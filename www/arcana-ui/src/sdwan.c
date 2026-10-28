@@ -5316,7 +5316,8 @@ sdwan_modal(struct html *h)
 			    "Then, for the apply to make both its ends, "
 			    "<code>speederv2</code> with its ratios and mode (both "
 			    "ends the same): a client here, a server on the far "
-			    "edge, each a profile of the plugin in rc.subr's "
+			    "edge, each a profile of Arcana's rc script "
+			    "(<code>arcana_relay</code>) in rc.subr's "
 			    "service jail (<code>_svcj</code>), held to the "
 			    "addresses it uses (<code>_svcj_ipaddrs</code>). "
 			    "Without, the relay process is yours.</small></label>");

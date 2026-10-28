@@ -26,7 +26,7 @@
 static int	pkg_run(struct work *, const char *, bool, uint8_t,
 		    const char *const *, size_t, struct execres *);
 static void	parse_versions(struct work *, const struct execres *,
-		    struct arc_package **, size_t *);
+		    struct package **, size_t *);
 static bool	valid_pkg(const char *);
 static const char *check_jail(struct work *, const char *);
 
@@ -178,9 +178,9 @@ pkg_repo_check(struct work *w, const char *jail, const char *repo)
 /* The lines of "pkg version -vRl '<'" as packages. */
 static void
 parse_versions(struct work *w, const struct execres *res,
-    struct arc_package **outp, size_t *np)
+    struct package **outp, size_t *np)
 {
-	struct arc_package	*v;
+	struct package	*v;
 	char			*copy, *it, *line, *nv, *dash, *p, *e;
 	size_t			 n;
 
@@ -250,11 +250,11 @@ check_jail(struct work *w, const char *jail)
  * each with tabs between (pkg query).
  */
 static int
-installed(struct work *w, const char *jail, struct arc_packages_rsp *rsp)
+installed(struct work *w, const char *jail, struct pkg_read *rsp)
 {
 	static const char *const query[] = { "query",
 	    "%n\t%v\t%a\t%sb\t%o\t%c" };
-	struct arc_package	*v;
+	struct package	*v;
 	struct execres		 res;
 	char			*copy, *it, *line, *f[6];
 	size_t			 n, i;
@@ -284,25 +284,24 @@ installed(struct work *w, const char *jail, struct arc_packages_rsp *rsp)
 		v[n].comment = i > 5 ? wtext(w, f[5]) : NULL;
 		n++;
 	}
-	rsp->packages.v = wadopt(w, v);
-	rsp->packages.n = n;
+	rsp->packages = wadopt(w, v);
+	rsp->npackages = n;
 	rsp->ok = true;
 	return (0);
 }
 
 int
 do_packages(struct work *w, const char *jail, bool refresh, bool inst,
-    uint8_t ip, bool anyos, struct arc_packages_rsp *rsp)
+    uint8_t ip, bool anyos, struct pkg_read *rsp)
 {
 	static const char *const update[] = { "update", "-q" };
 	static const char *const version[] = { "version", "-vRl", "<" };
-	struct arc_package	*v;
+	struct package	*v;
 	struct execres		 res;
 	const char		*e;
 	size_t			 n;
 
-	rsp->has_ok = true;
-	rsp->ok = false;
+	memset(rsp, 0, sizeof(*rsp));
 	if ((e = check_jail(w, jail)) != NULL) {
 		rsp->error = e;
 		return (0);
@@ -311,8 +310,8 @@ do_packages(struct work *w, const char *jail, bool refresh, bool inst,
 	{
 		const char	**rv;
 
-		pkg_repos(w, jail, &rv, &rsp->pkg_repos.n);
-		rsp->pkg_repos.v = rv;
+		pkg_repos(w, jail, &rv, &rsp->nrepos);
+		rsp->repos = rv;
 	}
 	/* A jail's base: pkgbase when FreeBSD-runtime is a package of it. */
 	if (jail != NULL && *jail != '\0') {
@@ -340,8 +339,8 @@ do_packages(struct work *w, const char *jail, bool refresh, bool inst,
 		return (0);
 	}
 	parse_versions(w, &res, &v, &n);
-	rsp->packages.v = v;
-	rsp->packages.n = n;
+	rsp->packages = v;
+	rsp->npackages = n;
 	rsp->ok = true;
 	return (0);
 }
@@ -353,19 +352,18 @@ do_packages(struct work *w, const char *jail, bool refresh, bool inst,
  * trace, and the error, when there is one, names each that failed.
  */
 static int
-upgrade_every_jail(struct work *w, const struct arc_pkg_upgrade_req *rq,
-    struct arc_pkg_upgrade_rsp *rsp)
+upgrade_every_jail(struct work *w, const struct pkg_upgrade *rq,
+    struct pkg_upgraded *rsp)
 {
-	struct arc_pkg_upgrade_req	 one;
-	struct arc_pkg_upgrade_rsp	 r;
+	struct pkg_upgrade		 one;
+	struct pkg_upgraded		 r;
 	struct execres			 res;
 	struct jinfo			*list;
 	const char			*e, *failed, *skipped;
 	static const char *const	 bootstrapped[] = { "-N" };
 	size_t				 n, i, done;
 
-	rsp->has_ok = true;
-	rsp->ok = false;
+	memset(rsp, 0, sizeof(*rsp));
 	list = NULL;
 	n = 0;
 	if (jails_running(w, &list, &n, &e) != 0) {
@@ -411,20 +409,19 @@ upgrade_every_jail(struct work *w, const struct arc_pkg_upgrade_req *rq,
 }
 
 int
-do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
-    struct arc_pkg_upgrade_rsp *rsp)
+do_pkg_upgrade(struct work *w, const struct pkg_upgrade *rq,
+    struct pkg_upgraded *rsp)
 {
 	const char		*version[] = { "version", "-vRl", "<", NULL,
 				    NULL, NULL };
-	struct arc_package	*v;
+	struct package	*v;
 	struct execres		 res;
 	const char		**args, *e, *p;
 	size_t			 n, i, nv;
 
 	if (rq->jail != NULL && strcmp(rq->jail, "*") == 0)
 		return (upgrade_every_jail(w, rq, rsp));
-	rsp->has_ok = true;
-	rsp->ok = false;
+	memset(rsp, 0, sizeof(*rsp));
 	if ((e = check_jail(w, rq->jail)) != NULL ||
 	    (e = pkg_repo_check(w, rq->jail, rq->pkg_repo)) != NULL) {
 		rsp->error = e;
@@ -478,8 +475,8 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
 	if (pkg_run(w, rq->jail, false, rq->pkg_ip, version, nv, &res) == 0 ||
 	    res.status == 1) {
 		parse_versions(w, &res, &v, &n);
-		rsp->packages.v = v;
-		rsp->packages.n = n;
+		rsp->packages = v;
+		rsp->npackages = n;
 	}
 	return (0);
 }

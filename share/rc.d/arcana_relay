@@ -1,0 +1,112 @@
+#!/bin/sh
+#
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# PROVIDE: arcana_relay
+# REQUIRE: NETWORKING
+# KEYWORD: shutdown
+#
+# Arcana's FEC relays: net/udpspeeder's speederv2, one or several on a
+# host, each run under daemon(8) with its lines in syslog (facility
+# daemon, tag the relay's name) and started again when it exits.  The
+# port's own rc script, speederv2, runs the admin's relay as before;
+# this one runs those Arcana makes, each a profile.
+#
+# Add these lines to /etc/rc.conf to enable the relays:
+#
+# arcana_relay_enable (bool):	Set to "YES" to run them.
+# arcana_relay_profiles (str):	The relays, by name, separated by
+#				spaces: each is run under rc.subr(8)'s
+#				name arcana_relay_<name>, so its
+#				variables are that name's, below, its
+#				syslog tag arcana_relay_<name>, its
+#				service jail svcj-arcana_relay_<name>.
+#				Empty: one relay, of arcana_relay_flags.
+# arcana_relay_<name>_enable (bool): Default: arcana_relay_enable.
+# arcana_relay_<name>_flags (str):	The command line of that relay
+#				(required), for example a client
+#				"-c -l127.0.0.1:51821 -r203.0.113.1:14350 --mode 1 -f20:10"
+#				or a server
+#				"-s -l203.0.113.1:14350 -r127.0.0.1:51821 --mode 1 -f20:10".
+# arcana_relay_<name>_user (str):	The user it runs as.
+#				Default: arcana_relay_user, "nobody";
+#				"" for root (a port below 1024).
+# arcana_relay_<name>_svcj (bool), _svcj_options, _svcj_ipaddrs:
+#				rc.subr(8)'s service jail for that relay,
+#				held to the addresses of _svcj_ipaddrs.
+# arcana_relay_<name>_pidfile (str): Default: /var/run/arcana_relay/<name>.pid
+# arcana_relay_flags, _user, _svcj, _svcj_options, _svcj_ipaddrs, _pidfile:
+#				the one relay's, without profiles.
+# arcana_relay_speederv2 (str):	The relay program (not _program: that
+#				is rc.subr's, and would stand in for
+#				daemon(8)).  Default: /usr/local/bin/speederv2
+#
+# /var/run/arcana_relay is made writable by the relay's user, for its
+# --fifo among others.  Each relay is "service arcana_relay <verb>
+# <name>"; without a name, the verb is every listed relay's.
+
+. /etc/rc.subr
+
+name=arcana_relay
+rcvar=arcana_relay_enable
+
+load_rc_config $name
+
+: ${arcana_relay_enable:=NO}
+: ${arcana_relay_user=nobody}
+: ${arcana_relay_speederv2:=/usr/local/bin/speederv2}
+
+piddir=/var/run/arcana_relay
+: ${arcana_relay_pidfile:=${piddir}/${name}.pid}
+
+if [ -n "$2" ]; then
+	profile=$2
+	if [ -n "${arcana_relay_profiles}" ]; then
+		# This relay, by its own variables: rc.subr takes
+		# ${name}_flags, _user, _svcj and the rest from the name.
+		name=arcana_relay_${profile}
+		rcvar=${name}_enable
+		eval ": \${${name}_enable:=\${arcana_relay_enable}}"
+		eval ": \${${name}_user=\${arcana_relay_user}}"
+		eval ": \${${name}_pidfile:=${piddir}/${profile}.pid}"
+	else
+		echo "$0: extra argument ignored"
+	fi
+elif [ -n "${arcana_relay_profiles}" ] && [ -n "$1" ]; then
+	# Every relay listed: at boot, at shutdown, or by hand without a
+	# name.  The script (rc_service, rc.subr's name for it) runs
+	# itself once for each.
+	for profile in ${arcana_relay_profiles}; do
+		echo "===> ${name} profile: ${profile}"
+		/bin/sh "${rc_service}" $1 ${profile}
+		retcode="$?"
+		if [ "0${retcode}" -ne 0 ]; then
+			failed="${profile} (${retcode}) ${failed:-}"
+		else
+			success="${profile} ${success:-}"
+		fi
+	done
+	exit 0
+fi
+
+eval pidfile=\$${name}_pidfile
+eval _arcana_relay_flags=\$${name}_flags
+eval _arcana_relay_user=\$${name}_user
+# Unset: rc.subr would put the flags in front of daemon(8).
+eval unset ${name}_flags
+
+command=/usr/sbin/daemon
+start_precmd=arcana_relay_precmd
+
+arcana_relay_precmd()
+{
+	if [ -z "${_arcana_relay_flags}" ]; then
+		err 1 "${name}_flags is not set"
+	fi
+	install -d ${_arcana_relay_user:+-o "${_arcana_relay_user}"} -m 0755 \
+	    "${pidfile%/*}"
+}
+
+command_args="-S -T ${name} -r -R 5 -P ${pidfile} ${arcana_relay_speederv2} --disable-color ${_arcana_relay_flags}"
+
+run_rc_command "$1"

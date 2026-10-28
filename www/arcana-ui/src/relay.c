@@ -1,14 +1,17 @@
 /*
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * A host's FEC relay tab: UDPspeeder (net/udpspeeder, a plugin), the
- * speederv2 service, as the agent's speeder read has it: how it is set,
- * the redundant packets it adds for each group size, and what the FEC
- * costs each way, measured from the relay's own --report lines.  Its
- * flags from a form, its ratios changed while it runs (by its fifo, the
- * tunnel kept), started, stopped, enabled.  Each change is a job, in safe
- * mode on the host: a relay often carries the tunnel the console reaches
- * the host by, and a change it cannot answer after is undone.
+ * A host's FEC relay tab: UDPspeeder (net/udpspeeder, a plugin), run by
+ * Arcana's own rc script, arcana_relay, one relay or several (each a
+ * profile), as the agent's speeder read has it: how each is set, the
+ * redundant packets it adds for each group size, and what the FEC costs
+ * each way, measured from the relay's own --report lines.  Its flags
+ * from a form, its ratios changed while it runs (by its fifo, the tunnel
+ * kept), started, stopped, enabled.  Each change is a job, in safe mode
+ * on the host: a relay often carries the tunnel the console reaches the
+ * host by, and a change it cannot answer after is undone.  The admin's
+ * own relay, run by the port's rc script (speederv2), is shown as read,
+ * never changed.
  */
 
 #include <stdio.h>
@@ -17,7 +20,7 @@
 
 #include "app.h"
 
-#define	FIFO_DEFAULT	"/var/run/speederv2/fifo"
+#define	FIFO_DEFAULT	"/var/run/arcana_relay/fifo"
 #define	RELAY_TICK_MS	5000
 #define	CMP_SAMPLES	30		/* the last samples a comparison averages */
 #define	CMP_RAW		"fec-raw"	/* the monitor without FEC: the underlay */
@@ -32,9 +35,11 @@ static struct {
 	bool		 picked;	/* where, chosen by hand: jail */
 	char		 jail[64];	/* "" the host */
 	char		 prof[40];	/* the relay picked: a profile, "" the
-					 * plain one (speederv2_flags) */
+					 * plain one (arcana_relay_flags) */
 	char		 shown[40];	/* the one shown, and its jobs': the
 					 * pick while the read has it */
+	bool		 port;		/* the admin's relay picked, the port's
+					 * rc script's: read alone */
 	bool		 adding;	/* a new profile's form open */
 } rl;
 
@@ -324,7 +329,7 @@ input(struct html *h, const char *label, const char *name, const char *value,
 static void
 conf_form(struct html *h, const ucl_object_t *o)
 {
-	char	num[32];
+	char	num[32], fifo[96];
 	bool	server;
 
 	server = jstr(o, "role") != NULL && strcmp(jstr(o, "role"), "server") ==
@@ -334,14 +339,14 @@ conf_form(struct html *h, const ucl_object_t *o)
 	h_txt(h, rl.adding ? "Another relay" : "The relay's flags");
 	h_raw(h, "</h3><p class=\"dim\">Written to <code>");
 	if (rl.adding)
-		h_raw(h, "speederv2_&lt;name&gt;_flags</code>, the name added "
-		    "to <code>speederv2_profiles");
+		h_raw(h, "arcana_relay_&lt;name&gt;_flags</code>, the name added "
+		    "to <code>arcana_relay_profiles");
 	else if (rl.shown[0] != '\0') {
-		h_raw(h, "speederv2_");
+		h_raw(h, "arcana_relay_");
 		h_txt(h, rl.shown);
 		h_raw(h, "_flags");
 	} else
-		h_raw(h, "speederv2_flags");
+		h_raw(h, "arcana_relay_flags");
 	h_raw(h, "</code> in rc.conf, each word checked; the relay restarted "
 	    "when it runs. Both ends need the same mode, key and ratios' "
 	    "scheme.</p>");
@@ -349,9 +354,9 @@ conf_form(struct html *h, const ucl_object_t *o)
 		h_raw(h, "<label>Name<input name=\"profile\" required "
 		    "pattern=\"[A-Za-z0-9_]{1,32}\" spellcheck=\"false\" "
 		    "autocomplete=\"off\" placeholder=\"lte\"><small>Letters, "
-		    "digits and _: the rc script's profile, run under rc.subr's "
-		    "name speederv2_&lt;name&gt;, its syslog tag and its "
-		    "variables' prefix.</small></label>");
+		    "digits and _: a profile of Arcana's rc script, run under "
+		    "rc.subr's name arcana_relay_&lt;name&gt;, its syslog tag "
+		    "and its variables' prefix.</small></label>");
 	h_raw(h, "<div class=\"two\"><label>Role<select name=\"role\">");
 	h_fmt(h, "<option value=\"client\"%s>client: takes plain packets, "
 	    "sends them with FEC</option><option value=\"server\"%s>server: "
@@ -386,9 +391,17 @@ conf_form(struct html *h, const ucl_object_t *o)
 	    "Its counters, logged: what this tab measures the overhead by. "
 	    "0 for none.");
 	h_raw(h, "</div><div class=\"two\">");
+	/* Its own fifo under the rc script's directory: the plain relay's
+	 * fifo, a profile's <name>.fifo. */
+	if (rl.shown[0] != '\0')
+		snprintf(fifo, sizeof(fifo), "/var/run/arcana_relay/%s.fifo",
+		    rl.shown);
+	else
+		snprintf(fifo, sizeof(fifo), "%s", FIFO_DEFAULT);
 	input(h, "Fifo", "fifo", jstr(o, "flags") != NULL ? jstr(o, "fifo") :
-	    FIFO_DEFAULT, FIFO_DEFAULT, "The ratios are changed through it "
-	    "while the relay runs, the tunnel kept up. Empty for none.");
+	    rl.adding ? "" : fifo, rl.adding ? "/var/run/arcana_relay/<name>.fifo"
+	    : fifo, "The ratios are changed through it while the relay runs, "
+	    "the tunnel kept up. Empty for none.");
 	h_fmt(h, "<label>Key<input type=\"password\" name=\"key\" "
 	    "autocomplete=\"off\" placeholder=\"%s\"><small>A simple XOR, the "
 	    "same at both ends; kept in rc.conf, never shown here.</small>"
@@ -619,8 +632,9 @@ series_chart(struct html *h, const ucl_object_t *series)
 }
 
 /*
- * The relay shown: the profile picked, else the first profile when there
- * are some and speederv2_flags is not set, else the plain one (o).
+ * The relay shown: the admin's when picked and read, else the profile
+ * picked, else the first profile when there are some and
+ * arcana_relay_flags is not set, else the plain one (o).
  */
 static const ucl_object_t *
 rl_relay(const ucl_object_t *o)
@@ -628,6 +642,11 @@ rl_relay(const ucl_object_t *o)
 	const ucl_object_t	*p, *first;
 	ucl_object_iter_t	 it;
 
+	if (rl.port && jget(o, "speederv2") != NULL) {
+		rl.shown[0] = '\0';
+		return (jget(o, "speederv2"));
+	}
+	rl.port = false;
 	first = NULL;
 	it = NULL;
 	while ((p = ucl_object_iterate(jget(o, "profiles"), &it, true)) !=
@@ -651,29 +670,29 @@ rl_relay(const ucl_object_t *o)
 	return (first);
 }
 
-/* Several relays: one picked to be shown, another added. */
+/* Several relays: one picked to be shown, another added; the admin's
+ * own, the port's rc script's, beside them to read. */
 static void
 relays_bar(struct html *h, const ucl_object_t *o)
 {
 	const ucl_object_t	*p;
 	ucl_object_iter_t	 it;
 
-	if (!jbool(o, "profiles_supported") && jget(o, "profiles") == NULL)
-		return;
 	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub relays\" "
 	    "aria-label=\"Relays\">");
 	if (jstr(o, "flags") != NULL || jget(o, "profiles") == NULL)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"rl-pick\" "
-		    "data-arg=\"\" title=\"speederv2_flags\">the plain one"
-		    "</button>", rl.shown[0] == '\0' && !rl.adding ? " on" : "");
+		    "data-arg=\"\" title=\"arcana_relay_flags\">the plain one"
+		    "</button>", rl.shown[0] == '\0' && !rl.port && !rl.adding ?
+		    " on" : "");
 	it = NULL;
 	while ((p = ucl_object_iterate(jget(o, "profiles"), &it, true)) !=
 	    NULL) {
 		if (jstr(p, "name") == NULL)
 			continue;
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"rl-pick\"",
-		    strcmp(jstr(p, "name"), rl.shown) == 0 && !rl.adding ? " on" :
-		    "");
+		    strcmp(jstr(p, "name"), rl.shown) == 0 && !rl.port &&
+		    !rl.adding ? " on" : "");
 		h_attr(h, "data-arg", jstr(p, "name"));
 		h_raw(h, "><span class=\"dot ");
 		h_raw(h, jbool(p, "running") ? "st-up" : "st-down");
@@ -681,14 +700,20 @@ relays_bar(struct html *h, const ucl_object_t *o)
 		h_txt(h, jstr(p, "name"));
 		h_raw(h, "</button>");
 	}
-	if (jbool(o, "profiles_supported"))
-		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"rl-add\">+ "
-		    "Another relay</button>", rl.adding ? " on" : "");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"rl-add\">+ "
+	    "Another relay</button>", rl.adding ? " on" : "");
+	if ((p = jget(o, "speederv2")) != NULL) {
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"rl-pick-port\""
+		    " title=\"The admin's own relay, run by the port's rc script "
+		    "(speederv2_flags): read here, never changed\"><span class=\""
+		    "dot %s\"></span>speederv2, the admin's</button>", rl.port ?
+		    " on" : "", jbool(p, "running") ? "st-up" : "st-down");
+	}
 	h_raw(h, "</nav></div>");
 	if (jstr(o, "flags") != NULL && jget(o, "profiles") != NULL)
 		h_raw(h, "<p class=\"notice warn\">The plain relay's "
-		    "<code>speederv2_flags</code> is set but not run: the rc "
-		    "script runs the relays of <code>speederv2_profiles</code> "
+		    "<code>arcana_relay_flags</code> is set but not run: the rc "
+		    "script runs the relays of <code>arcana_relay_profiles</code> "
 		    "while it lists any.</p>");
 }
 
@@ -753,7 +778,8 @@ view_relay(struct html *h, struct server *s)
 		return;
 	}
 	running = jbool(o, "running");
-	enabled = jbool(top, "enabled");
+	/* The admin's relay has its own enable; it is read, not run. */
+	enabled = jbool(rl.port ? o : top, "enabled");
 	set = jstr(o, "flags") != NULL;
 	h_raw(h, "<div class=\"toolbar\">");
 	if (jstr(top, "jail") != NULL) {
@@ -761,6 +787,8 @@ view_relay(struct html *h, struct server *s)
 		h_txt(h, jstr(top, "jail"));
 		h_raw(h, "</span> ");
 	}
+	if (rl.port)
+		h_raw(h, "<span class=\"chip\">the admin's, read only</span> ");
 	chip(h, enabled, "Enabled at boot", "Not at boot");
 	chip(h, running, "Running", "Stopped");
 	if (jstr(o, "role") != NULL) {
@@ -769,7 +797,7 @@ view_relay(struct html *h, struct server *s)
 		h_raw(h, "</span> ");
 	}
 	h_raw(h, "<span class=\"grow\"></span>");
-	if (set) {
+	if (set && !rl.port) {
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"%s\">%s"
 		    "</button> ", running ? "rl-restart" : "rl-start", running ?
 		    "Restart" : "Start");
@@ -779,18 +807,29 @@ view_relay(struct html *h, struct server *s)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"%s\" title="
 		    "\"%s\">%s</button> <button class=\"small%s\" data-act=\""
 		    "rl-conf\">Configure</button>", enabled ? "rl-disable" :
-		    "rl-enable", jget(top, "profiles") != NULL ? "speederv2_enable: "
-		    "every relay of the host's" : "speederv2_enable", enabled ?
-		    "Disable" : "Enable", rl.conf ? " on" : "");
+		    "rl-enable", jget(top, "profiles") != NULL ?
+		    "arcana_relay_enable: every relay of Arcana's on the host" :
+		    "arcana_relay_enable", enabled ? "Disable" : "Enable",
+		    rl.conf ? " on" : "");
 		if (rl.shown[0] != '\0')
 			h_raw(h, " <button class=\"ghost small danger\" data-act=\""
 			    "rl-remove\">Remove</button>");
 	}
 	h_raw(h, "</div>");
-	if (!set || rl.conf) {
+	if (rl.port) {
+		h_raw(h, "<p class=\"notice\">The port's own rc script, "
+		    "<code>speederv2</code>, runs this relay from <code>"
+		    "speederv2_flags</code>; it is yours, and Arcana only "
+		    "reads it. Arcana's relays are profiles of its own script, "
+		    "<code>arcana_relay</code>.</p>");
+		if (!set)
+			h_raw(h, "<p class=\"dim\"><code>speederv2_flags</code> is "
+			    "empty.</p>");
+	} else if (!set || rl.conf) {
 		if (!set && rl.shown[0] == '\0')
 			h_raw(h, "<p class=\"notice\">The relay is installed but "
-			    "not set up: <code>speederv2_flags</code> is empty.</p>");
+			    "not set up: <code>arcana_relay_flags</code> is empty."
+			    "</p>");
 		conf_form(h, o);
 	}
 	if (set) {
@@ -810,8 +849,9 @@ view_relay(struct html *h, struct server *s)
 		if (jbool(o, "svcj")) {
 			char	jn[64];
 
-			snprintf(jn, sizeof(jn), "svcj-speederv2%s%s",
-			    rl.shown[0] != '\0' ? "_" : "", rl.shown);
+			snprintf(jn, sizeof(jn), "svcj-%s%s%s", rl.port ?
+			    "speederv2" : "arcana_relay", rl.shown[0] != '\0' ?
+			    "_" : "", rl.shown);
 			dt(h, "Service jail", jn);
 			dt(h, "Its addresses", jstr(o, "svcj_ipaddrs") != NULL ?
 			    jstr(o, "svcj_ipaddrs") : "all of the host's");
@@ -821,16 +861,20 @@ view_relay(struct html *h, struct server *s)
 		h_raw(h, "</dl><p class=\"dim\"><code>");
 		h_txt(h, jstr(o, "flags"));
 		h_raw(h, "</code></p>");
-		/* The ratios changed while it runs. */
-		h_raw(h, "<form data-form=\"rl-fec\" class=\"inline-form\"><label>"
-		    "Ratios<input name=\"fec\" spellcheck=\"false\" "
-		    "autocomplete=\"off\" placeholder=\"20:10\"");
-		h_attr(h, "value", jstr(o, "fec") != NULL ? jstr(o, "fec") : "");
-		h_fmt(h, "></label><button class=\"small\">Change</button><small "
-		    "class=\"help\">%s</small></form></div>", !running ? "Kept for "
-		    "its next start." : jstr(o, "fifo") != NULL ? "Sent through "
-		    "its fifo: the tunnel stays up." : "Without a fifo it is "
-		    "restarted to take them.");
+		/* The ratios changed while it runs; not the admin's. */
+		if (!rl.port) {
+			h_raw(h, "<form data-form=\"rl-fec\" class=\"inline-form\">"
+			    "<label>Ratios<input name=\"fec\" spellcheck=\"false\" "
+			    "autocomplete=\"off\" placeholder=\"20:10\"");
+			h_attr(h, "value", jstr(o, "fec") != NULL ? jstr(o, "fec") :
+			    "");
+			h_fmt(h, "></label><button class=\"small\">Change</button>"
+			    "<small class=\"help\">%s</small></form>", !running ?
+			    "Kept for its next start." : jstr(o, "fifo") != NULL ?
+			    "Sent through its fifo: the tunnel stays up." :
+			    "Without a fifo it is restarted to take them.");
+		}
+		h_raw(h, "</div>");
 		h_raw(h, "<div><h3>What the FEC costs</h3>");
 		if (jget(o, "report") != NULL)
 			report_table(h, jget(o, "report"));
@@ -875,14 +919,17 @@ view_relay(struct html *h, struct server *s)
 		}
 		h_raw(h, "</pre></details>");
 	}
-	h_raw(h, "<p class=\"freebsd-note dim\">FreeBSD: the port's rc "
-	    "script runs speederv2 under daemon(8), which restarts it and "
-	    "sends its lines to syslogd(8); rc.conf's speederv2_flags are its "
-	    "words, or for several relays speederv2_profiles and each one's "
-	    "speederv2_&lt;name&gt;_flags. rc.subr(8) runs each in a service "
-	    "jail of its own with _svcj, held to _svcj_ipaddrs. The overhead "
-	    "is kept in the host's history beside its interfaces' rates "
-	    "(Utilization).</p></section>");
+	h_raw(h, "<p class=\"freebsd-note dim\">FreeBSD: Arcana's own rc "
+	    "script, arcana_relay, runs each relay as a profile of rc.subr(8) "
+	    "(service arcana_relay start &lt;name&gt;) under daemon(8), which "
+	    "restarts it and sends its lines to syslogd(8) tagged "
+	    "arcana_relay_&lt;name&gt;; rc.conf's arcana_relay_profiles lists "
+	    "them and arcana_relay_&lt;name&gt;_flags are each one's words, "
+	    "or arcana_relay_flags the one relay's. rc.subr runs each in a "
+	    "service jail of its own with _svcj, held to _svcj_ipaddrs. The "
+	    "port's own script, speederv2, keeps running the admin's relay. "
+	    "The overhead is kept in the host's history beside its "
+	    "interfaces' rates (Utilization).</p></section>");
 }
 
 static struct server *
@@ -1015,7 +1062,7 @@ relay_action(const char *act, const char *arg, const char *value)
 		rl.picked = true;
 		snprintf(rl.jail, sizeof(rl.jail), "%s", value != NULL ? value :
 		    "");
-		rl.conf = rl.adding = false;
+		rl.conf = rl.adding = rl.port = false;
 		rl.prof[0] = rl.shown[0] = '\0';
 		res_drop(&rl.r);
 		render();
@@ -1035,12 +1082,17 @@ relay_action(const char *act, const char *arg, const char *value)
 	if (strcmp(act, "rl-pick") == 0) {
 		snprintf(rl.prof, sizeof(rl.prof), "%s", arg != NULL ? arg : "");
 		snprintf(rl.shown, sizeof(rl.shown), "%s", rl.prof);
+		rl.conf = rl.adding = rl.port = false;
+		return (true);
+	}
+	if (strcmp(act, "rl-pick-port") == 0) {
+		rl.port = true;
 		rl.conf = rl.adding = false;
 		return (true);
 	}
 	if (strcmp(act, "rl-add") == 0) {
 		rl.adding = !rl.adding;
-		rl.conf = false;
+		rl.conf = rl.port = false;
 		return (true);
 	}
 	if (strcmp(act, "rl-compare") == 0) {
@@ -1067,8 +1119,8 @@ relay_action(const char *act, const char *arg, const char *value)
 		return (true);
 	if (strcmp(act, "rl-remove") == 0) {
 		snprintf(title, sizeof(title), "Remove the relay %s?", rl.shown);
-		confirm(title, "It is stopped, its speederv2_<name>_flags "
-		    "unset and its name taken out of speederv2_profiles. A "
+		confirm(title, "It is stopped, its arcana_relay_<name>_flags "
+		    "unset and its name taken out of arcana_relay_profiles. A "
 		    "tunnel carried by it is down. On the host the job is in "
 		    "safe mode, and is undone if the console cannot reach the "
 		    "host after it.", "Remove", true, "", "rl-do-remove", "", "");

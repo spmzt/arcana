@@ -553,6 +553,100 @@ ATF_TC_BODY(restconf_write, tc)
 	resp_free(&r);
 }
 
+/*
+ * An interface's router advertisements (RFC 8349's submodule with
+ * arcana-ra) put in the candidate at their path below the interface,
+ * committed confirmed: the first commit stops at rc-conf-files, the
+ * warning accepted it goes through; running has the node, the host's
+ * rtadvd.conf the record, rtadvd started.
+ */
+ATF_TC_WITHOUT_HEAD(restconf_ra);
+ATF_TC_BODY(restconf_ra, tc)
+{
+	static const char node[] = "{\"ietf-ipv6-unicast-routing:"
+	    "ipv6-router-advertisements\":{\"send-advertisements\":true,"
+	    "\"max-rtr-adv-interval\":300,\"arcana-ra:router-preference\":"
+	    "\"high\",\"arcana-ra:rdnss\":[{\"address\":\"2001:db8::53\"}],"
+	    "\"prefix-list\":{\"prefix\":[{\"prefix-spec\":\"2001:db8:57::/64\","
+	    "\"valid-lifetime\":3600,\"preferred-lifetime\":1800}]}}}";
+	struct authn	 a;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64], id[16];
+	char		 path[400], conf[MAXPATHLEN + 32];
+	FILE		*fp;
+	size_t		 n;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	/* Arcana's rc.conf file goes where a host has the directory. */
+	(void)mkdir("root/usr", 0755);
+	(void)mkdir("root/usr/local", 0755);
+	(void)mkdir("root/usr/local/etc", 0755);
+	ATF_REQUIRE(mkdir("root/usr/local/etc/rc.conf.d", 0755) == 0);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/restconf/ds/ietf-datastores:candidate/"
+	    "arcana-fleet:fleet/host=%s/ietf-interfaces:interfaces/"
+	    "interface=lo0/ietf-ip:ipv6/ietf-ipv6-unicast-routing:"
+	    "ipv6-router-advertisements", id);
+	http("PUT", path, node, &r);
+	ATF_CHECK_MSG(r.status == 204 || r.status == 201, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"arcana-ra:router-preference\":\"high\"")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
+	/* The commit stops at the warning: rc_conf_files does not name
+	 * Arcana's file; accepted, it goes on. */
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/"
+	    "host=%s/ietf-netconf:commit", id);
+	http("POST", path, "{\"ietf-netconf:input\":{\"confirmed\":[null],"
+	    "\"confirm-timeout\":60,\"persist\":\"ra1\"}}", &r);
+	ATF_CHECK_MSG(r.status >= 400, "%d %s", r.status, r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"error-app-tag\":\"rc-conf-files\"") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/"
+	    "host=%s/ietf-netconf:commit?arcana-accept=rc-conf-files", id);
+	http("POST", path, "{\"ietf-netconf:input\":{\"confirmed\":[null],"
+	    "\"confirm-timeout\":60,\"persist\":\"ra1\"}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/"
+	    "host=%s/ietf-netconf:commit", id);
+	http("POST", path, "{\"ietf-netconf:input\":{\"persist-id\":\"ra1\"}}",
+	    &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/restconf/ds/ietf-datastores:running/"
+	    "arcana-fleet:fleet/host=%s/ietf-interfaces:interfaces/"
+	    "interface=lo0/ietf-ip:ipv6/ietf-ipv6-unicast-routing:"
+	    "ipv6-router-advertisements", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"max-rtr-adv-interval\":300") != NULL &&
+	    strstr(r.body, "\"send-advertisements\":true") != NULL &&
+	    strstr(r.body, "\"arcana-ra:rdnss\":[{\"address\":\"2001:db8::53\"}]")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
+	/* The host's file, as rtadvd.conf(5) wants it; rtadvd run. */
+	ATF_REQUIRE((fp = fopen("rtadvd.conf", "r")) != NULL);
+	n = fread(conf, 1, sizeof(conf) - 1, fp);
+	conf[n] = '\0';
+	fclose(fp);
+	ATF_CHECK_MSG(strstr(conf, "lo0:\\\n\t:maxinterval#300:raflags=\"h\":"
+	    "addr=\"2001:db8:57::\":prefixlen#64:\\\n\t:vltime#3600:pltime#1800:"
+	    "rdnss=\"2001:db8::53\":\n") != NULL, "%s", conf);
+	ATF_CHECK(access("running.rtadvd", F_OK) == 0);
+}
+
 /* A path through a mount point (RFC 8528): a FIB's routing below its
  * network instance's vrf-root. */
 ATF_TC_WITHOUT_HEAD(restconf_mount);
@@ -2284,7 +2378,7 @@ ATF_TC_BODY(speeder, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_MSG(strstr(r.body, "t0psecret") == NULL, "%s", r.body);
 	resp_free(&r);
-	for (i = 0; i < 300 && system("grep -q '^speederv2_flags=\"-c "
+	for (i = 0; i < 300 && system("grep -q '^arcana_relay_flags=\"-c "
 	    "-l127.0.0.1:51821 -r192.0.2.1:14350 -k t0psecret -f20:10 --report "
 	    "10\"$' rc.conf") != 0; i++)
 		usleep(100000);
@@ -2296,7 +2390,7 @@ ATF_TC_BODY(speeder, tc)
 	resp_free(&r);
 	/* Confirmed by the console's next look: not undone after. */
 	sleep(3);
-	ATF_CHECK(system("grep -q '^speederv2_flags=\"-c ' rc.conf") == 0);
+	ATF_CHECK(system("grep -q '^arcana_relay_flags=\"-c ' rc.conf") == 0);
 	http("GET", jobs, NULL, &r);
 	ATF_CHECK_MSG(strstr(r.body, "t0psecret") == NULL && strstr(r.body,
 	    "undone") == NULL, "%.800s", r.body);
@@ -8792,8 +8886,8 @@ ATF_TC_BODY(sdwan_mesh, tc)
 	 * A relay the apply makes, speederv2's: b's client listening where
 	 * its wg peer points and sending to a's underlay at the relay's
 	 * port; a's server there, handing it to a's wg port; each a
-	 * profile, started, taken away with the tunnel; the plugin is
-	 * what the edges need.
+	 * profile of arcana_relay, started, taken away with the tunnel;
+	 * the plugin is what the edges need.
 	 */
 	ATF_REQUIRE(swap_in(doc, "\"port\":14350}", "\"port\":14350,"
 	    "\"plugin\":\"speederv2\",\"fec\":\"10:5\",\"mode\":0}", t1,
@@ -8809,7 +8903,7 @@ ATF_TC_BODY(sdwan_mesh, tc)
 	    strstr(r.body, "\"key\":\"relay:s_") != NULL && strstr(r.body,
 	    "\"role=client\",\"listen=127.0.0.1:51821\",\"remote=192.0.2.1:"
 	    "14350\",\"fec=10:5\",\"mode=0\",\"report=10\",\"fifo=/var/run/"
-	    "speederv2/c_") != NULL && strstr(r.body, "\"role=server\",\""
+	    "arcana_relay/c_") != NULL && strstr(r.body, "\"role=server\",\""
 	    "listen=192.0.2.1:14350\",\"remote=127.0.0.1:51") != NULL &&
 	    strstr(r.body, ".fifo\",\"svcj=yes\",\"svcj_ipaddrs=192.0.2.2,"
 	    "127.0.0.1\"]") != NULL && strstr(r.body, ".fifo\",\"svcj=yes\","
@@ -11507,6 +11601,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, jails);
 	ATF_TP_ADD_TC(tp, restconf);
 	ATF_TP_ADD_TC(tp, restconf_write);
+	ATF_TP_ADD_TC(tp, restconf_ra);
 	ATF_TP_ADD_TC(tp, restconf_mount);
 	ATF_TP_ADD_TC(tp, restconf_edit);
 	ATF_TP_ADD_TC(tp, restconf_yang_patch);

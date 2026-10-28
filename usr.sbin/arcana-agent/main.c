@@ -92,6 +92,7 @@ struct opts opts = {
 	.suricata_bin = PATH_SURICATA_BIN,
 	.poudriere_bin = PATH_POUDRIERE_BIN,
 	.ifmcstat_bin = PATH_IFMCSTAT_BIN,
+	.rtadvctl_bin = PATH_RTADVCTL_BIN,
 	.freshclam_conf = PATH_FRESHCLAM_CONF,
 	.suricata_rules = PATH_SURICATA_RULES,
 	.exports_file = "/etc/exports",
@@ -128,7 +129,8 @@ enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
     OPT_POUDRIERE, OPT_POUDRIERE_ETC, OPT_IFMCSTAT, OPT_FRESHCLAM_CONF,
     OPT_SURICATA_RULES, OPT_EXPORTS, OPT_CTL_CONF, OPT_HAST_CONF,
     OPT_SMTPD_CONF, OPT_SMTPD_DIR, OPT_PKG_IDLE, OPT_JOBS_CONF,
-    OPT_SPEEDER_LOG, OPT_SMTPD_WATCH, OPT_NACM, OPT_SUBSCRIPTIONS };
+    OPT_SPEEDER_LOG, OPT_SMTPD_WATCH, OPT_NACM, OPT_SUBSCRIPTIONS,
+    OPT_RTADVCTL };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
@@ -155,6 +157,7 @@ static const struct option longopts[] = {
 	{ "poudriere", required_argument, NULL, OPT_POUDRIERE },
 	{ "poudriere-etc", required_argument, NULL, OPT_POUDRIERE_ETC },
 	{ "ifmcstat", required_argument, NULL, OPT_IFMCSTAT },
+	{ "rtadvctl", required_argument, NULL, OPT_RTADVCTL },
 	{ "freshclam-conf", required_argument, NULL, OPT_FRESHCLAM_CONF },
 	{ "suricata-rules", required_argument, NULL, OPT_SURICATA_RULES },
 	/* The storage services' files: exports(5), ctl.conf(5), hast.conf(5). */
@@ -202,7 +205,7 @@ usage(void)
 	    "                 [-X traceroute] [--bird-watch seconds]\n"
 	    "                 [--sctp-also addresses] [--telegram-api url]\n"
 	    "                 [--poudriere poudriere] [--poudriere-etc directory]\n"
-	    "                 [--ifmcstat ifmcstat]\n"
+	    "                 [--ifmcstat ifmcstat] [--rtadvctl rtadvctl]\n"
 	    "                 [--freshclam-conf file]\n"
 	    "                 [--suricata-rules directory]\n"
 	    "                 [--exports file] [--ctl-conf file] [--hast-conf file]\n"
@@ -426,6 +429,9 @@ main(int argc, char *argv[])
 			break;
 		case OPT_IFMCSTAT:
 			opts.ifmcstat_bin = optarg;
+			break;
+		case OPT_RTADVCTL:
+			opts.rtadvctl_bin = optarg;
 			break;
 		case OPT_FRESHCLAM_CONF:
 			opts.freshclam_conf = optarg;

@@ -1,6 +1,7 @@
 %%CONSOLE%%@sample %%ETCDIR%%/web.conf.sample
 %%CONSOLE%%etc/rc.d/arcana_console
 etc/rc.d/arcana_agent
+etc/rc.d/arcana_relay
 %%CONSOLE%%sbin/arcana-console
 sbin/jailconf
 sbin/arcana-enrol

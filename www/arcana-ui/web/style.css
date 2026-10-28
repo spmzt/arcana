@@ -2869,6 +2869,14 @@ ul.devices em { color: var(--cyan); font-style: normal; font-size: .7rem; }
 	    var(--panel);
 	overflow: hidden;
 }
+/* Over the whole screen (Full screen, or F): the page's own colours,
+ * the buttons and the legend still over the drawing. */
+.map-wrap:fullscreen {
+	border: 0;
+	border-radius: 0;
+	background: var(--bg);
+}
+.map-wrap:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
 /* The map's traffic, drawn by WebGL under the drawing (glmap.c). */
 canvas.map-gl {
 	position: absolute;
@@ -2876,6 +2884,7 @@ canvas.map-gl {
 	width: 100%;
 	height: 100%;
 	pointer-events: none;
+	transform-origin: 50% 50%;	/* moved as one with the SVG (arc_map_view) */
 }
 svg.topo {
 	position: absolute;
@@ -2885,7 +2894,10 @@ svg.topo {
 	touch-action: none;
 	user-select: none;
 	-webkit-user-select: none;
+	transform-origin: 50% 50%;
 }
+/* A line moving with the hand is the canvas's until the hand lets go. */
+svg.topo .tlink.moving, svg.topo .tlabel.moving { visibility: hidden; }
 svg.topo .bg { cursor: grab; }
 /* A measured tunnel's last probe sample, under its rate. */
 svg.topo text.probe {
@@ -2958,6 +2970,119 @@ svg.topo.linking .tnode.target:hover .box {
 	stroke-width: 2;
 	stroke-dasharray: 6 5;
 	pointer-events: none;
+}
+.tdraft.ghostly { stroke-dasharray: 2 6; opacity: .7; }
+
+/*
+ * Draw mode (topo.c, "ghost and plan").  A host that cannot take the
+ * line is dimmed, its outline dotted and the reason written under it
+ * (a ✕ and words, not the colour alone); the one the keys are on has a
+ * doubled outline.  A drawn link's state is its dash: dotted and
+ * see-through a ghost, dashed planned, dash-dot pending (with the
+ * agent's countdown ring, the WebGL layer's), solid live; its kind is
+ * its letter in the circle at its middle.
+ */
+svg.topo .tnode.invalid { opacity: .4; }
+svg.topo .tnode.invalid .box, svg.topo .tnode.invalid .glyph {
+	stroke-dasharray: 1 4;
+}
+svg.topo .tnode text.why {
+	text-anchor: middle;
+	font-size: 10px;
+	fill: var(--fg-2);
+}
+svg.topo .tnode.kbsel .box, svg.topo .tnode.kbsel .glyph,
+svg.topo .tnode:focus-visible .box, svg.topo .tnode:focus-visible .glyph {
+	stroke: var(--cyan);
+	stroke-width: 3;
+	paint-order: stroke;
+	outline: none;
+}
+svg.topo .tnode:focus { outline: none; }
+svg.topo .kring { cursor: pointer; }
+svg.topo .kring circle {
+	fill: var(--bg);
+	stroke: var(--line-2);
+	stroke-width: 1.2;
+}
+svg.topo .kring text {
+	text-anchor: middle;
+	font-size: 9px;
+	font-weight: 700;
+	fill: var(--fg-2);
+}
+svg.topo .kring.on circle { stroke: var(--cyan); stroke-width: 2.4; }
+svg.topo .kring.on text { fill: var(--fg); }
+.tghost path {
+	fill: none;
+	stroke: var(--cyan);
+	stroke-width: 2.4;
+	stroke-linecap: round;
+}
+.tghost.k-tunnel path { stroke: var(--violet); }
+.tghost.k-bgp path { stroke: var(--magenta); }
+.tghost.k-ospf path { stroke: var(--amber); }
+.tghost.s-ghost path { stroke-dasharray: 2 7; opacity: .55; }
+.tghost.s-planned path { stroke-dasharray: 9 6; opacity: .85; }
+.tghost.s-pending path { stroke-dasharray: 12 4 2 4; }
+.tghost.s-live path { stroke-dasharray: none; stroke-width: 3; }
+.tghost circle {
+	fill: var(--bg);
+	stroke: var(--line-2);
+	stroke-width: 1.4;
+}
+.tghost.s-ghost circle { stroke-dasharray: 2 3; }
+svg.topo .tghost text.kl {
+	text-anchor: middle;
+	font-size: 11px;
+	font-weight: 700;
+	fill: var(--fg);
+}
+svg.topo .tghost text.st {
+	text-anchor: middle;
+	font-size: 10px;
+	fill: var(--fg-2);
+	paint-order: stroke;
+	stroke: var(--bg);
+	stroke-width: 3px;
+}
+svg.topo .tghost.failed text.st { fill: var(--red); }
+.map-tools .dkinds { display: inline-flex; gap: .15rem; }
+.map-tools .dkinds button { min-width: 1.9rem; font-weight: 700; }
+/* The plan beside the dialog's fields, where there is room. */
+@media (min-width: 900px) {
+	.modal:has(section.plan-side) { width: min(1060px, calc(100vw - 2rem)); }
+	.modal form:has(> section.plan-side) {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		column-gap: 1.4rem;
+		align-content: start;
+	}
+	.modal form:has(> section.plan-side) > * { grid-column: 1; }
+	.modal form > section.plan-side {
+		grid-column: 2;
+		grid-row: 1 / span 40;
+		align-self: start;
+	}
+	.modal form:has(> section.plan-side) > .buttons,
+	.modal form:has(> section.plan-side) > .err { grid-column: 1 / -1; }
+}
+section.join-plan pre {
+	margin: .3rem 0 .6rem;
+	white-space: pre-wrap;
+	font-size: .72rem;
+}
+/* For a screen reader only: the map as a list. */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+	border: 0;
 }
 
 .tlink .wire {
@@ -3058,7 +3183,9 @@ svg.topo .head.alt { fill: var(--amber); }
 	position: absolute;
 	top: .6rem;
 	left: .6rem;
+	right: .6rem;
 	display: flex;
+	flex-wrap: wrap;	/* every button within reach, in a narrow box too */
 	gap: .3rem;
 }
 .map-legend {
@@ -5539,3 +5666,13 @@ html.pad body { padding-bottom: calc(44px + env(safe-area-inset-bottom, 0px)); }
 @media (max-width: 1280px) and (max-height: 820px) {
 	html.pad { font-size: 17px; }
 }
+
+/* An interface's router advertisements (ra.c): the record's form and
+ * what rtadvd(8) sends, side by side where there is room. */
+section.ra { margin: 1rem 0; }
+.ra-two { display: grid; grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr); gap: 1rem; align-items: start; }
+.ra-state { border: 1px solid var(--line); border-radius: 8px; padding: .8rem 1rem; background: var(--panel); position: sticky; top: .5rem; }
+.ra-state .kv { grid-template-columns: 9rem minmax(0, 1fr); }
+.ra-state h5, section.ra h4 { margin: .8rem 0 .3rem; }
+.ra-list { font-size: .8rem; }
+@media (max-width: 60rem) { .ra-two { grid-template-columns: minmax(0, 1fr); } .ra-state { position: static; } }

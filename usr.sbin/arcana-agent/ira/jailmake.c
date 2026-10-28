@@ -458,7 +458,7 @@ parents_make(struct work *w, const char *ds, const char **topp,
 static int
 jail_make(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
-	struct arc_action_rsp	 ar;
+	struct jail_done	 ar;
 	const char		*file, *tmp, *e, *top;
 	bool			 made;
 
@@ -572,7 +572,7 @@ jail_edit(struct work *w, const struct arc_job_spec *sp, const char **errp)
 static int
 jail_unmake(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
-	struct arc_action_rsp	 ar;
+	struct jail_done	 ar;
 	struct cjail		*js;
 	const char		*file, *path, *e, *mp;
 	char			*buf;

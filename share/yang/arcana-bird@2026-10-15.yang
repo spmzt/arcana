@@ -459,7 +459,11 @@ module arcana-bird {
 
   augment "/arcj:jails/arcj:jail" {
     description
-      "A vnet jail's own BIRD.";
-    uses bird;
+      "A vnet jail's own BIRD, read with the jail.";
+    uses bird {
+      refine "bird" {
+        config false;
+      }
+    }
   }
 }

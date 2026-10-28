@@ -1358,6 +1358,76 @@ vc_unset(struct vc_file *f, const char *name, char *err, size_t errlen)
 }
 
 /*
+ * Every assignment of name commented out where it is: its line, if it
+ * is alone on it, with "#" before it and "  # mark" after (mark given);
+ * else it taken off the line, as vc_unset() takes it, and a line of its
+ * own, so commented, put before the line.  "#" and the mark taken off
+ * give the assignment again.
+ */
+int
+vc_comment(struct vc_file *f, const char *name, const char *mark, char *err,
+    size_t errlen)
+{
+
+	if (!vc_name_ok(f->dialect, name)) {
+		fail(err, errlen, "%s: not a variable's name", name);
+		errno = EINVAL;
+		return (-1);
+	}
+	if (!editable(f, name, err, errlen))
+		return (-1);
+	for (;;) {
+		const struct vc_assign *a = vc_get(f, name);
+		struct buf b = { 0 };
+		size_t s, e, eol;
+		int rc;
+
+		if (a == NULL)
+			return (0);
+		eol = a->send > a->soff && f->text[a->send - 1] == '\n' ?
+		    a->send - 1 : a->send;
+		if (a->nstmt == 1) {
+			s = a->soff;
+			e = eol;
+		} else {
+			s = a->off;
+			e = a->vend;
+		}
+		if (b_putc(&b, '#') == -1 || b_puts(&b, f->text + s, e - s) ==
+		    -1 || (mark != NULL && (b_puts(&b, "  # ", 4) == -1 ||
+		    b_puts(&b, mark, strlen(mark)) == -1))) {
+			free(b.s);
+			return (-1);
+		}
+		if (a->nstmt == 1) {
+			if (eol < a->send && b_putc(&b, '\n') == -1) {
+				free(b.s);
+				return (-1);
+			}
+			rc = splice(f, a->soff, a->send, b.s, b.len, NULL,
+			    NULL, err, errlen);
+		} else {
+			/* The line without it, and the blanks after it, under
+			 * the comment line. */
+			while (e < f->len && (f->text[e] == ' ' ||
+			    f->text[e] == '\t' || f->text[e] == ';'))
+				e++;
+			if (b_putc(&b, '\n') == -1 || b_puts(&b, f->text +
+			    a->soff, s - a->soff) == -1 || b_puts(&b, f->text +
+			    e, a->send - e) == -1) {
+				free(b.s);
+				return (-1);
+			}
+			rc = splice(f, a->soff, a->send, b.s, b.len, NULL,
+			    NULL, err, errlen);
+		}
+		free(b.s);
+		if (rc == -1)
+			return (-1);
+	}
+}
+
+/*
  * The file written to path atomically: a temporary file next to it,
  * the old one's mode and owner (mode for a new one), fsync, rename.
  */

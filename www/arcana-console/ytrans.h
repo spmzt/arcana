@@ -82,6 +82,31 @@ int	ytrans_sysctl(cbl_conn *conn, const char *prefix, const char *jail,
 int	ytrans_kernel(cbl_conn *conn, ucl_object_t **data, char *err,
 	    size_t errlen);
 
+/*
+ * The pages' jails and packages, and what is done to them, from
+ * arcana-jails and arcana-packages over conn, the shapes hosts.c had
+ * (its jail_object()): _jails puts "jails", "scopes" and "conf_errors"
+ * in top, the configured alone with config_only; _jail one jail's
+ * object, NULL where it is not; _jail_action the jail's action verb
+ * (start, stop, restart, kill); _packages the host's or jail's
+ * packages, those installed or what the repository has newer (after
+ * pkg update with refresh), as "packages", "repos" and "pkgbase" in
+ * top; _pkg_upgrade, jail "*" every running one, as "upgraded" and
+ * "packages".  0, or an errno and err says why (the agent's words).
+ */
+int	ytrans_jails(cbl_conn *conn, bool config_only, ucl_object_t *top,
+	    char *err, size_t errlen);
+ucl_object_t *ytrans_jail(cbl_conn *conn, const char *name);
+int	ytrans_jail_action(cbl_conn *conn, const char *name, const char *verb,
+	    char *err, size_t errlen);
+int	ytrans_packages(cbl_conn *conn, const char *jail, bool installed,
+	    bool refresh, uint8_t ip, bool anyos, ucl_object_t *top, char *err,
+	    size_t errlen);
+int	ytrans_pkg_upgrade(cbl_conn *conn, const char *jail,
+	    const char *const *names, size_t nnames, bool dry_run, bool anyos,
+	    uint8_t ip, const char *repo, ucl_object_t *top, char *err,
+	    size_t errlen);
+
 #include "yjsonin.h"
 
 #endif	/* !_ARCANA_YTRANS_H_ */

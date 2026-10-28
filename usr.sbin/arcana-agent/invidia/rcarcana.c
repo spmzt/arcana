@@ -15,12 +15,13 @@
  *	rc-conf-files		rc_conf_files does not name Arcana's
  *				file: named, once, in /etc/rc.conf
  *	rc-conf-conflict	a variable Arcana writes (or takes out) the
- *				user's files set too: taken out of theirs,
- *				kept in Arcana's
+ *				user's files set too: commented out where
+ *				it is in theirs ("#var="value"  # taken by
+ *				Arcana", the line kept), kept in Arcana's
  *
  * Unaccepted, the request is refused with that error-app-tag and says
  * what it would do.  Every file is kept as it was until the change is
- * through: rca_undo() puts them back.
+ * through: rca_undo() puts them back, the commented line as it was.
  */
 
 #include <sys/param.h>
@@ -313,10 +314,11 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 
 		(void)snprintf(text, sizeof(text), "your files set what "
 		    "Arcana would change: %s; accept rc-conf-conflict to have "
-		    "them in Arcana's file alone, taken out of yours", said);
+		    "them in Arcana's file alone, commented out in yours", said);
 		error = refuse(req, "rc-conf-conflict", text);
 	}
-	/* Accepted: theirs taken out, every file kept as it was first. */
+	/* Accepted: theirs commented out where they are, every file kept
+	 * as it was first. */
 	for (size_t i = 0; error == 0 && conflict && i < x->nuser; i++) {
 		bool changed = false;
 
@@ -329,7 +331,8 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 				    x->user[i])) != 0)
 					break;
 				changed = true;
-				if (vc_unset(&uf[i], name, err, errlen) == -1)
+				if (vc_comment(&uf[i], name, RCA_TAKEN, err,
+				    errlen) == -1)
 					error = errno != 0 ? errno : EIO;
 			}
 		}
@@ -343,7 +346,7 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 		if (asprintf(&nl, "%s %s", list, RC_ARCANA) == -1)
 			error = ENOMEM;
 		else {
-			/* The file as taking the user's variables out left it. */
+			/* The file as commenting the user's variables left it. */
 			vc_free(&rc);
 			memset(&rc, 0, sizeof(rc));
 			if ((error = keep(x, path)) == 0 && (vc_read(&rc, VC_SH,

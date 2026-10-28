@@ -5,25 +5,25 @@
  */
 
 /*
- * Ira: the jails as arcana-jails has them, from
- * what the list operation finds (do_list(): jail_get(2) and jail(8) -e
- * of each configuration file); its actions, start, stop, restart and
- * kill, are the action operation's (yjails_action(), lifecycle.c).  One
- * source for both, the operation's reply and the module's data: they
- * cannot drift.
+ * Ira: the jails as arcana-jails has them, from what the jails read
+ * finds (do_list(): jail_get(2) and jail(8) -e of each configuration
+ * file); its actions, start, stop, restart and kill, do_action()'s
+ * (lifecycle.c, yarcana.c).  One source for the state and the module's
+ * data: they cannot drift.
  */
 
 #include <errno.h>
 #include <string.h>
 
 #include <arcana.h>
+#include "agent.h"
 #include "collect.h"
 
 typedef struct arcana_jails_jails_jail yjail;
 
 /* The strings point into rsp's; a's the rest. */
 int
-yjails_from_list(const struct arc_list_rsp *rsp, cbl_yarena *a,
+yjails_from_list(const struct jails_read *rsp, cbl_yarena *a,
     struct arcana_jails *out)
 {
 	struct arcana_jails_jails *js;
@@ -32,27 +32,29 @@ yjails_from_list(const struct arc_list_rsp *rsp, cbl_yarena *a,
 
 	memset(out, 0, sizeof(*out));
 	if ((js = cbl_yarena_alloc(a, sizeof(*js))) == NULL ||
-	    (rsp->jails.n > 0 && (v = cbl_yarena_alloc(a, rsp->jails.n *
+	    (rsp->njails > 0 && (v = cbl_yarena_alloc(a, rsp->njails *
 	    sizeof(*v))) == NULL) ||
-	    (rsp->conf_errors.n > 0 && (ce = cbl_yarena_alloc(a,
-	    rsp->conf_errors.n * sizeof(*ce))) == NULL))
+	    (rsp->nerrors > 0 && (ce = cbl_yarena_alloc(a,
+	    rsp->nerrors * sizeof(*ce))) == NULL))
 		return (ENOMEM);
 	memset(js, 0, sizeof(*js));
-	js->scope.n = rsp->scopes.n;
-	js->scope.v = rsp->scopes.v;
-	for (size_t i = 0; i < rsp->conf_errors.n; i++) {
-		ce[i].scope = rsp->conf_errors.v[i].scope;
-		ce[i].message = rsp->conf_errors.v[i].message;
+	js->scope.n = rsp->nscopes;
+	js->scope.v = rsp->scopes;
+	for (size_t i = 0; i < rsp->nerrors; i++) {
+		ce[i].scope = rsp->errors[i].scope;
+		ce[i].message = rsp->errors[i].message;
 	}
-	js->conf_error.n = rsp->conf_errors.n;
+	js->conf_error.n = rsp->nerrors;
 	js->conf_error.v = ce;
-	for (size_t i = 0; i < rsp->jails.n; i++) {
-		const struct arc_jail *j = &rsp->jails.v[i];
+	for (size_t i = 0; i < rsp->njails; i++) {
+		const struct arc_jail *j = &rsp->jails[i];
 		yjail *y = &v[i];
 
 		memset(y, 0, sizeof(*y));
 		y->name = j->name;
-		/* jail-state's values are the operation's. */
+		if ((y->has_boot = j->has_boot))
+			y->boot = j->boot;
+		/* jail-state's values are the wire's. */
 		if ((y->has_state = j->has_state))
 			y->state = (enum arcana_jails_jails_jail_state)j->state;
 		if ((y->has_jid = j->has_jid))
@@ -81,7 +83,6 @@ yjails_from_list(const struct arc_list_rsp *rsp, cbl_yarena *a,
 			y->nproc = j->nproc;
 		if ((y->has_rss = j->has_rss_kb))
 			y->rss = j->rss_kb;
-		/* decimal64 with 2 fraction digits: hundredths. */
 		/* Hundredths on the wire and in the module alike. */
 		if ((y->has_cpu = j->has_cpu_pct))
 			y->cpu = j->cpu_pct;
@@ -100,6 +101,8 @@ yjails_from_list(const struct arc_list_rsp *rsp, cbl_yarena *a,
 			y->param.n = j->params.n;
 			y->param.v = p;
 		}
+		y->allow.n = j->allow.n;
+		y->allow.v = j->allow.v;
 		y->plugin.n = j->plugins.n;
 		y->plugin.v = j->plugins.v;
 		/* An LNE while it runs with a vnet of its own (ylne.c). */
@@ -107,7 +110,7 @@ yjails_from_list(const struct arc_list_rsp *rsp, cbl_yarena *a,
 		    j->state == ARC_JAIL_STATE_RUNNING)
 			y->lne = j->name;
 	}
-	js->jail.n = rsp->jails.n;
+	js->jail.n = rsp->njails;
 	js->jail.v = v;
 	out->jails = js;
 	return (0);

@@ -98,6 +98,30 @@ module arcana-packages {
     }
   }
 
+  grouping listed {
+    description
+      "The packages read, with where they come from.";
+    list package {
+      cg:struct "package";
+      key "name";
+      description
+        "A package.";
+      uses package;
+    }
+    leaf-list repository {
+      type string;
+      description
+        "The repositories pkg is configured with there (pkg -vv),
+         enabled or not: an upgrade may be held to any of them.";
+    }
+    leaf pkgbase {
+      type boolean;
+      description
+        "Of a jail: whether its base system is pkgbase
+         (FreeBSD-runtime is one of its packages).";
+    }
+  }
+
   grouping packages {
     description
       "The packages of a host or of a jail, and what is done to them.";
@@ -105,25 +129,27 @@ module arcana-packages {
       cg:struct "packages";
       config false;
       description
-        "Its packages.";
-      list package {
-        cg:struct "package";
-        key "name";
+        "Its packages: those installed (pkg query), read with the
+         host's; a jail's by its read action.";
+      uses listed;
+      action read {
+        nacm:default-deny-all;
         description
-          "An installed package.";
-        uses package;
-      }
-      leaf-list repository {
-        type string;
-        description
-          "The repositories pkg is configured with there (pkg -vv),
-           enabled or not: an upgrade may be held to any of them.";
+          "The packages installed, from pkg's own database (pkg
+           query), without asking the repository: a jail's, which a
+           read of the jails leaves out.";
+        output {
+          uses listed;
+        }
       }
       action refresh {
         nacm:default-deny-all;
         description
-          "pkg update: the repository's catalogue read again, and what
-           it has newer.";
+          "What the repository has newer (pkg version -vRl '<'), after
+           pkg update with update.  A repository of packages built for
+           a newer FreeBSD is refused by pkg, the error naming
+           IGNORE_OSVERSION; with ignore-osversion the read goes past
+           it.";
         input {
           leaf ip-version {
             type ip-version;
@@ -131,6 +157,22 @@ module arcana-packages {
             description
               "How the repository is reached.";
           }
+          leaf update {
+            type boolean;
+            default "false";
+            description
+              "pkg update first: the catalogue read again.";
+          }
+          leaf ignore-osversion {
+            type boolean;
+            default "false";
+            description
+              "Past a repository for a newer FreeBSD
+               (IGNORE_OSVERSION).";
+          }
+        }
+        output {
+          uses listed;
         }
       }
       action upgrade {
@@ -168,6 +210,14 @@ module arcana-packages {
               "From this one of pkg's repositories alone (pkg upgrade
                -r); none, from where pkg's configuration has each.";
           }
+          leaf every-jail {
+            type boolean;
+            default "false";
+            description
+              "Of the host's: in every running jail that has pkg
+               instead, one after the other, a jail that fails not
+               stopping the others, which the error names.";
+          }
         }
         output {
           leaf upgraded {
@@ -179,8 +229,8 @@ module arcana-packages {
             cg:struct "package";
             key "name";
             description
-              "Those upgraded, or that would be: the version before,
-               and the one after as available.";
+              "Those still pending after it: the version installed,
+               and the one the repository has as available.";
             uses package;
           }
         }

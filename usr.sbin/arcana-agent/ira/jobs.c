@@ -1458,15 +1458,15 @@ undo(struct qjob *j)
 static void
 run(struct qjob *j, bool lane)
 {
-	struct arc_action_rsp		 ar;
+	struct jail_done		 ar;
 	struct arc_address_req		 dq;
 	struct arc_address_rsp		 dr;
 	struct arc_service_action_rsp	 sar;
 	struct arc_service_config_req	 scq;
 	struct arc_service_config_rsp	 scr;
 	struct route_more		 rm;
-	struct arc_pkg_upgrade_req	 uq;
-	struct arc_pkg_upgrade_rsp	 ur;
+	struct pkg_upgrade		 uq;
+	struct pkg_upgraded		 ur;
 	const struct arc_job_spec	*sp;
 	const char			*error;
 	bool				 ok, go, inside, held;
@@ -1754,10 +1754,8 @@ run(struct qjob *j, bool lane)
 		uq.names.v = sp->names.v;
 		uq.names.n = sp->names.n;
 		/* Forced: to packages built for a newer FreeBSD too. */
-		uq.has_ignore_osversion = sp->force;
 		uq.ignore_osversion = sp->force;
-		uq.has_pkg_ip = sp->has_pkg_ip;
-		uq.pkg_ip = sp->pkg_ip;
+		uq.pkg_ip = sp->has_pkg_ip ? sp->pkg_ip : 0;
 		uq.pkg_repo = sp->pkg_repo;
 		do_pkg_upgrade(&j->w, &uq, &ur);
 		ok = ur.ok;

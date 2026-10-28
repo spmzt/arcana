@@ -1,0 +1,492 @@
+module arcana-ra {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-ra";
+  prefix arcra;
+
+  import ietf-interfaces {
+    prefix if;
+    reference
+      "RFC 8343: A YANG Data Model for Interface Management";
+  }
+  import ietf-ip {
+    prefix ip;
+    reference
+      "RFC 8344: A YANG Data Model for IP Management";
+  }
+  import ietf-ipv6-unicast-routing {
+    prefix v6ur;
+    reference
+      "RFC 8349: A YANG Data Model for Routing Management (NMDA
+       Version), its ietf-ipv6-router-advertisements submodule";
+  }
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "What rtadvd.conf(5) has of an interface's router advertisements
+     beyond RFC 8349's ietf-ipv6-router-advertisements, which holds
+     the intervals (maxinterval, mininterval), the flags (raflags m
+     and o), the hop limit (chlim), the router lifetime (rltime),
+     reachable time (rtime) and retrans timer (retrans), the MTU
+     option (mtu) and the prefixes (addr, prefixlen, pinfoflags,
+     vltime, pltime); and what rtadvd(8) advertises now, as
+     rtadvctl(8) show reports it.  Every capability of rtadvd.conf(5)
+     is one of these leaves or RFC 8349's; one the agent does not know
+     is kept as it was written.
+
+     The record is rtadvd.conf's record of the interface's name,
+     written as one termcap(5) record; whether rtadvd sends on the
+     interface (send-advertisements) is rc.conf's rtadvd_enable and
+     rtadvd_interfaces.";
+
+  revision 2026-10-28 {
+    description
+      "Initial revision.";
+  }
+
+  typedef preference {
+    type enumeration {
+      enum high {
+        description
+          "Prf 01: raflags or rtflags 'h' in rtadvd.conf(5).";
+      }
+      enum medium {
+        description
+          "Prf 00, the default.";
+      }
+      enum low {
+        description
+          "Prf 11: raflags or rtflags 'l'.";
+      }
+    }
+    description
+      "A router's or a route's preference (RFC 4191 section 2.1).";
+    reference
+      "RFC 4191: Default Router Preferences and More-Specific Routes";
+  }
+
+  grouping lifetime {
+    leaf lifetime {
+      type uint32;
+      units "seconds";
+      description
+        "How long a receiver keeps the entry.";
+    }
+    description
+      "An option's lifetime.";
+  }
+
+  augment "/if:interfaces/if:interface/ip:ipv6"
+        + "/v6ur:ipv6-router-advertisements" {
+    description
+      "The rest of rtadvd.conf(5)'s capabilities, and what rtadvd(8)
+       sends.";
+    leaf router-preference {
+      type preference;
+      default "medium";
+      description
+        "The default router preference in the advertisement's flags
+         (RFC 4191 section 2.2): rtadvd.conf(5) raflags 'h' or 'l',
+         or bits 0x10 and 0x08 of its number.";
+      reference
+        "RFC 4191: Default Router Preferences and More-Specific Routes";
+    }
+    leaf link-mtu-auto {
+      type boolean;
+      default "false";
+      description
+        "The MTU option carries the interface's own MTU: rtadvd.conf(5)
+         mtu=auto.  link-mtu is then not written.";
+    }
+    leaf interface-prefixes {
+      type boolean;
+      default "true";
+      description
+        "The on-link prefixes of the interface's own addresses are
+         advertised, with the defaults, beside the prefix-list's; off,
+         the prefix-list's alone: rtadvd.conf(5) noifprefix.";
+    }
+    leaf source-link-layer-address {
+      type boolean;
+      default "true";
+      description
+        "The advertisement carries the source link-layer address
+         option (RFC 4861 section 4.6.1); off, rtadvd.conf(5)
+         nolladdr.";
+    }
+    leaf clock-skew {
+      type uint16;
+      units "seconds";
+      default "0";
+      description
+        "The skew allowed between routers' lifetimes of a prefix
+         that decrements in real time, in rtadvd's consistency check;
+         0 skips the check: rtadvd.conf(5) clockskew.";
+    }
+    list route {
+      key "prefix";
+      ordered-by user;
+      description
+        "The route information options (RFC 4191 section 2.3):
+         rtadvd.conf(5) rtprefix and rtplen (one prefix), rtflags and
+         rtltime, each set numbered from the second (rtprefix0,
+         rtprefix1, ...).";
+      reference
+        "RFC 4191: Default Router Preferences and More-Specific Routes";
+      leaf prefix {
+        type inet:ipv6-prefix;
+        description
+          "The route's prefix: rtprefix and rtplen.";
+      }
+      leaf preference {
+        type preference;
+        default "medium";
+        description
+          "The route's preference: rtflags.";
+      }
+      uses lifetime {
+        refine "lifetime" {
+          description
+            "Route lifetime: rtltime.  Not given, rtadvd(8) uses the
+             router lifetime.";
+        }
+      }
+    }
+    list rdnss {
+      key "address";
+      ordered-by user;
+      description
+        "The recursive DNS servers (RFC 8106 section 5.1):
+         rtadvd.conf(5) rdnss, a set's addresses by commas with one
+         rdnssltime; sets numbered from the second (rdnss0, rdnss1,
+         ...).  Addresses that follow one another with one lifetime
+         are written as one set.";
+      reference
+        "RFC 8106: IPv6 Router Advertisement Options for DNS
+         Configuration";
+      leaf address {
+        type inet:ipv6-address-no-zone;
+        description
+          "The server's address.";
+      }
+      uses lifetime {
+        refine "lifetime" {
+          description
+            "rdnssltime.  Not given, rtadvd(8) uses 3/2 of
+             max-rtr-adv-interval; it must be between that interval
+             and twice it.";
+        }
+      }
+    }
+    list dnssl {
+      key "domain";
+      ordered-by user;
+      description
+        "The DNS search list (RFC 8106 section 5.2): rtadvd.conf(5)
+         dnssl, a set's names by commas with one dnsslltime; sets
+         numbered from the second.  Names that follow one another
+         with one lifetime are written as one set.";
+      reference
+        "RFC 8106: IPv6 Router Advertisement Options for DNS
+         Configuration";
+      leaf domain {
+        type inet:domain-name;
+        description
+          "A search domain.";
+      }
+      uses lifetime {
+        refine "lifetime" {
+          description
+            "dnsslltime.  Not given, rtadvd(8) uses 3/2 of
+             max-rtr-adv-interval; it must be between that interval
+             and twice it.";
+        }
+      }
+    }
+    list pref64 {
+      key "prefix";
+      ordered-by user;
+      description
+        "The NAT64 prefixes (RFC 8781): rtadvd.conf(5) pref64 and
+         pref64len (one prefix, of length 96, 64, 56, 48, 40 or 32),
+         pref64lifetime; sets numbered from the second.";
+      reference
+        "RFC 8781: Discovering PREF64 in Router Advertisements";
+      leaf prefix {
+        type inet:ipv6-prefix;
+        description
+          "The NAT64 prefix: pref64 and pref64len.";
+      }
+      leaf lifetime {
+        type uint16 {
+          range "0..65528";
+        }
+        units "seconds";
+        description
+          "pref64lifetime, rounded up to 8 seconds on the wire.  Not
+           given, rtadvd(8) uses three times the router lifetime, at
+           most 65528.";
+      }
+    }
+    leaf-list other-capability {
+      type string {
+        length "1..1024";
+        pattern '[^:\\\n]*(\\[:\\][^:\\\n]*)*';
+      }
+      ordered-by user;
+      description
+        "The record's own fields that no leaf here or in RFC 8349
+         holds, as rtadvd.conf(5) has them (name#number, name=string,
+         name, name@; a tc=record last): kept and written back as they
+         are.  rtadvd(8) refuses hapref and hatime.";
+    }
+    container rtadvd {
+      config false;
+      presence
+        "rtadvd(8) runs and knows the interface.";
+      description
+        "What rtadvd(8) advertises on the interface now, as rtadvctl(8)
+         show reports it: none where rtadvd does not run, or was not
+         given the interface.";
+      leaf flags {
+        type string;
+        description
+          "The interface as rtadvd(8) sees it: UP or DOWN, CONFIGURED
+           (rtadvd.conf's record read), TRANSITIVE, PERSIST (one it
+           was started with), or NONEXISTENT.";
+      }
+      leaf status {
+        type string;
+        description
+          "INACTIVE, RA_SEND (it advertises), RA_RECV (it hears
+           another router).";
+      }
+      leaf link-mtu {
+        type uint32;
+        description
+          "The MTU option sent, 0 for none.";
+      }
+      leaf default-lifetime {
+        type uint32;
+        units "seconds";
+        description
+          "The router lifetime sent.";
+      }
+      leaf min-rtr-adv-interval {
+        type uint32;
+        units "seconds";
+        description
+          "The least time between unsolicited advertisements.";
+      }
+      leaf max-rtr-adv-interval {
+        type uint32;
+        units "seconds";
+        description
+          "The most.";
+      }
+      leaf managed-flag {
+        type boolean;
+        description
+          "The M flag sent.";
+      }
+      leaf other-config-flag {
+        type boolean;
+        description
+          "The O flag sent.";
+      }
+      leaf router-preference {
+        type preference;
+        description
+          "The preference sent.";
+      }
+      leaf reachable-time {
+        type uint32;
+        units "milliseconds";
+        description
+          "Reachable time sent, 0 for unspecified.";
+      }
+      leaf retrans-timer {
+        type uint32;
+        units "milliseconds";
+        description
+          "Retrans timer sent, 0 for unspecified.";
+      }
+      leaf cur-hop-limit {
+        type uint8;
+        description
+          "The hop limit sent.";
+      }
+      leaf interface-prefixes {
+        type boolean;
+        description
+          "The interface's own prefixes are advertised (AdvIfPrefixes).";
+      }
+      leaf next-send {
+        type yang:date-and-time;
+        description
+          "When the next unsolicited advertisement goes; none when
+           never.";
+      }
+      leaf last-send {
+        type yang:date-and-time;
+        description
+          "When the last went; none when none has.";
+      }
+      leaf clock-skew {
+        type uint16;
+        units "seconds";
+        description
+          "The skew allowed, where not 0.";
+      }
+      list prefix {
+        key "prefix";
+        description
+          "The prefix information options sent.";
+        leaf prefix {
+          type inet:ipv6-prefix;
+          description
+            "The prefix.";
+        }
+        leaf origin {
+          type enumeration {
+            enum kernel {
+              description
+                "From an address of the interface.";
+            }
+            enum config {
+              description
+                "From rtadvd.conf.";
+            }
+            enum dynamic {
+              description
+                "Learnt from another router's advertisement.";
+            }
+          }
+          description
+            "Where rtadvd(8) has it from.";
+        }
+        leaf valid-lifetime {
+          type uint32;
+          units "seconds";
+          description
+            "The valid lifetime sent; 4294967295 is infinity.";
+        }
+        leaf preferred-lifetime {
+          type uint32;
+          units "seconds";
+          description
+            "The preferred lifetime sent; 4294967295 is infinity.";
+        }
+        leaf on-link-flag {
+          type boolean;
+          description
+            "The L flag.";
+        }
+        leaf autonomous-flag {
+          type boolean;
+          description
+            "The A flag.";
+        }
+        leaf valid-expires {
+          type uint32;
+          units "seconds";
+          description
+            "A lifetime that decrements: what is left of the valid
+             one.";
+        }
+        leaf preferred-expires {
+          type uint32;
+          units "seconds";
+          description
+            "What is left of the preferred one.";
+        }
+      }
+      list route {
+        key "prefix";
+        description
+          "The route information options sent.";
+        leaf prefix {
+          type inet:ipv6-prefix;
+          description
+            "The route's prefix.";
+        }
+        leaf preference {
+          type preference;
+          description
+            "Its preference.";
+        }
+        leaf lifetime {
+          type uint32;
+          units "seconds";
+          description
+            "Its lifetime; 4294967295 is infinity.";
+        }
+      }
+      list rdnss {
+        key "address";
+        description
+          "The recursive DNS servers sent.";
+        leaf address {
+          type inet:ipv6-address-no-zone;
+          description
+            "The server.";
+        }
+        uses lifetime;
+      }
+      list dnssl {
+        key "domain";
+        description
+          "The search list sent.";
+        leaf domain {
+          type inet:domain-name;
+          description
+            "A domain.";
+        }
+        uses lifetime;
+      }
+      list pref64 {
+        key "prefix";
+        description
+          "The NAT64 prefixes sent.";
+        leaf prefix {
+          type inet:ipv6-prefix;
+          description
+            "The prefix.";
+        }
+        uses lifetime;
+      }
+    }
+  }
+
+  augment "/if:interfaces/if:interface/ip:ipv6"
+        + "/v6ur:ipv6-router-advertisements/v6ur:prefix-list/v6ur:prefix" {
+    description
+      "A prefix's lifetimes that count down.";
+    leaf valid-lifetime-decrements {
+      type boolean;
+      default "false";
+      description
+        "The valid lifetime advertised decrements in real time from
+         valid-lifetime: rtadvd.conf(5) vltimedecr.";
+    }
+    leaf preferred-lifetime-decrements {
+      type boolean;
+      default "false";
+      description
+        "The preferred lifetime advertised decrements in real time:
+         rtadvd.conf(5) pltimedecr.";
+    }
+  }
+}

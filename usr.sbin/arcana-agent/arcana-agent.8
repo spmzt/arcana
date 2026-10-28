@@ -70,6 +70,7 @@
 .Op Fl -telegram-api Ar url
 .Op Fl -poudriere Ar poudriere
 .Op Fl -poudriere-etc Ar directory
+.Op Fl -rtadvctl Ar rtadvctl
 .Nm
 .Fl V
 .Sh DESCRIPTION
@@ -192,7 +193,9 @@ The three files are read at startup, before the daemon detaches: one
 that is missing, unreadable, not PEM, or a key that is not the
 certificate's, is an error that names the file.
 .It Fl D Ar confdir
-Per-jail configuration files.
+Per-jail configuration files: where a commit of arcana-jails puts a
+jail new, a file of its own,
+.Ar name Ns .conf .
 Default
 .Pa /etc/jail.conf.d .
 .It Fl d
@@ -201,6 +204,19 @@ Log debugging messages.
 Stay in the foreground and log to standard error.
 .It Fl f Ar jail.conf
 Main configuration file.
+With the files of
+.Fl D ,
+arcana-jails' running datastore: each jail's parameters as
+.Xr jail 8
+.Fl e
+resolves them, which a commit writes in the jail's own block, in
+place, every other line kept, read back by
+.Xr jail 8
+before it stands; and whether rc.d/jail starts it,
+.Va jail_list
+and
+.Va jail_enable
+in Arcana's rc.conf file.
 Default
 .Pa /etc/jail.conf .
 .It Fl g Ar group
@@ -339,6 +355,16 @@ and
 are.
 Default
 .Pa /usr/local/etc .
+.It Fl -rtadvctl Ar rtadvctl
+The
+.Xr rtadvctl 8
+run to reload
+.Xr rtadvd 8
+after a commit of an interface's router advertisements, and to read
+what it sends for the operational datastore
+.Pq Cm show .
+Default
+.Pa /usr/sbin/rtadvctl .
 .It Fl -pkg-idle Ar seconds
 How long
 .Xr pkg 8
@@ -608,7 +634,8 @@ The
 .Xr pkg 8
 program, for pending upgrades and upgrading, on the host and with
 .Fl j
-in running jails.
+in running jails: arcana-packages' state, its read, refresh and
+upgrade actions, and the pkg jobs.
 Upgrades may run for up to an hour, and are stopped sooner when pkg
 says nothing for
 .Fl -pkg-idle
@@ -656,10 +683,34 @@ an interface a cloner makes, made (a gif's or gre's tunnel ends, a
 vlan's tag and parent) or destroyed
 .Pq Va cloned_interfaces , create_args_ Ns Ar if ;
 .It
-an interface's router advertisements (RFC 8349), its record in
-.Xr rtadvd.conf 5 ,
+an interface's router advertisements, RFC 8349's
+.Ic ipv6-router-advertisements
+with arcana-ra's leaves for the rest of
+.Xr rtadvd.conf 5
+(the router preference of RFC 4191 and its route information, RFC
+8106's RDNSS and DNSSL, RFC 8781's PREF64, mtu=auto, noifprefix,
+nolladdr, clockskew, a prefix's vltimedecr and pltimedecr; a field the
+agent does not know kept as written in
+.Ic other-capability ) :
+the interface's record written whole, as one termcap record in the
+file's order, the other records and comments untouched;
+.Va rtadvd_enable
+and
 .Va rtadvd_interfaces
-where it sends; rtadvd restarted;
+where it sends; then
+.Xr rtadvctl 8
+.Cm reload
+of the interface where
+.Xr rtadvd 8
+runs on the same interfaces as before, else
+.Xr rtadvd 8
+restarted, or stopped where none is left.
+In the operational datastore the node carries
+.Ic arcana-ra:rtadvd ,
+what rtadvd sends now as
+.Xr rtadvctl 8
+.Cm show
+reports it;
 .It
 the network instance an interface is in, its FIB
 .Pq Dq fib Ar N No first on Va ifconfig_ Ns Ar if ,
@@ -731,9 +782,15 @@ request: naming the file in
 .Va rc_conf_files ,
 once
 .Pq Cm rc-conf-files ,
-and a variable Arcana writes that your files set too, taken out of
-yours
+and a variable Arcana writes that your files set too, commented out
+where it is in yours, the line kept with
+.Dq # taken by Arcana
+after it
 .Pq Cm rc-conf-conflict .
+A service's variables are moved under Arcana deliberately by
+arcana-services' convert action
+.Pq Nm arcanactl Cm services convert ,
+which says what it takes, or with dry-run would, by file and line.
 Every file is put back where the kernel refuses the change; a route the
 table changed meanwhile is tried once more first.
 .Pp

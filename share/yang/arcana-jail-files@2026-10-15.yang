@@ -27,6 +27,7 @@ module arcana-jail-files {
     description
       "The files the jails are made with.";
     container files {
+      config false;
       description
         "jail.conf(5)'s files.";
       leaf directory {

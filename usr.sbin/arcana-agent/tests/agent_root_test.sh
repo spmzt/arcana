@@ -1836,6 +1836,41 @@ qos_lab_down()
 	true
 }
 
+atf_test_case monitors_fib cleanup
+monitors_fib_head()
+{
+	atf_set "descr" "A monitor in another FIB hears its replies, which" \
+	    "come in on an interface of FIB 0"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+monitors_fib_body()
+{
+	[ "$(sysctl -n net.fibs)" -ge 2 ] || atf_skip "one FIB alone here"
+	ifconfig lo57 >/dev/null 2>&1 && atf_skip "lo57 is there already"
+	atf_check -o ignore ifconfig lo57 create
+	atf_check ifconfig lo57 inet 192.0.2.57/32
+	# The address is FIB 0's; FIB 1 reaches it by a route of its own.
+	atf_check -o ignore setfib 1 route add -host 192.0.2.57 -iface lo57
+	start_daemon
+	atf_check -o match:done "$JGC" -c "$SOCK" monitor set name=f1 \
+	    address=192.0.2.57 fib=1 interval=50 eval=200
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" monitor | grep -q '"id":"f1"[^}]*"state":"up"' &&
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'"id":"f1","address":"192.0.2.57","family":"inet","fib":1,"state":"up"' \
+	    "$JGC" -c "$SOCK" monitor
+	atf_check -o match:done "$JGC" -c "$SOCK" monitor remove name=f1
+}
+monitors_fib_cleanup()
+{
+	setfib 1 route delete -host 192.0.2.57 2>/dev/null
+	ifconfig lo57 destroy 2>/dev/null
+	cleanup
+}
+
 atf_test_case monitors_qos cleanup
 monitors_qos_head()
 {
@@ -2570,7 +2605,7 @@ yang_rtadv_body()
 	cat > rtadvd.conf <<EOF
 $b:\\
 	:maxinterval#600:mininterval#200:rltime#1800:\\
-	:addr="2001:db8:71::":prefixlen#64:
+	:addr="2001:db8:71::":prefixlen#64:rdnss="2001:db8:71::53":
 EOF
 	atf_check jexec "$YJAIL" rtadvd -c "$PWD/rtadvd.conf" \
 	    -p "$PWD/rtadvd.pid" -s "$b"
@@ -2592,6 +2627,20 @@ EOF
 	done
 	atf_check -o match:'MinAdvInterval/MaxAdvInterval: 3m20s/5m' \
 	    jexec "$YJAIL" rtadvctl show "$b"
+	# What rtadvd sends, rtadvctl -v show parsed as arcana-ra's rtadvd:
+	# the interval edited, the prefix from the file, the DNS server with
+	# rtadvd's default lifetime (3/2 of maxinterval).
+	jexec "$YJAIL" rtadvctl -v show "$b" > show.txt
+	atf_check -o match:'^flags=UP,.*PERSIST$' \
+	    -o match:'^max-rtr-adv-interval=300$' \
+	    -o match:'^min-rtr-adv-interval=200$' \
+	    -o match:'^default-lifetime=1800$' \
+	    -o match:'^router-preference=medium$' \
+	    -o match:'^interface-prefixes=1$' \
+	    -o match:'^prefix 2001:db8:71::/64 config 2592000 604800 1 1$' \
+	    -o match:'^rdnss 2001:db8:71::53 450$' \
+	    "$y" -s show.txt "$b"
+	atf_check -o inline:"none\n" "$y" -s show.txt nothere
 }
 yang_rtadv_cleanup()
 {
@@ -3317,6 +3366,7 @@ atf_init_test_cases()
 	atf_add_test_case lifecycle
 	atf_add_test_case jail_events_nested
 	atf_add_test_case monitors_probe
+	atf_add_test_case monitors_fib
 	atf_add_test_case monitors_qos
 	atf_add_test_case jail_allow_live
 	atf_add_test_case live_address

@@ -9,9 +9,35 @@ module: arcana-packages
      |  +--ro size?        uint64
      |  +--ro origin?      string
      +--ro repository*   string
+     +--ro pkgbase?      boolean
+     +---x read
+     |  +--ro output
+     |     +--ro package* [name]
+     |     |  +--ro name         string
+     |     |  +--ro installed?   string
+     |     |  +--ro available?   string
+     |     |  +--ro automatic?   boolean
+     |     |  +--ro comment?     string
+     |     |  +--ro size?        uint64
+     |     |  +--ro origin?      string
+     |     +--ro repository*   string
+     |     +--ro pkgbase?      boolean
      +---x refresh
      |  +---w input
-     |     +---w ip-version?   ip-version
+     |  |  +---w ip-version?         ip-version
+     |  |  +---w update?             boolean
+     |  |  +---w ignore-osversion?   boolean
+     |  +--ro output
+     |     +--ro package* [name]
+     |     |  +--ro name         string
+     |     |  +--ro installed?   string
+     |     |  +--ro available?   string
+     |     |  +--ro automatic?   boolean
+     |     |  +--ro comment?     string
+     |     |  +--ro size?        uint64
+     |     |  +--ro origin?      string
+     |     +--ro repository*   string
+     |     +--ro pkgbase?      boolean
      +---x upgrade
         +---w input
         |  +---w name*               string
@@ -19,6 +45,7 @@ module: arcana-packages
         |  +---w ignore-osversion?   boolean
         |  +---w ip-version?         ip-version
         |  +---w repository?         string
+        |  +---w every-jail?         boolean
         +--ro output
            +--ro upgraded?   uint32
            +--ro package* [name]

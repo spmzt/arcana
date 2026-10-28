@@ -538,15 +538,15 @@ definitions:
           a jail is restarted (jail-action), not rebooted.
       - name: speeder
         doc: |
-          UDPspeeder's FEC relay, a plugin (speederv2, its rc service):
-          conf (args: role=client|server, listen=, remote=, mode=,
-          mtu=, fec=, timeout=, report=, fifo=, key=, nokey, extra=,
-          written to speederv2_flags, restarted when it runs), fec
-          (args: the ratios, sent to the running relay by its fifo and
-          kept in the flags), enable, disable, start, stop, restart;
-          with profile=<name> (where the rc script has
-          speederv2_profiles) one of several relays, its words in
-          speederv2_<name>_flags, and remove takes one away.  Of the
+          UDPspeeder's FEC relay, a plugin (speederv2), run by Arcana's
+          own rc service, arcana_relay: conf (args: role=client|server,
+          listen=, remote=, mode=, mtu=, fec=, timeout=, report=, fifo=,
+          key=, nokey, extra=, written to arcana_relay_flags, restarted
+          when it runs), fec (args: the ratios, sent to the running
+          relay by its fifo and kept in the flags), enable, disable,
+          start, stop, restart; with profile=<name> one of several
+          relays, its words in arcana_relay_<name>_flags, its name in
+          arcana_relay_profiles, and remove takes one away.  Of the
           host, or with jail of that jail.  Undone in safe mode on the
           host: the rc.conf variables and whether it ran.
       - name: monitor
@@ -781,7 +781,6 @@ definitions:
       - name: disable
         doc: |
           Not started at boot: taken out of jail_list.  An empty list
-          (every jail started) becomes every jail defined but this one.
   - name: jail-state
     type: enum
     entries:
@@ -2162,41 +2161,6 @@ operations:
         attributes:
           - host
 
-  - name: list
-    attribute-set: arcana
-    auth: true
-    do:
-      request:
-        attributes:
-          - config-only
-      reply:
-        attributes:
-          - ok
-          - error
-          - host
-          - jails
-          - scopes
-          - conf-errors
-          - trace
-
-  - name: action
-    attribute-set: arcana
-    auth: true
-    do:
-      request:
-        attributes:
-          - jail
-          - action
-        required:
-          - jail
-          - action
-      reply:
-        attributes:
-          - ok
-          - error
-          - result
-          - trace
-
   - name: address
     attribute-set: arcana
     auth: true
@@ -2334,62 +2298,6 @@ operations:
           - ok
           - error
           - stats
-          - trace
-
-  - name: packages
-    attribute-set: arcana
-    auth: true
-    doc: |
-      Packages of the host, or of a running jail, that the repository has
-      newer versions of (pkg version -vRl '<'), after pkg update with
-      refresh; with pkg-installed, the packages installed instead, each
-      with its version, origin, size, comment and whether it came
-      automatically, read from the host's own database (pkg query)
-      without asking the repository.  A repository of packages built
-      for a newer FreeBSD is refused by pkg (wrong OS version), and
-      the error says IGNORE_OSVERSION; with pkg-anyos the read goes
-      past it (pkg -o IGNORE_OSVERSION=yes), once the console asked.
-    do:
-      request:
-        attributes:
-          - jail
-          - refresh
-          - pkg-installed
-          - pkg-ip
-          - pkg-anyos
-      reply:
-        attributes:
-          - ok
-          - error
-          - packages
-          - trace
-          - pkg-repos
-          - pkgbase
-
-  - name: pkg-upgrade
-    attribute-set: arcana
-    auth: true
-    doc: |
-      pkg upgrade -y on the host or in a running jail, of the named
-      packages or of all; dry-run only shows what pkg would do;
-      ignore-osversion upgrades to packages built for a newer FreeBSD
-      too, as a job of kind pkg-upgrade does with force; pkg-repo
-      takes them from that repository alone (pkg upgrade -r).
-    do:
-      request:
-        attributes:
-          - jail
-          - names
-          - dry-run
-          - ignore-osversion
-          - pkg-ip
-          - pkg-repo
-      reply:
-        attributes:
-          - ok
-          - error
-          - upgraded
-          - packages
           - trace
 
   - name: job-submit
@@ -3935,9 +3843,11 @@ operations:
     attribute-set: arcana
     auth: true
     doc: |
-      UDPspeeder's FEC relay (speederv2) on this host, as a JSON object:
-      "installed", "enabled", "running"; "flags" (speederv2_flags, the
-      key left out), and read from them "role" (client or server),
+      UDPspeeder's FEC relays (speederv2) on this host, run by Arcana's
+      own rc service, arcana_relay, as a JSON object: "installed",
+      "enabled" (arcana_relay_enable), "running"; "flags"
+      (arcana_relay_flags, the one relay's, the key left out), and read
+      from them "role" (client or server),
       "listen", "remote", "mode", "mtu", "fec" (the ratios as given),
       "timeout", "report_every", "fifo", "key" (whether one is set, never
       what), "extra" (the words not understood); "fec_groups" (the
@@ -3950,10 +3860,13 @@ operations:
       overhead to the server and to the client, the plain rates each
       way); "svcj" (true when it runs in rc.subr's service jail, with
       "svcj_options" and "svcj_ipaddrs"); "log" (its last lines);
-      "profiles_supported" (whether the rc script runs several relays)
-      and "profiles" (each listed in speederv2_profiles: "name",
+      "profiles_supported" (true: the rc script runs several relays)
+      and "profiles" (each listed in arcana_relay_profiles: "name",
       "running" and the same fields of its own, from
-      speederv2_<name>_flags and its tag speederv2_<name>).
+      arcana_relay_<name>_flags and its tag arcana_relay_<name>);
+      "speederv2", where the port's own rc script is installed: the
+      admin's relay ("enabled" from speederv2_enable, "running", and
+      the same fields from speederv2_flags), read alone.
       Of the host, or with jail of that jail.  Nothing is changed.
     do:
       request:

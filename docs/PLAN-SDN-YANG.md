@@ -735,7 +735,12 @@ whose first part is served.
     with the user's confirmation), so every rc script reads it. A
     variable also set in the user's files: a warning and an explicit
     confirm to overwrite; overwritten, the new value is written to
-    Arcana's file and the conflicting item taken out of the user's.
+    Arcana's file and the conflicting line commented out where it is
+    in the user's (`#var="value"  # taken by Arcana`), never removed;
+    put back when the commit fails. The user moves a service's
+    variables under Arcana deliberately with arcana-services' `convert`
+    action (`arcanactl services convert [-n] [name ...]`), which lists
+    each variable taken with its file and line.
   - Changes through `candidate` and a confirmed commit, undone unless
     confirmed.
   - A boot-time tunable written to its file with a "takes effect after
@@ -777,7 +782,14 @@ whose first part is served.
   kernel by netlink per FIB (`rcr_apply`); check: `route -n get`.
 - 2.5.1 A (done): rtadvd.conf ↔ the RA submodule in `running` (`rtadv_write`
   behind an `EDIT`), `rtadvctl reload`; check: `rtadvctl show` after
-  an edit.
+  an edit. Every capability of rtadvd.conf(5) since `arcana-ra`
+  (router preference, route information, RDNSS, DNSSL, PREF64,
+  mtu=auto, noifprefix, nolladdr, clockskew, vltimedecr, pltimedecr;
+  unknown fields kept in `other-capability`): the record written
+  whole, `rtadvctl reload` where rtadvd runs on the same interfaces,
+  a restart where not; `arcana-ra:rtadvd` in operational from
+  `rtadvctl -v show`; the console's form on an interface's row
+  (ra.c), saved by a confirmed commit, its warnings accepted there.
 - 2.6.2 A (done): `vrf-root` mount serving routing per FIB, with
   `parent-reference` (`/if:interfaces`, in `schema-mounts`); check: the
   FIB's table under the mount.
@@ -827,9 +839,37 @@ whose first part is served.
 
 ### Y-3
 
-- 3.1.1 A: `arcana-jails`: jail.conf as `running` through `EDIT`; the
-  list and action operations retired; check: the `list` and `action`
-  tests pass through the module.
+- 3.1.1 A (done): `arcana-jails`: jail.conf as `running` through
+  `EDIT`; the list and action operations retired; check: the `list`
+  and `action` tests pass through the module.  Done (ira/yjailedit.c,
+  lifecycle.c): running is each jail's parameters as jail(8) -e
+  resolves them, its file, and `boot` (jail_enable, jail_list) from
+  the files rc(8) reads (libvarconf); the operational state is the
+  list operation's read, the running jails by libjail, the bird,
+  firewall and jail-files augments refined to state.  A commit edits
+  the jail's own block in place, every other line kept (libjailconf:
+  the first value where the statement was, jc_replace(), the others
+  added after it, an empty value a bare boolean), makes a new jail a
+  file of its own in jail.conf.d and takes one away with its file,
+  each file read back by libjailconf and all by jail(8) -e, the jails
+  then what was asked; a parameter the file's defaults give, not the
+  jail's own, is refused, every file put back; `boot` is jail_list and
+  jail_enable in Arcana's rc.conf file by rcarcana.c's rules
+  (rc-conf-files, rc-conf-conflict), never an empty list.  start,
+  stop, restart and kill are the module's actions, one change at a
+  time as the agent's own, their steps told on the steps group as an
+  operation's trace was (ywork_told()), which arcanactl -t and the
+  console's trace collect.  The console's jails, action and address
+  replies keep their shapes (ytrans_jails(), ytrans_jail(),
+  ytrans_jail_action()); its enable and disable stay the jail-action
+  job, waited for: by a commit they would meet rc-conf-conflict
+  wherever /etc/rc.conf sets jail_list, which the page does not ask to
+  accept yet (as 3.1.2's enable and disable).  arcanactl's list,
+  start, stop, restart and kill are the module's; enable and disable
+  its `boot` by EDIT and commit, -a the accepts.  Check:
+  `datastores_jails`, `jail_boot` (the job), `list`, `start`,
+  `failures`, `trace`, `many_jails`, `yang_jails`, `yang_actions`; the
+  console's `jails`; `pwa_hosts`.
 - 3.1.2 A: `arcana-services`: rcvars and rc.conf variables as leaves
   in `running`; the services, service-action and service-config
   operations retired; check: the services tests.  Done, the first
@@ -848,8 +888,22 @@ whose first part is served.
   from the page, or keep those writes as the service-action and
   service-config jobs (3.1.4) and retire the operations alone.  A
   decision for the user.
-- 3.1.3 A: `arcana-packages`: the packages and pkg-upgrade
-  operations retired; check: the packages tests.
+- 3.1.3 A (done): `arcana-packages`: the packages and pkg-upgrade
+  operations retired; check: the packages tests.  Done (ira/ypackages.c,
+  yarcana.c): the host's packages and a jail's (arcana-jails' jail)
+  are state: those installed (pkg query) read with the host's, a
+  jail's by the read action; what the repository has newer by the
+  refresh action (pkg version -vRl '<'; update, pkg update first, the
+  one change; ignore-osversion past a repository for a newer FreeBSD,
+  the error naming IGNORE_OSVERSION as before), the repositories and
+  pkgbase beside; the upgrade action is pkg-upgrade's (every-jail, the
+  host's in every running jail one after the other); the pkg-upgrade
+  job, its lanes and the stall watchdog are as they were.  Their
+  steps are told on the steps group as the jails'.  The console's
+  packages and upgrade replies keep their shapes (ytrans_packages(),
+  ytrans_pkg_upgrade()); arcanactl's packages and pkg-upgrade are the
+  actions.  The second SID range is 79 500.  Check: `packages`,
+  `yang_packages`; the console's `churn`, `services`; `pwa_hosts`.
 - 3.1.4 A: `arcana-jobs`: the job-submit, jobs, job, job-cancel and
   job-confirm operations retired; check: the jobs tests; the trace
   tree rebuilt in the page.

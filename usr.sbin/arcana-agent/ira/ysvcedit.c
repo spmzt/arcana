@@ -311,3 +311,221 @@ arcana_services_services_edit(cbl_req *req,
 	cbl_yarena_free(a);
 	return (error);
 }
+
+typedef struct arcana_services_services_convert_output_service ysvc_taken;
+typedef struct arcana_services_services_convert_output_service_variable
+    yvar_taken;
+
+/*
+ * Service svc's <svc>_* variables in the user's files x reads, each
+ * where it is (file, line, value), in the order rc(8) reads them; one
+ * the files do not settle, or whose line sh(1) may not run, said left
+ * in every entry of its name: it is not taken.  The entries are a's.
+ */
+static int
+taken_of(cbl_yarena *a, struct rca *x, const char *svc, yvar_taken **vp,
+    size_t *nvp)
+{
+	struct vc_file	 f;
+	yvar_taken	*v = NULL;
+	char		 err[256], prefix[80];
+	size_t		 nv = 0, cap = 0, plen, rl;
+	int		 error = 0;
+
+	rl = opts.root != NULL ? strlen(opts.root) : 0;
+	plen = (size_t)snprintf(prefix, sizeof(prefix), "%s_", svc);
+	for (size_t i = 0; error == 0 && i < x->nuser; i++) {
+		if (vc_read(&f, VC_SH, x->user[i], err, sizeof(err)) == -1) {
+			logmsg(LOG_WARNING, "%s: %s", x->user[i], err);
+			continue;
+		}
+		for (size_t k = 0; error == 0 && k < f.na; k++) {
+			const struct vc_assign *as = &f.a[k];
+			yvar_taken *t;
+
+			if (strncmp(as->name, prefix, plen) != 0)
+				continue;
+			if (nv == cap) {
+				cap = cap > 0 ? cap * 2 : 8;
+				if ((t = cbl_yarena_alloc(a, cap * sizeof(*t))) ==
+				    NULL) {
+					error = ENOMEM;
+					break;
+				}
+				if (nv > 0)
+					memcpy(t, v, nv * sizeof(*v));
+				v = t;
+			}
+			t = &v[nv];
+			memset(t, 0, sizeof(*t));
+			if ((t->name = astrdup(a, as->name)) == NULL ||
+			    (t->file = astrdup(a, x->user[i] + rl)) == NULL ||
+			    (as->value != NULL && (t->value = astrdup(a,
+			    as->value)) == NULL)) {
+				error = ENOMEM;
+				break;
+			}
+			t->line = (uint32_t)as->line;
+			if ((as->flags & VC_COND) != 0)
+				t->left = "its line may or may not run (an if, "
+				    "a loop, a function): move it by hand";
+			else if ((as->flags & VC_OPAQUE) != 0)
+				t->left = "set in a way not read here (a "
+				    "command's environment, a subshell): move "
+				    "it by hand";
+			else if (as->value == NULL)
+				t->left = "its value is not a literal (an "
+				    "expansion): move it by hand";
+			nv++;
+		}
+		vc_free(&f);
+	}
+	/* A name left anywhere is left everywhere. */
+	for (size_t j = 0; error == 0 && j < nv; j++)
+		for (size_t k = 0; v[j].left != NULL && k < nv; k++)
+			if (v[k].left == NULL && strcmp(v[k].name, v[j].name) ==
+			    0)
+				v[k].left = v[j].left;
+	*vp = v;
+	*nvp = nv;
+	return (error);
+}
+
+/*
+ * The convert action (arcana-services): the n services named, none
+ * every script the host has, their rc.conf configuration moved under
+ * Arcana as running reads it: each <name>_* variable of the user's
+ * files set in Arcana's file, by the last file that sets it, and
+ * commented out where it is in theirs, by rca_write()'s rules (what is
+ * not accepted refused, every file put back where a later service's
+ * write fails); dry, the files as they are.  out lists what was taken
+ * or would be, a service with such variables at a time; its strings
+ * are a's.
+ */
+int
+yservices_convert(cbl_req *req, const char *const *names, size_t n, bool dry,
+    cbl_yarena *a, struct arcana_services_services_convert_output *out)
+{
+	struct arc_services_rsp	 r;
+	struct rca		*x;
+	struct work		 w;
+	ysvc_taken		*sv = NULL;
+	const char		*const *all, **every;
+	char			 err[512];
+	size_t			 nall, nsv = 0, cap = 0, nx = 0;
+	int			 error = 0;
+
+	work_init(&w);
+	memset(&r, 0, sizeof(r));
+	service_scripts(&w, &r);
+	if (n == 0) {
+		if ((every = cbl_yarena_alloc(a, (r.services.n + 1) *
+		    sizeof(*every))) == NULL) {
+			work_free(&w);
+			return (ENOMEM);
+		}
+		for (size_t i = 0; i < r.services.n; i++)
+			every[i] = r.services.v[i].name;
+		all = every;
+		nall = r.services.n;
+	} else {
+		all = names;
+		nall = n;
+		for (size_t i = 0; i < n; i++) {
+			size_t k;
+
+			for (k = 0; k < r.services.n && (!valid_service(
+			    names[i]) || strcmp(r.services.v[k].name,
+			    names[i]) != 0); k++)
+				;
+			if (k == r.services.n) {
+				(void)snprintf(err, sizeof(err), "%s: no such "
+				    "service", names[i]);
+				(void)cbl_req_set_yerr(req, err, 0);
+				work_free(&w);
+				return (EINVAL);
+			}
+		}
+	}
+	if ((x = calloc(nall + 1, sizeof(*x))) == NULL) {
+		work_free(&w);
+		return (ENOMEM);
+	}
+	err[0] = '\0';
+	for (size_t i = 0; error == 0 && i < nall; i++) {
+		yvar_taken	*v;
+		size_t		 nv, ntake = 0;
+
+		if ((error = rca_open(&x[nx], all[i], err, sizeof(err))) != 0)
+			break;
+		if ((error = taken_of(a, &x[nx], all[i], &v, &nv)) != 0) {
+			rca_close(&x[nx]);
+			break;
+		}
+		if (nv == 0) {
+			rca_close(&x[nx]);
+			continue;
+		}
+		if (nsv == cap) {
+			ysvc_taken *t;
+
+			cap = cap > 0 ? cap * 2 : 8;
+			if ((t = cbl_yarena_alloc(a, cap * sizeof(*t))) == NULL) {
+				rca_close(&x[nx]);
+				error = ENOMEM;
+				break;
+			}
+			if (nsv > 0)
+				memcpy(t, sv, nsv * sizeof(*sv));
+			sv = t;
+		}
+		memset(&sv[nsv], 0, sizeof(sv[nsv]));
+		if ((sv[nsv].name = astrdup(a, all[i])) == NULL) {
+			rca_close(&x[nx]);
+			error = ENOMEM;
+			break;
+		}
+		sv[nsv].variable.v = v;
+		sv[nsv].variable.n = nv;
+		nsv++;
+		/* Set in order: the last file's value wins, as rc(8) has
+		 * it. */
+		for (size_t k = 0; error == 0 && k < nv; k++)
+			if (v[k].left == NULL) {
+				ntake++;
+				if (!dry)
+					error = rca_set(&x[nx], v[k].name,
+					    v[k].value, err, sizeof(err));
+			}
+		if (dry || ntake == 0) {
+			rca_close(&x[nx]);
+			continue;
+		}
+		nx++;
+		if (error == 0)
+			error = rca_write(&x[nx - 1], req, err, sizeof(err));
+	}
+	if (error != 0) {
+		for (size_t i = nx; i-- > 0; )
+			rca_undo(&x[i]);
+		if (error != EEXIST) {
+			(void)cbl_req_set_yerr(req, err[0] != '\0' ? err :
+			    strerror(error), 0);
+			if (nx > 0)
+				logmsg(LOG_WARNING, "services convert: %s: "
+				    "rc.conf as it was", err);
+		}
+	} else {
+		out->service.v = sv;
+		out->service.n = nsv;
+		if (nx > 0)
+			logmsg(LOG_NOTICE, "services convert: %zu service%s "
+			    "under Arcana's rc.conf file", nx, nx == 1 ? "" :
+			    "s");
+	}
+	for (size_t i = 0; i < nx; i++)
+		rca_close(&x[i]);
+	free(x);
+	work_free(&w);
+	return (error);
+}

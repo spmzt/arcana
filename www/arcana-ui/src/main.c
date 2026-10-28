@@ -508,6 +508,7 @@ tick(void *arg)
 		if (app.online) {
 			transport_tick(now);
 			nacm_tick(now);
+			ra_tick(now);
 			ca_tick(now);
 			cluster_tick(now);
 			net_live_tick(now);
@@ -659,7 +660,7 @@ submit(const char *form, const ucl_object_t *f)
 	    naspage_form(form, f) || sysview_form(form, f) || mail_form(form, f) || relay_form(form, f) || monitor_form(form, f) ||
 	    builder_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
-	    sysctl_form(form, f) || nacm_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
+	    sysctl_form(form, f) || nacm_form(form, f) || ra_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
 		return;
 	submit_form(form, f);
@@ -1100,6 +1101,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    routing_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || nacm_action(act, arg, value) ||
+	    ra_action(act, arg, value) ||
 	    apidoc_action(act, arg, value) ||
 	    procs_action(act, arg, value) || logs_action(act, arg, value) ||
 	    usage_action(act, arg, value) || ecmp_action(act, arg, value) ||
@@ -2139,7 +2141,11 @@ dispatch(const char *act, const char *arg, const char *value)
 		toast(value[0] != '\0', value[0] != '\0' ? "The browser would "
 		    "not copy it: select it and copy it by hand" : "Copied");
 	} else if (strcmp(act, "close") == 0 || strcmp(act, "escape") == 0) {
-		if (app.modal != MODAL_NONE)
+		/* A line being drawn on the map by the keys goes first. */
+		if (app.modal == MODAL_NONE && strcmp(act, "escape") == 0 &&
+		    topo_escape())
+			;
+		else if (app.modal != MODAL_NONE)
 			close_modal();
 		else if (app.peek) {
 			app.peek = false;
@@ -2184,7 +2190,11 @@ arc_on_action(char *act, char *arg, char *value)
 	free(act);
 	free(arg);
 	free(value);
-	render();
+	/* A move of the pointer the map drew on its canvas alone: no page
+	 * to build again. */
+	if (!app.no_draw)
+		render();
+	app.no_draw = false;
 }
 
 /* A part of something that comes in parts, or word that none will. */

@@ -9,8 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <syslog.h>
 
 #include "agent.h"
+#include "varconf.h"
 
 static void	split_list(struct work *, const char *, const char *const **,
 		    size_t *);
@@ -147,6 +149,44 @@ jail_boot_read(struct work *w, struct jboot *b)
 
 	b->on = rc_yes(rc_get(w, "jail_enable"));
 	b->list = rc_get(w, "jail_list");
+	if (b->list != NULL && b->list[strspn(b->list, " \t")] == '\0')
+		b->list = NULL;
+}
+
+/*
+ * The same from the files rc(8) reads for rc.d/jail (libvarconf), the
+ * last that sets each winning: what running has, Arcana's file read
+ * after the user's.
+ */
+void
+jail_boot_files(struct work *w, struct jboot *b)
+{
+	struct vc_file	 f;
+	const char	*on = NULL;
+	char		**paths, err[256];
+	size_t		 n;
+
+	memset(b, 0, sizeof(*b));
+	if (vc_rc_files(opts.root != NULL ? opts.root : "", "/usr/local",
+	    "jail", "arcana", &paths, &n, err, sizeof(err)) != 0) {
+		logmsg(LOG_WARNING, "jail_list: %s", err);
+		return;
+	}
+	for (size_t i = 0; i < n; i++) {
+		const struct vc_assign *as;
+
+		if (vc_read(&f, VC_SH, paths[i], err, sizeof(err)) == -1) {
+			logmsg(LOG_WARNING, "%s: %s", paths[i], err);
+			continue;
+		}
+		if ((as = vc_get(&f, "jail_enable")) != NULL && as->value != NULL)
+			on = wstrdup(w, as->value);
+		if ((as = vc_get(&f, "jail_list")) != NULL && as->value != NULL)
+			b->list = wstrdup(w, as->value);
+		vc_free(&f);
+	}
+	vc_rc_files_free(paths, n);
+	b->on = rc_yes(on);
 	if (b->list != NULL && b->list[strspn(b->list, " \t")] == '\0')
 		b->list = NULL;
 }

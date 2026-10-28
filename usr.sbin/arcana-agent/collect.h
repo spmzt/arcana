@@ -59,6 +59,7 @@ struct yunread {
 int	yif_running(struct ietf_interfaces *data, cbl_yarena *a);
 /* Their router advertisements, as rtadvd.conf and rc.conf have them. */
 int	yif_rtadv(struct ietf_interfaces *data, cbl_yarena *a);
+int	yif_rtadv_show(struct ietf_interfaces *data, cbl_yarena *a);
 /* The FIBs as network instances, their names from fibs.conf
  * (invidia/yserve.c). */
 int	yni_instances(cbl_yarena *a,
@@ -70,9 +71,12 @@ int	yni_instances(cbl_yarena *a,
  * files rc(8) reads for service svc; rca_write(): f written, what the
  * user has not accepted (rc-conf-files, rc-conf-conflict) refused for
  * req (EEXIST, its error-app-tag), each file kept as it was; rca_undo():
- * them put back.
+ * them put back.  A variable of the user's that Arcana's file takes is
+ * commented out where it is, the line kept under "#" with RCA_TAKEN
+ * after it (libvarconf's vc_comment()), never removed.
  */
 #define	RC_ARCANA	"/usr/local/etc/rc.conf.d/arcana"
+#define	RCA_TAKEN	"taken by Arcana"
 
 struct rca_was {
 	char		*path;
@@ -90,7 +94,7 @@ struct rca {
 	struct rca_was	*was;
 	size_t		 nwas;
 	struct vc_file	*uf;		/* the user's, read by rca_get() */
-	char		**drop;		/* taken out wherever they are */
+	char		**drop;		/* out of Arcana's, commented in theirs */
 	size_t		 ndrop;
 };
 
@@ -134,9 +138,11 @@ int	rcr_write(struct vc_file *f, int fib,
 
 /*
  * rtadvd.conf and an interface's ipv6-router-advertisements (RFC 8349's
- * submodule), invidia/rtadv.c.  rtadv_read(): the interface's record,
- * tc= followed (none: *out NULL).  rtadv_write(): ra into the record's
- * own fields, the record made if not there; err says what is refused.
+ * submodule with arcana-ra's augments), invidia/rtadv.c.  rtadv_read():
+ * the interface's record, tc= followed (none: *out NULL).
+ * rtadv_write(): ra written as the record, whole, made if not there;
+ * err says what is refused.  rtadvctl_parse(): rtadvctl -v show's text,
+ * the interface's block as arcana-ra's rtadvd (none: *out NULL).
  */
 struct vc_capfile;
 int	rtadv_read(const struct vc_capfile *f, const char *ifname,
@@ -145,6 +151,8 @@ int	rtadv_read(const struct vc_capfile *f, const char *ifname,
 int	rtadv_write(struct vc_capfile *f, const char *ifname,
 	    const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements *ra,
 	    char *err, size_t errlen);
+int	rtadvctl_parse(const char *text, const char *ifname, cbl_yarena *a,
+	    const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_arcra_rtadvd **out);
 
 /*
  * RFC 8530's logical network elements: the vnet jails, as jls(8) lists
@@ -207,13 +215,14 @@ int	yni_bind_apply(const char *ifname, const char *name, const char *v4,
 	    const struct ietf_network_instance_bind_ni_name_failed **fail);
 
 /*
- * arcana-jails (ira/yjails.c): yjails_from_list() the list operation's
- * reply as the module has it, its strings rsp's.  Its actions are the
- * action operation's (invidia/yarcana.c).
+ * arcana-jails (ira/yjails.c): yjails_from_list() the jails read as
+ * the module has it, its strings rsp's.  Served, the read and the
+ * commits, by ira/yjailedit.c; its actions do_action()'s
+ * (invidia/yarcana.c).
  */
-struct arc_list_rsp;
+struct jails_read;
 struct work;
-int	yjails_from_list(const struct arc_list_rsp *rsp, cbl_yarena *a,
+int	yjails_from_list(const struct jails_read *rsp, cbl_yarena *a,
 	    struct arcana_jails *out);
 
 /*
@@ -234,20 +243,34 @@ int	yservices_diff(const struct arcana_services_services_service *have,
 	    const struct arcana_services_services_service *want,
 	    cbl_yarena *a, int *enable, struct arc_variable **vars,
 	    size_t *nvars);
+/* The convert action's work (ira/ysvcedit.c): the n services named
+ * (none: every script) moved under Arcana's rc.conf file by
+ * rca_write()'s rules, dry says what would be; out's strings are a's. */
+int	yservices_convert(cbl_req *req, const char *const *names, size_t n,
+	    bool dry, cbl_yarena *a,
+	    struct arcana_services_services_convert_output *out);
 
 /*
  * arcana-packages (ira/ypackages.c, ira/packages.c), the host's or a
  * jail's alike (a jail's structs have the host's layout):
- * ypackages_from() pkg-installed's reply, each with its newer version
- * from the outdated reply (NULL: not asked); ypackages_upgraded()
- * pkg-upgrade's reply as the upgrade action's output.
+ * ypackages_listed() the packages installed (pkg query's read), each
+ * with its newer version from the outdated read (NULL: not asked), the
+ * repositories and pkgbase beside, as the container and the read and
+ * refresh actions' outputs have them; ypackages_from() the container;
+ * ypackages_upgraded() an upgrade's outcome as the upgrade action's
+ * output.
  */
-struct arc_packages_rsp;
-struct arc_pkg_upgrade_rsp;
-int	ypackages_from(const struct arc_packages_rsp *installed,
-	    const struct arc_packages_rsp *outdated, cbl_yarena *a,
+struct pkg_read;
+struct pkg_upgraded;
+int	ypackages_listed(const struct pkg_read *installed,
+	    const struct pkg_read *outdated, cbl_yarena *a,
+	    const struct arcana_packages_package **vp, size_t *np,
+	    const char *const **rp, size_t *nrp, bool *has_pkgbase,
+	    bool *pkgbase);
+int	ypackages_from(const struct pkg_read *installed,
+	    const struct pkg_read *outdated, cbl_yarena *a,
 	    struct arcana_packages_packages *out);
-int	ypackages_upgraded(const struct arc_pkg_upgrade_rsp *rsp,
+int	ypackages_upgraded(const struct pkg_upgraded *rsp,
 	    cbl_yarena *a, struct arcana_packages_packages_upgrade_output *out);
 
 /*
@@ -497,8 +520,11 @@ int	ybuilder_options_from_json(const char *json, cbl_yarena *a,
 int	ynetconf_datastores(cbl_ctx *);
 
 /* The models served (invidia/yserve.c, yarcana.c).  ywork(): the work
- * of a read, freed with the answer's arena. */
+ * of a read, freed with the answer's arena; ywork_told(): one whose
+ * steps the requester hears (the steps group), its root step what. */
 int	yang_serve(cbl_ctx *);
 struct work *ywork(cbl_yarena *a);
+struct work *ywork_told(cbl_req *req, cbl_yarena *a, const char *what,
+	    int *root);
 
 #endif	/* !_ARCANA_COLLECT_H_ */

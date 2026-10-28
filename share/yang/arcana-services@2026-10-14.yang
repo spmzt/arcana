@@ -56,6 +56,81 @@ module arcana-services {
   container services {
     description
       "The host's rc.d scripts.";
+    action convert {
+      nacm:default-deny-all;
+      description
+        "The services' rc.conf configuration moved under Arcana, as
+         running reads it: each named service's <name>_enable and
+         <name>_* variables, as the files rc(8) reads set them, written
+         to Arcana's file (/usr/local/etc/rc.conf.d/arcana) and
+         commented out where they are in yours ('#var=\"value\"  # taken
+         by Arcana'), the line kept.  A commit's rules apply: what you
+         have not accepted (rc-conf-files, rc-conf-conflict) is refused
+         with its error-app-tag; failing, every file is put back.
+         The output lists what was taken, or with dry-run what would
+         be, each variable with the file and line it was in.";
+      input {
+        leaf-list service {
+          type string {
+            pattern '[A-Za-z0-9_][A-Za-z0-9_.-]*';
+          }
+          description
+            "The services to convert; none named, every script the
+             host has.";
+        }
+        leaf dry-run {
+          type boolean;
+          default false;
+          description
+            "Say what would be taken, writing nothing.";
+        }
+      }
+      output {
+        list service {
+          key "name";
+          description
+            "A service with variables in your files.";
+          leaf name {
+            type string;
+            description
+              "The script's name.";
+          }
+          list variable {
+            key "name file line";
+            description
+              "A variable of yours taken, or to be taken, from its
+               file and line.";
+            leaf name {
+              type string;
+              description
+                "The variable.";
+            }
+            leaf file {
+              type string;
+              description
+                "The file of yours that sets it.";
+            }
+            leaf line {
+              type uint32;
+              description
+                "Its line in the file.";
+            }
+            leaf value {
+              type string;
+              description
+                "Its value there, as rc(8) reads it.";
+            }
+            leaf left {
+              type string;
+              description
+                "Why it was left where it is: its value is not a
+                 literal (an expansion), or sh(1) may or may not run
+                 the line; absent when taken.";
+            }
+          }
+        }
+      }
+    }
     list service {
       key "name";
       description

@@ -2,9 +2,17 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-packages",
     "module-revision": "2026-10-14",
-    "sid-file-version": 2,
-    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 300, 100.",
+    "sid-file-version": 3,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 300, 100, and 79 500, 100.",
     "dependency-revision": [
+      {
+        "module-name": "ietf-netconf-acm",
+        "module-revision": "2018-02-14"
+      },
+      {
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
+      },
       {
         "module-name": "arcana-jails",
         "module-revision": "2026-10-14"
@@ -13,6 +21,10 @@
     "assignment-range": [
       {
         "entry-point": "62300",
+        "size": "100"
+      },
+      {
+        "entry-point": "79500",
         "size": "100"
       }
     ],
@@ -331,6 +343,276 @@
         "namespace": "data",
         "identifier": "/arcana-packages:packages/upgrade/input/repository",
         "sid": "62362"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/pkgbase",
+        "sid": "62363"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read",
+        "sid": "62364"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/input",
+        "sid": "62365"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/output",
+        "sid": "62366"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/output/package",
+        "sid": "62367"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/output/package/automatic",
+        "sid": "62368"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/output/package/available",
+        "sid": "62369"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/output/package/comment",
+        "sid": "62370"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/output/package/installed",
+        "sid": "62371"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/output/package/name",
+        "sid": "62372"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/output/package/origin",
+        "sid": "62373"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/output/package/size",
+        "sid": "62374"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/output/pkgbase",
+        "sid": "62375"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/read/output/repository",
+        "sid": "62376"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/input/ignore-osversion",
+        "sid": "62377"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/input/update",
+        "sid": "62378"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/output/package",
+        "sid": "62379"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/output/package/automatic",
+        "sid": "62380"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/output/package/available",
+        "sid": "62381"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/output/package/comment",
+        "sid": "62382"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/output/package/installed",
+        "sid": "62383"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/output/package/name",
+        "sid": "62384"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/output/package/origin",
+        "sid": "62385"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/output/package/size",
+        "sid": "62386"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/output/pkgbase",
+        "sid": "62387"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/refresh/output/repository",
+        "sid": "62388"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/upgrade/input/every-jail",
+        "sid": "62389"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/pkgbase",
+        "sid": "62390"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read",
+        "sid": "62391"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/input",
+        "sid": "62392"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/output",
+        "sid": "62393"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/output/package",
+        "sid": "62394"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/output/package/automatic",
+        "sid": "62395"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/output/package/available",
+        "sid": "62396"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/output/package/comment",
+        "sid": "62397"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/output/package/installed",
+        "sid": "62398"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/output/package/name",
+        "sid": "62399"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/output/package/origin",
+        "sid": "79500"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/output/package/size",
+        "sid": "79501"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/output/pkgbase",
+        "sid": "79502"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/read/output/repository",
+        "sid": "79503"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/input/ignore-osversion",
+        "sid": "79504"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/input/update",
+        "sid": "79505"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/output/package",
+        "sid": "79506"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/output/package/automatic",
+        "sid": "79507"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/output/package/available",
+        "sid": "79508"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/output/package/comment",
+        "sid": "79509"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/output/package/installed",
+        "sid": "79510"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/output/package/name",
+        "sid": "79511"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/output/package/origin",
+        "sid": "79512"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/output/package/size",
+        "sid": "79513"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/output/pkgbase",
+        "sid": "79514"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/refresh/output/repository",
+        "sid": "79515"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/upgrade/input/every-jail",
+        "sid": "79516"
       }
     ]
   }

@@ -309,21 +309,46 @@ an RFC 3339 time the subscription ends at,
 how many records to take before ending it.
 Each record is a line of RFC 8040's JSON.
 .It Cm list Op Fl c
-List running and configured jails.
+List running and configured jails, a GET of arcana-jails.
 With
 .Fl c ,
 only configured ones.
+A jail's
+.Xr jail.conf 5
+parameters are arcana-jails' running datastore,
+.Cm get Fl d Cm running jails ,
+changed by
+.Cm edit jails
+and
+.Cm commit :
+in the jail's own block of its file, every other line kept; a jail
+new is a file of its own in jail.conf.d, one taken away goes with its
+file.
 .It Cm start | stop | restart | kill Ar jail
-Change the jail's state.
+Change the jail's state, by arcana-jails' actions.
 .Cm kill
 removes the jail without running its stop scripts.
-.It Cm enable | disable Ar jail
+With
+.Fl t ,
+the agent's steps, heard while it works.
+.It Cm enable | disable Oo Fl a Ar warning Oc ... Ar jail
 Start the jail at boot, or not, by
 .Xr rc.conf 5 Ns 's
 .Va jail_list
 and
 .Va jail_enable ,
 as rc.d/jail reads them; the running jail is left as it is.
+It is arcana-jails'
+.Va boot
+in the candidate, committed: the two variables in Arcana's rc.conf
+file, refused with a warning
+.Fl a
+accepts where that file is not named in
+.Va rc_conf_files
+yet or yours set them; with
+.Fl q
+the jail-action job instead, by
+.Xr sysrc 8 .
 rc.d/jail starts every jail when
 .Va jail_list
 is empty, so an empty list is never left: disabling one of all makes
@@ -352,6 +377,33 @@ The host's rc.d scripts: whether
 enables them, and for the enabled ones whether they run, as
 .Xr service 8
 reports.
+.It Cm services convert Oo Fl n Oc Oo Fl a Ar warning Oc ... Op Ar name ...
+The services' configuration of your
+.Xr rc.conf 5
+files moved under Arcana, deliberately (arcana-services' convert
+action): each named service's
+.Va name_enable
+and
+.Va name_*
+variables, as the files
+.Xr rc 8
+reads set them, written to Arcana's file
+.Pq Pa /usr/local/etc/rc.conf.d/arcana
+and commented out where they are in yours
+.Pq Dq # taken by Arcana ;
+no name, every script the host has.
+What was taken is printed a row each: the variable, its value, the file
+and line of yours it was in; one left where it is (its value an
+expansion, or on a line
+.Xr sh 1
+may not run) says why.
+With
+.Fl n
+nothing is written: the rows say what would be taken.
+It is a change like a commit's: what you have not accepted with
+.Fl a
+.Pq Cm rc-conf-files , rc-conf-conflict ; see Sx Warnings
+is refused, and failing, every file is put back.
 .It Cm service Ar name Cm start | stop | restart | reload | enable | disable
 Change a service:
 .Cm start ,
@@ -928,33 +980,44 @@ a metric over its threshold, or under it again,
 .It Cm monitor remove Cm name Ns = Ns Ar name
 No longer measured.
 .It Cm speeder
-UDPspeeder's FEC relay, the
+UDPspeeder's FEC relays, net/udpspeeder's
 .Nm speederv2
-service of net/udpspeeder, of the host or of
+run by Arcana's own rc script,
+.Pa arcana_relay ,
+of the host or of
 .Fl j Ns 's
-jail, as JSON: installed, enabled and running; its flags, the key left
-out, and what they say (role, listen, remote, mode, mtu, fec, timeout,
-report, fifo, whether a key is set, the extra words); the redundant
-packets it adds for each group size, as it logged them at its start;
-with
+jail, as JSON: installed, enabled
+.Pq Va arcana_relay_enable
+and running; the flags of the one relay
+.Pq Va arcana_relay_flags ,
+the key left out, and what they say (role, listen, remote, mode, mtu,
+fec, timeout, report, fifo, whether a key is set, the extra words); the
+redundant packets it adds for each group size, as it logged them at its
+start; with
 .Fl -report ,
 its last counters each way, the bytes it took in plain and sent with
 FEC, and the overhead the FEC added, in all and over the last interval
 with its rates; whether it runs in
 .Xr rc.subr 8 Ns 's
 service jail, with its options and addresses; its last lines in the log.
-Where the port's rc script runs several relays, whether it does, and
-each relay of
-.Va speederv2_profiles
+Each relay of
+.Va arcana_relay_profiles
 with the same fields, read from its
-.Va speederv2_ Ns Ar name Ns Va _flags
+.Va arcana_relay_ Ns Ar name Ns Va _flags
 and its log lines, tagged
-.Li speederv2_ Ns Ar name ,
-the name the rc script runs it under.
+.Li arcana_relay_ Ns Ar name ,
+the name the rc script runs it under; and, where the port's own rc
+script is installed, the admin's relay
+.Pq Li speederv2 ,
+with its
+.Va speederv2_enable
+and
+.Va speederv2_flags ,
+read alone.
 Nothing is changed.
 .It Cm speeder conf Ar name Ns = Ns Ar value ...
 The relay's flags written to
-.Va speederv2_flags :
+.Va arcana_relay_flags :
 .Cm role Ns = Ns Cm client | server ,
 .Cm listen Ns = Ns Ar address : Ns Ar port ,
 .Cm remote Ns = Ns Ar address : Ns Ar port
@@ -964,7 +1027,10 @@ The relay's flags written to
 .Cm fec Ns = Ns Ar x : Ns Ar y Ns Op , Ns Ar x : Ns Ar y ... ,
 .Cm timeout Ns = ,
 .Cm report Ns = Ns Ar seconds ,
-.Cm fifo Ns = Ns Ar path ,
+.Cm fifo Ns = Ns Ar path
+(under
+.Pa /var/run/arcana_relay ,
+which the rc script makes writable by the relay's user),
 .Cm key Ns = Ns Ar key
 (kept when not given;
 .Cm nokey
@@ -977,14 +1043,14 @@ or
 passed on),
 .Cm svcj Ns = Ns Cm yes | no
 (the relay in a service jail of its own,
-.Va speederv2_svcj
+.Va arcana_relay_svcj
 with
-.Va speederv2_svcj_options
+.Va arcana_relay_svcj_options
 .Dq net_basic
 unless set; kept when not given) and
 .Cm svcj_ipaddrs Ns = Ns Ar address Ns Op , Ns Ar address ...
 (the jail's,
-.Va speederv2_svcj_ipaddrs :
+.Va arcana_relay_svcj_ipaddrs :
 those it listens at and sends from; empty for all of the host's).
 Each value is checked word by word, as rc.subr hands them to a shell.
 The relay is restarted when it runs; stopped and started when its
@@ -994,11 +1060,12 @@ The ratios changed: kept in the flags and, where the relay runs with a
 .Fl -fifo ,
 sent to it there, the tunnel kept up; without one, it is restarted.
 .It Cm speeder enable | disable | start | stop | restart
-.Va speederv2_enable
-set and the relay started, or stopped and unset; or the service told.
+.Va arcana_relay_enable
+set and every relay of the script's started, or stopped and unset; or
+the service told.
 With
 .Fl s ,
-on the host, a job of these is undone when not confirmed: the two
+on the host, a job of these is undone when not confirmed: the
 variables and whether it ran put back.
 .Pp
 .Cm profile Ns = Ns Ar name ,
@@ -1009,20 +1076,29 @@ and
 (which are every relay's), is for one of several relays:
 .Cm conf
 writes
-.Va speederv2_ Ns Ar name Ns Va _flags
+.Va arcana_relay_ Ns Ar name Ns Va _flags
 and adds the name to
-.Va speederv2_profiles ,
+.Va arcana_relay_profiles ,
 and the service is told
-.Dq Li service speederv2 one Ns Ar verb Ar name ;
+.Dq Li service arcana_relay one Ns Ar verb Ar name ;
 its service jail's variables are
-.Va speederv2_ Ns Ar name Ns Va _svcj
+.Va arcana_relay_ Ns Ar name Ns Va _svcj
 and the like, its jail
-.Li svcj-speederv2_ Ns Ar name .
+.Li svcj-arcana_relay_ Ns Ar name ,
+its syslog tag
+.Li arcana_relay_ Ns Ar name .
 The rc script runs only the relays it lists while it lists any.
-The port's script runs one relay a host or jail as yet.
+A relay Arcana made under the port's script's name before
+.Pq Va speederv2_ Ns Ar name Ns Va _flags
+is moved at its next
+.Cm conf :
+those variables unset, the name taken out of
+.Va speederv2_profiles .
+The port's own script keeps running the admin's relay; Arcana never
+tells it.
 .It Cm speeder remove Cm profile Ns = Ns Ar name
 That relay stopped, its variables unset and its name taken out of
-.Va speederv2_profiles ;
+.Va arcana_relay_profiles ;
 undone with
 .Fl s
 as the others.
@@ -1384,6 +1460,28 @@ enabled and the interface on rtadvd_interfaces in
 too.
 .It Cm rtadvd Ar interface Cm remove
 The interface's entry taken out; rtadvd stopped when none is left.
+.Pp
+The whole of
+.Xr rtadvd.conf 5
+is the datastores' instead: an interface's
+.Ic ipv6-router-advertisements
+(RFC 8349) with arcana-ra's leaves for the file's other capabilities,
+read with
+.Cm get ,
+changed by
+.Cm edit
+and
+.Cm commit
+(see
+.Xr arcana-agent 8 ,
+CONFIGURATION); in the operational datastore
+.Ic arcana-ra:rtadvd
+says what
+.Xr rtadvd 8
+sends now, as
+.Xr rtadvctl 8
+.Cm show
+reports it.
 .It Cm kmod load | unload Ar module
 Load a kernel module with
 .Xr kldload 8 ,
@@ -1924,13 +2022,15 @@ and the ZFS pools.
 Packages of the host, or of the running
 .Ar jail ,
 that the repository has newer versions of
-.Pq Nm pkg version Fl vRl '<' ;
+.Pq Nm pkg version Fl vRl '<' ,
+arcana-packages' refresh action;
 .Fl r
 fetches the catalogue first
 .Pq Nm pkg update .
 With
 .Fl i ,
-the packages installed instead, from the host's own database without
+the packages installed instead, the read action, from the host's own
+database without
 the repository
 .Pq Nm pkg query :
 each with its version, whether it was installed by hand or
@@ -1942,7 +2042,8 @@ has pkg reach the repository over IPv4 or IPv6 only.
 .It Cm pkg-upgrade Oo Fl n Oc Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl r Ar repo Oc Oo Fl j Ar jail | Fl J Oc Op Ar package ...
 .Nm pkg upgrade Fl y
 of the named packages, or of all of them, on the host or in the running
-.Ar jail ;
+.Ar jail ,
+arcana-packages' upgrade action;
 with
 .Fl J ,
 in every running jail that has
@@ -2602,7 +2703,13 @@ names it: accepted, it is added there in
 once.
 .It Cm rc-conf-conflict
 A variable Arcana would write, or take out, is set in your files too:
-accepted, it is taken out of yours and kept in Arcana's alone.
+accepted, it is kept in Arcana's alone and commented out where it is
+in yours, the line kept under
+.Ql #
+with
+.Dq # taken by Arcana
+after it; never removed.
+Failing, the line is as it was.
 .It Cm syslog-include
 Arcana keeps what it writes of
 .Xr syslog.conf 5

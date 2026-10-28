@@ -2974,48 +2974,8 @@ module arcana {
     }
   }
 
-  rpc list {
-    fam:command 2;
-    fam:auth;
-    input {
-      uses attr-config-only;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-host;
-      uses attr-jails;
-      uses attr-scopes;
-      uses attr-conf-errors;
-      uses attr-trace;
-    }
-  }
-
-  rpc action {
-    fam:command 3;
-    fam:auth;
-    input {
-      uses attr-jail {
-        refine jail {
-          mandatory true;
-        }
-      }
-      uses attr-action {
-        refine action {
-          mandatory true;
-        }
-      }
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-result;
-      uses attr-trace;
-    }
-  }
-
   rpc address {
-    fam:command 4;
+    fam:command 2;
     fam:auth;
     input {
       uses attr-jail {
@@ -3044,7 +3004,7 @@ module arcana {
   }
 
   rpc services {
-    fam:command 5;
+    fam:command 3;
     fam:auth;
     description
       "The rc.d scripts of the host with whether they are enabled, and for
@@ -3058,7 +3018,7 @@ module arcana {
   }
 
   rpc service-action {
-    fam:command 6;
+    fam:command 4;
     fam:auth;
     input {
       uses attr-service {
@@ -3081,7 +3041,7 @@ module arcana {
   }
 
   rpc service-config {
-    fam:command 7;
+    fam:command 5;
     fam:auth;
     description
       "A service's rc.conf variables, read through sysrc(8); with
@@ -3106,7 +3066,7 @@ module arcana {
   }
 
   rpc network {
-    fam:command 8;
+    fam:command 6;
     fam:auth;
     description
       "The host's routing table, nexthops, connections or sockets, as
@@ -3141,7 +3101,7 @@ module arcana {
   }
 
   rpc network-dump {
-    fam:command 8;
+    fam:command 6;
     fam:auth;
     fam:dump "network";
     description
@@ -3165,7 +3125,7 @@ module arcana {
   }
 
   rpc stats {
-    fam:command 9;
+    fam:command 7;
     fam:auth;
     description
       "CPU, memory, swap and ZFS pool usage of the host.";
@@ -3177,64 +3137,8 @@ module arcana {
     }
   }
 
-  rpc packages {
-    fam:command 10;
-    fam:auth;
-    description
-      "Packages of the host, or of a running jail, that the repository has
-       newer versions of (pkg version -vRl '<'), after pkg update with
-       refresh; with pkg-installed, the packages installed instead, each
-       with its version, origin, size, comment and whether it came
-       automatically, read from the host's own database (pkg query)
-       without asking the repository.  A repository of packages built
-       for a newer FreeBSD is refused by pkg (wrong OS version), and
-       the error says IGNORE_OSVERSION; with pkg-anyos the read goes
-       past it (pkg -o IGNORE_OSVERSION=yes), once the console asked.";
-    input {
-      uses attr-jail;
-      uses attr-refresh;
-      uses attr-pkg-installed;
-      uses attr-pkg-ip;
-      uses attr-pkg-anyos;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-packages;
-      uses attr-trace;
-      uses attr-pkg-repos;
-      uses attr-pkgbase;
-    }
-  }
-
-  rpc pkg-upgrade {
-    fam:command 11;
-    fam:auth;
-    description
-      "pkg upgrade -y on the host or in a running jail, of the named
-       packages or of all; dry-run only shows what pkg would do;
-       ignore-osversion upgrades to packages built for a newer FreeBSD
-       too, as a job of kind pkg-upgrade does with force; pkg-repo
-       takes them from that repository alone (pkg upgrade -r).";
-    input {
-      uses attr-jail;
-      uses attr-names;
-      uses attr-dry-run;
-      uses attr-ignore-osversion;
-      uses attr-pkg-ip;
-      uses attr-pkg-repo;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-upgraded;
-      uses attr-packages;
-      uses attr-trace;
-    }
-  }
-
   rpc job-submit {
-    fam:command 12;
+    fam:command 8;
     fam:auth;
     description
       "Queue changes.  The daemon runs them one after another in the order
@@ -3255,7 +3159,7 @@ module arcana {
   }
 
   rpc jobs {
-    fam:command 13;
+    fam:command 9;
     fam:auth;
     description
       "The queued, running and recent jobs, without their traces; and
@@ -3272,7 +3176,7 @@ module arcana {
   }
 
   rpc jobs-set {
-    fam:command 14;
+    fam:command 10;
     fam:auth;
     description
       "How many jobs of pkg in jails run at once: lanes, 1 to 32, kept
@@ -3293,7 +3197,7 @@ module arcana {
   }
 
   rpc job {
-    fam:command 15;
+    fam:command 11;
     fam:auth;
     description
       "One job with its trace so far.";
@@ -3312,7 +3216,7 @@ module arcana {
   }
 
   rpc job-cancel {
-    fam:command 16;
+    fam:command 12;
     fam:auth;
     description
       "Take a job that has not started out of the queue.";
@@ -3331,7 +3235,7 @@ module arcana {
   }
 
   rpc job-confirm {
-    fam:command 17;
+    fam:command 13;
     fam:auth;
     description
       "Confirm a job that is unconfirmed: the change stays.  That the
@@ -3351,7 +3255,7 @@ module arcana {
   }
 
   rpc agent-update {
-    fam:command 18;
+    fam:command 14;
     fam:auth;
     description
       "Replace arcana-agent with the program sent.  It is checked by its
@@ -3385,7 +3289,7 @@ module arcana {
   }
 
   rpc agent-build {
-    fam:command 19;
+    fam:command 15;
     fam:auth;
     description
       "Build arcana-agent from a git repository on this host and return
@@ -3417,7 +3321,7 @@ module arcana {
   }
 
   rpc console-update {
-    fam:command 20;
+    fam:command 16;
     fam:auth;
     description
       "Build the whole tree from a git repository on this host and install
@@ -3449,7 +3353,7 @@ module arcana {
   }
 
   rpc route-lookup {
-    fam:command 21;
+    fam:command 17;
     fam:auth;
     description
       "The route this host would send a packet to an address by, as
@@ -3475,7 +3379,7 @@ module arcana {
   }
 
   rpc bird-config {
-    fam:command 22;
+    fam:command 18;
     fam:auth;
     description
       "BIRD's configuration.  Without conf-text, read a file of it: the
@@ -3512,7 +3416,7 @@ module arcana {
   }
 
   rpc storage {
-    fam:command 23;
+    fam:command 19;
     fam:auth;
     description
       "The host's storage, as a JSON object, of the kind asked for.  More
@@ -3539,7 +3443,7 @@ module arcana {
   }
 
   rpc fstab {
-    fam:command 24;
+    fam:command 20;
     fam:auth;
     description
       "fstab(5).  Without conf-text, read it, with the SHA-256 of its
@@ -3561,7 +3465,7 @@ module arcana {
   }
 
   rpc transport {
-    fam:command 25;
+    fam:command 21;
     fam:auth;
     description
       "How the agent is reached, as a JSON object: \"listeners\", each
@@ -3592,7 +3496,7 @@ module arcana {
   }
 
   rpc ipfw-rules {
-    fam:command 26;
+    fam:command 22;
     fam:auth;
     description
       "The kept rules of the firewall, a file of ipfw(8) commands, one
@@ -3629,7 +3533,7 @@ module arcana {
   }
 
   rpc processes {
-    fam:command 27;
+    fam:command 23;
     fam:auth;
     description
       "What runs on the host, as a JSON object: \"processes\", each with
@@ -3658,7 +3562,7 @@ module arcana {
   }
 
   rpc log {
-    fam:command 28;
+    fam:command 24;
     fam:auth;
     description
       "A log of the host, as syslogd(8) wrote it, as a JSON object:
@@ -3695,7 +3599,7 @@ module arcana {
   }
 
   rpc history {
-    fam:command 29;
+    fam:command 25;
     fam:auth;
     description
       "How busy the host has been, which the agent samples by itself
@@ -3749,7 +3653,7 @@ module arcana {
   }
 
   rpc events {
-    fam:command 30;
+    fam:command 26;
     fam:auth;
     description
       "What happened on the host, as it happened, as a JSON object:
@@ -3813,7 +3717,7 @@ module arcana {
   }
 
   sx:structure event-ntf {
-    fam:command 31;
+    fam:command 27;
     fam:group "events";
     description
       "One event, the moment it happens: json is it as events has
@@ -3825,7 +3729,7 @@ module arcana {
   }
 
   rpc fw-trace {
-    fam:command 32;
+    fam:command 28;
     fam:auth;
     description
       "Packets followed by the kernel itself through the firewall: each
@@ -3858,7 +3762,7 @@ module arcana {
   }
 
   rpc network-parts {
-    fam:command 33;
+    fam:command 29;
     fam:auth;
     fam:stream "part";
     fam:credit 2097152;
@@ -3888,7 +3792,7 @@ module arcana {
   }
 
   rpc zfs-send {
-    fam:command 34;
+    fam:command 30;
     fam:auth;
     fam:stream "chunk";
     fam:credit 4194304;
@@ -3910,7 +3814,7 @@ module arcana {
   }
 
   rpc zfs-receive {
-    fam:command 35;
+    fam:command 31;
     fam:auth;
     fam:stream "chunk";
     fam:credit 4194304;
@@ -3931,7 +3835,7 @@ module arcana {
   }
 
   rpc source-head {
-    fam:command 36;
+    fam:command 32;
     fam:auth;
     description
       "The commit at the head of a repository's branch (ref, or its
@@ -3960,7 +3864,7 @@ module arcana {
   }
 
   rpc source-log {
-    fam:command 37;
+    fam:command 33;
     fam:auth;
     description
       "What is new in a repository's branch: its latest commits (count,
@@ -3994,7 +3898,7 @@ module arcana {
   }
 
   rpc traceroute {
-    fam:command 38;
+    fam:command 34;
     fam:auth;
     description
       "One round of traceroute(8), or traceroute6(8), from this host to
@@ -4019,7 +3923,7 @@ module arcana {
   }
 
   rpc sdwan-probes {
-    fam:command 39;
+    fam:command 35;
     fam:auth;
     description
       "The tunnels the agent is to measure from now on, as the console
@@ -4050,7 +3954,7 @@ module arcana {
   }
 
   rpc sdwan {
-    fam:command 40;
+    fam:command 36;
     fam:auth;
     description
       "What the probes have seen, as a JSON object: \"targets\", each
@@ -4078,7 +3982,7 @@ module arcana {
   }
 
   rpc sdwan-rules {
-    fam:command 41;
+    fam:command 37;
     fam:auth;
     description
       "The rules that classify what comes in at the SD-WAN UNIs and
@@ -4107,7 +4011,7 @@ module arcana {
   }
 
   rpc sdwan-steer {
-    fam:command 42;
+    fam:command 38;
     fam:auth;
     description
       "What the policy tables of the rules hold: json, an object with
@@ -4131,7 +4035,7 @@ module arcana {
   }
 
   rpc sdwan-bird {
-    fam:command 43;
+    fam:command 39;
     fam:auth;
     description
       "The BIRD instances of the SD-WAN services at this edge, one each,
@@ -4168,7 +4072,7 @@ module arcana {
   }
 
   rpc sdwan-dhcp {
-    fam:command 44;
+    fam:command 40;
     fam:auth;
     description
       "The DHCP servers of the SD-WAN services at this edge (dnsmasq,
@@ -4199,7 +4103,7 @@ module arcana {
   }
 
   rpc sdwan-dns {
-    fam:command 45;
+    fam:command 41;
     fam:auth;
     description
       "The resolvers of the SD-WAN services at this edge (MEF 138's DNF
@@ -4239,7 +4143,7 @@ module arcana {
   }
 
   rpc sdwan-proxy {
-    fam:command 46;
+    fam:command 42;
     fam:auth;
     description
       "The proxies of the SD-WAN services at this edge (MEF 138's URLF,
@@ -4283,7 +4187,7 @@ module arcana {
   }
 
   rpc sdwan-ids {
-    fam:command 47;
+    fam:command 43;
     fam:auth;
     description
       "The intrusion detection of the SD-WAN services at this edge (the
@@ -4324,7 +4228,7 @@ module arcana {
   }
 
   rpc jail-files {
-    fam:command 48;
+    fam:command 44;
     fam:auth;
     description
       "The files jails are made with, as the jail-conf job writes them,
@@ -4342,7 +4246,7 @@ module arcana {
   }
 
   rpc certs {
-    fam:command 49;
+    fam:command 45;
     fam:auth;
     description
       "The certificates OpenSSL trusts, of the host or of jail, as a JSON
@@ -4365,7 +4269,7 @@ module arcana {
   }
 
   rpc ssh {
-    fam:command 50;
+    fam:command 46;
     fam:auth;
     description
       "The base system's sshd, of the host or of jail, as a JSON object:
@@ -4391,7 +4295,7 @@ module arcana {
   }
 
   rpc capture {
-    fam:command 51;
+    fam:command 47;
     fam:auth;
     description
       "Packets taken with tcpdump(1) off interface, of the host or of
@@ -4419,7 +4323,7 @@ module arcana {
   }
 
   rpc zfs-key {
-    fam:command 52;
+    fam:command 48;
     fam:auth;
     description
       "The key of an encrypted dataset whose keylocation is prompt, as
@@ -4448,7 +4352,7 @@ module arcana {
   }
 
   rpc tls {
-    fam:command 53;
+    fam:command 49;
     fam:auth;
     description
       "The host's own TLS files, those of -A, -C and -K, renewed without
@@ -4484,7 +4388,7 @@ module arcana {
   }
 
   sx:structure step-ntf {
-    fam:command 54;
+    fam:command 50;
     fam:group "steps";
     description
       "A step of what a request of the peer's own does, told while the
@@ -4498,7 +4402,7 @@ module arcana {
   }
 
   rpc config-export {
-    fam:command 55;
+    fam:command 51;
     fam:auth;
     description
       "All that makes the host what it is, as a JSON object, to keep or to
@@ -4530,7 +4434,7 @@ module arcana {
   }
 
   rpc config-apply {
-    fam:command 56;
+    fam:command 52;
     fam:auth;
     description
       "A bundle of config-export's made this host's configuration.  First
@@ -4564,7 +4468,7 @@ module arcana {
   }
 
   rpc path-check {
-    fam:command 57;
+    fam:command 53;
     fam:auth;
     description
       "What this host does with a packet from path-src to path-dst (of
@@ -4612,7 +4516,7 @@ module arcana {
   }
 
   rpc notify {
-    fam:command 58;
+    fam:command 54;
     fam:auth;
     description
       "A message sent to a Telegram chat by a bot, over the Bot API's
@@ -4645,7 +4549,7 @@ module arcana {
   }
 
   rpc builder {
-    fam:command 59;
+    fam:command 55;
     fam:auth;
     description
       "poudriere(8) on this host, as a JSON object: \"installed\" and
@@ -4684,7 +4588,7 @@ module arcana {
   }
 
   rpc builder-options {
-    fam:command 60;
+    fam:command 56;
     fam:auth;
     description
       "A port's options as a poudriere build takes them, names its
@@ -4709,7 +4613,7 @@ module arcana {
   }
 
   rpc crashes {
-    fam:command 61;
+    fam:command 57;
     fam:auth;
     description
       "The cores the kernel dumped where kern.corefile says, as a JSON
@@ -4731,7 +4635,7 @@ module arcana {
   }
 
   rpc suricata-rules {
-    fam:command 62;
+    fam:command 58;
     fam:auth;
     description
       "The rules of Suricata's ruleset, suricata.rules as suricata-update
@@ -4775,7 +4679,7 @@ module arcana {
   }
 
   rpc netstore {
-    fam:command 63;
+    fam:command 59;
     fam:auth;
     description
       "The host's network storage services, as a JSON object: \"nfs\" (the
@@ -4800,7 +4704,7 @@ module arcana {
   }
 
   rpc system {
-    fam:command 64;
+    fam:command 60;
     fam:auth;
     description
       "The system's own configuration, as a JSON object: \"files\", each
@@ -4827,7 +4731,7 @@ module arcana {
   }
 
   rpc smtpd {
-    fam:command 65;
+    fam:command 61;
     fam:auth;
     description
       "OpenSMTPD on this host, as a JSON object: \"installed\", \"enabled\",
@@ -4856,12 +4760,14 @@ module arcana {
   }
 
   rpc speeder {
-    fam:command 66;
+    fam:command 62;
     fam:auth;
     description
-      "UDPspeeder's FEC relay (speederv2) on this host, as a JSON object:
-       \"installed\", \"enabled\", \"running\"; \"flags\" (speederv2_flags, the
-       key left out), and read from them \"role\" (client or server),
+      "UDPspeeder's FEC relays (speederv2) on this host, run by Arcana's
+       own rc service, arcana_relay, as a JSON object: \"installed\",
+       \"enabled\" (arcana_relay_enable), \"running\"; \"flags\"
+       (arcana_relay_flags, the one relay's, the key left out), and read
+       from them \"role\" (client or server),
        \"listen\", \"remote\", \"mode\", \"mtu\", \"fec\" (the ratios as given),
        \"timeout\", \"report_every\", \"fifo\", \"key\" (whether one is set, never
        what), \"extra\" (the words not understood); \"fec_groups\" (the
@@ -4874,10 +4780,13 @@ module arcana {
        overhead to the server and to the client, the plain rates each
        way); \"svcj\" (true when it runs in rc.subr's service jail, with
        \"svcj_options\" and \"svcj_ipaddrs\"); \"log\" (its last lines);
-       \"profiles_supported\" (whether the rc script runs several relays)
-       and \"profiles\" (each listed in speederv2_profiles: \"name\",
+       \"profiles_supported\" (true: the rc script runs several relays)
+       and \"profiles\" (each listed in arcana_relay_profiles: \"name\",
        \"running\" and the same fields of its own, from
-       speederv2_<name>_flags and its tag speederv2_<name>).
+       arcana_relay_<name>_flags and its tag arcana_relay_<name>);
+       \"speederv2\", where the port's own rc script is installed: the
+       admin's relay (\"enabled\" from speederv2_enable, \"running\", and
+       the same fields from speederv2_flags), read alone.
        Of the host, or with jail of that jail.  Nothing is changed.";
     input {
       uses attr-names;
@@ -4892,7 +4801,7 @@ module arcana {
   }
 
   rpc monitors {
-    fam:command 67;
+    fam:command 63;
     fam:auth;
     description
       "The admin's tunnel monitors (monitor jobs) as a JSON object:
@@ -4915,7 +4824,7 @@ module arcana {
   }
 
   rpc suricata-pcap-put {
-    fam:command 68;
+    fam:command 64;
     fam:auth;
     fam:stream "chunk";
     fam:credit 4194304;
@@ -4942,7 +4851,7 @@ module arcana {
   }
 
   rpc suricata-pcap-get {
-    fam:command 69;
+    fam:command 65;
     fam:auth;
     fam:stream "chunk";
     fam:credit 4194304;

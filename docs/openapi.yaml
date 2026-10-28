@@ -1471,9 +1471,10 @@ paths:
   /api/servers/{server}/speeder:
     get:
       tags: [servers]
-      summary: UDPspeeder's FEC relay on the host
-      description: 'Under data: installed, enabled, running; flags
-        (speederv2_flags, the key shown as <hidden>) and what they say -
+      summary: UDPspeeder's FEC relays on the host, by Arcana's rc script
+      description: 'Under data: installed, enabled (arcana_relay_enable),
+        running; flags (arcana_relay_flags, the one relay''s, the key
+        shown as <hidden>) and what they say -
         role (client or server), listen, remote, mode, mtu, fec, timeout,
         report_every, fifo, key (whether one is set, never what), extra;
         fec_groups (each group size with the redundant packets the relay
@@ -1488,9 +1489,13 @@ paths:
         bytes a second); svcj (true when it runs in rc.subr''s service
         jail, with svcj_options and svcj_ipaddrs as rc.conf has them);
         log (its last lines) and log_path;
-        profiles_supported (whether the rc script runs several relays)
-        and profiles (each relay of speederv2_profiles: name, running and
-        the same fields of its own).  The changes are jobs of kind
+        profiles_supported (true: Arcana''s rc script, arcana_relay, runs
+        several) and profiles (each relay of arcana_relay_profiles: name,
+        running and the same fields of its own, from
+        arcana_relay_<name>_flags, its syslog tag arcana_relay_<name>);
+        speederv2, where the port''s own rc script is installed: the
+        admin''s relay (speederv2_enable, speederv2_flags) with the same
+        fields, read alone.  The changes are jobs of kind
         speeder: verb conf with name=value words (role, listen, remote,
         mode, mtu, fec, timeout, report, fifo, key, nokey, extra, svcj
         yes or no, svcj_ipaddrs by commas), fec
@@ -4121,8 +4126,8 @@ components:
         relays:
           type: array
           description: the FEC relays (UDPspeeder) by their syslog tag,
-            speederv2 or speederv2_<profile>, as their --report lines
-            came; at most 16.
+            arcana_relay or arcana_relay_<profile> (Arcana's), speederv2
+            (the admin's), as their --report lines came; at most 16.
           items: { type: string }
         samples:
           type: array

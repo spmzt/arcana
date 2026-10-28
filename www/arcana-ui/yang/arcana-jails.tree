@@ -1,15 +1,19 @@
 module: arcana-jails
-  +--ro jails
+  +--rw jails
      +--ro scope*        string
      +--ro conf-error*
      |  +--ro scope?     string
      |  +--ro message?   string
-     +--ro jail* [name]
-        +--ro name           string
+     +--rw jail* [name]
+        +--rw name           string
+        +--rw boot?          boolean
+        +--rw scope?         string
+        +--rw param* [name]
+        |  +--rw name     string
+        |  +--rw value*   string
         +--ro state?         jail-state
         +--ro jid?           uint32
         +--ro configured?    boolean
-        +--ro scope?         string
         +--ro hostname?      string
         +--ro path?          string
         +--ro ip4*           string
@@ -24,9 +28,7 @@ module: arcana-jails
         +--ro rss?           uint64
         +--ro cpu?           decimal64
         +--ro interface?     string
-        +--ro param* [name]
-        |  +--ro name     string
-        |  +--ro value*   string
+        +--ro allow*         string
         +--ro plugin*        string
         +--ro lne?           -> /lne:logical-network-elements/lne:logical-network-element/lne:name
         +---x start

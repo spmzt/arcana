@@ -1106,9 +1106,10 @@ jc_edit(struct jc_file *f, struct jc_block *b, const char *key,
  * every statement of key the block has goes, a bare one ("allow.x;")
  * too, and with a value a "key = value;" statement comes where the
  * first was, else on a line of its own last in the block; a value of
- * letters, digits and _ . - + / : is written bare, any other quoted.
- * The new contents of f are returned in *outp; nothing is written.
- * The number of statements taken out, or -1.
+ * letters, digits and _ . - + / : is written bare, any other quoted;
+ * an empty value is a bare statement, a boolean set.  The new contents
+ * of f are returned in *outp; nothing is written.  The number of
+ * statements taken out, or -1.
  */
 int
 jc_replace(struct jc_file *f, const struct jc_block *b, const char *key,
@@ -1123,17 +1124,19 @@ jc_replace(struct jc_file *f, const struct jc_block *b, const char *key,
 	memset(&out, 0, sizeof(out));
 	memset(&ins, 0, sizeof(ins));
 	if (value != NULL) {
-		bare = value[0] != '\0';
+		bare = true;
 		for (i = 0; value[i] != '\0'; i++)
 			if (!isalnum((unsigned char)value[i]) && strchr("_.-+/:",
 			    value[i]) == NULL)
 				bare = false;
 		sb_puts(&ins, key);
-		sb_puts(&ins, " = ");
-		if (bare)
-			sb_puts(&ins, value);
-		else
-			sb_putq(&ins, value, '"');
+		if (value[0] != '\0') {
+			sb_puts(&ins, " = ");
+			if (bare)
+				sb_puts(&ins, value);
+			else
+				sb_putq(&ins, value, '"');
+		}
 		sb_putc(&ins, ';');
 	}
 	n = 0;

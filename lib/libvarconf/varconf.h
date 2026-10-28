@@ -100,6 +100,8 @@ bool		 vc_settled(const struct vc_file *, const char *);
 int		 vc_set(struct vc_file *, const char *, const char *, char *,
 		    size_t);
 int		 vc_unset(struct vc_file *, const char *, char *, size_t);
+int		 vc_comment(struct vc_file *, const char *, const char *,
+		    char *, size_t);
 int		 vc_write(const struct vc_file *, const char *, mode_t, char *,
 		    size_t);
 int		 vc_rcd_path(const char *, const char *, const char *, char *,
@@ -121,6 +123,9 @@ int		 vc_cap_unset(struct vc_capfile *, const char *, const char *,
 		    char *, size_t);
 int		 vc_cap_add_record(struct vc_capfile *, const char *,
 		    const char *const *, size_t, char *, size_t);
+int		 vc_cap_set_record(struct vc_capfile *, const char *,
+		    const char *const *, size_t, char *, size_t);
+char		*vc_cap_field(const char *, char, const char *);
 int		 vc_cap_remove_record(struct vc_capfile *, const char *,
 		    char *, size_t);
 int		 vc_cap_write(const struct vc_capfile *, const char *, mode_t,

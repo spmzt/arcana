@@ -94,7 +94,7 @@ static char	*words_joined(int, char **);
 static fileargs_t	*files;		/* to read */
 static fileargs_t	*outfiles;	/* agent-build's program, to write */
 static const char *join(const char *const *, size_t);
-static void	emit_jail(const struct arc_jail *, bool);
+static void	emit_jail(const struct arcana_jails_jails_jail *, bool);
 static void	emit_trace(const struct arc_step *, size_t);
 static void	emit_lines(const char *, const struct cbl_bytes *);
 static int	cmd_hello(struct arc_client *);
@@ -123,7 +123,7 @@ static int	cmd_pkg_clean(struct arc_client *, int, char **);
 static int	cmd_pkg_install(struct arc_client *, int, char **);
 static int	cmd_ipsec(struct arc_client *, int, char **);
 static int	cmd_pkg_upgrade(struct arc_client *, int, char **);
-static void	emit_packages(const struct arc_package *, size_t);
+static void	emit_packages(const struct arcana_packages_package *, size_t);
 static int	submit(struct arc_client *, struct arc_job_spec *);
 static void	emit_job(const struct arc_job *);
 static int	cmd_jobs(struct arc_client *);
@@ -155,9 +155,11 @@ usage(void)
 	    "    subscribe [-n count] [-o seconds | -p seconds | -r time]\n"
 	    "              [-s stop-time] [-x xpath]\n"
 	    "    list [-c]\n"
-	    "    start | stop | restart | kill | enable | disable jail\n"
+	    "    start | stop | restart | kill jail\n"
+	    "    enable | disable [-a warning]... jail\n"
 	    "    address add | remove [-lnp] [-i interface] jail address\n"
 	    "    services\n"
+	    "    services convert [-n] [-a warning]... [name ...]\n"
 	    "    service name start | stop | restart | reload | enable | "
 	    "disable\n"
 	    "    service name config [-x key ...] [key=value ...]\n"
@@ -401,14 +403,14 @@ join(const char *const *v, size_t n)
 }
 
 static void
-emit_jail(const struct arc_jail *j, bool table)
+emit_jail(const struct arcana_jails_jails_jail *j, bool table)
 {
 	size_t	i, k;
 
 	if (table) {
 		xo_open_instance("jail");
 		xo_emit("{k:name/%-16s/%s} {:state/%-8s/%s} ", j->name,
-		    j->has_state && j->state < nitems(state_names) ?
+		    j->has_state && (size_t)j->state < nitems(state_names) ?
 		    state_names[j->state] : "?");
 		if (j->has_jid)
 			xo_emit("{:jid/%4u/%u} ", j->jid);
@@ -420,8 +422,8 @@ emit_jail(const struct arc_jail *j, bool table)
 		    j->ip4.n > 0 ? j->ip4.n : j->ip6.n),
 		    j->hostname != NULL ? j->hostname : "-");
 		/* For a program that reads this: its plugins, if it has. */
-		for (i = 0; i < j->plugins.n; i++)
-			xo_emit("{el:plugins/%s}", j->plugins.v[i]);
+		for (i = 0; i < j->plugin.n; i++)
+			xo_emit("{el:plugins/%s}", j->plugin.v[i]);
 		/* libxo ends a leaf list at the next other field. */
 		for (i = 0; i < j->ip4.n; i++)
 			xo_emit("{el:ip4/%s}", j->ip4.v[i]);
@@ -434,7 +436,7 @@ emit_jail(const struct arc_jail *j, bool table)
 		    j->scope != NULL ? j->scope : "");
 		if (j->has_nproc)
 			xo_emit("{e:nproc/%u}{e:rss-kb/%ju}{e:cpu-pct/%.1f}",
-			    j->nproc, (uintmax_t)j->rss_kb, j->cpu_pct / 100.0);
+			    j->nproc, (uintmax_t)j->rss, (double)j->cpu / 100.0);
 		xo_close_instance("jail");
 		return;
 	}
@@ -443,7 +445,8 @@ emit_jail(const struct arc_jail *j, bool table)
 	xo_open_container("jail");
 	xo_emit("{Lwc:Name}{:name/%s}\n", j->name);
 	xo_emit("{Lwc:State}{:state/%s}", j->has_state &&
-	    j->state < nitems(state_names) ? state_names[j->state] : "?");
+	    (size_t)j->state < nitems(state_names) ? state_names[j->state] :
+	    "?");
 	if (j->has_jid)
 		xo_emit(" ({Lw:jid}{:jid/%u})", j->jid);
 	xo_emit("\n");
@@ -454,12 +457,12 @@ emit_jail(const struct arc_jail *j, bool table)
 		xo_emit("{Lwc:Hostname}{:hostname/%s}\n", j->hostname);
 	if (j->path != NULL)
 		xo_emit("{Lwc:Path}{:path/%s}\n", j->path);
-	if (j->plugins.n > 0) {
+	if (j->plugin.n > 0) {
 		xo_emit("{Lwc:Plugins}");
 		xo_open_list("plugins");
-		for (i = 0; i < j->plugins.n; i++)
+		for (i = 0; i < j->plugin.n; i++)
 			xo_emit("{P:/%s}{l:plugins/%s}", i > 0 ? " " : "",
-			    j->plugins.v[i]);
+			    j->plugin.v[i]);
 		xo_close_list("plugins");
 		xo_emit("\n");
 	}
@@ -476,20 +479,20 @@ emit_jail(const struct arc_jail *j, bool table)
 		xo_emit("{Lwc:Configured in}{:scope/%s}\n", j->scope);
 	if (j->has_nproc)
 		xo_emit("{Lwc:Processes}{:nproc/%u}, {:rss-kb/%ju} KiB, "
-		    "{:cpu-pct/%.1f}% CPU\n", j->nproc, (uintmax_t)j->rss_kb,
-		    j->cpu_pct / 100.0);
-	if (j->params.n > 0) {
+		    "{:cpu-pct/%.1f}% CPU\n", j->nproc, (uintmax_t)j->rss,
+		    (double)j->cpu / 100.0);
+	if (j->param.n > 0) {
 		xo_open_list("param");
-		for (i = 0; i < j->params.n; i++) {
+		for (i = 0; i < j->param.n; i++) {
 			xo_open_instance("param");
-			xo_emit("{P:  }{:key/%s}", j->params.v[i].key);
-			if (j->params.v[i].values.n > 0)
+			xo_emit("{P:  }{:key/%s}", j->param.v[i].name);
+			if (j->param.v[i].value.n > 0)
 				xo_emit("{D: = }{d:/%s}", join(
-				    j->params.v[i].values.v,
-				    j->params.v[i].values.n));
-			for (k = 0; k < j->params.v[i].values.n; k++)
+				    j->param.v[i].value.v,
+				    j->param.v[i].value.n));
+			for (k = 0; k < j->param.v[i].value.n; k++)
 				xo_emit("{el:value/%s}",
-				    j->params.v[i].values.v[k]);
+				    j->param.v[i].value.v[k]);
 			xo_emit("\n");
 			xo_close_instance("param");
 		}
@@ -858,9 +861,14 @@ cmd_edit(struct arc_client *cl, int argc, char **argv)
 	return (0);
 }
 
-/* An rpc of ietf-netconf's, its input in, over cl. */
-static void
-netconf_rpc(struct arc_client *cl, const char *name, const void *in)
+/*
+ * An rpc of ietf-netconf's, its input in, over cl, the accepts given:
+ * 0, or an errno and what the agent said in err (NULL: not wanted), its
+ * app-tag in tag.  Its warnings printed.
+ */
+static int
+netconf_try(struct arc_client *cl, const char *name, const void *in,
+    char *err, size_t errlen, char *tag, size_t taglen)
 {
 	const struct cbl_ynode	*rpc = NULL, *inode = NULL;
 	cbl_msg			*m, *rep = NULL;
@@ -882,12 +890,75 @@ netconf_rpc(struct arc_client *cl, const char *name, const void *in)
 	    in)) != 0 || (naccepts > 0 && (error = cbl_msg_set_accept(m,
 	    accepts, naccepts)) != 0))
 		xo_errx(1, "%s: %s", name, strerror(error));
-	if ((error = cbl_request(cl->conn, m, &rep, -1)) != 0)
-		refused(name, rep != NULL && cbl_msg_err_str(rep) != NULL ?
-		    cbl_msg_err_str(rep) : strerror(error), rep != NULL ?
-		    cbl_msg_err_apptag(rep) : NULL);
+	if ((error = cbl_request(cl->conn, m, &rep, -1)) != 0) {
+		if (err != NULL)
+			(void)snprintf(err, errlen, "%s", rep != NULL &&
+			    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
+			    strerror(error));
+		if (tag != NULL)
+			(void)snprintf(tag, taglen, "%s", rep != NULL &&
+			    cbl_msg_err_apptag(rep) != NULL ?
+			    cbl_msg_err_apptag(rep) : "");
+		cbl_msg_free(rep);
+		return (error);
+	}
 	warnings_of(rep);
 	cbl_msg_free(rep);
+	return (0);
+}
+
+/* The same, what it refuses said, exit 1. */
+static void
+netconf_rpc(struct arc_client *cl, const char *name, const void *in)
+{
+	char	err[512], tag[80];
+
+	if (netconf_try(cl, name, in, err, sizeof(err), tag, sizeof(tag)) != 0)
+		refused(name, err, tag);
+}
+
+/*
+ * Top-level node n's data, its module's struct data, put in datastore
+ * ds by an EDIT, the accepts given: 0, or an errno and what the agent
+ * said in err, the node at fault's SID in *errsid, its app-tag in tag.
+ */
+static int
+yedit_data(cbl_conn *conn, const struct cbl_ynode *n, const void *data,
+    enum cbl_yds_name ds, const char *const *acc, size_t nacc, char *err,
+    size_t errlen, uint64_t *errsid, char *tag, size_t taglen)
+{
+	cbl_msg	*m, *rep = NULL;
+	int	 error;
+
+	*errsid = 0;
+	tag[0] = '\0';
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_EDIT, 0, &m)) != 0) {
+		(void)snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	if ((error = cbl_msg_set_datastore(m, ds)) == 0 && nacc > 0)
+		error = cbl_msg_set_accept(m, acc, nacc);
+	if (error == 0)
+		error = cbl_msg_put_ymember(m, n, data);
+	if (error != 0) {
+		cbl_msg_free(m);
+		(void)snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	if ((error = cbl_request(conn, m, &rep, -1)) != 0) {
+		(void)snprintf(err, errlen, "%s", rep != NULL &&
+		    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
+		    strerror(error));
+		if (rep != NULL) {
+			*errsid = cbl_msg_err_sid(rep);
+			if (cbl_msg_err_apptag(rep) != NULL)
+				(void)snprintf(tag, taglen, "%s",
+				    cbl_msg_err_apptag(rep));
+		}
+	}
+	cbl_msg_free(rep);
+	return (error);
 }
 
 static int
@@ -1417,20 +1488,226 @@ cmd_hello(struct arc_client *cl)
 	return (0);
 }
 
+/*
+ * The agent's steps of a request of family 1, heard on the steps group
+ * while it runs (-t), as an operation's trace was: each step by its
+ * number, its last word kept, printed when asked.
+ */
+static struct arc_step	*ysteps;
+static size_t		 nysteps;
+static cbl_sub		*ystep_sub;
+static bool		 ystep_on;
+
+static void
+ystep_free(struct arc_step *s)
+{
+
+	free((void *)(uintptr_t)s->label);
+	free((void *)(uintptr_t)s->detail);
+	for (size_t i = 0; i < s->argv.n; i++)
+		free((void *)(uintptr_t)s->argv.v[i]);
+	free((void *)(uintptr_t)s->argv.v);
+	free((void *)(uintptr_t)s->output.p);
+	free((void *)(uintptr_t)s->error_output.p);
+}
+
+static const void *
+ybytes(const struct cbl_bytes *b)
+{
+	void	*p;
+
+	if (b->len == 0)
+		return (NULL);
+	if ((p = malloc(b->len)) == NULL)
+		xo_err(1, "trace");
+	memcpy(p, b->p, b->len);
+	return (p);
+}
+
+static void
+ystep_rx(const struct arc_step_ntf *ntf, void *arg __unused)
+{
+	const struct arc_step	*s;
+	struct arc_step		*d;
+	const char		**argv;
+	size_t			 i, k;
+
+	for (i = 0; ystep_on && i < ntf->trace.n; i++) {
+		s = &ntf->trace.v[i];
+		for (k = 0; k < nysteps && ysteps[k].id != s->id; k++)
+			;
+		if (k == nysteps) {
+			if ((ysteps = reallocarray(ysteps, nysteps + 1,
+			    sizeof(*ysteps))) == NULL)
+				xo_err(1, "trace");
+			nysteps++;
+		} else
+			ystep_free(&ysteps[k]);
+		d = &ysteps[k];
+		*d = *s;
+		d->label = s->label != NULL ? strdup(s->label) : NULL;
+		d->detail = s->detail != NULL ? strdup(s->detail) : NULL;
+		if ((argv = calloc(s->argv.n + 1, sizeof(*argv))) == NULL)
+			xo_err(1, "trace");
+		for (size_t m = 0; m < s->argv.n; m++)
+			argv[m] = strdup(s->argv.v[m]);
+		d->argv.v = argv;
+		d->output.p = ybytes(&s->output);
+		d->error_output.p = ybytes(&s->error_output);
+	}
+}
+
+static int
+ystep_cmp(const void *a, const void *b)
+{
+	uint32_t	x = ((const struct arc_step *)a)->id;
+	uint32_t	y = ((const struct arc_step *)b)->id;
+
+	return (x < y ? -1 : x > y);
+}
+
+/* The steps of what is asked from now on, heard with -t. */
+static void
+ytold_begin(struct arc_client *cl)
+{
+	static const struct arc_steps_handlers h = { .step = ystep_rx };
+
+	if (!show_trace)
+		return;
+	if (ystep_sub == NULL && cl->groups[ARC_MCGRP_STEPS] != 0)
+		(void)arc_steps_subscribe(cl, &h, NULL, &ystep_sub);
+	ystep_on = true;
+}
+
+/* No more heard; with print, those heard printed as a trace. */
+static void
+ytold_end(bool print)
+{
+
+	ystep_on = false;
+	if (print && nysteps > 0) {
+		qsort(ysteps, nysteps, sizeof(*ysteps), ystep_cmp);
+		emit_trace(ysteps, nysteps);
+	}
+	for (size_t i = 0; print && i < nysteps; i++)
+		ystep_free(&ysteps[i]);
+	if (print)
+		nysteps = 0;
+}
+
+/*
+ * Top-level node n of datastore ds (-1: the agent's default), decoded
+ * into its module's data, data (a's).  Refused: said, exit 1.
+ */
+static void
+yget_data(struct arc_client *cl, const struct cbl_ynode *n, int ds,
+    void *data, cbl_yarena *a)
+{
+	cbl_msg	*req, *rep = NULL;
+	char	 why[256];
+	int	 error;
+
+	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_GET, 0, &req)) != 0 || (error = cbl_msg_put_yget(req,
+	    &n->sid, 1)) != 0 || (ds >= 0 && (error = cbl_msg_set_datastore(
+	    req, (enum cbl_yds_name)ds)) != 0))
+		xo_errx(1, "%s: %s", n->name, strerror(error));
+	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+		xo_errx(1, "%s: %s", n->name, rep != NULL &&
+		    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
+		    strerror(error));
+	if ((error = cbl_msg_ydecode_member(rep, n, data, a, 0, why,
+	    sizeof(why))) != 0 && error != ENOENT)
+		xo_errx(1, "%s: %s", n->name, why);
+	cbl_msg_free(rep);
+}
+
+/*
+ * Action act of node n, the list entry of keys vals (nvals of them) or
+ * a container's; in its input (NULL: none given), out its output (a's).
+ * 0, or an errno and what the agent said in err.
+ */
+static int
+ycall(struct arc_client *cl, const struct cbl_ynode *n,
+    const void *const *vals, size_t nvals, const char *act, const void *in,
+    void *out, cbl_yarena *a, char *err, size_t errlen)
+{
+	const struct cbl_ynode	*an, *inode, *onode;
+	struct cbl_ybuf		 t = { NULL, 0, 0 };
+	cbl_msg			*req, *rep = NULL;
+	int			 error;
+
+	if ((an = ychild(n, act)) == NULL || (inode = ychild(an, "input")) ==
+	    NULL || (onode = ychild(an, "output")) == NULL)
+		xo_errx(1, "%s: %s is not in the tables", n->name, act);
+	if (in == NULL && (in = cbl_yarena_alloc(a, inode->size)) == NULL)
+		xo_err(1, "%s", act);
+	if ((error = cbl_yiid_write(n, (const void **)(uintptr_t)vals, nvals,
+	    &t)) != 0 || (error = cbl_msg_new(cbl_conn_ctx(cl->conn),
+	    CBL_YANG_FAMILY, CBL_YCMD_RPC, 0, &req)) != 0 ||
+	    (error = cbl_msg_put_ynode(req, inode, in)) != 0 ||
+	    (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0)
+		xo_errx(1, "%s: %s", act, strerror(error));
+	cbl_ybuf_free(&t);
+	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0) {
+		(void)snprintf(err, errlen, "%s", rep != NULL &&
+		    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
+		    strerror(error));
+		cbl_msg_free(rep);
+		return (error);
+	}
+	if (out != NULL && (error = cbl_msg_ydecode(rep, onode, out, a, 0, err,
+	    errlen)) != 0 && error != ENOENT) {
+		cbl_msg_free(rep);
+		return (error);
+	}
+	cbl_msg_free(rep);
+	return (0);
+}
+
+/* arcana-jails' jails, as datastore ds has them (a's). */
+static const struct arcana_jails_jails *
+yjails(struct arc_client *cl, int ds, cbl_yarena *a)
+{
+	static const struct arcana_jails_jails none;
+	const struct cbl_ynode	*n;
+	struct arcana_jails	 d;
+
+	if ((n = ytop_named("jails")) == NULL)
+		xo_errx(1, "jails: arcana-jails is not in the tables");
+	memset(&d, 0, sizeof(d));
+	yget_data(cl, n, ds, &d, a);
+	return (d.jails != NULL ? d.jails : &none);
+}
+
+static const struct arcana_jails_jails_jail *
+yjail_in(const struct arcana_jails_jails *js, const char *name)
+{
+
+	for (size_t i = 0; i < js->jail.n; i++)
+		if (strcmp(js->jail.v[i].name, name) == 0)
+			return (&js->jail.v[i]);
+	return (NULL);
+}
+
+/*
+ * list [-c]: the jails, running and configured, a GET of arcana-jails;
+ * with -c those configured alone.
+ */
 static int
 cmd_list(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_list_req	 req;
-	struct arc_list_rsp	*rsp;
-	size_t			 i;
-	int			 ch, error;
+	const struct arcana_jails_jails	*js;
+	cbl_yarena			*a;
+	bool				 config_only;
+	int				 ch;
 
-	memset(&req, 0, sizeof(req));
+	config_only = false;
 	optind = 1;
 	while ((ch = getopt(argc, argv, "c")) != -1) {
 		switch (ch) {
 		case 'c':
-			req.config_only = true;
+			config_only = true;
 			break;
 		default:
 			usage();
@@ -1438,32 +1715,124 @@ cmd_list(struct arc_client *cl, int argc, char **argv)
 	}
 	if (optind != argc)
 		usage();
-	if ((error = arc_list(cl, &req, &rsp)) != 0)
-		fail(cl, error, "list");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "list");
+	ytold_begin(cl);
+	js = yjails(cl, -1, a);
+	ytold_end(false);
 	xo_emit("{T:/%-16s} {T:/%-8s} {T:/%4s} {T:/%-31s} {T:/%s}\n", "NAME",
 	    "STATE", "JID", "ADDRESSES", "HOSTNAME");
 	xo_open_list("jail");
-	for (i = 0; i < rsp->jails.n; i++)
-		emit_jail(&rsp->jails.v[i], true);
+	for (size_t i = 0; i < js->jail.n; i++)
+		if (!config_only || (js->jail.v[i].has_configured &&
+		    js->jail.v[i].configured))
+			emit_jail(&js->jail.v[i], true);
 	xo_close_list("jail");
-	for (i = 0; i < rsp->conf_errors.n; i++)
-		xo_warnx("%s: %s", rsp->conf_errors.v[i].scope,
-		    rsp->conf_errors.v[i].message);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("%s", rsp->error != NULL ? rsp->error : "failed");
-	arc_list_rsp_free(rsp);
-	return (error);
+	for (size_t i = 0; i < js->conf_error.n; i++)
+		xo_warnx("%s: %s", js->conf_error.v[i].scope,
+		    js->conf_error.v[i].message);
+	ytold_end(true);
+	cbl_yarena_free(a);
+	return (0);
 }
 
+/* The jail as it is now, in detail; boot as running has it, where given. */
+static void
+yjail_show(struct arc_client *cl, const char *name, const bool *boot)
+{
+	const struct arcana_jails_jails_jail	*j;
+	struct arcana_jails_jails_jail		 c;
+	cbl_yarena				*a;
+
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "%s", name);
+	if ((j = yjail_in(yjails(cl, -1, a), name)) != NULL) {
+		c = *j;
+		if (boot != NULL) {
+			c.has_boot = true;
+			c.boot = *boot;
+		}
+		emit_jail(&c, false);
+	}
+	cbl_yarena_free(a);
+}
+
+/*
+ * enable | disable jail: started at boot or not, arcana-jails' boot in
+ * the candidate, committed: jail_list and jail_enable in Arcana's
+ * rc.conf file, the accepts given with -a.  What the commit refuses
+ * leaves the candidate as running is.
+ */
+static int
+jail_boot(struct arc_client *cl, const char *verb, const char *name, bool on)
+{
+	struct ietf_netconf_commit_input		 cin;
+	struct ietf_netconf_discard_changes_input	 din;
+	const struct cbl_ynode				*n;
+	const struct arcana_jails_jails			*js;
+	struct arcana_jails_jails_jail			*j;
+	struct arcana_jails				 d;
+	cbl_yarena					*a;
+	char						 err[512], tag[80];
+	uint64_t					 errsid;
+	int						 error;
+
+	if ((n = ytop_named("jails")) == NULL)
+		xo_errx(1, "jails: arcana-jails is not in the tables");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "%s", verb);
+	js = yjails(cl, CBL_YDS_RUNNING, a);
+	if ((j = (struct arcana_jails_jails_jail *)(uintptr_t)yjail_in(js,
+	    name)) == NULL)
+		xo_errx(1, "%s %s: jail '%s' is not defined", verb, name, name);
+	if (!j->has_boot || j->boot != on) {
+		j->has_boot = true;
+		j->boot = on;
+		memset(&d, 0, sizeof(d));
+		d.jails = js;
+		if ((error = yedit_data(cl->conn, n, &d, CBL_YDS_CANDIDATE,
+		    accepts, naccepts, err, sizeof(err), &errsid, tag,
+		    sizeof(tag))) != 0)
+			refused(verb, err, tag);
+		memset(&cin, 0, sizeof(cin));
+		if (netconf_try(cl, "commit", &cin, err, sizeof(err), tag,
+		    sizeof(tag)) != 0) {
+			memset(&din, 0, sizeof(din));
+			(void)netconf_try(cl, "discard-changes", &din, NULL, 0,
+			    NULL, 0);
+			refused(verb, err, tag);
+		}
+	}
+	cbl_yarena_free(a);
+	yjail_show(cl, name, &on);
+	return (0);
+}
+
+/* start | stop | restart | kill jail: arcana-jails' actions. */
 static int
 cmd_action(struct arc_client *cl, uint8_t action, int argc, char **argv)
 {
-	struct arc_action_req	 req;
-	struct arc_action_rsp	*rsp;
-	int			 error;
+	const struct cbl_ynode	*n;
+	const void		*vals[1];
+	cbl_yarena		*a;
+	char			 why[512];
+	int			 ch, error;
 
+	/* enable and disable: the commit's accepts, -a. */
+	if (action == ARC_ACTION_ENABLE || action == ARC_ACTION_DISABLE) {
+		optind = 1;
+		optreset = 1;
+		while ((ch = getopt(argc, argv, "a:")) != -1) {
+			if (ch != 'a')
+				usage();
+			if (naccepts < nitems(accepts))
+				accepts[naccepts++] = optarg;
+		}
+		/* The verb kept first, before the jail. */
+		argv[optind - 1] = argv[0];
+		argc -= optind - 1;
+		argv += optind - 1;
+	}
 	if (argc != 2)
 		usage();
 	if (queue) {
@@ -1477,21 +1846,27 @@ cmd_action(struct arc_client *cl, uint8_t action, int argc, char **argv)
 		sp.action = action;
 		return (submit(cl, &sp));
 	}
-	memset(&req, 0, sizeof(req));
-	req.jail = argv[1];
-	req.has_action = true;
-	req.action = action;
-	if ((error = arc_action(cl, &req, &rsp)) != 0)
-		fail(cl, error, argv[0]);
-	if (rsp->result != NULL)
-		emit_jail(rsp->result, false);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("%s %s: %s", argv[0], argv[1],
-		    rsp->error != NULL ? rsp->error : "failed");
-	arc_action_rsp_free(rsp);
-	return (error);
+	if (action == ARC_ACTION_ENABLE || action == ARC_ACTION_DISABLE)
+		return (jail_boot(cl, argv[0], argv[1], action ==
+		    ARC_ACTION_ENABLE));
+	if ((n = ytop_named("jails")) == NULL || (n = ychild(n, "jail")) ==
+	    NULL)
+		xo_errx(1, "jails: arcana-jails is not in the tables");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "%s", argv[0]);
+	vals[0] = &argv[1];
+	ytold_begin(cl);
+	error = ycall(cl, n, vals, 1, argv[0], NULL, NULL, a, why,
+	    sizeof(why));
+	ytold_end(false);
+	cbl_yarena_free(a);
+	yjail_show(cl, argv[1], NULL);
+	ytold_end(true);
+	if (error != 0) {
+		xo_warnx("%s %s: %s", argv[0], argv[1], why);
+		return (1);
+	}
+	return (0);
 }
 
 static int
@@ -1551,8 +1926,9 @@ cmd_address(struct arc_client *cl, int argc, char **argv)
 		fail(cl, error, "address");
 	if (rsp->diff != NULL)
 		xo_emit("{:diff/%s}", rsp->diff);
+	/* The jail as it is after, as arcana-jails has it. */
 	if (rsp->result != NULL && !req.dry_run)
-		emit_jail(rsp->result, false);
+		yjail_show(cl, req.jail, NULL);
 	emit_trace(rsp->trace.v, rsp->trace.n);
 	error = rsp->ok ? 0 : 1;
 	if (!rsp->ok)
@@ -1618,6 +1994,101 @@ cmd_services(struct arc_client *cl)
 		xo_warnx("%s", rsp->error != NULL ? rsp->error : "failed");
 	arc_services_rsp_free(rsp);
 	return (error);
+}
+
+/*
+ * services convert [-n] [-a warning]... [name ...]: the services' rc.conf
+ * configuration moved under Arcana by arcana-services' convert action,
+ * what it took (or with -n would take) a row each: the variable, its
+ * value, the file and line of yours it was in, and why one was left.
+ */
+static int
+cmd_services_convert(struct arc_client *cl, int argc, char **argv)
+{
+	const struct cbl_ynode				*n, *act, *in, *out;
+	struct arcana_services_services_convert_input	 i;
+	struct arcana_services_services_convert_output	 o;
+	struct cbl_ybuf					 t = { NULL, 0, 0 };
+	cbl_msg						*req, *rep = NULL;
+	cbl_yarena					*a;
+	char						 why[256];
+	int						 ch, error;
+
+	memset(&i, 0, sizeof(i));
+	optind = 1;
+	optreset = 1;
+	while ((ch = getopt(argc, argv, "a:n")) != -1) {
+		switch (ch) {
+		case 'a':
+			if (naccepts < nitems(accepts))
+				accepts[naccepts++] = optarg;
+			break;
+		case 'n':
+			i.has_dry_run = true;
+			i.dry_run = true;
+			break;
+		default:
+			usage();
+		}
+	}
+	i.service.v = (const char *const *)argv + optind;
+	i.service.n = (size_t)(argc - optind);
+	if ((n = ytop_named("services")) == NULL || (act = ychild(n,
+	    "convert")) == NULL || (in = ychild(act, "input")) == NULL ||
+	    (out = ychild(act, "output")) == NULL)
+		xo_errx(1, "services: arcana-services is not in the tables");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "services");
+	if ((error = cbl_yiid_write(n, NULL, 0, &t)) != 0 ||
+	    (error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_RPC, 0, &req)) != 0 ||
+	    (error = cbl_msg_put_ynode(req, in, &i)) != 0 ||
+	    (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0 ||
+	    (naccepts > 0 && (error = cbl_msg_set_accept(req, accepts,
+	    naccepts)) != 0))
+		xo_errx(1, "services: %s", strerror(error));
+	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+		refused("services convert", rep != NULL && cbl_msg_err_str(rep)
+		    != NULL ? cbl_msg_err_str(rep) : strerror(error), rep !=
+		    NULL ? cbl_msg_err_apptag(rep) : NULL);
+	memset(&o, 0, sizeof(o));
+	if ((error = cbl_msg_ydecode(rep, out, &o, a, 0, why, sizeof(why))) !=
+	    0 && error != ENOENT)
+		xo_errx(1, "services: %s", why);
+	warnings_of(rep);
+	xo_emit("{T:/%-16s} {T:/%-24s} {T:/%-24s} {T:/%s}\n", "SERVICE",
+	    "VARIABLE", "VALUE", "WHERE");
+	xo_open_list("service");
+	for (size_t k = 0; k < o.service.n; k++) {
+		const struct arcana_services_services_convert_output_service *s =
+		    &o.service.v[k];
+
+		xo_open_instance("service");
+		xo_emit("{e:name/%s}", s->name);
+		xo_open_list("variable");
+		for (size_t j = 0; j < s->variable.n; j++) {
+			const struct
+			    arcana_services_services_convert_output_service_variable
+			    *v = &s->variable.v[j];
+
+			xo_open_instance("variable");
+			xo_emit("{d:service/%-16s} {:name/%-24s} {:value/%-24s} "
+			    "{:file}:{:line/%u}", j == 0 ? s->name : "",
+			    v->name, v->value != NULL ? v->value : "", v->file,
+			    v->line);
+			if (v->left != NULL)
+				xo_emit("  left: {:left/%s}", v->left);
+			xo_emit("\n");
+			xo_close_instance("variable");
+		}
+		xo_close_list("variable");
+		xo_close_instance("service");
+	}
+	xo_close_list("service");
+	cbl_ybuf_free(&t);
+	cbl_yarena_free(a);
+	cbl_msg_free(rep);
+	return (0);
 }
 
 /* service name verb, or service name config [-x key] [key=value] */
@@ -5077,8 +5548,10 @@ cmd_stats(struct arc_client *cl)
 	return (error);
 }
 
+typedef struct arcana_packages_package ypkg;
+
 static void
-emit_packages(const struct arc_package *v, size_t n)
+emit_packages(const ypkg *v, size_t n)
 {
 	size_t	i;
 
@@ -5092,8 +5565,9 @@ emit_packages(const struct arc_package *v, size_t n)
 	for (i = 0; i < n; i++) {
 		xo_open_instance("package");
 		xo_emit("{k:name/%-40s/%s} {:installed/%-20s/%s} "
-		    "{:available/%s}\n", v[i].name, v[i].installed,
-		    v[i].available != NULL ? v[i].available : "");
+		    "{:available/%s}\n", v[i].name, v[i].installed != NULL ?
+		    v[i].installed : "", v[i].available != NULL ?
+		    v[i].available : "");
 		xo_close_instance("package");
 	}
 	xo_close_list("package");
@@ -5101,7 +5575,7 @@ emit_packages(const struct arc_package *v, size_t n)
 
 /* The installed packages: by hand or automatic, size, what each is. */
 static void
-emit_installed(const struct arc_package *v, size_t n)
+emit_installed(const ypkg *v, size_t n)
 {
 	size_t	i;
 
@@ -5122,31 +5596,67 @@ emit_installed(const struct arc_package *v, size_t n)
 }
 
 /*
+ * arcana-packages' node: the host's packages, or with jail the jail's
+ * (vals[0] its key, *keyp the name); *nvals the keys.
+ */
+static const struct cbl_ynode *
+ypkg_node(const char *jail, const char **keyp, const void **vals,
+    size_t *nvals)
+{
+	const struct cbl_ynode	*n;
+
+	*nvals = 0;
+	if (jail == NULL)
+		n = ytop_named("packages");
+	else if ((n = ytop_named("jails")) != NULL && (n = ychild(n,
+	    "jail")) != NULL && (n = ychild(n, "packages")) != NULL) {
+		*keyp = jail;
+		vals[0] = keyp;
+		*nvals = 1;
+	}
+	if (n == NULL)
+		xo_errx(1, "packages: arcana-packages is not in the tables");
+	return (n);
+}
+
+/*
  * packages [-i] [-r] [-4 | -6] [jail]: what has a newer version in the
- * repository; with -i, what is installed.
+ * repository, arcana-packages' refresh action (with -r, pkg update
+ * first); with -i, what is installed, its read action.
  */
 static int
 cmd_packages(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_packages_req	 req;
-	struct arc_packages_rsp	*rsp;
-	int			 ch, error;
+	struct arcana_packages_packages_refresh_input	 ri;
+	struct arcana_packages_packages_refresh_output	 ro;
+	struct arcana_packages_packages_read_output	 io;
+	const struct cbl_ynode				*n;
+	const void					*vals[1];
+	const char					*jail, *key;
+	const char *const				*repos;
+	cbl_yarena					*a;
+	char						 why[512];
+	size_t						 nvals, nrepos;
+	bool						 inst;
+	int						 ch, error;
 
-	memset(&req, 0, sizeof(req));
+	memset(&ri, 0, sizeof(ri));
+	inst = false;
 	optind = 1;
 	while ((ch = getopt(argc, argv, "46ir")) != -1) {
 		switch (ch) {
 		case '4':
 		case '6':
-			req.has_pkg_ip = true;
-			req.pkg_ip = (uint8_t)(ch - '0');
+			/* ip-version's values are pkg's: 4, 6. */
+			ri.has_ip_version = true;
+			ri.ip_version = ch - '0';
 			break;
 		case 'i':
-			req.has_pkg_installed = true;
-			req.pkg_installed = true;
+			inst = true;
 			break;
 		case 'r':
-			req.refresh = true;
+			ri.has_update = true;
+			ri.update = true;
 			break;
 		default:
 			usage();
@@ -5154,32 +5664,42 @@ cmd_packages(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc - optind > 1)
 		usage();
-	if (argc - optind == 1)
-		req.jail = argv[optind];
-	if ((error = arc_packages(cl, &req, &rsp)) != 0)
-		fail(cl, error, "packages");
-	if (rsp->ok && req.pkg_installed)
-		emit_installed(rsp->packages.v, rsp->packages.n);
-	else if (rsp->ok)
-		emit_packages(rsp->packages.v, rsp->packages.n);
+	jail = argc - optind == 1 ? argv[optind] : NULL;
+	n = ypkg_node(jail, &key, vals, &nvals);
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "packages");
+	memset(&ro, 0, sizeof(ro));
+	memset(&io, 0, sizeof(io));
+	ytold_begin(cl);
+	if (inst)
+		error = ycall(cl, n, vals, nvals, "read", NULL, &io, a, why,
+		    sizeof(why));
+	else
+		error = ycall(cl, n, vals, nvals, "refresh", &ri, &ro, a, why,
+		    sizeof(why));
+	ytold_end(false);
+	repos = inst ? io.repository.v : ro.repository.v;
+	nrepos = inst ? io.repository.n : ro.repository.n;
+	if (error == 0 && inst)
+		emit_installed(io.package.v, io.package.n);
+	else if (error == 0)
+		emit_packages(ro.package.v, ro.package.n);
 	/* pkg's repositories there: what -r of pkg-upgrade may name. */
-	if (rsp->ok && rsp->pkg_repos.n > 0) {
-		size_t	i;
-
+	if (error == 0 && nrepos > 0) {
 		xo_open_list("repository");
 		xo_emit("{Lwc:Repositories}");
-		for (i = 0; i < rsp->pkg_repos.n; i++)
-			xo_emit("{P: }{l:repository/%s}", rsp->pkg_repos.v[i]);
+		for (size_t i = 0; i < nrepos; i++)
+			xo_emit("{P: }{l:repository/%s}", repos[i]);
 		xo_close_list("repository");
 		xo_emit("\n");
 	}
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("packages: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_packages_rsp_free(rsp);
-	return (error);
+	ytold_end(true);
+	cbl_yarena_free(a);
+	if (error != 0) {
+		xo_warnx("packages: %s", why);
+		return (1);
+	}
+	return (0);
 }
 
 /* jobs lanes number: how many jobs of pkg in jails run at once. */
@@ -5272,9 +5792,9 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 {
 	struct arc_job_submit_req	 req;
 	struct arc_job_submit_rsp	*rsp;
-	struct arc_list_req		 lq;
-	struct arc_list_rsp		*lr;
+	const struct arcana_jails_jails	*js;
 	struct arc_job_spec		 sp, *v;
+	cbl_yarena			*a;
 	size_t				 i, n;
 	int				 ch, error;
 	bool				 jails;
@@ -5303,17 +5823,17 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 		usage();
 	if (!jails)
 		return (submit(cl, &sp));
-	memset(&lq, 0, sizeof(lq));
-	if ((error = arc_list(cl, &lq, &lr)) != 0)
-		fail(cl, error, "list");
-	if ((v = calloc(lr->jails.n + 1, sizeof(*v))) == NULL)
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "pkg-clean");
+	js = yjails(cl, -1, a);
+	if ((v = calloc(js->jail.n + 1, sizeof(*v))) == NULL)
 		xo_err(1, "calloc");
-	for (i = n = 0; i < lr->jails.n; i++) {
-		if (!lr->jails.v[i].has_state || lr->jails.v[i].state !=
-		    ARC_JAIL_STATE_RUNNING || lr->jails.v[i].name == NULL)
+	for (i = n = 0; i < js->jail.n; i++) {
+		if (!js->jail.v[i].has_state || js->jail.v[i].state !=
+		    ARCANA_JAILS_JAILS_JAIL_STATE_RUNNING)
 			continue;
 		v[n] = sp;
-		v[n].jail = lr->jails.v[i].name;
+		v[n].jail = js->jail.v[i].name;
 		v[n].safe = safe;
 		v[n].has_safe_wait = safe && safe_wait > 0;
 		v[n].safe_wait = safe_wait;
@@ -5322,7 +5842,7 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 	if (n == 0) {
 		xo_warnx("pkg-clean: no running jail");
 		free(v);
-		arc_list_rsp_free(lr);
+		cbl_yarena_free(a);
 		return (1);
 	}
 	memset(&req, 0, sizeof(req));
@@ -5339,7 +5859,7 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 		xo_warnx("pkg-clean: %s", rsp->error != NULL ? rsp->error :
 		    "not accepted");
 	arc_job_submit_rsp_free(rsp);
-	arc_list_rsp_free(lr);
+	cbl_yarena_free(a);
 	free(v);
 	return (error);
 }
@@ -5483,72 +6003,93 @@ cmd_ipsec(struct arc_client *cl, int argc, char **argv)
 static int
 cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_pkg_upgrade_req	 req;
-	struct arc_pkg_upgrade_rsp	*rsp;
-	int				 ch, error;
+	struct arcana_packages_packages_upgrade_input	 ui;
+	struct arcana_packages_packages_upgrade_output	 uo;
+	const struct cbl_ynode				*n;
+	const void					*vals[1];
+	const char					*jail, *key;
+	cbl_yarena					*a;
+	char						 why[512];
+	size_t						 nvals;
+	int						 ch, error;
 
-	memset(&req, 0, sizeof(req));
+	memset(&ui, 0, sizeof(ui));
+	jail = NULL;
 	optind = 1;
 	while ((ch = getopt(argc, argv, "46OJj:nr:")) != -1) {
 		switch (ch) {
 		case '4':
 		case '6':
-			req.has_pkg_ip = true;
-			req.pkg_ip = (uint8_t)(ch - '0');
+			/* ip-version's values are pkg's: 4, 6. */
+			ui.has_ip_version = true;
+			ui.ip_version = ch - '0';
 			break;
 		case 'O':
 			/* Packages for a newer FreeBSD too. */
-			req.has_ignore_osversion = true;
-			req.ignore_osversion = true;
+			ui.has_ignore_osversion = true;
+			ui.ignore_osversion = true;
 			break;
 		case 'j':
-			req.jail = optarg;
+			jail = optarg;
 			break;
 		case 'J':
-			req.jail = "*";
+			jail = "*";
 			break;
 		case 'n':
-			req.dry_run = true;
+			ui.has_dry_run = true;
+			ui.dry_run = true;
 			break;
 		case 'r':
-			req.pkg_repo = optarg;
+			ui.repository = optarg;
 			break;
 		default:
 			usage();
 		}
 	}
-	req.names.v = (const char *const *)(argv + optind);
-	req.names.n = (size_t)(argc - optind);
-	if (queue && !req.dry_run) {
+	ui.name.v = (const char *const *)(argv + optind);
+	ui.name.n = (size_t)(argc - optind);
+	if (queue && !ui.dry_run) {
 		struct arc_job_spec sp;
 
 		memset(&sp, 0, sizeof(sp));
 		sp.has_kind = true;
 		sp.kind = ARC_JOB_KIND_PKG_UPGRADE;
-		sp.jail = req.jail;
-		sp.force = req.ignore_osversion;
-		sp.has_pkg_ip = req.has_pkg_ip;
-		sp.pkg_ip = req.pkg_ip;
-		sp.pkg_repo = req.pkg_repo;
-		sp.names.v = req.names.v;
-		sp.names.n = req.names.n;
+		sp.jail = jail;
+		sp.force = ui.ignore_osversion;
+		sp.has_pkg_ip = ui.has_ip_version;
+		sp.pkg_ip = (uint8_t)ui.ip_version;
+		sp.pkg_repo = ui.repository;
+		sp.names.v = ui.name.v;
+		sp.names.n = ui.name.n;
 		return (submit(cl, &sp));
 	}
-	if ((error = arc_pkg_upgrade(cl, &req, &rsp)) != 0)
-		fail(cl, error, "pkg-upgrade");
-	if (rsp->ok) {
-		if (rsp->has_upgraded)
-			xo_emit("{Lwc:Upgraded}{:upgraded/%u}\n", rsp->upgraded);
-		xo_emit("{T:Still pending}:\n");
-		emit_packages(rsp->packages.v, rsp->packages.n);
+	/* In every running jail: the host's, every-jail. */
+	if (jail != NULL && strcmp(jail, "*") == 0) {
+		jail = NULL;
+		ui.has_every_jail = true;
+		ui.every_jail = true;
 	}
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("pkg-upgrade: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_pkg_upgrade_rsp_free(rsp);
-	return (error);
+	n = ypkg_node(jail, &key, vals, &nvals);
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "pkg-upgrade");
+	memset(&uo, 0, sizeof(uo));
+	ytold_begin(cl);
+	error = ycall(cl, n, vals, nvals, "upgrade", &ui, &uo, a, why,
+	    sizeof(why));
+	ytold_end(false);
+	if (error == 0) {
+		if (uo.has_upgraded)
+			xo_emit("{Lwc:Upgraded}{:upgraded/%u}\n", uo.upgraded);
+		xo_emit("{T:Still pending}:\n");
+		emit_packages(uo.package.v, uo.package.n);
+	}
+	ytold_end(true);
+	cbl_yarena_free(a);
+	if (error != 0) {
+		xo_warnx("pkg-upgrade: %s", why);
+		return (1);
+	}
+	return (0);
 }
 
 static void
@@ -5907,6 +6448,9 @@ main(int argc, char *argv[])
 		rc = cmd_address(&cl, argc, argv);
 	else if (strcmp(argv[0], "services") == 0 && argc == 1)
 		rc = cmd_services(&cl);
+	else if (strcmp(argv[0], "services") == 0 && strcmp(argv[1],
+	    "convert") == 0)
+		rc = cmd_services_convert(&cl, argc - 1, argv + 1);
 	else if (strcmp(argv[0], "service") == 0)
 		rc = cmd_service(&cl, argc, argv);
 	else if (strcmp(argv[0], "interface") == 0 ||

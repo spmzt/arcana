@@ -172,7 +172,8 @@ module arcana-history {
       key "name";
       description
         "Each FEC relay told apart, at most 16, by its syslog tag:
-         speederv2, or speederv2_<profile> for one of several.  Its
+         arcana_relay, or arcana_relay_<profile> for one of several
+         (Arcana's rc script's), or speederv2, the admin's.  Its
          figures are those of its last --report interval, both ways
          summed, while its last report is fresh; zero else.";
       leaf name {

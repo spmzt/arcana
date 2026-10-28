@@ -34,6 +34,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <emscripten/html5.h>
+
 #include "app.h"
 
 #define	TOPO_POLL_MS	5000
@@ -245,8 +247,57 @@ static struct {
 	int	nprobed;		/* tunnels measured, as last drawn */
 	int	fib;			/* the routing table shown alone, or -1 */
 	bool	stencil;		/* drawn as a network diagram: glyphs, straight lines */
+	bool	full;			/* over the whole screen */
+	/* A move of the hand drawn without the map's HTML: the host
+	 * dragged, or the link bent, whose lines the canvas draws; and
+	 * the view the SVG was last drawn with, which a pan or a zoom
+	 * moves as one until the hand rests (arc_map_view). */
+	char	gldrag[80];
+	char	glbend[160];
+	double	zoom0, panx0, pany0;
+	/* Draw mode: a line dropped is a ghost with its plan, of the kind
+	 * chosen (JOIN_*); the keyboard's line: from where, and the
+	 * target it is on (a node), or -1. */
+	bool	draw;
+	int	dkind;
+	char	kb_from[80];
+	int	kb_at;
 	double	last_poll;
-} tp = { .zoom = 1.0, .fib = -1 };
+} tp = { .zoom = 1.0, .fib = -1, .kb_at = -1 };
+
+/*
+ * A link drawn in Draw mode, from its drop to the moment both ends
+ * report it up: a ghost (dropped, its plan beside the form), planned
+ * (applied: the jobs sent), pending (a safe change on an end, waiting
+ * for the console to confirm it: the countdown ring), live (every end
+ * says it is up: tunnel up, BGP Established, OSPF Full); back to a
+ * ghost, with the reason, when an end fails or its timer lapses.
+ */
+enum { GH_GHOST, GH_PLANNED, GH_PENDING, GH_LIVE };
+static const char *const gh_names[] = { "ghost", "planned", "pending",
+    "live" };
+#define	GHOSTS	8
+static struct ghost {
+	char		a[80], b[80];	/* the nodes */
+	int		kind;		/* JOIN_* */
+	int		state;		/* GH_* */
+	char		why[200];	/* why it is a ghost again */
+	char		tgt[2][24];	/* each end's interface, a tunnel's */
+	double		since;		/* applied, ms */
+	double		live_at;
+	long long	by;		/* pending: undone then, s of the epoch */
+	double		total;
+} ghosts[GHOSTS];
+static int	nghosts;
+
+static const char	 kind_keys[] = "tbof";	/* JOIN_*'s keys */
+
+static const char	*target_why(int, int, int);
+static void		 kind_ring(struct html *, int);
+static void		 map_ghosts(struct html *);
+static void		 map_list(struct html *);
+static void		 ghost_applied(const char *, const char *, int,
+			    const char *, const char *);
 
 static struct {
 	char		from[80];
@@ -428,6 +479,10 @@ places_load(void)
 	double		 x, y;
 
 	tp.loaded = true;
+	/* Draw mode, as this viewer left it. */
+	text = arc_store_get("arc_topo_draw");
+	tp.draw = text != NULL && strcmp(text, "on") == 0;
+	free(text);
 	text = arc_store_get("arc_topo");
 	p = text;
 	while (p != NULL && (line = strsep(&p, "\n")) != NULL)
@@ -3141,6 +3196,69 @@ link_dirs(const struct tlink *l, double *ab, double *ba)
 	}
 }
 
+/*
+ * Where a link is drawn: its ends (shifted apart from the links beside
+ * it in the diagram), its bend, and its wire's width from its rate.
+ * The same for the SVG and for the canvas that draws it while it moves.
+ */
+static bool
+link_geom(int i, double *x1, double *y1, double *x2, double *y2,
+    double *bend, double *w)
+{
+	const struct tlink	*l = &links[i];
+
+	if (!place(l->a, x1, y1) || !place(l->b, x2, y2))
+		return (false);
+	if (tp.stencil && neighbourship(l->kind) && l->b >= 0)
+		*bend = neighbour_bend(i);
+	else if (tp.stencil) {
+		*bend = 0;
+		para_shift(i, x1, y1, x2, y2);
+	} else
+		*bend = bend_of(i);
+	*w = 1.6 + log10(1 + l->rate / 1000.0) * 1.1;
+	if (*w > 7)
+		*w = 7;
+	return (true);
+}
+
+/* Whether a link moves with the hand now: the canvas draws it, the SVG
+ * keeps its own hidden (docs/notes/webgl-map.md). */
+static bool
+link_moving(int i)
+{
+	int	n;
+
+	if (!glmap_on())
+		return (false);
+	if (tp.glbend[0] != '\0')
+		return (strcmp(links[i].key, tp.glbend) == 0);
+	if (tp.gldrag[0] == '\0' || (n = node_index(tp.gldrag)) == -1)
+		return (false);
+	return (links[i].a == n || links[i].b == n);
+}
+
+/* The lines moving with the hand, given to the canvas as they are now. */
+static void
+drag_scene(void)
+{
+	const struct tlink	*l;
+	double			 x1, y1, x2, y2, bend, w;
+	int			 i;
+
+	glmap_scene_begin();
+	for (i = 0; i < nlinks; i++) {
+		l = &links[i];
+		if (!link_moving(i) || node_lone(l->a) || node_lone(l->b) ||
+		    (l->kind == LK_OSPF && !l->ospf_stray) || tp.hide[l->kind] ||
+		    !link_geom(i, &x1, &y1, &x2, &y2, &bend, &w))
+			continue;
+		glmap_scene_link(x1, y1, x2, y2, bend, w, l->kind, l->up,
+		    !link_in_fib(l, tp.fib));
+	}
+	glmap_scene_end();
+}
+
 static void
 map_links(struct html *h)
 {
@@ -3196,21 +3314,13 @@ map_links(struct html *h)
 		 * With one table shown, the links outside it are dimmed, not
 		 * gone: the map keeps its shape. */
 		outer = ta >= 0 && ta != fa ? ta : tb >= 0 && tb != fb ? tb : -1;
-		if (tp.stencil && neighbourship(l->kind) && l->b >= 0)
-			bend = neighbour_bend(i);
-		else if (tp.stencil) {
-			bend = 0;
-			para_shift(i, &x1, &y1, &x2, &y2);
-		} else
-			bend = bend_of(i);
-		w = 1.6 + log10(1 + l->rate / 1000.0) * 1.1;
-		if (w > 7)
-			w = 7;
+		link_geom(i, &x1, &y1, &x2, &y2, &bend, &w);
 		flow = l->rate < 1000 ? 0 : l->rate < 100000 ? 1 : l->rate <
 		    10000000 ? 2 : 3;
-		h_fmt(h, "<g class=\"tlink %s %s flow%d%s%s", kinds[l->kind],
+		h_fmt(h, "<g class=\"tlink %s %s flow%d%s%s%s", kinds[l->kind],
 		    l->up ? "up" : "down", flow, strcmp(tp.sel_link, l->key) ==
-		    0 ? " sel" : "", labels_quiet(l->kind) ? " quiet" : "");
+		    0 ? " sel" : "", labels_quiet(l->kind) ? " quiet" : "",
+		    link_moving(i) ? " moving" : "");
 		if (outer >= 0)
 			h_fmt(h, " o%d", outer > 6 ? 6 : outer);
 		if (!link_in_fib(l, tp.fib))
@@ -3275,7 +3385,8 @@ map_links(struct html *h)
 			lh = h;
 		else {
 			lh = &tlab;
-			h_fmt(lh, "<g class=\"tlabel %s\">", kinds[l->kind]);
+			h_fmt(lh, "<g class=\"tlabel %s%s\">", kinds[l->kind],
+			    link_moving(i) ? " moving" : "");
 		}
 		/*
 		 * A tunnel's or a point to point link's ends are named each
@@ -3431,10 +3542,14 @@ map_nodes(struct html *h)
 	ucl_object_iter_t	 it;
 	struct server		*s;
 	struct thost		*t;
+	const char		*why;
 	char			 rate[24], sub[64];
 	double			 total;
-	int			 i, k, nif, f, tf, dim;
+	int			 i, k, nif, f, tf, dim, from;
 
+	/* The host a line is being drawn from, by the hand or the keys. */
+	from = tp.linking ? node_index(tp.link_from) : tp.kb_from[0] != '\0' ?
+	    node_index(tp.kb_from) : -1;
 	/* A network several are in: with its lines, or not at all. */
 	for (k = 0; !tp.hide[LK_LAN] && k < nsegs; k++) {
 		if (segs[k].n < 3 || segs[k].same != 0)
@@ -3702,12 +3817,20 @@ map_nodes(struct html *h)
 				nif++;
 				total += rate_now(t, jstr(o, "name"));
 			}
-		h_fmt(h, "<g class=\"tnode %s%s%s%s\" transform=\"translate(%.1f,"
-		    "%.1f)\" data-drag=\"topo-node\"", t->failed || s->failed ?
+		/* A line being drawn from another host (by the hand or the
+		 * keyboard): this one can take it, or not and why. */
+		why = NULL;
+		if (from >= 0 && from != i)
+			why = target_why(from, i, tp.draw ? tp.dkind :
+			    JOIN_TUNNEL);
+		h_fmt(h, "<g class=\"tnode %s%s%s%s%s\" transform=\"translate(%.1f,"
+		    "%.1f)\" data-drag=\"topo-node\" data-follow tabindex=\"0\" "
+		    "id=\"tn-%d\"", t->failed || s->failed ?
 		    "down" : t->ifs != NULL ? "up" : "unknown",
-		    strcmp(tp.sel, key) == 0 ? " sel" : "", tp.linking &&
-		    strcmp(tp.link_from, key) != 0 ? " target" : "",
-		    tn[i].jail[0] != '\0' ? " vjail" : "", t->x, t->y);
+		    strcmp(tp.sel, key) == 0 ? " sel" : "", from < 0 || from ==
+		    i ? "" : why == NULL ? " target" : " invalid",
+		    tn[i].jail[0] != '\0' ? " vjail" : "", tp.kb_at == i ?
+		    " kbsel" : "", t->x, t->y, i);
 		h_attr(h, "data-arg", key);
 		h_attr(h, "data-drop", key);
 		if (tp.stencil && !node_routes(t, tn[i].jail[0] != '\0'))
@@ -3746,11 +3869,27 @@ map_nodes(struct html *h)
 		h_txt(h, tn[i].name);
 		h_raw(h, tn[i].jail[0] != '\0' ? " (a jail) · " : " · ");
 		h_txt(h, sub);
+		/* Why a line cannot end here, on hover, and written under
+		 * the box: not by its dimming alone. */
+		if (why != NULL) {
+			h_raw(h, " · cannot be joined: ");
+			h_txt(h, why);
+			h_fmt(h, "</title><text class=\"why\" x=\"0\" y=\"%d\">"
+			    "✕ ", tp.stencil ? 72 : NODE_H / 2 + 14);
+			h_fit(h, why, 34);
+			h_raw(h, "</text><title>");
+			h_txt(h, why);
+		}
 		h_fmt(h, "</title><circle class=\"port\" cx=\"%d\" cy=\"0\" "
 		    "r=\"7\" data-drag=\"topo-link\"", tp.stencil ? 28 : NODE_W / 2);
 		h_attr(h, "data-arg", key);
 		h_raw(h, "><title>Drag to another host to join them: a "
-		    "tunnel, or a BGP, OSPF or BFD session</title></circle></g>");
+		    "tunnel, or a BGP, OSPF or BFD session</title></circle>");
+		/* Draw mode: what the line makes, a ring of four on the
+		 * port of the host picked. */
+		if (tp.draw && strcmp(tp.sel, key) == 0)
+			kind_ring(h, tp.stencil ? 28 : NODE_W / 2);
+		h_raw(h, "</g>");
 	}
 }
 
@@ -4425,9 +4564,18 @@ map(struct html *h)
 
 	w = VIEW_W / tp.zoom;
 	ht = VIEW_H / tp.zoom;
+	/* The view this drawing has: a pan or a zoom moves it from here
+	 * until the map is drawn again. */
+	tp.zoom0 = tp.zoom;
+	tp.panx0 = tp.panx;
+	tp.pany0 = tp.pany;
 	/* The traffic's layer under the drawing, in the same view. */
 	glmap_begin(tp.panx - w / 2, tp.pany - ht / 2, w, ht);
-	h_raw(h, "<div class=\"map-wrap\">");
+	/* By its id, so that a redraw keeps the box itself, the one the
+	 * screen was given to; its keys are the map's (topo-key). */
+	h_raw(h, "<div class=\"map-wrap\" id=\"map-box\" tabindex=\"0\" "
+	    "data-keys=\"topo-key\" role=\"group\" aria-label=\"The network "
+	    "map; F for the whole screen\">");
 	glmap_html(h);
 	h_fmt(h, "<svg class=\"topo%s\" viewBox=\""
 	    "%.1f %.1f %.1f %.1f\" data-wheel=\"topo-zoom\">"
@@ -4448,23 +4596,28 @@ map(struct html *h)
 		om_draw(h);
 	else {
 		map_links(h);
+		map_ghosts(h);
 		glmap_end();
 		map_path(h);
 		if (tp.linking && (t = thost(tp.link_from, false)) != NULL) {
-			int	k;
+			int	k, from;
 
-			h_fmt(h, "<path class=\"tdraft\" d=\"M%.1f %.1f L%.1f "
-			    "%.1f\"/>", t->x + NODE_W / 2, t->y, tp.link_x, tp.link_y);
+			h_fmt(h, "<path class=\"tdraft%s\" d=\"M%.1f %.1f L%.1f "
+			    "%.1f\"/>", tp.draw ? " ghostly" : "", t->x + NODE_W / 2,
+			    t->y, tp.link_x, tp.link_y);
 			/* And in the WebGL layer: the line alive, and every
-			 * host it can be dropped on lit. */
+			 * host it can be dropped on lit (in Draw mode, those
+			 * that can take its kind). */
 			glmap_draft(t->x + NODE_W / 2, t->y, tp.link_x,
 			    tp.link_y);
+			from = node_index(tp.link_from);
 			for (k = 0; k < ntn; k++) {
 				struct thost	*o;
 
-				if (node_lone(k) || strcmp(tn[k].key,
-				    tp.link_from) == 0 || (o = thost(tn[k].key,
-				    false)) == NULL || !o->placed || o->ifs == NULL)
+				if (node_lone(k) || k == from || (o = thost(
+				    tn[k].key, false)) == NULL || !o->placed ||
+				    o->ifs == NULL || (tp.draw && target_why(from,
+				    k, tp.dkind) != NULL))
 					continue;
 				glmap_target(o->x, o->y, NODE_W, NODE_H);
 			}
@@ -4477,7 +4630,10 @@ map(struct html *h)
 			h_raw(h, "</g>");
 		}
 	}
-	h_raw(h, "</svg><div class=\"map-tools\">"
+	h_raw(h, "</svg>");
+	if (!om.on)
+		map_list(h);
+	h_raw(h, "<div class=\"map-tools\">"
 	    "<button class=\"ghost small\" data-act=\"topo-zoom-in\" "
 	    "title=\"Closer\">+</button>"
 	    "<button class=\"ghost small\" data-act=\"topo-zoom-out\" "
@@ -4510,6 +4666,33 @@ map(struct html *h)
 	    "map%s</button>", om.on ? " on" : "", om.on && !om.built ? "…" : "");
 	h_raw(h, "<button class=\"ghost small\" data-act=\"topo-png\" title=\"The "
 	    "map as it is shown, saved as a PNG picture\">PNG</button>");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-full\" "
+	    "aria-pressed=\"%s\" title=\"The map alone, over the whole screen "
+	    "(F when the map has the focus; Escape gives it back)\">%s</button>",
+	    tp.full ? " on" : "", tp.full ? "true" : "false", tp.full ?
+	    "Leave full screen" : "Full screen");
+	/* Draw mode, and what its lines make: the kind by its letter. */
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-draw\" "
+	    "aria-pressed=\"%s\" title=\"A line drawn is a ghost with its plan "
+	    "beside the dialog, followed until both ends report it up; the "
+	    "hosts that cannot take it say why. Keys: T, B, O, F for what it "
+	    "makes, C on a host to draw from it, arrows and Enter\">Draw mode"
+	    "</button>", tp.draw ? " on" : "", tp.draw ? "true" : "false");
+	if (tp.draw) {
+		static const char *const titles[] = { "A tunnel (T)",
+		    "A BGP session (B)", "An OSPF adjacency (O)", "BFD (F)" };
+		int	k;
+
+		h_raw(h, "<span class=\"dkinds\" role=\"group\" aria-label=\"What "
+		    "a line makes\">");
+		for (k = 0; k < 4; k++)
+			h_fmt(h, "<button type=\"button\" class=\"ghost small%s\" "
+			    "data-act=\"topo-dkind\" data-arg=\"%s\" aria-pressed="
+			    "\"%s\" title=\"%s\">%c</button>", k == tp.dkind ?
+			    " on" : "", join_kinds[k], k == tp.dkind ? "true" :
+			    "false", titles[k], kind_keys[k] - 32);
+		h_raw(h, "</span>");
+	}
 	{
 		int	f, n[8], more;
 
@@ -6760,6 +6943,116 @@ join_kinds_nav(struct html *h)
 	h_raw(h, "</nav>");
 }
 
+/* The join dialog's fields as they are now: its plan is drawn from them
+ * as they are typed. */
+static struct {
+	int	over;
+	char	as_a[12], as_b[12];	/* "" as each host's BIRD says it */
+	bool	nobfd;
+} joinf;
+
+/*
+ * The session's two ends, from what it goes over (the i-th of
+ * join_over()), each end's AS and BFD: what each end's BIRD form is
+ * filled with.  False, with the reason in app.modal_error, when they
+ * do not make one.
+ */
+static bool
+join_ends(int a, int b, int i, const char *as_a, const char *as_b, bool bfd,
+    struct bfsess *sa, struct bfsess *sb)
+{
+	struct over	v[JOIN_OVER];
+	int		n;
+
+	n = join_over(a, b, v, JOIN_OVER);
+	if (i < 0 || i >= n) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "Pick what "
+		    "the session goes over.");
+		return (false);
+	}
+	if (tp.join == JOIN_BGP && (as_a[0] == '\0' || as_b[0] == '\0' ||
+	    as_a[strspn(as_a, "0123456789")] != '\0' || as_b[strspn(as_b,
+	    "0123456789")] != '\0')) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "An AS for "
+		    "each end, a number: 64512");
+		return (false);
+	}
+	memset(sa, 0, sizeof(*sa));
+	snprintf(sa->kind, sizeof(sa->kind), "%s", join_kinds[tp.join]);
+	sa->bfd = tp.join == JOIN_BFD || bfd;
+	*sb = *sa;
+	/* BGP: a protocol named for the far end; OSPF and BFD: the
+	 * instance's name, when one is made. */
+	if (tp.join == JOIN_BGP) {
+		proto_name(sa->name, sizeof(sa->name), "to_", tn[b].name);
+		proto_name(sb->name, sizeof(sb->name), "to_", tn[a].name);
+		snprintf(sa->desc, sizeof(sa->desc), "%.80s, drawn on the map",
+		    tn[b].label);
+		snprintf(sb->desc, sizeof(sb->desc), "%.80s, drawn on the map",
+		    tn[a].label);
+		snprintf(sa->las, sizeof(sa->las), "%s", as_a);
+		snprintf(sa->nas, sizeof(sa->nas), "%s", as_b);
+		snprintf(sb->las, sizeof(sb->las), "%s", as_b);
+		snprintf(sb->nas, sizeof(sb->nas), "%s", as_a);
+	} else {
+		snprintf(sa->name, sizeof(sa->name), "%s", tp.join == JOIN_OSPF ?
+		    (strchr(v[i].aa, ':') != NULL ? "ospf6" : "ospf4") : "bfd1");
+		snprintf(sb->name, sizeof(sb->name), "%s", sa->name);
+	}
+	snprintf(sa->nbr, sizeof(sa->nbr), "%s", v[i].ab);
+	snprintf(sa->src, sizeof(sa->src), "%s", v[i].aa);
+	snprintf(sa->ifname, sizeof(sa->ifname), "%s", v[i].ifa);
+	snprintf(sb->nbr, sizeof(sb->nbr), "%s", v[i].aa);
+	snprintf(sb->src, sizeof(sb->src), "%s", v[i].ab);
+	snprintf(sb->ifname, sizeof(sb->ifname), "%s", v[i].ifb);
+	sa->ptp = sb->ptp = v[i].ptp;
+	return (true);
+}
+
+/*
+ * What each end's BIRD is to be given, from the fields as they are:
+ * the protocol as the BIRD form writes it, applied with birdc
+ * configure timeout (BIRD's own safe mode), one end after the other.
+ */
+static void
+join_plan(struct html *h, int a, int b)
+{
+	struct bfsess	 s[2];
+	struct bfconf	*c;
+	char		*text, err[sizeof(app.modal_error)];
+	int		 e;
+
+	memcpy(err, app.modal_error, sizeof(err));
+	if (!join_ends(a, b, joinf.over, joinf.as_a[0] != '\0' ? joinf.as_a :
+	    node_as(a), joinf.as_b[0] != '\0' ? joinf.as_b : node_as(b),
+	    !joinf.nobfd, &s[0], &s[1])) {
+		memcpy(app.modal_error, err, sizeof(err));
+		return;
+	}
+	h_fmt(h, "<section class=\"tun-plan join-plan%s\"><h3>What each "
+	    "host's BIRD is to be given</h3><div class=\"two\">", tp.draw ?
+	    " plan-side" : "");
+	for (e = 0; e < 2; e++) {
+		c = bf_new(join_kinds[tp.join]);
+		bf_prefill(c, &s[e]);
+		text = bf_text(c);
+		bf_free(c);
+		h_raw(h, "<div><b>");
+		h_txt(h, tn[e == 0 ? a : b].label);
+		h_raw(h, "</b><p class=\"dim\">");
+		h_raw(h, tp.join == JOIN_BGP ? "A new protocol" : "Added to "
+		    "the instance the host runs, else a new one");
+		h_raw(h, ", then <code>birdc configure timeout</code>:</p>"
+		    "<pre class=\"mono\">");
+		h_txt(h, text != NULL ? text : "");
+		h_raw(h, "</pre></div>");
+		free(text);
+	}
+	h_raw(h, "</div><small>Each in BIRD's safe mode: it takes the change "
+	    "back by itself unless this page still reaches the host after "
+	    "it.</small></section>");
+}
+
 /* A routing session between two hosts: what it goes over, and its own. */
 static void
 join_form(struct html *h, int a, int b)
@@ -6787,9 +7080,11 @@ join_form(struct html *h, int a, int b)
 		    "tunnel first.</p>");
 		return;
 	}
-	h_raw(h, "<label>Over<select name=\"over\">");
+	h_raw(h, "<label>Over<select name=\"over\" data-input=\"topo-joinf\" "
+	    "data-arg=\"over\">");
 	for (i = 0; i < n; i++) {
-		h_fmt(h, "<option value=\"%d\">", i);
+		h_fmt(h, "<option value=\"%d\"%s>", i, i == joinf.over ?
+		    " selected" : "");
 		h_txt(h, v[i].label);
 		h_raw(h, "</option>");
 	}
@@ -6799,13 +7094,15 @@ join_form(struct html *h, int a, int b)
 		h_raw(h, "<div class=\"two\"><label>AS of ");
 		h_txt(h, tn[a].label);
 		h_raw(h, "<input name=\"as_a\" inputmode=\"numeric\" "
-		    "required");
-		h_attr(h, "value", node_as(a));
+		    "required data-input=\"topo-joinf\" data-arg=\"as_a\"");
+		h_attr(h, "value", joinf.as_a[0] != '\0' ? joinf.as_a :
+		    node_as(a));
 		h_raw(h, "></label><label>AS of ");
 		h_txt(h, tn[b].label);
 		h_raw(h, "<input name=\"as_b\" inputmode=\"numeric\" "
-		    "required");
-		h_attr(h, "value", node_as(b));
+		    "required data-input=\"topo-joinf\" data-arg=\"as_b\"");
+		h_attr(h, "value", joinf.as_b[0] != '\0' ? joinf.as_b :
+		    node_as(b));
 		h_raw(h, "></label></div><small>As each host's BIRD says it "
 		    "in a BGP session it has; the same for iBGP.</small>");
 	}
@@ -6814,71 +7111,31 @@ join_form(struct html *h, int a, int b)
 		    "end, added to the OSPF instance of that family the host "
 		    "runs, else in a new one.</p>");
 	if (tp.join != JOIN_BFD)
-		h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\" "
-		    "name=\"bfd\" checked><span>With BFD, so that a failure "
-		    "is seen in under a second; BIRD's BFD protocol is needed "
-		    "on both ends</span></label>");
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+		    "name=\"bfd\" data-input=\"topo-joinf\" data-arg=\"bfd\"%s>"
+		    "<span>With BFD, so that a failure is seen in under a "
+		    "second; BIRD's BFD protocol is needed on both ends</span>"
+		    "</label>", joinf.nobfd ? "" : " checked");
+	join_plan(h, a, b);
 }
 
 /* The session's two ends as forms: this one's opened, the other's next. */
 static void
 join_create(const ucl_object_t *f)
 {
-	struct over	 v[JOIN_OVER];
 	struct bfsess	 sa, sb;
-	const char	*as_a, *as_b;
-	int		 a, b, n, i;
+	int		 a, b;
 
 	if ((a = node_index(tp.tun_a)) == -1 || (b = node_index(
 	    tp.tun_b)) == -1)
 		return;
-	n = join_over(a, b, v, JOIN_OVER);
-	i = jstr(f, "over") != NULL ? atoi(jstr(f, "over")) : 0;
-	if (i < 0 || i >= n) {
-		snprintf(app.modal_error, sizeof(app.modal_error), "Pick what "
-		    "the session goes over.");
+	if (!join_ends(a, b, jstr(f, "over") != NULL ? atoi(jstr(f, "over")) :
+	    0, jstr(f, "as_a") != NULL ? jstr(f, "as_a") : "", jstr(f, "as_b") !=
+	    NULL ? jstr(f, "as_b") : "", jbool(f, "bfd"), &sa, &sb))
 		return;
-	}
-	as_a = jstr(f, "as_a") != NULL ? jstr(f, "as_a") : "";
-	as_b = jstr(f, "as_b") != NULL ? jstr(f, "as_b") : "";
-	if (tp.join == JOIN_BGP && (as_a[0] == '\0' || as_b[0] == '\0' ||
-	    as_a[strspn(as_a, "0123456789")] != '\0' || as_b[strspn(as_b,
-	    "0123456789")] != '\0')) {
-		snprintf(app.modal_error, sizeof(app.modal_error), "An AS for "
-		    "each end, a number: 64512");
-		return;
-	}
-	memset(&sa, 0, sizeof(sa));
-	snprintf(sa.kind, sizeof(sa.kind), "%s", join_kinds[tp.join]);
-	sa.bfd = tp.join == JOIN_BFD || jbool(f, "bfd");
-	sb = sa;
-	/* BGP: a protocol named for the far end; OSPF and BFD: the
-	 * instance's name, when one is made. */
-	if (tp.join == JOIN_BGP) {
-		proto_name(sa.name, sizeof(sa.name), "to_", tn[b].name);
-		proto_name(sb.name, sizeof(sb.name), "to_", tn[a].name);
-		snprintf(sa.desc, sizeof(sa.desc), "%.80s, drawn on the map",
-		    tn[b].label);
-		snprintf(sb.desc, sizeof(sb.desc), "%.80s, drawn on the map",
-		    tn[a].label);
-		snprintf(sa.las, sizeof(sa.las), "%s", as_a);
-		snprintf(sa.nas, sizeof(sa.nas), "%s", as_b);
-		snprintf(sb.las, sizeof(sb.las), "%s", as_b);
-		snprintf(sb.nas, sizeof(sb.nas), "%s", as_a);
-	} else {
-		snprintf(sa.name, sizeof(sa.name), "%s", tp.join == JOIN_OSPF ?
-		    (strchr(v[i].aa, ':') != NULL ? "ospf6" : "ospf4") : "bfd1");
-		snprintf(sb.name, sizeof(sb.name), "%s", sa.name);
-	}
-	snprintf(sa.nbr, sizeof(sa.nbr), "%s", v[i].ab);
-	snprintf(sa.src, sizeof(sa.src), "%s", v[i].aa);
-	snprintf(sa.ifname, sizeof(sa.ifname), "%s", v[i].ifa);
-	snprintf(sb.nbr, sizeof(sb.nbr), "%s", v[i].aa);
-	snprintf(sb.src, sizeof(sb.src), "%s", v[i].ab);
-	snprintf(sb.ifname, sizeof(sb.ifname), "%s", v[i].ifb);
-	sa.ptp = sb.ptp = v[i].ptp;
 	bird_session(app.servers[tn[a].srv].id, tn[a].jail, &sa, tn[b].key,
 	    tn[b].label, &sb);
+	ghost_applied(tp.tun_a, tp.tun_b, tp.join, "", "");
 	node_open(a, NET_BIRD);
 }
 
@@ -6905,6 +7162,381 @@ topo_joining(void)
 {
 
 	return (app.modal == MODAL_TUNNEL && tp.join != JOIN_TUNNEL);
+}
+
+/*
+ * Draw mode, the research's "ghost and plan": a line dropped is a
+ * ghost of the kind chosen (T, B, O, F by key or the ring on the port),
+ * the hosts that cannot take it dimmed with the reason, the plan beside
+ * the form; once applied it is followed until both ends report it up.
+ * Shape and words carry its state, never colour alone; nothing moves
+ * but the safe-mode ring, which is state.
+ */
+
+/* Why a line of kind from a cannot end at b, or NULL when it can. */
+static const char *
+target_why(int a, int b, int kind)
+{
+	static char		 buf[160];
+	__typeof__(offer)	 keep;
+	struct over		 v[JOIN_OVER];
+	const struct tlink	*l;
+	struct thost		*ta, *tb;
+	int			 i, n;
+
+	if ((ta = thost(tn[a].key, false)) == NULL || (tb = thost(tn[b].key,
+	    false)) == NULL || ta->ifs == NULL || tb->ifs == NULL)
+		return ("its interfaces are not read yet");
+	if (kind == JOIN_TUNNEL) {
+		/* The offer is the open dialog's: kept as it was. */
+		keep = offer;
+		tunnel_offer(ta, tb);
+		n = offer.oa[0] != '\0';
+		offer = keep;
+		return (n ? NULL : "no address family in common");
+	}
+	for (i = 0; i < 2; i++) {
+		n = i == 0 ? a : b;
+		if (!plugin_at(&app.servers[tn[n].srv], tn[n].jail, "bird")) {
+			snprintf(buf, sizeof(buf), "no BIRD on %s", tn[n].name);
+			return (buf);
+		}
+	}
+	if (join_over(a, b, v, JOIN_OVER) == 0)
+		return ("no tunnel or network between them: draw a tunnel first");
+	for (i = 0; i < nlinks; i++) {
+		l = &links[i];
+		if (!((l->a == a && l->b == b) || (l->a == b && l->b == a)))
+			continue;
+		if (kind == JOIN_BGP && l->kind == LK_BGP)
+			return ("a BGP session between them exists");
+		if (kind == JOIN_OSPF && (l->kind == LK_OSPF || l->ospf_in))
+			return ("an OSPF adjacency between them exists");
+	}
+	return (NULL);
+}
+
+/* What the line makes, four small buttons round the port at px. */
+static void
+kind_ring(struct html *h, int px)
+{
+	static const char *const titles[] = { "a tunnel", "a BGP session",
+	    "an OSPF adjacency", "BFD" };
+	static const int dx[] = { 4, 20, 20, 4 }, dy[] = { -24, -9, 9, 24 };
+	int	k;
+
+	for (k = 0; k < 4; k++)
+		h_fmt(h, "<g class=\"kring%s\" data-act=\"topo-dkind\" "
+		    "data-arg=\"%s\" role=\"button\" aria-pressed=\"%s\"><circle "
+		    "cx=\"%d\" cy=\"%d\" r=\"8\"/><text x=\"%d\" y=\"%d\">%c</text>"
+		    "<title>Draw %s (%c)</title></g>", k == tp.dkind ? " on" : "",
+		    join_kinds[k], k == tp.dkind ? "true" : "false", px + dx[k],
+		    dy[k], px + dx[k], dy[k] + 3, kind_keys[k] - 32, titles[k],
+		    kind_keys[k] - 32);
+}
+
+/* A line dropped in Draw mode: its ghost, the dialog's to apply. */
+static void
+ghost_add(const char *a, const char *b, int kind)
+{
+	struct ghost	*g;
+	int		 i;
+
+	for (i = 0; i < nghosts; i++)
+		if (ghosts[i].state == GH_GHOST && ghosts[i].since == 0)
+			break;
+	if (i == nghosts && nghosts == GHOSTS) {
+		memmove(&ghosts[0], &ghosts[1], sizeof(ghosts[0]) *
+		    (GHOSTS - 1));
+		i = --nghosts;
+	}
+	if (i == nghosts)
+		nghosts++;
+	g = &ghosts[i];
+	memset(g, 0, sizeof(*g));
+	snprintf(g->a, sizeof(g->a), "%s", a);
+	snprintf(g->b, sizeof(g->b), "%s", b);
+	g->kind = kind;
+	g->state = GH_GHOST;
+}
+
+/* Applied: the jobs sent; ta and tb a tunnel's two interfaces. */
+static void
+ghost_applied(const char *a, const char *b, int kind, const char *ta,
+    const char *tb)
+{
+	struct ghost	*g;
+	int		 i;
+
+	for (i = 0; i < nghosts; i++) {
+		g = &ghosts[i];
+		if (g->state != GH_GHOST || g->since != 0 || strcmp(g->a, a) !=
+		    0 || strcmp(g->b, b) != 0)
+			continue;
+		g->kind = kind;
+		g->state = GH_PLANNED;
+		g->since = arc_now();
+		snprintf(g->tgt[0], sizeof(g->tgt[0]), "%s", ta);
+		snprintf(g->tgt[1], sizeof(g->tgt[1]), "%s", tb);
+		return;
+	}
+}
+
+static void
+ghost_drop(int i)
+{
+
+	memmove(&ghosts[i], &ghosts[i + 1], sizeof(ghosts[0]) * (size_t)(
+	    nghosts - i - 1));
+	nghosts--;
+}
+
+/* Whether what g makes is up between a and b, as both ends report. */
+static bool
+ghost_up(const struct ghost *g, int a, int b)
+{
+	const struct tlink	*l;
+	int			 i;
+
+	for (i = 0; i < nlinks; i++) {
+		l = &links[i];
+		if (!((l->a == a && l->b == b) || (l->a == b && l->b == a)))
+			continue;
+		switch (g->kind) {
+		case JOIN_TUNNEL:
+			if (l->kind == LK_TUNNEL && l->up && (strcmp(l->ifa,
+			    g->tgt[0]) == 0 || strcmp(l->ifa, g->tgt[1]) == 0))
+				return (true);
+			break;
+		case JOIN_BGP:
+			if (l->kind == LK_BGP && l->up)
+				return (true);
+			break;
+		case JOIN_OSPF:
+			if ((l->kind == LK_OSPF && l->up) || (l->ospf_in &&
+			    l->ospf_in_up))
+				return (true);
+			break;
+		}
+	}
+	return (false);
+}
+
+/*
+ * A ghost's state from what its ends' jobs say: failed (a ghost again,
+ * with the reason), a safe change waiting on an end (pending, with the
+ * agent's timer), or up at both ends (live).  BFD's sessions are not
+ * read by the map: BFD is live once both ends' BIRDs took it.
+ */
+static void
+ghost_step(struct ghost *g)
+{
+	const struct op	*o, *failed;
+	long long	 by;
+	double		 total;
+	int		 a, b, e, k, n, done;
+
+	a = node_index(g->a);
+	b = node_index(g->b);
+	if (g->since == 0 || g->state == GH_LIVE || g->why[0] != '\0')
+		return;
+	failed = NULL;
+	by = 0;
+	total = 0;
+	done = 0;
+	for (k = 0; k < app.nops; k++) {
+		o = &app.ops[k];
+		if (o->started < g->since - 2000)
+			continue;
+		for (e = 0; e < 2; e++) {
+			n = e == 0 ? a : b;
+			if (strcmp(o->sid, app.servers[tn[n].srv].id) != 0 ||
+			    (g->tgt[e][0] != '\0' ? strcmp(o->target,
+			    g->tgt[e]) != 0 : strstr(o->title, "bird") == NULL &&
+			    strstr(o->title, "BIRD") == NULL))
+				continue;
+			if (o->state == OP_FAILED)
+				failed = o;
+			else if (o->state == OP_RUNNING && o->confirm_by > by) {
+				by = o->confirm_by;
+				total = (double)o->confirm_by - o->started / 1000.0;
+			} else if (o->state == OP_OK)
+				done |= 1 << e;
+		}
+	}
+	if (ghost_up(g, a, b) || (g->kind == JOIN_BFD && done == 3)) {
+		g->state = GH_LIVE;
+		g->live_at = arc_now();
+	} else if (failed != NULL) {
+		g->state = GH_GHOST;
+		g->live_at = arc_now();
+		snprintf(g->why, sizeof(g->why), "%s", failed->error[0] !=
+		    '\0' ? failed->error : strstr(failed->stage, "rolled") !=
+		    NULL ? "undone by its host: not confirmed in time" :
+		    "an end failed");
+	} else if (by > 0 && by > (long long)(arc_now() / 1000)) {
+		g->state = GH_PENDING;
+		g->by = by;
+		g->total = total;
+	} else if (g->state == GH_PENDING && done != 3) {
+		/* Its timer ran out with no end done: the agent put it
+		 * back. */
+		g->state = GH_GHOST;
+		g->live_at = arc_now();
+		snprintf(g->why, sizeof(g->why), "undone: the safe-mode timer "
+		    "lapsed before the console confirmed it");
+	} else
+		g->state = GH_PLANNED;
+}
+
+/*
+ * The ghosts on the map, over the links: dashed see-through for a
+ * ghost, dashed for planned, dash-dot with the agent's countdown ring
+ * (the WebGL layer's fuse) for pending, solid for live; the kind's
+ * letter in a circle at the middle and the state written under it.
+ */
+static void
+map_ghosts(struct html *h)
+{
+	static const char *const letter = "TBOF";
+	struct ghost	*g;
+	double		 x1, y1, x2, y2, mx, my;
+	long long	 left;
+	int		 i, a, b;
+
+	for (i = 0; i < nghosts; i++) {
+		g = &ghosts[i];
+		a = node_index(g->a);
+		b = node_index(g->b);
+		/* Gone from the map, given up in the dialog, or shown
+		 * long enough. */
+		if (a == -1 || b == -1 || (g->since == 0 && app.modal !=
+		    MODAL_TUNNEL) || (g->live_at > 0 && arc_now() - g->live_at >
+		    (g->state == GH_LIVE ? 10000 : 120000))) {
+			ghost_drop(i--);
+			continue;
+		}
+		ghost_step(g);
+		if (!place(a, &x1, &y1) || !place(b, &x2, &y2))
+			continue;
+		h_fmt(h, "<g class=\"tghost s-%s k-%s%s\"><path d=\"",
+		    gh_names[g->state], join_kinds[g->kind], g->why[0] != '\0' ?
+		    " failed" : "");
+		curve(h, x1, y1, x2, y2, 46, 0.5, &mx, &my);
+		h_fmt(h, "\"/><circle cx=\"%.1f\" cy=\"%.1f\" r=\"11\"/><text "
+		    "class=\"kl\" x=\"%.1f\" y=\"%.1f\">%c</text><text class=\"st\" "
+		    "x=\"%.1f\" y=\"%.1f\">", mx, my, mx, my + 4, letter[g->kind],
+		    mx, my + 27);
+		left = g->by - (long long)(arc_now() / 1000);
+		if (g->why[0] != '\0') {
+			h_raw(h, "✕ ");
+			h_fit(h, g->why, 48);
+		} else if (g->state == GH_PENDING)
+			h_fmt(h, "pending · undone in %llds unless confirmed",
+			    left > 0 ? left : 0);
+		else
+			h_raw(h, g->state == GH_GHOST ? "ghost · not applied" :
+			    g->state == GH_PLANNED ? "planned · sent" : "live");
+		h_raw(h, "</text></g>");
+		if (g->state == GH_PENDING && left > 0)
+			glmap_fuse(mx, my, 22, 22, g->by, g->total);
+	}
+}
+
+/*
+ * The map as a list, for a screen reader: every host, every link, and
+ * what is being drawn, its state said as it changes.
+ */
+static void
+map_list(struct html *h)
+{
+	const struct tlink	*l;
+	struct thost		*t;
+	int			 i, n;
+
+	h_raw(h, "<div class=\"sr-only\"><h3>The map as a list</h3><ul "
+	    "aria-label=\"Hosts\">");
+	for (i = 0; i < ntn; i++) {
+		if (node_lone(i))
+			continue;
+		t = thost(tn[i].key, false);
+		h_raw(h, "<li>");
+		h_txt(h, tn[i].label);
+		h_raw(h, t == NULL || t->ifs == NULL ? ": not read yet" : t->failed ?
+		    ": no answer" : ": answers");
+		h_raw(h, "</li>");
+	}
+	h_raw(h, "</ul><ul aria-label=\"Links\">");
+	for (i = 0, n = 0; i < nlinks && n < 300; i++) {
+		l = &links[i];
+		if (l->b < 0 || node_lone(l->a) || node_lone(l->b))
+			continue;
+		n++;
+		h_raw(h, "<li>");
+		h_txt(h, l->label);
+		h_raw(h, " between ");
+		h_txt(h, tn[l->a].label);
+		h_raw(h, " and ");
+		h_txt(h, tn[l->b].label);
+		h_raw(h, l->up ? ": up" : ": down");
+		h_raw(h, "</li>");
+	}
+	h_raw(h, "</ul><ul aria-label=\"Drawn\" aria-live=\"polite\">");
+	for (i = 0; i < nghosts; i++) {
+		static const char *const what[] = { "A tunnel", "A BGP session",
+		    "An OSPF adjacency", "BFD" };
+		const struct ghost *g = &ghosts[i];
+
+		h_raw(h, "<li>");
+		h_raw(h, what[g->kind]);
+		h_raw(h, " between ");
+		h_txt(h, node_index(g->a) != -1 ? tn[node_index(g->a)].label :
+		    g->a);
+		h_raw(h, " and ");
+		h_txt(h, node_index(g->b) != -1 ? tn[node_index(g->b)].label :
+		    g->b);
+		h_raw(h, ": ");
+		h_raw(h, gh_names[g->state]);
+		if (g->why[0] != '\0') {
+			h_raw(h, ", ");
+			h_txt(h, g->why);
+		}
+		h_raw(h, "</li>");
+	}
+	h_raw(h, "</ul></div>");
+}
+
+/* The next host the keyboard's line can end at, dir away from where it
+ * is; -1 when none can. */
+static int
+kb_next(int dir)
+{
+	struct thost	*t;
+	int		 from, i, k;
+
+	if ((from = node_index(tp.kb_from)) == -1 || ntn == 0)
+		return (-1);
+	for (k = 0, i = tp.kb_at >= 0 ? tp.kb_at : from; k < ntn; k++) {
+		i = (i + dir + ntn) % ntn;
+		if (i == from || node_lone(i) || (t = thost(tn[i].key,
+		    false)) == NULL || !t->placed || target_why(from, i,
+		    tp.draw ? tp.dkind : JOIN_TUNNEL) != NULL)
+			continue;
+		return (i);
+	}
+	return (-1);
+}
+
+/* The keyboard's line given up (Escape); true when there was one. */
+bool
+topo_escape(void)
+{
+
+	if (tp.kb_from[0] == '\0')
+		return (false);
+	tp.kb_from[0] = '\0';
+	tp.kb_at = -1;
+	return (true);
 }
 
 /* The tunnel dialog's fields as they are now: its plan is drawn from
@@ -6979,8 +7611,8 @@ tunnel_plan(struct html *h, int a, int b)
 		snprintf(peer[e], sizeof(peer[e]), "%.*s", (int)strcspn(e == 0 ?
 		    tunf.ib : tunf.ia, "/"), e == 0 ? tunf.ib : tunf.ia);
 	}
-	h_raw(h, "<section class=\"tun-plan\"><h3>What each host is to "
-	    "run</h3><div class=\"two\">");
+	h_fmt(h, "<section class=\"tun-plan%s\"><h3>What each host is to "
+	    "run</h3><div class=\"two\">", tp.draw ? " plan-side" : "");
 	for (e = 0; e < 2; e++) {
 		la = e == 0 ? tunf.la : tunf.lb;
 		lb = e == 0 ? tunf.lb : tunf.la;
@@ -7503,6 +8135,7 @@ tunnel_create(const ucl_object_t *f)
 	    type));
 	snprintf(nb, sizeof(nb), "%s%d", type, next_unit(thost(tn[b].key, false),
 	    type));
+	ghost_applied(tp.tun_a, tp.tun_b, JOIN_TUNNEL, na, nb);
 	if (strcmp(type, "wg") == 0) {
 		wg_create(f, a, b, na, nb, la, lb, ia, ib, fa == AF_INET6,
 		    keep);
@@ -7767,6 +8400,30 @@ zoom_by(double f, double x, double y)
 	tp.zoom = z;
 }
 
+/*
+ * The wheel zooms the drawing as one (arc_map_view) and the map is
+ * drawn anew in the new view once the wheel has rested a moment: a
+ * turn of it is not a redraw of a thousand links.
+ */
+static long	settle_id;
+
+static void
+settle_cb(void *data)
+{
+
+	settle_id = 0;
+	render();
+}
+
+static void
+settle(void)
+{
+
+	if (settle_id != 0)
+		emscripten_clear_timeout(settle_id);
+	settle_id = emscripten_set_timeout(settle_cb, 150, NULL);
+}
+
 static void
 fit(void)
 {
@@ -7803,6 +8460,48 @@ fit(void)
 		tp.zoom = 0.1;
 	tp.panx = (x0 + x1) / 2;
 	tp.pany = (y0 + y1) / 2 + (LEGEND_H - TOOLS_H) / 2 / tp.zoom;
+}
+
+/*
+ * A line from a dropped on b, by the hand or the keyboard: the dialog
+ * of what joins them, with its plan; in Draw mode of the kind chosen,
+ * refused with the reason where it cannot end, and drawn as a ghost.
+ */
+static void
+join_drop(const char *a, const char *b)
+{
+	const char	*why;
+	int		 na, nb;
+
+	if (b[0] == '\0' || strcmp(a, b) == 0 || (na = node_index(a)) == -1 ||
+	    (nb = node_index(b)) == -1)
+		return;
+	if (thost(a, false) == NULL || thost(a, false)->ifs == NULL ||
+	    thost(b, false) == NULL || thost(b, false)->ifs == NULL) {
+		toast(true, "The interfaces of both hosts must have been read "
+		    "first");
+		return;
+	}
+	if (tp.draw && (why = target_why(na, nb, tp.dkind)) != NULL) {
+		toast(true, "%s cannot be joined so: %s", tn[nb].label, why);
+		return;
+	}
+	snprintf(tp.tun_a, sizeof(tp.tun_a), "%s", a);
+	snprintf(tp.tun_b, sizeof(tp.tun_b), "%s", b);
+	tunnel_offer(thost(a, false), thost(b, false));
+	tp.join = tp.draw ? tp.dkind : JOIN_TUNNEL;
+	memset(&tunf, 0, sizeof(tunf));
+	snprintf(tunf.type, sizeof(tunf.type), "gif");
+	snprintf(tunf.la, sizeof(tunf.la), "%s", offer.oa);
+	snprintf(tunf.lb, sizeof(tunf.lb), "%s", offer.ob);
+	snprintf(tunf.ia, sizeof(tunf.ia), "%s", offer.ia);
+	snprintf(tunf.ib, sizeof(tunf.ib), "%s", offer.ib);
+	tunf.keep = true;
+	memset(&joinf, 0, sizeof(joinf));
+	if (tp.draw)
+		ghost_add(a, b, tp.join);
+	app.modal = MODAL_TUNNEL;
+	app.modal_error[0] = '\0';
 }
 
 /* Called when the section is opened: read every host at once. */
@@ -7855,13 +8554,26 @@ topo_action(const char *act, const char *arg, const char *value)
 			drag_y0 = t->y;
 			grab_x = t->x - x;
 			grab_y = t->y - y;
+			/* Its lines go to the canvas: this one draw hides the
+			 * SVG's; the node itself follows the hand by its own
+			 * transform (data-follow). */
+			snprintf(tp.gldrag, sizeof(tp.gldrag), "%s", glmap_on() ?
+			    arg : "");
+			if (tp.gldrag[0] != '\0')
+				drag_scene();
 		} else {
 			t->x = x + grab_x;
 			t->y = y + grab_y;
+			if (tp.gldrag[0] != '\0') {
+				drag_scene();
+				app.no_draw = true;
+			}
 		}
 		tp.touched = true;
 		tp.custom = true;
 	} else if (strcmp(act, "topo-node-end") == 0) {
+		tp.gldrag[0] = '\0';
+		glmap_scene_clear();
 		/* The neighbours dragged beside it are kept from it: by as
 		 * much as it moved, so that they stay where they are. */
 		if ((t = thost(arg, false)) != NULL) {
@@ -7890,11 +8602,16 @@ topo_action(const char *act, const char *arg, const char *value)
 			tp.panx -= (cx - tp.lastcx) * k;
 			tp.pany -= (cy - tp.lastcy) * k;
 			tp.touched = true;
+			/* The drawing moved as one, not drawn again until the
+			 * hand lets go. */
+			arc_map_view((tp.panx0 - tp.panx) * tp.zoom, (tp.pany0 -
+			    tp.pany) * tp.zoom, 1);
+			app.no_draw = true;
 		}
 		tp.lastcx = cx;
 		tp.lastcy = cy;
 	} else if (strcmp(act, "topo-pan-end") == 0) {
-		;
+		;		/* drawn again, in the view it was panned to */
 	} else if (strcmp(act, "topo-pan-click") == 0 || strcmp(act,
 	    "topo-unselect") == 0) {
 		tp.sel[0] = tp.sel_link[0] = tp.sel_if[0] = '\0';
@@ -7911,31 +8628,25 @@ topo_action(const char *act, const char *arg, const char *value)
 		tp.linking = false;
 		(void)drag_values(value, &x, &y, &cx, &cy, &k, drop,
 		    sizeof(drop));
-		if (drop[0] == '\0' || strcmp(drop, arg) == 0 ||
-		    node_index(drop) == -1 || node_index(arg) == -1)
-			return (true);
-		if (thost(arg, false) == NULL || thost(arg, false)->ifs ==
-		    NULL || thost(drop, false) == NULL || thost(drop,
-		    false)->ifs == NULL) {
-			toast(true, "The interfaces of both hosts must have "
-			    "been read first");
-			return (true);
-		}
-		snprintf(tp.tun_a, sizeof(tp.tun_a), "%s", arg);
-		snprintf(tp.tun_b, sizeof(tp.tun_b), "%s", drop);
-		tunnel_offer(thost(arg, false), thost(drop, false));
-		tp.join = JOIN_TUNNEL;
-		memset(&tunf, 0, sizeof(tunf));
-		snprintf(tunf.type, sizeof(tunf.type), "gif");
-		snprintf(tunf.la, sizeof(tunf.la), "%s", offer.oa);
-		snprintf(tunf.lb, sizeof(tunf.lb), "%s", offer.ob);
-		snprintf(tunf.ia, sizeof(tunf.ia), "%s", offer.ia);
-		snprintf(tunf.ib, sizeof(tunf.ib), "%s", offer.ib);
-		tunf.keep = true;
-		app.modal = MODAL_TUNNEL;
-		app.modal_error[0] = '\0';
+		join_drop(arg, drop);
 	} else if (strcmp(act, "input:topo-tunf") == 0) {
 		tunf_set(arg, value != NULL ? value : "");
+	} else if (strcmp(act, "input:topo-joinf") == 0) {
+		if (strcmp(arg, "over") == 0)
+			joinf.over = atoi(value);
+		else if (strcmp(arg, "as_a") == 0)
+			snprintf(joinf.as_a, sizeof(joinf.as_a), "%s", value);
+		else if (strcmp(arg, "as_b") == 0)
+			snprintf(joinf.as_b, sizeof(joinf.as_b), "%s", value);
+		else if (strcmp(arg, "bfd") == 0)
+			joinf.nobfd = strcmp(value, "true") != 0;
+	} else if (strcmp(act, "topo-draw") == 0) {
+		tp.draw = !tp.draw;
+		arc_store_set("arc_topo_draw", tp.draw ? "on" : "off");
+	} else if (strcmp(act, "topo-dkind") == 0) {
+		for (i = 0; i < (int)nitems(join_kinds); i++)
+			if (strcmp(arg, join_kinds[i]) == 0)
+				tp.dkind = i;
 	} else if (strcmp(act, "topo-join") == 0) {
 		for (i = 0; i < (int)nitems(join_kinds); i++)
 			if (strcmp(arg, join_kinds[i]) == 0)
@@ -7953,6 +8664,12 @@ topo_action(const char *act, const char *arg, const char *value)
 			else
 				zoom_by(k < 0 ? 1.15 : 1 / 1.15, x, y);
 			tp.touched = true;
+			/* The drawing scaled as one, and drawn anew once the
+			 * wheel has rested a moment. */
+			arc_map_view((tp.panx0 - tp.panx) * tp.zoom, (tp.pany0 -
+			    tp.pany) * tp.zoom, tp.zoom / tp.zoom0);
+			settle();
+			app.no_draw = true;
 		}
 	} else if (strcmp(act, "topo-zoom-in") == 0) {
 		zoom_by(1.25, tp.panx, tp.pany);
@@ -7994,7 +8711,18 @@ topo_action(const char *act, const char *arg, const char *value)
 			b->bend = -600;
 		snprintf(tp.sel_link, sizeof(tp.sel_link), "%s", arg);
 		tp.sel[0] = tp.sel_if[0] = '\0';
+		/* The one line to the canvas: hidden in the SVG by this
+		 * draw, then moved with the hand without another. */
+		if (act[10] == 's')
+			snprintf(tp.glbend, sizeof(tp.glbend), "%s", glmap_on() ?
+			    arg : "");
+		if (tp.glbend[0] != '\0') {
+			drag_scene();
+			app.no_draw = act[10] != 's';
+		}
 	} else if (strcmp(act, "topo-bend-end") == 0) {
+		tp.glbend[0] = '\0';
+		glmap_scene_clear();
 		bends_save();
 	} else if (strcmp(act, "topo-peer-start") == 0 || strcmp(act,
 	    "topo-peer-move") == 0) {
@@ -8103,6 +8831,66 @@ topo_action(const char *act, const char *arg, const char *value)
 		arc_svg_png("svg.topo", tp.stencil ? "network-diagram.png" :
 		    "network-map.png");
 		return (true);		/* nothing to draw again */
+	} else if (strcmp(act, "topo-full") == 0) {
+		/* Drawn again when the browser says it has done so. */
+		arc_fullscreen("#map-box", !tp.full);
+		return (true);
+	} else if (strcmp(act, "topo-fullscreen") == 0) {
+		/* Its room changed, both ways: shown whole in it. */
+		tp.full = strcmp(arg, "on") == 0;
+		tp.touched = false;
+		tp.fitted = false;
+	} else if (strcmp(act, "topo-key") == 0) {
+		/* A key pressed with the map in focus: arg the key, value the
+		 * node under the focus, if one.  In Draw mode t, b, o and f
+		 * pick what a line makes, and Shift-F is the whole screen. */
+		const char	*kk;
+		char		 id[16];
+
+		if (tp.draw && arg[0] != '\0' && arg[1] == '\0' && (kk =
+		    strchr(kind_keys, arg[0])) != NULL) {
+			tp.dkind = (int)(kk - kind_keys);
+			if (tp.kb_from[0] != '\0' && (tp.kb_at < 0 ||
+			    target_why(node_index(tp.kb_from), tp.kb_at,
+			    tp.dkind) != NULL))
+				tp.kb_at = kb_next(1);
+		} else if (strcmp(arg, "F") == 0 || strcmp(arg, "f") == 0) {
+			arc_fullscreen("#map-box", !tp.full);
+			return (true);
+		} else if ((strcmp(arg, "c") == 0 || strcmp(arg, "C") == 0) &&
+		    node_index(value) != -1) {
+			/* A line from the host in focus, by the keyboard. */
+			snprintf(tp.kb_from, sizeof(tp.kb_from), "%s", value);
+			tp.kb_at = -1;
+			if ((tp.kb_at = kb_next(1)) == -1) {
+				toast(true, "No host can take %s from %s", tp.draw &&
+				    tp.dkind != JOIN_TUNNEL ? "that session" :
+				    "a tunnel", tn[node_index(value)].label);
+				tp.kb_from[0] = '\0';
+			}
+		} else if (tp.kb_from[0] != '\0' && strncmp(arg, "Arrow", 5) ==
+		    0) {
+			n = kb_next(strcmp(arg, "ArrowLeft") == 0 || strcmp(arg,
+			    "ArrowUp") == 0 ? -1 : 1);
+			if (n != -1)
+				tp.kb_at = n;
+		} else if (tp.kb_from[0] != '\0' && strcmp(arg, "Enter") == 0 &&
+		    tp.kb_at >= 0) {
+			snprintf(drop, sizeof(drop), "%s", tn[tp.kb_at].key);
+			snprintf(body, sizeof(body), "%s", tp.kb_from);
+			topo_escape();
+			join_drop(body, drop);
+			return (true);
+		} else
+			return (true);
+		/* The focus on the host the line would end at: drawn now,
+		 * and the focus put there. */
+		if (tp.kb_from[0] != '\0' && tp.kb_at >= 0) {
+			render();
+			snprintf(id, sizeof(id), "tn-%d", tp.kb_at);
+			arc_focus(id);
+			app.no_draw = true;
+		}
 	} else if (strcmp(act, "topo-ospfmap") == 0) {
 		if (om.on) {
 			om_reset();
@@ -8709,6 +9497,12 @@ struct tqend {
 	char	inner[64];		/* its own inner address */
 	char	far_outer[64];		/* the far end's outer, as it has it */
 	char	ptp[64];		/* its point-to-point far end */
+	/* The far outer address is on this host's own interface, another
+	 * tunnel's inner network (carrier): a tunnel over a tunnel, with
+	 * no underlay of its own to measure; or the host's own (self): the
+	 * far end is reached through a relay here. */
+	char	carrier[32];
+	bool	self;
 };
 struct tqpair {
 	struct tqend	a, b;
@@ -8745,6 +9539,81 @@ tq_host(const char *ep, char *buf, size_t len)
 		snprintf(buf, len, "%.*s", (int)(c - ep - 2), ep + 1);
 	else
 		snprintf(buf, len, "%.*s", (int)(c - ep), ep);
+}
+
+/* Whether address addr is in the network of net/plen. */
+static bool
+addr_in(const char *addr, const char *net, int plen)
+{
+	unsigned char	ra[16], rn[16];
+	int		fa, fn, bytes, bits;
+
+	if (!addr_bytes(addr, &fa, ra) || !addr_bytes(net, &fn, rn) ||
+	    fa != fn || plen < 0 || plen > (fa == AF_INET ? 32 : 128))
+		return (false);
+	bytes = plen / 8;
+	bits = plen % 8;
+	if (memcmp(ra, rn, (size_t)bytes) != 0)
+		return (false);
+	return (bits == 0 || ((ra[bytes] ^ rn[bytes]) & (0xff << (8 - bits)))
+	    == 0);
+}
+
+/*
+ * What of this host's own the far outer address is: the host's own
+ * address (e->self), or on the network of another tunnel of the host's
+ * (e->carrier): then the tunnel runs over that one, and the underlay to
+ * measure is the carrier's, not this one's.
+ */
+static void
+tq_end_under(struct tqend *e)
+{
+	const ucl_object_t	*o, *a;
+	ucl_object_iter_t	 it, ait;
+
+	e->carrier[0] = '\0';
+	e->self = false;
+	if (e->far_outer[0] == '\0' || e->node < 0 || e->node >= ntn)
+		return;
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(hosts[e->node].ifs, "interfaces"),
+	    &it, true)) != NULL) {
+		ait = NULL;
+		while ((a = ucl_object_iterate(jget(o, "addresses"), &ait,
+		    true)) != NULL) {
+			if (jstr(a, "address") == NULL)
+				continue;
+			if (addr_same(jstr(a, "address"), e->far_outer)) {
+				e->self = true;
+				return;
+			}
+			if (jstr(o, "name") != NULL && strcmp(jstr(o, "name"),
+			    e->ifname) != 0 && (jget(o, "tunnel") != NULL ||
+			    strncmp(jstr(o, "name"), "wg", 2) == 0) &&
+			    e->carrier[0] == '\0' && addr_in(e->far_outer,
+			    jstr(a, "address"), (int)jint(a, "prefixlen", -1)))
+				snprintf(e->carrier, sizeof(e->carrier), "%s",
+				    jstr(o, "name"));
+		}
+	}
+}
+
+/* Why an end's underlay is not measured; NULL where it is. */
+static const char *
+tq_under_why(const struct tqend *e, char *buf, size_t len)
+{
+
+	if (e->self) {
+		snprintf(buf, len, "the far end's outer address is this host's "
+		    "own (a relay here): no underlay to probe");
+		return (buf);
+	}
+	if (e->carrier[0] != '\0') {
+		snprintf(buf, len, "runs over %s: the underlay is %s's", e->carrier,
+		    e->carrier);
+		return (buf);
+	}
+	return (NULL);
 }
 
 /* An interface's own inner address (inet first) and its far end. */
@@ -8789,6 +9658,7 @@ tq_end_fill(struct tqend *e, int node, const char *ifname,
 		snprintf(e->inner, sizeof(e->inner), "%s", v6);
 	if (e->ptp[0] == '\0' && p6 != NULL)
 		snprintf(e->ptp, sizeof(e->ptp), "%s", p6);
+	tq_end_under(e);
 }
 
 /* Its end's interface object: from the interfaces read, else a name. */
@@ -9092,11 +9962,19 @@ tq_tick(double now)
 
 /* A monitor's last sample, in a cell: delay · jitter · loss. */
 static void
-tq_cell(struct html *h, const ucl_object_t *m)
+tq_cell(struct html *h, const ucl_object_t *m, const char *why)
 {
 	const ucl_object_t	*sm, *last;
 	unsigned int		 n;
 
+	/* No underlay of its own: said, whatever a probe set by hand
+	 * says. */
+	if (why != NULL) {
+		h_raw(h, "<td class=\"dim\">");
+		h_txt(h, why);
+		h_raw(h, "</td>");
+		return;
+	}
 	if (m == NULL) {
 		h_raw(h, "<td class=\"dim\">–</td>");
 		return;
@@ -9215,7 +10093,7 @@ tq_view(struct html *h)
 {
 	const ucl_object_t	*ms[4];
 	const struct tqpair	*q;
-	char			 an[200], bn[200], names[4][240];
+	char			 an[200], bn[200], names[4][240], why[160];
 	const char		*np[4];
 	int			 i, k;
 
@@ -9263,7 +10141,9 @@ tq_view(struct html *h)
 		h_txt(h, q->kind);
 		h_raw(h, "</td>");
 		for (k = 0; k < 4; k++)
-			tq_cell(h, ms[k]);
+			tq_cell(h, ms[k], k == 2 ? tq_under_why(&q->a, why,
+			    sizeof(why)) : k == 3 && q->has_b ? tq_under_why(&q->b,
+			    why, sizeof(why)) : NULL);
 		h_raw(h, "<td class=\"acts\">");
 		if (ms[0] == NULL && ms[1] == NULL && ms[2] == NULL && ms[3] ==
 		    NULL) {
@@ -9336,7 +10216,7 @@ tq_modal_end(struct html *h, const char *side, const struct tqend *e,
     const struct tqend *far)
 {
 	const ucl_object_t	*ov, *ul;
-	char			 nm[200], buf[32];
+	char			 nm[200], buf[32], why[160];
 
 	ov = tq_find(e, "ov-");
 	ul = tq_find(e, "ul-");
@@ -9358,9 +10238,15 @@ tq_modal_end(struct html *h, const char *side, const struct tqend *e,
 	    "\"two\"><label>Underlay: probe<input spellcheck=\"false\" "
 	    "autocomplete=\"off\"");
 	h_fmt(h, " name=\"%s_ul\"", side);
-	h_attr(h, "value", ul != NULL ? jstr(ul, "address") : e->far_outer);
-	h_raw(h, "><small>The far end's outer address; empty: not "
-	    "measured.</small></label><label>in FIB<input inputmode=\"numeric\"");
+	h_attr(h, "value", tq_under_why(e, why, sizeof(why)) != NULL ? "" :
+	    ul != NULL ? jstr(ul, "address") : e->far_outer);
+	h_raw(h, "><small>");
+	if (tq_under_why(e, why, sizeof(why)) != NULL) {
+		h_txt(h, why);
+		h_raw(h, "; empty: not measured.");
+	} else
+		h_raw(h, "The far end's outer address; empty: not measured.");
+	h_raw(h, "</small></label><label>in FIB<input inputmode=\"numeric\"");
 	h_fmt(h, " name=\"%s_ulfib\"", side);
 	snprintf(buf, sizeof(buf), "%lld", ul != NULL ? (long long)jint(ul,
 	    "fib", 0) : (long long)e->tfib);

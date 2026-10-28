@@ -33,7 +33,7 @@
 struct job {
 	cbl_req			*req;
 	uint16_t		 cmd;
-	bool			 config_only;
+	bool			 config_only;	/* bird-config: confirm */
 	char			*jail;
 	uint8_t			 action;
 	struct arc_address_req	 addr;
@@ -44,12 +44,9 @@ struct job {
 	uint64_t		 pos;		/* log: where to read on; history: since */
 	bool			 has_pos;
 	uint32_t		 lim[4];	/* history: the limits */
-	struct arc_pkg_upgrade_req pkg;
+	struct pkg_upgrade	 pkg;	/* its names: what many take */
 	bool			 refresh;
-	bool			 installed;	/* packages: pkg query */
 	bool			 from_rc;	/* ipfw-rules: rc.conf's file */
-	uint8_t			 pkg_ip;	/* packages: pkg -4, -6 */
-	bool			 anyos;		/* packages: IGNORE_OSVERSION */
 	uint8_t			*binary;	/* agent-update */
 	size_t			 binlen;
 	char			*sha256;
@@ -90,15 +87,6 @@ static pthread_mutex_t	note_lock = PTHREAD_MUTEX_INITIALIZER;
 static char		note[256];
 static time_t		note_since;
 static bool		stopping;
-
-static const char *action_names[] = {
-	[ARC_ACTION_START] = "start",
-	[ARC_ACTION_STOP] = "stop",
-	[ARC_ACTION_RESTART] = "restart",
-	[ARC_ACTION_KILL] = "kill",
-	[ARC_ACTION_ENABLE] = "enable",
-	[ARC_ACTION_DISABLE] = "disable",
-};
 
 static const char *net_kind_names[] = {
 	[ARC_NET_KIND_ROUTES] = "routes",
@@ -330,8 +318,6 @@ worker(void *arg)
 {
 	struct job		*j;
 	struct work		 w;
-	struct arc_list_rsp	 lr;
-	struct arc_action_rsp	 ar;
 	struct arc_address_rsp	 dr;
 	struct arc_services_rsp	 sr;
 	struct arc_service_action_rsp sar;
@@ -383,8 +369,6 @@ worker(void *arg)
 	struct arc_storage_rsp	 stg;
 	struct arc_fstab_req	 fq;
 	struct arc_fstab_rsp	 fr;
-	struct arc_packages_rsp	 pr;
-	struct arc_pkg_upgrade_rsp ur;
 	struct arc_agent_update_rsp aur;
 	struct arc_agent_build_rsp abr;
 	struct arc_source_head_rsp shr;
@@ -403,8 +387,6 @@ worker(void *arg)
 	/* A read's programs run at READ_NICE; what changes the host at
 	 * its own priority, as jobs do. */
 	switch (j->cmd) {
-	case ARC_CMD_ACTION:
-	case ARC_CMD_PKG_UPGRADE:
 	case ARC_CMD_NOTIFY:
 	case ARC_CMD_CONFIG_APPLY:
 	case ARC_CMD_TRANSPORT:
@@ -426,94 +408,6 @@ worker(void *arg)
 		break;
 	}
 	switch (j->cmd) {
-	case ARC_CMD_LIST:
-		what = j->config_only ? "list (configuration only)" : "list";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&lr, 0, sizeof(lr));
-		do_list(&w, j->config_only, &lr);
-		ok = lr.ok;
-		error = lr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &lr.trace.v, &lr.trace.n);
-		rc = arc_list_reply(j->req, &lr);
-		break;
-	case ARC_CMD_ACTION:
-		what = wfmt(&w, "%s %s", action_names[j->action], j->jail);
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&ar, 0, sizeof(ar));
-		pthread_mutex_lock(&change_lock);
-		if (change_note("%s", what))
-			do_action(&w, j->jail, j->action, &ar);
-		else {
-			ar.has_ok = true;
-			ar.error = STOPPING;
-		}
-		(void)change_note(NULL);
-		pthread_mutex_unlock(&change_lock);
-		ok = ar.ok;
-		error = ar.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &ar.trace.v, &ar.trace.n);
-		rc = arc_action_reply(j->req, &ar);
-		break;
-	case ARC_CMD_PACKAGES:
-		what = wfmt(&w, "packages%s%s%s%s", j->installed ?
-		    " installed" : "", j->jail != NULL ? " of jail " : "",
-		    j->jail != NULL ? j->jail : "", j->refresh ?
-		    " (refresh)" : "");
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&pr, 0, sizeof(pr));
-		/*
-		 * Only pkg update writes (the catalogue): a reading waits for
-		 * no change, and none waits for it.
-		 */
-		if (!j->refresh)
-			do_packages(&w, j->jail, false, j->installed, j->pkg_ip,
-			    j->anyos, &pr);
-		else {
-			pthread_mutex_lock(&change_lock);
-			if (change_note("%s", what))
-				do_packages(&w, j->jail, true, false, j->pkg_ip,
-				    j->anyos, &pr);
-			else {
-				pr.has_ok = true;
-				pr.error = STOPPING;
-			}
-			(void)change_note(NULL);
-			pthread_mutex_unlock(&change_lock);
-		}
-		ok = pr.ok;
-		error = pr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &pr.trace.v, &pr.trace.n);
-		rc = arc_packages_reply(j->req, &pr);
-		break;
-	case ARC_CMD_PKG_UPGRADE:
-		what = wfmt(&w, "pkg upgrade%s%s%s%s", j->jail != NULL ?
-		    " in jail " : "", j->jail != NULL ? j->jail : "",
-		    j->pkg.names.n > 0 ? " (some)" : " (all)",
-		    j->pkg.dry_run ? " dry-run" : "");
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&ur, 0, sizeof(ur));
-		pthread_mutex_lock(&change_lock);
-		if (change_note("%s", what))
-			do_pkg_upgrade(&w, &j->pkg, &ur);
-		else {
-			ur.has_ok = true;
-			ur.error = STOPPING;
-		}
-		(void)change_note(NULL);
-		pthread_mutex_unlock(&change_lock);
-		ok = ur.ok;
-		error = ur.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &ur.trace.v, &ur.trace.n);
-		rc = arc_pkg_upgrade_reply(j->req, &ur);
-		break;
 	case ARC_CMD_STATS:
 		what = "stats";
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "stats");
@@ -1520,38 +1414,6 @@ arc_hello_doit(cbl_req *req, void *arg __unused)
 	error = arc_hello_reply(req, &rsp);
 	work_free(&w);
 	return (error);
-}
-
-int
-arc_list_doit(cbl_req *req, const struct arc_list_req *rq, void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_LIST;
-	j->config_only = rq->config_only;
-	return (start(j));
-}
-
-int
-arc_action_doit(cbl_req *req, const struct arc_action_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (!valid_jail(rq->jail))
-		return (reject(req, "invalid jail name"));
-	if (rq->action >= nitems(action_names))
-		return (reject(req, "invalid action"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_ACTION;
-	j->jail = xstrdup(rq->jail);
-	j->action = rq->action;
-	return (start(j));
 }
 
 int
@@ -2644,64 +2506,6 @@ arc_stats_doit(cbl_req *req, void *arg __unused)
 	return (start(j));
 }
 
-int
-arc_packages_doit(cbl_req *req, const struct arc_packages_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->jail != NULL && !valid_jail(rq->jail))
-		return (reject(req, "invalid jail name"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_PACKAGES;
-	j->jail = xstrdup(rq->jail);
-	j->refresh = rq->refresh;
-	j->installed = rq->pkg_installed;
-	j->pkg_ip = rq->has_pkg_ip ? rq->pkg_ip : 0;
-	j->anyos = rq->has_pkg_anyos && rq->pkg_anyos;
-	return (start(j));
-}
-
-int
-arc_pkg_upgrade_doit(cbl_req *req, const struct arc_pkg_upgrade_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-	const char	**v;
-	size_t		 i;
-
-	if (rq->jail != NULL && strcmp(rq->jail, "*") != 0 &&
-	    !valid_jail(rq->jail))
-		return (reject(req, "invalid jail name"));
-	for (i = 0; i < rq->names.n; i++)
-		if (rq->names.v[i] == NULL)
-			return (reject(req, "a package without a name"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_PKG_UPGRADE;
-	j->jail = xstrdup(rq->jail);
-	j->pkg.jail = j->jail;
-	j->pkg.dry_run = rq->dry_run;
-	j->pkg.has_ignore_osversion = rq->has_ignore_osversion;
-	j->pkg.ignore_osversion = rq->ignore_osversion;
-	j->pkg.has_pkg_ip = rq->has_pkg_ip;
-	j->pkg.pkg_ip = rq->pkg_ip;
-	j->pkg.pkg_repo = rq->pkg_repo != NULL && rq->pkg_repo[0] != '\0' ?
-	    xstrdup(rq->pkg_repo) : NULL;
-	if (rq->names.n > 0) {
-		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL)
-			err(1, "calloc");
-		for (i = 0; i < rq->names.n; i++)
-			v[i] = xstrdup(rq->names.v[i]);
-		j->pkg.names.v = v;
-		j->pkg.names.n = rq->names.n;
-	}
-	return (start(j));
-}
-
 /* Is the spec complete and are its names fit?  NULL, or what is wrong. */
 static const char *
 check_spec(const struct arc_job_spec *sp)
@@ -2720,7 +2524,7 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_JAIL_ACTION:
 		if (sp->jail == NULL || !valid_jail(sp->jail))
 			return ("invalid jail name");
-		if (!sp->has_action || sp->action >= nitems(action_names))
+		if (!sp->has_action || sp->action > ARC_ACTION_DISABLE)
 			return ("invalid action");
 		if (sp->safe)
 			return ("what a jail was doing cannot be put back: not "

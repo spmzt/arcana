@@ -30,8 +30,14 @@ module arcana-jails {
      A jail with a vnet of its own (jail(8)'s vnet) is also a logical
      network element (RFC 8530): lne names it.
 
-     These are state: a jail's configuration is its configuration
-     file's, which Arcana edits in place (libjailconf).";
+     Running is each jail's parameters as its configuration file has
+     them, and whether rc.d/jail starts it at boot (rc.conf(5)'s
+     jail_enable and jail_list).  A commit writes what differs: a
+     parameter in the jail's block of its file, in place, every other
+     line kept (libjailconf); a jail not there before as a block of
+     its own in jail.conf.d; jail_list and jail_enable in Arcana's
+     rc.conf file.  The running jail is left as it is: the actions
+     change that.";
 
   revision 2026-10-14 {
     description
@@ -81,16 +87,17 @@ module arcana-jails {
   }
 
   container jails {
-    config false;
     description
       "The host's jails.";
     leaf-list scope {
       type string;
+      config false;
       description
         "The configuration files jail(8) is run with (-f):
          /etc/jail.conf and those of /etc/jail.conf.d.";
     }
     list conf-error {
+      config false;
       description
         "A configuration file jail(8) could not read, and why.";
       leaf scope {
@@ -115,108 +122,30 @@ module arcana-jails {
         description
           "Its name (jail(8)'s name; a child's parent.child).";
       }
-      leaf state {
-        type jail-state;
-        description
-          "Where it is in its life.";
-      }
-      leaf jid {
-        type uint32;
-        description
-          "Its number (jid), while it runs.";
-      }
-      leaf configured {
+      leaf boot {
         type boolean;
         description
-          "Whether a configuration file defines it.";
+          "Started at boot by rc.d/jail: jail_enable is yes and
+           jail_list is empty or names it.  Written as the list of
+           the jails started, never an empty list that starts every
+           jail; with none, jail_enable is no.";
       }
       leaf scope {
         type string;
         description
-          "The configuration file that defines it.";
-      }
-      leaf hostname {
-        type string;
-        description
-          "host.hostname.";
-      }
-      leaf path {
-        type string;
-        description
-          "Its root directory (path).";
-      }
-      leaf-list ip4 {
-        type string;
-        ordered-by user;
-        description
-          "ip4.addr, as jail(8) has each: an address, with an
-           interface and a prefix length where given.";
-      }
-      leaf-list ip6 {
-        type string;
-        ordered-by user;
-        description
-          "ip6.addr, as ip4.";
-      }
-      leaf vnet {
-        type boolean;
-        description
-          "Whether it has a network stack of its own (vnet = new).";
-      }
-      leaf osrelease {
-        type string;
-        description
-          "The release it says it is (osrelease).";
-      }
-      leaf persist {
-        type boolean;
-        description
-          "Whether it stays without processes (persist).";
-      }
-      leaf securelevel {
-        type int32;
-        description
-          "Its securelevel (securelevel(7)).";
-      }
-      leaf parent {
-        type uint32;
-        description
-          "The jid of the jail it is in; 0, the host.";
-      }
-      leaf children {
-        type uint32;
-        description
-          "How many jails it has in it now.";
-      }
-      leaf nproc {
-        type uint32;
-        description
-          "Its processes now.";
-      }
-      leaf rss {
-        type uint64;
-        units "kibibytes";
-        description
-          "Their resident memory, kinfo_proc's ki_rssize summed.";
-      }
-      leaf cpu {
-        type decimal64 {
-          fraction-digits 2;
-        }
-        units "percent";
-        description
-          "Their share of one CPU, kinfo_proc's ki_pctcpu summed.";
-      }
-      leaf interface {
-        type string;
-        description
-          "interface: the one its addresses are added to.";
+          "The configuration file that defines it.  A jail not there
+           before is written to jail.conf.d/<name>.conf; one defined
+           is not moved.";
       }
       list param {
         key "name";
         description
           "Every parameter its configuration gives it, as jail(8) -e
-           resolves them (variables expanded, += appended).";
+           resolves them (variables expanded, += appended).  One
+           changed is set in the jail's own block, where the first
+           statement of it was or last; one taken out goes with its
+           statements, unless the block has none, inherited from the
+           file's defaults: that is refused.";
         leaf name {
           type string;
           description
@@ -229,8 +158,125 @@ module arcana-jails {
             "Its values; none for a boolean set.";
         }
       }
+      leaf state {
+        type jail-state;
+        config false;
+        description
+          "Where it is in its life.";
+      }
+      leaf jid {
+        type uint32;
+        config false;
+        description
+          "Its number (jid), while it runs.";
+      }
+      leaf configured {
+        type boolean;
+        config false;
+        description
+          "Whether a configuration file defines it.";
+      }
+      leaf hostname {
+        type string;
+        config false;
+        description
+          "host.hostname.";
+      }
+      leaf path {
+        type string;
+        config false;
+        description
+          "Its root directory (path).";
+      }
+      leaf-list ip4 {
+        type string;
+        config false;
+        ordered-by user;
+        description
+          "ip4.addr, as jail(8) has each: an address, with an
+           interface and a prefix length where given.";
+      }
+      leaf-list ip6 {
+        type string;
+        config false;
+        ordered-by user;
+        description
+          "ip6.addr, as ip4.";
+      }
+      leaf vnet {
+        type boolean;
+        config false;
+        description
+          "Whether it has a network stack of its own (vnet = new).";
+      }
+      leaf osrelease {
+        type string;
+        config false;
+        description
+          "The release it says it is (osrelease).";
+      }
+      leaf persist {
+        type boolean;
+        config false;
+        description
+          "Whether it stays without processes (persist).";
+      }
+      leaf securelevel {
+        type int32;
+        config false;
+        description
+          "Its securelevel (securelevel(7)).";
+      }
+      leaf parent {
+        type uint32;
+        config false;
+        description
+          "The jid of the jail it is in; 0, the host.";
+      }
+      leaf children {
+        type uint32;
+        config false;
+        description
+          "How many jails it has in it now.";
+      }
+      leaf nproc {
+        type uint32;
+        config false;
+        description
+          "Its processes now.";
+      }
+      leaf rss {
+        type uint64;
+        units "kibibytes";
+        config false;
+        description
+          "Their resident memory, kinfo_proc's ki_rssize summed.";
+      }
+      leaf cpu {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        units "percent";
+        config false;
+        description
+          "Their share of one CPU, kinfo_proc's ki_pctcpu summed.";
+      }
+      leaf interface {
+        type string;
+        config false;
+        description
+          "interface: the one its addresses are added to.";
+      }
+      leaf-list allow {
+        type string;
+        config false;
+        description
+          "Of a running jail: its allow.* parameters as the kernel has
+           them, each allow.name=0|1.";
+      }
       leaf-list plugin {
         type string;
+        config false;
         description
           "Of a running jail with a network of its own: the plugins it
            has, as a host's, by the programs installed in it.";
@@ -241,6 +287,7 @@ module arcana-jails {
              + "/lne:name";
           require-instance false;
         }
+        config false;
         description
           "The logical network element it is, with a vnet of its own.";
       }

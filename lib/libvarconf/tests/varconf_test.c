@@ -502,6 +502,65 @@ ATF_TC_BODY(edits_edge, tc)
 	vc_free(&f);
 }
 
+/* An assignment commented out where it is: the line kept under "#" with
+ * the mark after it; one sharing its line on a line of its own before
+ * it; what the mark says taken off gives the file again. */
+ATF_TC_WITHOUT_HEAD(comments);
+ATF_TC_BODY(comments, tc)
+{
+	const struct fixture *x = fixture("host.conf");
+	const struct vc_assign *a;
+	struct vc_file f;
+	char err[256], *p;
+	size_t s, e;
+
+	parse(&f, x->text, x->len);
+	a = must_get(&f, "pf_enable");
+	s = a->soff;
+	e = a->send;
+	ATF_REQUIRE_MSG(vc_comment(&f, "pf_enable", "taken by Arcana", err,
+	    sizeof(err)) == 0, "%s", err);
+	check_splice(&f, x->text, x->len, s, e,
+	    "#pf_enable=\"NO\"\t# pf.conf is not ready  # taken by Arcana\n");
+	ATF_CHECK(vc_get(&f, "pf_enable") == NULL);
+	/* Not there: nothing to do.  Back: "#" and the mark taken off. */
+	ATF_REQUIRE_EQ(0, vc_comment(&f, "pf_enable", "taken by Arcana", err,
+	    sizeof(err)));
+	ATF_REQUIRE((p = strstr(f.text, "#pf_enable")) != NULL);
+	memmove(p, p + 1, f.len - (size_t)(p - f.text));
+	f.len--;
+	ATF_REQUIRE((p = strstr(f.text, "  # taken by Arcana\n")) != NULL);
+	memmove(p, p + 19, f.len - (size_t)(p + 19 - f.text) + 1);
+	f.len -= 19;
+	ATF_CHECK(f.len == x->len && memcmp(f.text, x->text, x->len) == 0);
+	vc_free(&f);
+
+	x = fixture("edge.conf");
+	parse(&f, x->text, x->len);
+	/* One of two on a line: on a line of its own; the other stays. */
+	ATF_REQUIRE_MSG(vc_comment(&f, "three", "mark", err, sizeof(err)) ==
+	    0, "%s", err);
+	ATF_CHECK(strstr(f.text, "\n#three=2  # mark\ntwo=1 \n") != NULL);
+	ATF_REQUIRE_MSG(vc_comment(&f, "semi", NULL, err, sizeof(err)) == 0,
+	    "%s", err);
+	ATF_CHECK(strstr(f.text, "\n#semi=1\nsemi2=2\n") != NULL);
+	/* Every assignment of it. */
+	ATF_REQUIRE_EQ(0, vc_comment(&f, "last", "m", err, sizeof(err)));
+	ATF_CHECK(vc_get(&f, "last") == NULL);
+	ATF_CHECK(strstr(f.text, "\n#last=one  # m\n#last=two  # m\n") != NULL);
+	/* The last line, no newline after it: none after. */
+	ATF_REQUIRE_EQ(0, vc_comment(&f, "noeol", "m", err, sizeof(err)));
+	ATF_CHECK(f.text[f.len - 1] != '\n');
+	ATF_CHECK(strcmp(f.text + f.len - 16, "\n#noeol=end  # m") == 0);
+	check_value(&f, "two", "1");
+	check_value(&f, "semi2", "2");
+	/* What reading does not settle, refused. */
+	ATF_CHECK_EQ(-1, vc_comment(&f, "inif", "m", err, sizeof(err)));
+	ATF_CHECK_EQ(EBUSY, errno);
+	check_sh(&f);
+	vc_free(&f);
+}
+
 /* What sh(1) could not read: refused, the line said. */
 ATF_TC_WITHOUT_HEAD(errors);
 ATF_TC_BODY(errors, tc)
@@ -1057,6 +1116,54 @@ ATF_TC_BODY(rtadvd_edits, tc)
 	vc_cap_free(&f);
 }
 
+/* A record written whole: replaced where it is, its names kept, the
+ * fields packed on lines of 72 columns; one not there added last. */
+ATF_TC_WITHOUT_HEAD(rtadvd_record);
+ATF_TC_BODY(rtadvd_record, tc)
+{
+	const struct fixture *x = fixture("rtadvd-edge.conf");
+	static const char *const x0[] = { "maxinterval#600",
+	    "mininterval#200", "chlim#64", "raflags=\"mo\"", "rltime#1800",
+	    "rtime#0", "retrans#0", "noifprefix", "addr=\"2001:db8:1::\"",
+	    "prefixlen#64", "pinfoflags=\"la\"", "vltime#2592000",
+	    "pltime#604800", "mtu#1280", "tc=base" };
+	static const char *const em9[] = { "rltime#0" };
+	static const char *const empty[] = { "" };
+	struct vc_capfile f;
+	char *s, err[256];
+
+	rtparse(&f, x->text, x->len);
+	ATF_REQUIRE_EQ(0, vc_cap_set_record(&f, "alias0", x0, 15, err,
+	    sizeof(err)));
+	ATF_CHECK_MSG(strstr(f.text, "\nx0|alias0:\\\n"
+	    "\t:maxinterval#600:mininterval#200:chlim#64:raflags=\"mo\":\\\n"
+	    "\t:rltime#1800:rtime#0:retrans#0:noifprefix:addr=\"2001:db8:1::\""
+	    ":\\\n"
+	    "\t:prefixlen#64:pinfoflags=\"la\":vltime#2592000:pltime#604800:"
+	    "\\\n"
+	    "\t:mtu#1280:tc=base:\ny0:\\\n") != NULL, "%s", f.text);
+	ATF_CHECK(strstr(f.text, "esc=") == NULL);
+	ATF_CHECK(strstr(f.text, "goes on: this line is the comment's too.\n"
+	    "base:\\\n") != NULL);
+	ATF_CHECK_STREQ("600", vc_cap_get(&f, "x0", "maxinterval", '#')->value);
+	ATF_REQUIRE_EQ(0, vc_cap_set_record(&f, "em9", em9, 1, err,
+	    sizeof(err)));
+	ATF_CHECK(strstr(f.text, "prefixlen0#48:\nem9:\\\n\t:rltime#0:\n") !=
+	    NULL);
+	ATF_REQUIRE_EQ(0, vc_cap_set_record(&f, "em9", NULL, 0, err,
+	    sizeof(err)));
+	ATF_CHECK(strstr(f.text, "prefixlen0#48:\nem9:\n") != NULL);
+	ATF_CHECK_EQ(-1, vc_cap_set_record(&f, "em9", empty, 1, err,
+	    sizeof(err)));
+	ATF_CHECK_EQ(-1, vc_cap_set_record(&f, "bad name", x0, 1, err,
+	    sizeof(err)));
+	ATF_REQUIRE((s = vc_cap_field("addr", '=', "2001:db8::\"x")) != NULL);
+	ATF_CHECK_STREQ("addr=\"2001:db8::\\\"x\"", s);
+	free(s);
+	ATF_CHECK(vc_cap_field("mtu", '#', "12a") == NULL);
+	vc_cap_free(&f);
+}
+
 /*
  * rtadvd(8) reads the fixtures, and the file the edits made, as they
  * are read here: by its own advcap.c, from the system's sources.
@@ -1096,6 +1203,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, edge);
 	ATF_TP_ADD_TC(tp, edits);
 	ATF_TP_ADD_TC(tp, edits_edge);
+	ATF_TP_ADD_TC(tp, comments);
 	ATF_TP_ADD_TC(tp, errors);
 	ATF_TP_ADD_TC(tp, rcd);
 	ATF_TP_ADD_TC(tp, conflicts);
@@ -1104,6 +1212,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, edits_lines);
 	ATF_TP_ADD_TC(tp, rtadvd);
 	ATF_TP_ADD_TC(tp, rtadvd_edits);
+	ATF_TP_ADD_TC(tp, rtadvd_record);
 	ATF_TP_ADD_TC(tp, rtadvd_read);
 	return (atf_no_error());
 }

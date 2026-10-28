@@ -146,11 +146,11 @@ if [ "\$1" = -e ]; then
 	done
 	exit 0
 fi
-# A third word: speederv2's, a relay's profile, run as rc.subr's
-# speederv2_<profile> (its verbs noted); dhclient's, its interface,
+# A third word: arcana_relay's, a relay's profile, run as rc.subr's
+# arcana_relay_<profile> (its verbs noted); dhclient's, its interface,
 # the same service.
 name=\$1; verb=\$2; r=\$name
-[ "\$name" = speederv2 ] && r=\$name\${3:+_\$3} && echo "\$verb \$r" >> speederv2.verbs
+[ "\$name" = arcana_relay ] && r=\$name\${3:+_\$3} && echo "\$verb \$r" >> arcana_relay.verbs
 case "\$verb" in
 rcvar)		echo "# \$name"; echo "\${name}_enable=\"NO\""; echo '#   (default: "")' ;;
 enabled)	grep -q "^\${name}_enable=\"YES\"" "\$conf" ;;
@@ -355,6 +355,7 @@ start_daemon()
 	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
 	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" -8 "$(pwd)/fake-rtsol" \
 	    -9 "$(pwd)/fake-setkey" -0 "$(pwd)/fake-local-unbound" \
+	    --rtadvctl "$(pwd)/fake-rtadvctl" \
 	    --bird-watch 0 $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
@@ -650,8 +651,9 @@ atf_test_case yang_rtadv_conf
 yang_rtadv_conf_head()
 {
 	atf_set "descr" "rtadvd.conf as RFC 8349's router advertisement" \
-	    "submodule: read through tc=, an edit of" \
-	    "one leaf alone, written and read back"
+	    "submodule and arcana-ra: read through tc=, an edit" \
+	    "of one leaf alone, every capability written and" \
+	    "read back byte for byte, other capabilities kept"
 }
 yang_rtadv_conf_body()
 {
@@ -677,35 +679,121 @@ reachable-time=0
 retrans-timer=0
 cur-hop-limit=64
 default-lifetime=1800
-prefix 2001:db8:ffff:1000::/64 1 1 2592000 604800
+router-preference=medium
+prefix 2001:db8:ffff:1000::/64 1 1 2592000 604800 0 0
+other tc=default
 " "$y" rtadvd.conf ef1
 	atf_check -o inline:"managed-flag=1
 other-config-flag=1
-prefix 2001:db8:ffff:1000::/48 1 0 2592000 604800
-prefix 2001:db8:1::/64 1 1 3600 1800
+router-preference=medium
+prefix 2001:db8:ffff:1000::/48 1 0 2592000 604800 0 0
+prefix 2001:db8:1::/64 1 1 3600 1800 0 0
 " "$y" rtadvd.conf wlan0
 	atf_check -o inline:"default-lifetime=0\n" "$y" rtadvd.conf ne0
 	atf_check -o inline:"none\n" "$y" rtadvd.conf nothere
-	# One leaf edited: its field alone changes.
+	# One leaf edited: the record written whole, in rtadvd.conf(5)'s
+	# order, nothing else of the file touched.
 	cp rtadvd.conf was
 	atf_check "$y" -m rtadvd.conf wlan0 300
-	atf_check -s exit:1 -o inline:"10c10
+	atf_check -s exit:1 -o inline:"9,10c9,11
+< 	:addr=\"2001:db8:ffff:1000::\":prefixlen#48:pinfoflags=\"l\":\\
 < 	:addr0=\"2001:db8:1::\":vltime0#3600:pltime0#1800:raflags=\"mo\":
 ---
-> 	:addr0=\"2001:db8:1::\":vltime0#3600:pltime0#1800:raflags=\"mo\":maxinterval#300:
+> 	:maxinterval#300:raflags=\"mo\":addr=\"2001:db8:ffff:1000::\":\\
+> 	:prefixlen#48:pinfoflags=\"l\":addr0=\"2001:db8:1::\":prefixlen0#64:\\
+> 	:vltime0#3600:pltime0#1800:
 " diff was rtadvd.conf
 	atf_check -o match:'^max-rtr-adv-interval=300$' "$y" rtadvd.conf wlan0
-	# A record with tc=: what default brings stays default's.
+	# A record with tc=: what default brings and the edit does not
+	# change stays default's; its own prefix is written whole.
 	cp rtadvd.conf was2
 	atf_check "$y" -m rtadvd.conf ef1 450
-	atf_check -s exit:1 -o inline:"7c7
+	atf_check -s exit:1 -o inline:"7c7,8
 < 	:addr=\"2001:db8:ffff:1000::\":prefixlen#64:tc=default:
 ---
-> 	:addr=\"2001:db8:ffff:1000::\":prefixlen#64:maxinterval#450:tc=default:
+> 	:maxinterval#450:addr=\"2001:db8:ffff:1000::\":prefixlen#64:\\
+> 	:pinfoflags=\"la\":vltime#2592000:pltime#604800:tc=default:
 " diff was2 rtadvd.conf
+	atf_check -o match:'^cur-hop-limit=64$' -o match:'^other tc=default$' \
+	    "$y" rtadvd.conf ef1
 	# Written to another file and read back: the same.
 	"$y" was wlan0 > want
 	atf_check -o file:want "$y" -w was wlan0 out
+	# Every capability of rtadvd.conf(5), as Arcana writes it: read,
+	# written to another file, the bytes the same; and read back the
+	# same.  hapref and hatime, which rtadvd(8) refuses, and a field it
+	# never heard of are kept as written, a cancelled mtu too.
+	cat > full.conf <<'EOF'
+# The lab's advertisements.
+base:\
+	:chlim#64:mtu#01500:
+em0:\
+	:maxinterval#600:mininterval#200:chlim#32:raflags="moh":\
+	:rltime#1800:rtime#30000:retrans#1000:noifprefix:clockskew#10:\
+	:addr="2001:db8:1::":prefixlen#64:addr0="2001:db8:2::":\
+	:prefixlen0#56:pinfoflags0="l":vltime0#3600:vltimedecr0:\
+	:pltime0#1800:pltimedecr0:mtu#1280:nolladdr:\
+	:rtprefix="2001:db8:100::":rtplen#48:rtflags="h":rtltime#900:\
+	:rtprefix0="2001:db8:200::":rtplen0#64:rtflags0="l":\
+	:rdnss="2001:db8::53,2001:db8::54":rdnssltime#900:\
+	:rdnss0="2001:db8::55":dnssl="example.com,lab.example.com":\
+	:dnsslltime#700:dnssl0="corp.example":pref64="64:ff9b::":\
+	:pref640="2001:db8:64::":pref64len0#48:pref64lifetime0#3600:\
+	:hapref#10:hatime#100:unheardof="x":mtu@:tc=base:
+em1:\
+	:raflags="l":addr="2001:db8:3::":prefixlen#64:mtu="auto":
+EOF
+	cat > want.em0 <<'EOF'
+max-rtr-adv-interval=600
+min-rtr-adv-interval=200
+managed-flag=1
+other-config-flag=1
+link-mtu=1280
+reachable-time=30000
+retrans-timer=1000
+cur-hop-limit=32
+default-lifetime=1800
+router-preference=high
+interface-prefixes=0
+source-link-layer-address=0
+clock-skew=10
+prefix 2001:db8:1::/64 1 1 2592000 604800 0 0
+prefix 2001:db8:2::/56 1 0 3600 1800 1 1
+route 2001:db8:100::/48 high 900
+route 2001:db8:200::/64 low -
+rdnss 2001:db8::53 900
+rdnss 2001:db8::54 900
+rdnss 2001:db8::55 -
+dnssl example.com 700
+dnssl lab.example.com 700
+dnssl corp.example -
+pref64 64:ff9b::/96 -
+pref64 2001:db8:64::/48 3600
+other hapref#10
+other hatime#100
+other unheardof="x"
+other mtu@
+other tc=base
+EOF
+	atf_check -o file:want.em0 "$y" full.conf em0
+	atf_check -o inline:"managed-flag=0
+other-config-flag=0
+router-preference=low
+link-mtu-auto=1
+prefix 2001:db8:3::/64 1 1 2592000 604800 0 0
+" "$y" full.conf em1
+	cp full.conf again.conf
+	atf_check -o file:want.em0 "$y" -w full.conf em0 again.conf
+	atf_check -o ignore "$y" -w full.conf em1 again.conf
+	atf_check cmp full.conf again.conf
+	# A record of another interface is not touched by a write of one.
+	printf 'em9:\\\n\t:rltime#0:\n' > one.conf
+	atf_check -o ignore "$y" -w full.conf em1 one.conf
+	atf_check -o inline:"em9:\\\\
+	:rltime#0:
+em1:\\\\
+	:raflags=\"l\":addr=\"2001:db8:3::\":prefixlen#64:mtu=\"auto\":
+" cat one.conf
 }
 
 atf_test_case yang_rc_routes
@@ -2800,7 +2888,7 @@ trace_body()
 {
 	start_daemon
 	atf_check -o save:trace.out "$JGC" -t -c "$SOCK" list
-	atf_check -o match:'\[daemon\] arcana-agent: list' cat trace.out
+	atf_check -o match:'\[daemon\] arcana-agent: jails' cat trace.out
 	atf_check -o match:'\[lib\] jailparam_get\(3\)' cat trace.out
 	atf_check -o match:'\[exec\] .*fake-jail -f .*/etc/jail.conf -e \\037' \
 	    cat trace.out
@@ -7790,7 +7878,7 @@ smtpd_cleanup()
 atf_test_case speeder cleanup
 speeder_head()
 {
-	atf_set "descr" "UDPspeeder's relay, a plugin: read (its flags, the key never; the groups and the reports from its log, the overhead in all and of the last interval); conf written word by word, the key kept or taken away and never traced; what a shell would take refused; the ratios sent by its fifo; enabled and disabled; a safe conf undone"
+	atf_set "descr" "UDPspeeder's relays, a plugin, run by Arcana's own rc script: read (the flags, the key never; the groups and the reports from the log, the overhead in all and of the last interval; the admin's relay of the port's script beside, never changed); conf written word by word, the key kept or taken away and never traced; what a shell would take refused; the ratios sent by its fifo; enabled and disabled; several, each a profile, one moved from the port's name; a safe conf undone"
 }
 speeder_body()
 {
@@ -7798,18 +7886,21 @@ speeder_body()
 	printf '#!/bin/sh\nexit 0\n' > tools/speederv2
 	chmod +x tools/speederv2
 	cat > messages <<'EOM'
-Oct 23 14:22:39 h speederv2[44253]: [2026-10-23 14:22:39][INFO]fec_inner_parameter=1:2,2:3,3:4,4:4
+Oct 23 14:22:39 h arcana_relay[44253]: [2026-10-23 14:22:39][INFO]fec_inner_parameter=1:2,2:3,3:4,4:4
 Oct 23 14:22:40 h sshd[1]: unrelated
-Oct 23 14:22:49 h speederv2[44253]: [2026-10-23 14:22:49][INFO][report]client-->server:(original:100 pkt;100000 byte) (fec:150 pkt,160000 byte)  server-->client:(original:50 pkt;40000 byte) (fec:80 pkt;60000 byte)
-Oct 23 14:22:59 h speederv2[44253]: [2026-10-23 14:22:59][INFO][report]client-->server:(original:200 pkt;200000 byte) (fec:300 pkt,330000 byte)  server-->client:(original:100 pkt;80000 byte) (fec:160 pkt;120000 byte)
+Oct 23 14:22:49 h arcana_relay[44253]: [2026-10-23 14:22:49][INFO][report]client-->server:(original:100 pkt;100000 byte) (fec:150 pkt,160000 byte)  server-->client:(original:50 pkt;40000 byte) (fec:80 pkt;60000 byte)
+Oct 23 14:22:59 h arcana_relay[44253]: [2026-10-23 14:22:59][INFO][report]client-->server:(original:200 pkt;200000 byte) (fec:300 pkt,330000 byte)  server-->client:(original:100 pkt;80000 byte) (fec:160 pkt;120000 byte)
+Oct 23 14:23:00 h speederv2[9]: [2026-10-23 14:23:00][INFO]fec_inner_parameter=5:2
 EOM
 	DAEMON_ARGS="-2 $(pwd)/tools --speederv2-log $(pwd)/messages"
 	start_daemon
-	printf '#!/bin/sh\n' > rc.d/speederv2
-	chmod +x rc.d/speederv2
+	printf '#!/bin/sh\n' > rc.d/arcana_relay
+	chmod +x rc.d/arcana_relay
 	atf_check -o match:'Plugins: .*speederv2' "$JGC" -c "$SOCK" hello
-	# Not set yet: what the log says; 65 % over all, 70 % of late.
+	# Not set yet: what the log says of arcana_relay; 65 % over all,
+	# 70 % of late.  Without the port's script, no relay of the admin's.
 	atf_check -o match:'"installed":true' -o match:'"running":false' \
+	    -o match:'"profiles_supported":true' -o not-match:'"speederv2":' \
 	    -o not-match:'"role"' -o not-match:'sshd' \
 	    -o match:'"fec_groups":\[\[1,2\],\[2,3\],\[3,4\],\[4,4\]\]' \
 	    -o match:'"interval":10' \
@@ -7823,7 +7914,7 @@ EOM
 	    "$JGC" -c "$SOCK" speeder conf role=client listen=127.0.0.1:51821 \
 	    remote=192.0.2.1:14350 mode=1 mtu=1456 fec=1:2,2:3,8:4,20:10 report=10 \
 	    fifo=$(pwd)/fifo key=s3cr3tkey 'extra=--sock-buf 2048'
-	atf_check -o match:'^speederv2_flags="-c -l127.0.0.1:51821 -r192.0.2.1:14350 -k s3cr3tkey --mode 1 --mtu 1456 -f1:2,2:3,8:4,20:10 --report 10 --fifo .*/fifo --sock-buf 2048"$' \
+	atf_check -o match:'^arcana_relay_flags="-c -l127.0.0.1:51821 -r192.0.2.1:14350 -k s3cr3tkey --mode 1 --mtu 1456 -f1:2,2:3,8:4,20:10 --report 10 --fifo .*/fifo --sock-buf 2048"$' \
 	    cat rc.conf
 	atf_check -o match:'"key":true' -o match:'-k <hidden>' -o not-match:'s3cr3tkey' \
 	    -o match:'"role":"client"' -o match:'"mtu":1456' -o match:'"extra":"--sock-buf 2048"' \
@@ -7850,8 +7941,8 @@ EOM
 	# Enabled: started.  The ratios then by its fifo, not restarted,
 	# and kept in the flags.
 	atf_check -o match:done "$JGC" -c "$SOCK" speeder enable
-	atf_check -o match:'^speederv2_enable="YES"$' cat rc.conf
-	atf_check test -f running.speederv2
+	atf_check -o match:'^arcana_relay_enable="YES"$' cat rc.conf
+	atf_check test -f running.arcana_relay
 	: > fifo
 	atf_check -o match:done "$JGC" -c "$SOCK" speeder fec 1:3,10:8
 	atf_check -o inline:'fec 1:3,10:8\n' cat fifo
@@ -7868,49 +7959,50 @@ EOM
 	done
 	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
 	    "$JGC" -c "$SOCK" job 6
-	atf_check -o match:'^speederv2_flags="-c -l127.0.0.1:51821' cat rc.conf
-	atf_check test -f running.speederv2
+	atf_check -o match:'^arcana_relay_flags="-c -l127.0.0.1:51821' cat rc.conf
+	atf_check test -f running.arcana_relay
 	# Disabled: stopped.  A jail's is not undone, so not safe there.
 	atf_check -o match:done "$JGC" -c "$SOCK" speeder disable
-	atf_check -o match:'^speederv2_enable="NO"$' cat rc.conf
-	atf_check test ! -f running.speederv2
+	atf_check -o match:'^arcana_relay_enable="NO"$' cat rc.conf
+	atf_check test ! -f running.arcana_relay
 	atf_check -s exit:1 -e match:"a jail's relay is not undone" -o ignore \
 	    "$JGC" -j web -s -c "$SOCK" speeder stop
 
-	# Several relays, each a profile, where the rc script runs them.
-	atf_check -s exit:1 -o match:'runs one relay' "$JGC" -c "$SOCK" \
-	    speeder conf profile=b role=server listen=192.0.2.2:14351 \
-	    remote=127.0.0.1:51822
-	printf '#!/bin/sh\n# speederv2_profiles: several relays\n' > rc.d/speederv2
+	# Several relays, each a profile of arcana_relay.  One made under
+	# the port's script's name before (speederv2_b_*) is moved at its
+	# conf: those variables unset, its name out of speederv2_profiles.
+	printf 'speederv2_profiles="b"\nspeederv2_b_flags="-s -l192.0.2.2:14351 -r127.0.0.1:51822"\nspeederv2_b_svcj="YES"\n' \
+	    >> rc.conf
 	atf_check -o match:'done +speederv2 b: conf, a server from 192.0.2.2:14351 to 127.0.0.1:51822' \
 	    "$JGC" -c "$SOCK" speeder conf profile=b role=server \
 	    listen=192.0.2.2:14351 remote=127.0.0.1:51822 key=bkey
+	atf_check -o not-match:'speederv2_' cat rc.conf
 	atf_check -o match:done "$JGC" -c "$SOCK" speeder conf profile=c \
 	    role=client listen=127.0.0.1:51823 remote=192.0.2.3:14352
-	atf_check -o match:'^speederv2_profiles="b c"$' \
-	    -o match:'^speederv2_b_flags="-s -l192.0.2.2:14351 -r127.0.0.1:51822 -k bkey' \
-	    -o match:'^speederv2_c_flags="-c -l127.0.0.1:51823' cat rc.conf
+	atf_check -o match:'^arcana_relay_profiles="b c"$' \
+	    -o match:'^arcana_relay_b_flags="-s -l192.0.2.2:14351 -r127.0.0.1:51822 -k bkey' \
+	    -o match:'^arcana_relay_c_flags="-c -l127.0.0.1:51823' cat rc.conf
 	atf_check -o match:done "$JGC" -c "$SOCK" speeder start profile=b
-	atf_check test -f running.speederv2_b
+	atf_check test -f running.arcana_relay_b
 	# In rc.subr's service jail, held to its addresses: a running relay
 	# stopped under the jail it is in and started in the new one, not
 	# restarted in the old; the same jail again is a restart.
-	: > speederv2.verbs
+	: > arcana_relay.verbs
 	atf_check -o match:done "$JGC" -c "$SOCK" speeder conf profile=b \
 	    role=server listen=192.0.2.2:14351 remote=127.0.0.1:51822 \
 	    svcj=yes svcj_ipaddrs=192.0.2.2,127.0.0.1
-	atf_check -o match:'^speederv2_b_svcj="YES"$' \
-	    -o match:'^speederv2_b_svcj_options="net_basic"$' \
-	    -o match:'^speederv2_b_svcj_ipaddrs="192.0.2.2 127.0.0.1"$' \
-	    -o match:'^speederv2_b_flags="-s -l192.0.2.2:14351 -r127.0.0.1:51822 -k bkey' \
+	atf_check -o match:'^arcana_relay_b_svcj="YES"$' \
+	    -o match:'^arcana_relay_b_svcj_options="net_basic"$' \
+	    -o match:'^arcana_relay_b_svcj_ipaddrs="192.0.2.2 127.0.0.1"$' \
+	    -o match:'^arcana_relay_b_flags="-s -l192.0.2.2:14351 -r127.0.0.1:51822 -k bkey' \
 	    cat rc.conf
-	atf_check -o inline:'onestatus speederv2_b\nonestop speederv2_b\nonestart speederv2_b\n' \
-	    cat speederv2.verbs
-	: > speederv2.verbs
+	atf_check -o inline:'onestatus arcana_relay_b\nonestop arcana_relay_b\nonestart arcana_relay_b\n' \
+	    cat arcana_relay.verbs
+	: > arcana_relay.verbs
 	atf_check -o match:done "$JGC" -c "$SOCK" speeder conf profile=b \
 	    role=server listen=192.0.2.2:14351 remote=127.0.0.1:51822
-	atf_check -o inline:'onestatus speederv2_b\nonerestart speederv2_b\n' \
-	    cat speederv2.verbs
+	atf_check -o inline:'onestatus arcana_relay_b\nonerestart arcana_relay_b\n' \
+	    cat arcana_relay.verbs
 	atf_check -o match:'"name":"b","running":true,[^]]*"svcj":true,"svcj_options":"net_basic","svcj_ipaddrs":"192.0.2.2 127.0.0.1"' \
 	    "$JGC" -c "$SOCK" speeder
 	atf_check -s exit:1 -e match:'svcj_ipaddrs is up to 8 addresses' -o ignore \
@@ -7920,15 +8012,23 @@ EOM
 	    "$JGC" -c "$SOCK" speeder conf profile=b role=server \
 	    listen=192.0.2.2:14351 remote=127.0.0.1:51822 svcj=no \
 	    svcj_ipaddrs=192.0.2.2
-	# Each read with its own lines, by its tag; the key never.
+	# Each read with its own lines, by its tag; the key never.  The
+	# admin's relay too, where the port's script is: its own variables
+	# and tag, read alone.
 	cat >> messages <<'EOM'
-Oct 23 14:23:09 h speederv2_b[45]: [2026-10-23 14:23:09][INFO][report]client-->server:(original:10 pkt;1000 byte) (fec:20 pkt,2000 byte)  server-->client:(original:10 pkt;1000 byte) (fec:20 pkt;2000 byte)
+Oct 23 14:23:09 h arcana_relay_b[45]: [2026-10-23 14:23:09][INFO][report]client-->server:(original:10 pkt;1000 byte) (fec:20 pkt,2000 byte)  server-->client:(original:10 pkt;1000 byte) (fec:20 pkt;2000 byte)
 EOM
+	printf '#!/bin/sh\n' > rc.d/speederv2
+	chmod +x rc.d/speederv2
+	printf 'speederv2_enable="YES"\nspeederv2_flags="-c -l127.0.0.1:1 -r192.0.2.9:2 -k adminkey"\n' \
+	    >> rc.conf
+	touch running.speederv2
 	atf_check -o match:'"profiles_supported":true' \
 	    -o match:'"profiles":\[\{"name":"b","running":true,"flags":"-s -l192.0.2.2:14351 -r127.0.0.1:51822 -k <hidden>"' \
 	    -o match:'"name":"b".*"plain_bytes":1000,"fec_packets":20,"fec_bytes":2000,"overhead":100' \
 	    -o match:'\{"name":"c","running":false,"flags":"-c -l127.0.0.1:51823' \
-	    -o not-match:'bkey' "$JGC" -c "$SOCK" speeder
+	    -o match:'"speederv2":\{"enabled":true,"running":true,"flags":"-c -l127.0.0.1:1 -r192.0.2.9:2 -k <hidden>","role":"client",[^}]*"fec_groups":\[\[5,2\]\]' \
+	    -o not-match:'bkey' -o not-match:'adminkey' "$JGC" -c "$SOCK" speeder
 	atf_check -s exit:1 -e match:'no profile=' -o ignore "$JGC" -c "$SOCK" \
 	    speeder enable profile=b
 	atf_check -s exit:1 -e match:'remove takes profile=<name> alone' -o ignore \
@@ -7943,20 +8043,30 @@ EOM
 		sleep 0.1
 	done
 	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
-	    -o match:'speederv2 b: remove' "$JGC" -c "$SOCK" job 14
-	atf_check -o match:'^speederv2_profiles="b c"$' \
-	    -o match:'^speederv2_b_flags="-s ' \
-	    -o match:'^speederv2_b_svcj_ipaddrs="192.0.2.2 127.0.0.1"$' cat rc.conf
-	atf_check test -f running.speederv2_b
-	# Taken away for good.
+	    -o match:'speederv2 b: remove' "$JGC" -c "$SOCK" job 13
+	atf_check -o match:'^arcana_relay_profiles="b c"$' \
+	    -o match:'^arcana_relay_b_flags="-s ' \
+	    -o match:'^arcana_relay_b_svcj_ipaddrs="192.0.2.2 127.0.0.1"$' cat rc.conf
+	atf_check test -f running.arcana_relay_b
+	# Taken away for good.  Enabled: every listed relay started, the
+	# admin's left alone.
 	atf_check -o match:done "$JGC" -c "$SOCK" speeder remove profile=b
-	atf_check -o match:'^speederv2_profiles="c"$' -o not-match:'speederv2_b_' \
+	atf_check -o match:'^arcana_relay_profiles="c"$' -o not-match:'arcana_relay_b_' \
 	    cat rc.conf
-	atf_check test ! -f running.speederv2_b
+	atf_check test ! -f running.arcana_relay_b
+	: > arcana_relay.verbs
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder enable
+	atf_check -o inline:'onestatus arcana_relay_c\nonestart arcana_relay_c\n' \
+	    cat arcana_relay.verbs
+	atf_check -o match:'^arcana_relay_enable="YES"$' -o match:'^speederv2_enable="YES"$' \
+	    cat rc.conf
+	atf_check test -f running.arcana_relay_c
+	atf_check test -f running.speederv2
 
 	# Its overhead in the history, beside the interfaces' rates: the
 	# bytes taken in plain and added by the FEC, both ways, a second,
 	# over its last interval; read on from the log's end as it grows.
+	# The admin's relay by its tag as well.
 	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20
 	sleep 1.5
 	printf '%s h speederv2[7]: [%s][INFO][report]client-->server:(original:100 pkt;100000 byte) (fec:150 pkt,160000 byte)  server-->client:(original:50 pkt;40000 byte) (fec:80 pkt;60000 byte)\n' \
@@ -7968,12 +8078,90 @@ EOM
 		grep -q ',14000,9000\]\]' h.json && break
 		sleep 0.1
 	done
-	atf_check -o match:'"relays":\["speederv2_b","speederv2"\]' \
+	atf_check -o match:'"relays":\["arcana_relay_b","speederv2"\]' \
 	    -o match:',14000,9000\]\]\}$' cat h.json
 }
 speeder_cleanup()
 {
 	stop_daemon
+}
+
+atf_test_case relay_rc cleanup
+relay_rc_head()
+{
+	atf_set "descr" "Arcana's rc script for the FEC relays, share/rc.d/arcana_relay, under the real rc.subr(8): each profile by its own rc.subr name, variables, pidfile and syslog tag, run under daemon(8) with its flags; every listed one at once, one not enabled left alone; the one relay without profiles, refused without flags"
+}
+relay_rc_body()
+{
+	script="$(atf_get_srcdir)/arcana_relay"
+	atf_check /bin/sh -n "$script"
+	printf '#!/bin/sh\necho "$*" >> %s/argv\nexec sleep 30\n' "$(pwd)" \
+	    > fake-speederv2
+	chmod +x fake-speederv2
+	# rc.conf's variables from the environment, the defaults taken as
+	# read; run as this user, within its limits (the login class's
+	# would be raised, which root alone may).
+	lim="-d $(ulimit -H -d)k"
+	export _rc_conf_loaded=true rc_debug=yes
+	export arcana_relay_enable=YES arcana_relay_user=
+	export arcana_relay_speederv2="$(pwd)/fake-speederv2"
+	export arcana_relay_profiles="p q"
+	export arcana_relay_p_flags="-c -l127.0.0.1:51821 -r192.0.2.1:14350 -f20:10"
+	export arcana_relay_p_pidfile="$(pwd)/run/p.pid" arcana_relay_p_limits="$lim"
+	export arcana_relay_q_flags="-s -l127.0.0.1:1 -r127.0.0.1:2"
+	export arcana_relay_q_pidfile="$(pwd)/run/q.pid" arcana_relay_q_limits="$lim"
+	export arcana_relay_q_enable=NO
+	# A profile: its rcvar from the service's, or its own.
+	atf_check -o match:'^arcana_relay_p_enable="YES"$' -e ignore \
+	    /bin/sh "$script" rcvar p
+	atf_check -s exit:1 -e ignore /bin/sh "$script" enabled q
+	# Started: daemon(8) with its tag and pidfile, the relay with its
+	# flags; seen running by its pidfile.
+	atf_check -o match:'Starting arcana_relay_p' \
+	    -e match:'daemon +-S -T arcana_relay_p -r -R 5 -P .*/run/p.pid .*/fake-speederv2 --disable-color -c -l127.0.0.1:51821' \
+	    /bin/sh "$script" start p
+	atf_check -o match:'arcana_relay_p is running as pid' -e ignore \
+	    /bin/sh "$script" status p
+	atf_check -o inline:'--disable-color -c -l127.0.0.1:51821 -r192.0.2.1:14350 -f20:10\n' \
+	    cat argv
+	atf_check test -s run/p.pid
+	# All listed at once: p runs already, q is not enabled.
+	atf_check -o match:'profile: p' -o match:'profile: q' \
+	    -o match:"Cannot 'start' arcana_relay_q" \
+	    -e match:'arcana_relay_p already running' /bin/sh "$script" start
+	atf_check -o match:'arcana_relay_p is running' \
+	    -o match:'arcana_relay_q is not running' -e ignore \
+	    /bin/sh "$script" status
+	atf_check -o match:'Stopping arcana_relay_p' -e ignore \
+	    /bin/sh "$script" stop p
+	atf_check -s exit:1 -o match:'arcana_relay_p is not running' -e ignore \
+	    /bin/sh "$script" status p
+	for i in $(seq 1 50); do
+		pgrep -qf "$(pwd)/fake-speederv2" || break
+		sleep 0.1
+	done
+	atf_check -s exit:1 pgrep -qf "$(pwd)/fake-speederv2"
+	# Without profiles, the one relay of arcana_relay_flags: refused
+	# while they are not set.
+	unset arcana_relay_profiles
+	export arcana_relay_pidfile="$(pwd)/run/plain.pid" arcana_relay_limits="$lim"
+	atf_check -s exit:1 -o ignore -e match:'arcana_relay_flags is not set' \
+	    /bin/sh "$script" start
+	export arcana_relay_flags="-c -l127.0.0.1:3 -r127.0.0.1:4"
+	atf_check -o match:'Starting arcana_relay\.' \
+	    -e match:'daemon +-S -T arcana_relay -r -R 5 -P .*/run/plain.pid' \
+	    /bin/sh "$script" start
+	atf_check -o match:'arcana_relay is running' -e ignore /bin/sh "$script" status
+	atf_check -o match:'^--disable-color -c -l127.0.0.1:3 -r127.0.0.1:4$' tail -1 argv
+	atf_check -o ignore -e ignore /bin/sh "$script" stop
+	atf_check -s exit:1 -o ignore -e ignore /bin/sh "$script" status
+}
+relay_rc_cleanup()
+{
+	for f in run/*.pid; do
+		[ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null
+	done
+	:
 }
 
 atf_test_case monitors cleanup
@@ -11548,38 +11736,46 @@ bird_watch_cleanup()
 atf_test_case jail_boot cleanup
 jail_boot_head()
 {
-	atf_set "descr" "a jail started at boot or not, by jail_list and jail_enable, never left an empty list that starts every jail"
+	atf_set "descr" "a jail started at boot or not by the jail-action job, jail_list and jail_enable, never left an empty list that starts every jail"
 }
 jail_boot_body()
 {
 	start_daemon
+	# The jail-action job's way, the console's: rc.conf through
+	# sysrc(8), each job done before the next is looked at.
+	q()
+	{
+		atf_check -o ignore "$JGC" -q -c "$SOCK" "$@"
+		for i in $(seq 1 100); do
+			"$JGC" -c "$SOCK" jobs | grep -q 'queued\|running' || return 0
+			sleep 0.05
+		done
+	}
 	# jail_enable off: the list is the jail alone, then turned on.
-	atf_check -o match:'^At boot: +started$' "$JGC" -c "$SOCK" enable web
+	q enable web
 	atf_check -o match:'^jail_list="web"$' -o match:'^jail_enable="YES"$' \
 	    cat rc.conf
-	atf_check -o match:'^At boot: +not started$' "$JGC" -c "$SOCK" \
-	    disable db
-	atf_check -o match:'^At boot: +started$' "$JGC" -c "$SOCK" enable db
+	q disable db
+	q enable db
 	atf_check -o match:'^jail_list="web db"$' cat rc.conf
-	atf_check -o ignore "$JGC" -c "$SOCK" disable web
+	q disable web
 	atf_check -o match:'^jail_list="db"$' cat rc.conf
 	# The last one named: jail_enable off, not an empty list.
-	atf_check -o match:'^At boot: +not started$' "$JGC" -c "$SOCK" \
-	    disable db
+	q disable db
 	atf_check -o match:'^jail_enable="NO"$' cat rc.conf
 	# Every jail started (an empty list): one left out is every other.
 	sed -i '' -e '/^jail_list=/d' -e 's/^jail_enable=.*/jail_enable="YES"/' \
 	    rc.conf
-	atf_check -o ignore "$JGC" -c "$SOCK" disable vpn
+	q disable vpn
 	atf_check -o match:'^jail_list=".*web' -o match:'^jail_list=".*db' \
 	    -o match:'^jail_list=".*mail' -o not-match:'vpn' cat rc.conf
 	# Started at boot already: nothing written.
 	cp rc.conf rc.before
-	atf_check -o ignore "$JGC" -c "$SOCK" enable web
+	q enable web
 	atf_check -o empty diff rc.before rc.conf
 	# Only a jail defined.
-	atf_check -s exit:1 -o ignore -e match:'not defined' \
-	    "$JGC" -c "$SOCK" enable nosuch
+	q enable nosuch
+	atf_check -o match:'failed +enable nosuch' "$JGC" -c "$SOCK" jobs
 }
 jail_boot_cleanup()
 {
@@ -11813,14 +12009,31 @@ datastores_instances_cleanup()
 atf_test_case datastores_ra cleanup
 datastores_ra_head()
 {
-	atf_set "descr" "Router advertisements read from rtadvd.conf and committed"
+	atf_set "descr" "Router advertisements read from rtadvd.conf and" \
+	    "committed: rtadvd restarted where its interfaces change," \
+	    "rtadvctl reload where not; other records kept; the" \
+	    "operational datastore has what rtadvctl show says"
 }
 datastores_ra_body()
 {
 	mkdir -p root/etc/defaults root/usr/local/etc
 	cp /etc/defaults/rc.conf root/etc/defaults/
 	printf 'hostname="lab"\n' > root/etc/rc.conf
-	printf 'lo0:\\\n\t:maxinterval#300:chlim#64:\n' > rtadvd.conf
+	cat > rtadvd.conf <<'EOF'
+# Kept as it is: a comment, and another interface's record.
+em7:\
+	:rltime#0:unheardof="x":
+lo0:\
+	:maxinterval#300:chlim#64:
+EOF
+	# rtadvctl(8) stood in for: its calls logged, and show's text given.
+	cat > fake-rtadvctl <<EOF
+#!/bin/sh
+echo "rtadvctl \$*" >> $(pwd)/rtadvctl.log
+[ "\$1" = -v ] && [ "\$2" = show ] && cat $(pwd)/show.txt 2>/dev/null
+exit 0
+EOF
+	chmod +x fake-rtadvctl
 	DAEMON_ARGS="--root $(pwd)/root"
 	start_daemon
 	"$JGC" -c "$SOCK" get -d running interfaces > run.json
@@ -11835,10 +12048,76 @@ datastores_ra_body()
 	atf_check -o match:'^rtadvd_interfaces="lo0"' \
 	    -o match:'^rtadvd_enable="YES"' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
+	# lo0 added to the interfaces rtadvd runs on: restarted, not reloaded.
 	atf_check test -f running.rtadvd
+	atf_check test ! -f rtadvctl.log
 	atf_check -o match:'"max-rtr-adv-interval":400' \
 	    -o match:'"send-advertisements":true' \
 	    "$JGC" -c "$SOCK" get -d running interfaces
+	# The other record and the comment as they were.
+	atf_check -o match:'^# Kept as it is' \
+	    -o match:'^	:rltime#0:unheardof="x":$' cat rtadvd.conf
+	# Every capability of arcana-ra committed: the record written whole.
+	"$JGC" -c "$SOCK" get -d running interfaces > run.json
+	sed -e 's|"max-rtr-adv-interval":400|"max-rtr-adv-interval":400,"min-rtr-adv-interval":200,"managed-flag":true,"arcana-ra:router-preference":"high","link-mtu":1280,"arcana-ra:interface-prefixes":false,"arcana-ra:source-link-layer-address":false,"arcana-ra:clock-skew":10,"prefix-list":{"prefix":[{"prefix-spec":"2001:db8:57::/64","valid-lifetime":3600,"preferred-lifetime":1800,"on-link-flag":true,"autonomous-flag":false,"arcana-ra:valid-lifetime-decrements":true}]},"arcana-ra:route":[{"prefix":"2001:db8:100::/48","preference":"low","lifetime":900}],"arcana-ra:rdnss":[{"address":"2001:db8::53","lifetime":600},{"address":"2001:db8::54","lifetime":600}],"arcana-ra:dnssl":[{"domain":"example.com"}],"arcana-ra:pref64":[{"prefix":"64:ff9b::/96","lifetime":3600}],"arcana-ra:other-capability":["hatime#5"]|' \
+	    run.json > new.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @new.json
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o inline:"lo0:\\\\
+	:maxinterval#400:mininterval#200:chlim#64:raflags=\"mh\":\\\\
+	:noifprefix:clockskew#10:addr=\"2001:db8:57::\":prefixlen#64:\\\\
+	:pinfoflags=\"l\":vltime#3600:vltimedecr:pltime#1800:mtu#1280:\\\\
+	:nolladdr:rtprefix=\"2001:db8:100::\":rtplen#48:rtflags=\"l\":\\\\
+	:rtltime#900:rdnss=\"2001:db8::53,2001:db8::54\":rdnssltime#600:\\\\
+	:dnssl=\"example.com\":pref64=\"64:ff9b::\":pref64lifetime#3600:\\\\
+	:hatime#5:
+" sed -n '/^lo0:/,$p' rtadvd.conf
+	# The same interfaces as before: rtadvd reloaded for lo0, not
+	# restarted.
+	atf_check -o match:'^rtadvctl reload lo0$' cat rtadvctl.log
+	"$JGC" -c "$SOCK" get -d running interfaces > run.json
+	atf_check -o match:'"arcana-ra:router-preference":"high"' \
+	    -o match:'"arcana-ra:valid-lifetime-decrements":true' \
+	    -o match:'"arcana-ra:rdnss":\[\{"address":"2001:db8::53","lifetime":600\},\{"address":"2001:db8::54","lifetime":600\}\]' \
+	    -o match:'"arcana-ra:pref64":\[\{"lifetime":3600,"prefix":"64:ff9b::/96"\}\]' \
+	    -o match:'"arcana-ra:other-capability":\["hatime#5"\]' \
+	    -o not-match:'arcana-ra:rtadvd' cat run.json
+	# Operational: what rtadvd(8) sends, from rtadvctl -v show.
+	cat > show.txt <<'EOF'
+lo0: flags=<UP,CONFIGURED,PERSIST> status=<RA_SEND> mtu 16384
+	DefaultLifetime: 30m
+	MinAdvInterval/MaxAdvInterval: 3m20s/6m40s
+	AdvLinkMTU: 1280, Flags: M, Preference: high
+	ReachableTime: 0s, RetransTimer: 0s, CurHopLimit: 64
+	AdvIfPrefixes: no
+	Next RA send: Tue Oct 27 10:11:12 2026
+	Last RA send: never
+	Clock skew: 10sec
+	Route Info:
+	  2001:db8:100::/48 (pref: low, ltime: 15m)
+	Prefixes (1):
+	  2001:db8:57::/64 (CONFIG, vltime=1h(expire: 59m), pltime=30m(expire 29m), flags=L)
+	RDNSS entries:
+	  2001:db8::53 (ltime=10m)
+	  2001:db8::54 (ltime=10m)
+	DNSSL entries:
+	  example.com (ltime=10m)
+	PREF64:
+	  64:ff9b::/96 (ltime: 1h)
+em7: flags=<DOWN,CONFIGURED> status=<INACTIVE>
+EOF
+	"$JGC" -c "$SOCK" get -d operational interfaces > oper.json
+	atf_check -o match:'"arcana-ra:rtadvd":\{"clock-skew":10,"cur-hop-limit":64,"default-lifetime":1800,"dnssl":\[\{"domain":"example.com","lifetime":600\}\],"flags":"UP,CONFIGURED,PERSIST","interface-prefixes":false,"link-mtu":1280,"managed-flag":true,"max-rtr-adv-interval":400,"min-rtr-adv-interval":200,"next-send":"2026-10-27T[0-9:]*Z","other-config-flag":false,"pref64":\[\{"lifetime":3600,"prefix":"64:ff9b::/96"\}\],"prefix":\[\{"autonomous-flag":false,"on-link-flag":true,"origin":"config","preferred-expires":1740,"preferred-lifetime":1800,"prefix":"2001:db8:57::/64","valid-expires":3540,"valid-lifetime":3600\}\],"rdnss":\[\{"address":"2001:db8::53","lifetime":600\},\{"address":"2001:db8::54","lifetime":600\}\],"reachable-time":0,"retrans-timer":0,"route":\[\{"lifetime":900,"preference":"low","prefix":"2001:db8:100::/48"\}\],"router-preference":"high","status":"RA_SEND"\}' \
+	    cat oper.json
+	# Taken out of the advertising interfaces: rtadvd stopped.
+	"$JGC" -c "$SOCK" get -d running interfaces > run.json
+	sed -e 's|"send-advertisements":true|"send-advertisements":false|' \
+	    run.json > new.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @new.json
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o match:'^rtadvd_interfaces=""' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check test ! -f running.rtadvd
 }
 datastores_ra_cleanup()
 {
@@ -11919,23 +12198,29 @@ datastores_sysctl_cleanup()
 # its rcvar and rc.conf variables from the files rc(8) reads; a commit
 # writes what differs to Arcana's rc.conf file by rcarcana.c's rules,
 # a service at a time; a variable not the service's own, or its rcvar
-# as a variable, is refused.
+# as a variable, is refused.  A variable of the user's that Arcana's
+# file takes is commented out where it is, never removed, and put back
+# where the commit fails; the convert action moves a service's
+# variables under Arcana deliberately, said first with dry-run.
 atf_test_case datastores_services cleanup
 datastores_services_head()
 {
-	atf_set "descr" "Services' rcvars and variables as running, committed"
+	atf_set "descr" "Services' rcvars and variables as running, committed; the user's lines commented out, put back; the convert action"
 }
 datastores_services_body()
 {
-	mkdir -p root/etc/defaults root/usr/local/etc
+	mkdir -p root/etc/defaults root/etc/rc.conf.d root/usr/local/etc
 	cp /etc/defaults/rc.conf root/etc/defaults/
-	printf 'hostname="lab"\nsshd_enable="YES"\nsshd_flags="-4"\n' > root/etc/rc.conf
+	printf 'hostname="lab"\nsshd_enable="YES"\nsshd_flags="-4"\nntpd_enable="NO"\nntpd_sync_on_start="$x"\n' \
+	    > root/etc/rc.conf
+	printf 'ntpd_flags="-g"\n' > root/etc/rc.conf.d/ntpd
 	DAEMON_ARGS="--root $(pwd)/root"
 	start_daemon
 	# Running: the scripts, with what the files rc(8) reads set.
 	atf_check -o save:run.json "$JGC" -c "$SOCK" get -d running services
 	atf_check -o match:'\{"enabled":true,"name":"sshd","variable":\[\{"name":"sshd_flags","value":"-4"\}\]\}' \
-	    -o match:'\{"name":"ntpd"\}' -o not-match:'"path"' cat run.json
+	    -o match:'\{"enabled":false,"name":"ntpd","variable":\[\{"name":"ntpd_flags","value":"-g"\}\]\}' \
+	    -o not-match:'"path"' cat run.json
 	# The operational datastore: enabled as sysrc -A says, the
 	# variables beside.
 	atf_check -o match:'"name":"ntpd"' -o match:'"path":"' \
@@ -11951,9 +12236,24 @@ datastores_services_body()
 	atf_check -o match:'^sshd_enable="NO"$' -o match:'^sshd_flags="-6"$' \
 	    -o match:'^sshd_program="/usr/local/sbin/sshd"$' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o not-match:'sshd_' cat root/etc/rc.conf
+	# The user's lines commented out where they are, never removed.
+	atf_check -o match:'^#sshd_enable="YES"  # taken by Arcana$' \
+	    -o match:'^#sshd_flags="-4"  # taken by Arcana$' \
+	    -o match:'^hostname="lab"$' -o match:'^ntpd_enable="NO"$' \
+	    -o not-match:'^sshd_' cat root/etc/rc.conf
 	atf_check -o match:'\{"enabled":false,"name":"sshd","variable":\[\{"name":"sshd_flags","value":"-6"\},\{"name":"sshd_program","value":"/usr/local/sbin/sshd"\}\]\}' \
 	    "$JGC" -c "$SOCK" get -d running services
+	# A later service's failure puts every file back: the user's line
+	# as it was, Arcana's file without the change.
+	cp root/etc/rc.conf rc.conf.before
+	cp root/usr/local/etc/rc.conf.d/arcana arcana.before
+	atf_check "$JGC" -c "$SOCK" edit services \
+	    '{"service":[{"name":"ntpd","enabled":true},{"name":"zfs","variable":[{"name":"ntpd_flags","value":"x"}]}]}'
+	atf_check -s exit:1 -e match:"'ntpd_flags' is not a variable of zfs" \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-conflict
+	atf_check cmp rc.conf.before root/etc/rc.conf
+	atf_check cmp arcana.before root/usr/local/etc/rc.conf.d/arcana
+	atf_check "$JGC" -c "$SOCK" discard
 	# Not its own variable; its rcvar is enabled's alone.
 	atf_check "$JGC" -c "$SOCK" edit services \
 	    '{"service":[{"name":"sshd","variable":[{"name":"ntpd_flags","value":"x"}]}]}'
@@ -11971,8 +12271,130 @@ datastores_services_body()
 	atf_check "$JGC" -c "$SOCK" commit
 	atf_check -o match:'^sshd_enable="NO"$' -o match:'^sshd_flags="-6"$' \
 	    -o not-match:'sshd_program' cat root/usr/local/etc/rc.conf.d/arcana
+	# The convert action: a service's variables of the user's files
+	# moved under Arcana, each said with its file and line; a dry run
+	# first, the files as they are; one not a literal left, said why.
+	cp root/etc/rc.conf rc.conf.before
+	atf_check -o match:'^ntpd +ntpd_enable +NO +/etc/rc.conf:4$' \
+	    -o match:'^ +ntpd_sync_on_start +/etc/rc.conf:5  left: its value is not a literal' \
+	    -o match:'^ +ntpd_flags +-g +/etc/rc.conf.d/ntpd:1$' \
+	    "$JGC" -c "$SOCK" services convert -n ntpd
+	atf_check cmp rc.conf.before root/etc/rc.conf
+	atf_check -o inline:'ntpd_flags="-g"\n' cat root/etc/rc.conf.d/ntpd
+	atf_check -s exit:1 -e match:'no such service' \
+	    "$JGC" -c "$SOCK" services convert -n nosuch
+	# Real: a change like a commit's, refused until accepted.
+	atf_check -s exit:1 -e match:'ntpd_enable .*rc.conf line 4.*-a rc-conf-conflict' \
+	    "$JGC" -c "$SOCK" services convert ntpd
+	atf_check cmp rc.conf.before root/etc/rc.conf
+	atf_check -o match:'^ntpd +ntpd_enable +NO +/etc/rc.conf:4$' \
+	    -o match:'^ +ntpd_flags +-g +/etc/rc.conf.d/ntpd:1$' \
+	    "$JGC" -c "$SOCK" services convert -a rc-conf-conflict ntpd
+	atf_check -o match:'^ntpd_enable="NO"$' -o match:'^ntpd_flags="-g"$' \
+	    -o match:'^sshd_flags="-6"$' -o not-match:'ntpd_sync_on_start' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^#ntpd_enable="NO"  # taken by Arcana$' \
+	    -o match:'^ntpd_sync_on_start="\$x"$' -o not-match:'^ntpd_enable' \
+	    cat root/etc/rc.conf
+	atf_check -o inline:'#ntpd_flags="-g"  # taken by Arcana\n' cat root/etc/rc.conf.d/ntpd
+	atf_check -o match:'\{"enabled":false,"name":"ntpd","variable":\[\{"name":"ntpd_flags","value":"-g"\}\]\}' \
+	    "$JGC" -c "$SOCK" get -d running services
+	# Every script: nothing of the user's left but what cannot be taken.
+	atf_check -o match:'ntpd_sync_on_start' -o not-match:'sshd' \
+	    -o not-match:'ntpd_flags' "$JGC" -c "$SOCK" services convert -n
+	# As the action, its output RFC 7951's JSON.
+	atf_check -o match:'"service":\[\{"name":"ntpd","variable":\[\{"file":"/etc/rc.conf","left":"its value is not a literal[^"]*","line":5,"name":"ntpd_sync_on_start"\}\]\}\]' \
+	    "$JGC" -c "$SOCK" action services convert dry-run=true
 }
 datastores_services_cleanup()
+{
+	stop_daemon
+}
+
+# arcana-jails (PLAN-SDN-YANG 3.1.1): running is each jail's parameters
+# as jail(8) -e resolves them, and what starts at boot from the files
+# rc(8) reads; a commit edits the jail's own block in place, makes a
+# new jail a file of its own in jail.conf.d and takes one away with
+# its file, and writes jail_list to Arcana's rc.conf file by
+# rcarcana.c's rules.  What jail(8) would not read as asked is refused,
+# every file put back.
+atf_test_case datastores_jails cleanup
+datastores_jails_head()
+{
+	atf_set "descr" "jail.conf as running, committed in place; boot by Arcana's rc.conf file; a jail made and taken away; refusals put every file back"
+}
+datastores_jails_body()
+{
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\njail_enable="YES"\njail_list="db"\n' \
+	    > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	# Running: each jail's parameters as jail(8) -e has them, and what
+	# starts at boot from the files rc(8) reads; nothing of its state.
+	atf_check -o save:run.json "$JGC" -c "$SOCK" get -d running jails
+	atf_check -o match:'"name":"db","param":.*"scope":"[^"]*/etc/jail.conf","boot":true\},\{"name":"mail"' \
+	    -o match:'"name":"ip4.addr","value":\["10.0.0.10","10.0.0.11"\]' \
+	    -o not-match:'"state"' -o not-match:'"conf-error"' cat run.json
+	atf_check -o match:'"name":"web".*"state":"stopped"' \
+	    "$JGC" -c "$SOCK" get jails
+	# A list changed in its block, its first statement's place kept,
+	# every other line as it was.
+	cp etc/jail.conf before
+	sed -e 's/"10\.0\.0\.11"/"10.0.0.12","10.0.0.13"/' run.json > e1.json
+	atf_check "$JGC" -c "$SOCK" edit jails @e1.json
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o match:'^	ip4.addr = 10.0.0.10, "10.0.0.12", "10.0.0.13";$' \
+	    -o match:'^# Lab jails$' cat etc/jail.conf
+	atf_check -o inline:'2\n' sh -c "diff before etc/jail.conf | grep -c '^[<>]'"
+	# Started at boot: jail_list and jail_enable in Arcana's rc.conf
+	# file, the user's lines commented out where accepted.
+	atf_check -s exit:1 -e match:'-a rc-conf-files' \
+	    "$JGC" -c "$SOCK" enable web
+	atf_check -s exit:1 -e match:'jail_list .*rc.conf line 3.*-a rc-conf-conflict' \
+	    "$JGC" -c "$SOCK" enable -a rc-conf-files web
+	atf_check -o match:'^At boot: +started$' "$JGC" -c "$SOCK" \
+	    enable -a rc-conf-files -a rc-conf-conflict web
+	atf_check -o match:'^jail_list="db web"$' -o match:'^jail_enable="YES"$' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^#jail_list="db"  # taken by Arcana$' \
+	    -o match:'^hostname="lab"$' cat root/etc/rc.conf
+	# The last one taken out: jail_enable off, never an empty list,
+	# which starts every jail.
+	atf_check -o ignore "$JGC" -c "$SOCK" disable db
+	atf_check -o match:'^At boot: +not started$' "$JGC" -c "$SOCK" \
+	    disable web
+	atf_check -o match:'^jail_enable="NO"$' -o not-match:'jail_list' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	# A jail made: a file of its own in jail.conf.d; taken away with it.
+	atf_check -o save:run2.json "$JGC" -c "$SOCK" get -d running jails
+	sed -e 's|"jail":\[|"jail":[{"name":"cache","param":[{"name":"path","value":["/jails/cache"]},{"name":"persist"}]},|' \
+	    run2.json > e2.json
+	atf_check "$JGC" -c "$SOCK" edit jails @e2.json
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o inline:'cache {\n\tpath = /jails/cache;\n\tpersist;\n}\n' \
+	    cat etc/jail.conf.d/cache.conf
+	atf_check -o match:'^cache +stopped' "$JGC" -c "$SOCK" list -c
+	atf_check "$JGC" -c "$SOCK" edit jails @run2.json
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -s exit:1 test -e etc/jail.conf.d/cache.conf
+	# Refused, every file as it was: a parameter the file's defaults
+	# give, not the jail's own; a name jail(8) would not take.
+	cp etc/jail.conf before
+	sed -e 's|{"name":"path","value":\["/jails/web"\]},||' run2.json > e3.json
+	atf_check "$JGC" -c "$SOCK" edit jails @e3.json
+	atf_check -s exit:1 -e match:"web: path is inherited from the file's defaults" \
+	    "$JGC" -c "$SOCK" commit
+	atf_check cmp before etc/jail.conf
+	atf_check "$JGC" -c "$SOCK" discard
+	sed -e 's/"name":"vpn"/"name":"a;b"/' run2.json > e4.json
+	atf_check "$JGC" -c "$SOCK" edit jails @e4.json
+	atf_check -s exit:1 -e match:'invalid jail name' "$JGC" -c "$SOCK" commit
+	atf_check -o match:'^vpn \{$' cat etc/jail.conf.d/vpn.conf
+	atf_check "$JGC" -c "$SOCK" discard
+}
+datastores_jails_cleanup()
 {
 	stop_daemon
 }
@@ -12000,7 +12422,8 @@ datastores_kernel_body()
 	atf_check -o match:'"kept":\["if_bridge"\]' -o match:'"file":\[\{"address"' \
 	    "$JGC" -c "$SOCK" get kernel
 	# rc_conf_files first, then the user's variable; then Arcana's
-	# file has it, the user's not, and a module not loaded is said.
+	# file has it, the user's commented out, and a module not loaded
+	# is said.
 	atf_check "$JGC" -c "$SOCK" edit kernel '{"kept":["if_bridge","if_nosuch"]}'
 	atf_check -s exit:1 -e match:'-a rc-conf-files' "$JGC" -c "$SOCK" commit
 	atf_check -s exit:1 -e match:'kld_list .*rc.conf line 2.*-a rc-conf-conflict' \
@@ -12010,7 +12433,8 @@ datastores_kernel_body()
 	atf_check -o match:'^kld_list="if_bridge if_nosuch"$' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
 	atf_check -o match:'^rc_conf_files=".*/usr/local/etc/rc.conf.d/arcana"$' \
-	    -o not-match:'kld_list' cat root/etc/rc.conf
+	    -o match:'^#kld_list="if_bridge"  # taken by Arcana$' \
+	    -o not-match:'^kld_list' cat root/etc/rc.conf
 	atf_check -o inline:'{"arcana-kernel:kernel":{"kept":["if_bridge","if_nosuch"]}}\n' \
 	    "$JGC" -c "$SOCK" get -d running kernel
 	# A name is a name.
@@ -12167,6 +12591,7 @@ atf_init_test_cases()
 	atf_add_test_case datastores_ra
 	atf_add_test_case datastores_sysctl
 	atf_add_test_case datastores_services
+	atf_add_test_case datastores_jails
 	atf_add_test_case datastores_kernel
 	atf_add_test_case datastores_instances
 	atf_add_test_case datastores_interfaces
@@ -12191,6 +12616,7 @@ atf_init_test_cases()
 	atf_add_test_case netstore
 	atf_add_test_case smtpd
 	atf_add_test_case speeder
+	atf_add_test_case relay_rc
 	atf_add_test_case monitors
 	atf_add_test_case sysfiles
 	atf_add_test_case sdwan_jail

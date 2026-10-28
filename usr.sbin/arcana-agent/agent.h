@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.230.1"
+#define	ARCANA_AGENT_VERSION	"0.231.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -57,6 +57,7 @@
 #define	SURICATA_ETC		"/usr/local/etc/suricata"
 #define	PATH_POUDRIERE_BIN	"/usr/local/bin/poudriere"
 #define	PATH_IFMCSTAT_BIN	"/usr/sbin/ifmcstat"
+#define	PATH_RTADVCTL_BIN	"/usr/sbin/rtadvctl"
 #define	PATH_FRESHCLAM_CONF	"/usr/local/etc/freshclam.conf"
 #define	PATH_SURICATA_RULES	"/var/lib/suricata/rules"
 #define	PATH_POUDRIERE_ETC	"/usr/local/etc"
@@ -143,6 +144,7 @@ struct opts {
 	const char	*suricata_bin;	/* suricata: intrusion detection, a plugin */
 	const char	*poudriere_bin;	/* poudriere(8): the package builder, a plugin */
 	const char	*ifmcstat_bin;	/* ifmcstat(8): IGMP's and MLD's state */
+	const char	*rtadvctl_bin;	/* rtadvctl(8): rtadvd's reload and show */
 	const char	*freshclam_conf; /* ClamAV's freshclam.conf, its mirrors */
 	const char	*suricata_rules; /* where suricata-update writes the ruleset */
 	const char	*exports_file;	/* exports(5) */
@@ -324,7 +326,13 @@ void		 jails_procstats(struct work *, struct jinfo *, size_t);
 int		 jail_named(struct work *, const char *, struct jinfo *);
 int		 jail_lookup(struct work *, const char *);
 
-/* superbia/confread.c: configured jails, as jail(8) -e resolves them. */
+/* superbia/confread.c: configured jails, as jail(8) -e resolves them;
+ * a file it could not read, and why. */
+struct conf_error {
+	const char	*scope;
+	const char	*message;
+};
+
 struct cjail {
 	const char	*name;
 	const char	*scope;		/* file to give jail(8) -f */
@@ -337,7 +345,7 @@ struct cconf {
 	size_t		 nscopes;
 	struct cjail	*jails;
 	size_t		 njails;
-	struct arc_conf_error *errors;
+	struct conf_error *errors;
 	size_t		 nerrors;
 };
 
@@ -347,6 +355,7 @@ struct jboot {
 	const char	*list;		/* jail_list, or NULL: every jail */
 };
 void		 jail_boot_read(struct work *, struct jboot *);
+void		 jail_boot_files(struct work *, struct jboot *);
 bool		 jail_boot_of(const struct jboot *, const char *);
 int		 jail_boot_set(struct work *, const char *, bool,
 		    const struct cconf *, const char **);
@@ -366,10 +375,27 @@ void		 jail_record(struct work *, struct arc_jail *, const char *,
 struct arc_jail	*jail_current(struct work *, const char *,
 		    const struct cconf *);
 
-/* ira/lifecycle.c, invidia/address.c */
-int		 do_list(struct work *, bool, struct arc_list_rsp *);
+/* ira/lifecycle.c: the jails, configured and running merged (do_list(),
+ * with config_only the configured alone), and what an action left. */
+struct jails_read {
+	bool			 ok;
+	const char		*error;
+	struct arc_jail		*jails;
+	size_t			 njails;
+	const char *const	*scopes;
+	size_t			 nscopes;
+	struct conf_error	*errors;
+	size_t			 nerrors;
+};
+struct jail_done {
+	bool		 ok;
+	const char	*error;
+	struct arc_jail	*result;	/* the jail as it is after */
+};
+int		 do_list(struct work *, bool, struct jails_read *);
 int		 do_action(struct work *, const char *, uint8_t,
-		    struct arc_action_rsp *);
+		    struct jail_done *);
+/* invidia/address.c */
 /* ira/jailmake.c: jails made and taken away, their defaults, templates */
 const char	*jail_conf_check(const struct arc_job_spec *);
 int		 do_jail_conf(struct work *, const struct arc_job_spec *,
@@ -746,8 +772,6 @@ const char	*speeder_check(const struct arc_job_spec *);
 char		*speeder_title(const struct arc_job_spec *);
 int		 do_speeder_job(struct work *, const struct arc_job_spec *,
 		    const char **);
-bool		 speeder_running(struct work *);
-int		 speeder_service(struct work *, const char *, const char **);
 /* A relay as it was, for safe mode: its profile (NULL: the plain one). */
 struct speeder_was {
 	const char	*profile, *flags, *enable, *profiles;
@@ -1035,12 +1059,53 @@ int		 do_ng(struct work *, const char *, const char *const *, size_t,
 /* gula/stats.c */
 int		 do_stats(struct work *, struct arc_stats_rsp *);
 
-/* ira/packages.c */
+/* ira/packages.c: a package as pkg(8) says of it; a read of pkg's
+ * (those installed, or what the repository has newer); an upgrade
+ * asked and its outcome. */
+struct package {
+	const char	*name;
+	const char	*installed;
+	const char	*available;	/* the repository's, where newer */
+	bool		 has_automatic;
+	bool		 automatic;
+	const char	*comment;
+	bool		 has_size;
+	uint64_t	 size;
+	const char	*origin;
+};
+struct pkg_read {
+	bool			 ok;
+	const char		*error;
+	struct package	*packages;
+	size_t			 npackages;
+	const char *const	*repos;		/* pkg -vv's, enabled or not */
+	size_t			 nrepos;
+	bool			 has_pkgbase;	/* a jail's base: pkgbase */
+	bool			 pkgbase;
+};
+struct pkg_upgrade {
+	const char		*jail;		/* NULL the host; "*" every one */
+	struct {
+		size_t		 n;		/* none: all */
+		const char *const *v;
+	}			 names;
+	bool			 dry_run;
+	bool			 ignore_osversion;
+	uint8_t			 pkg_ip;	/* 4, 6, or 0 */
+	const char		*pkg_repo;	/* from it alone, or NULL */
+};
+struct pkg_upgraded {
+	bool			 ok;
+	const char		*error;
+	bool			 has_upgraded;
+	uint32_t		 upgraded;
+	struct package	*packages;	/* still pending */
+	size_t			 npackages;
+};
 int		 do_packages(struct work *, const char *, bool, bool, uint8_t,
-		    bool,
-		    struct arc_packages_rsp *);
-int		 do_pkg_upgrade(struct work *, const struct arc_pkg_upgrade_req *,
-		    struct arc_pkg_upgrade_rsp *);
+		    bool, struct pkg_read *);
+int		 do_pkg_upgrade(struct work *, const struct pkg_upgrade *,
+		    struct pkg_upgraded *);
 int		 do_pkg_clean(struct work *, const char *, bool, const char **);
 int		 do_jail_base(struct work *, const struct arc_job_spec *,
 		    const char **);

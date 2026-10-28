@@ -5,12 +5,11 @@
  */
 
 /*
- * ypackages: the packages operations' replies as arcana-packages has
- * them (ypackages.c), for agent_test.sh: pkg-installed's reply of three
- * packages and the outdated reply of two, one of them not installed,
- * merged, a package a line; the host's through YANG-CBOR and back, and
- * a jail's, in arcana-jails's jail; pkg-upgrade's reply as the upgrade
- * action's output.
+ * ypackages: pkg's reads as arcana-packages has them (ypackages.c), for
+ * agent_test.sh: pkg query's read of three packages and pkg version's
+ * of two, one of them not installed, merged, a package a line; the
+ * host's through YANG-CBOR and back, and a jail's, in arcana-jails's
+ * jail; an upgrade's outcome as the upgrade action's output.
  */
 
 #include <err.h>
@@ -19,11 +18,12 @@
 
 #include <arcana.h>
 
+#include "agent.h"
 #include "collect.h"
 
 typedef struct arcana_packages_package ypkg;
 
-static const struct arc_package inst[] = {
+static const struct package inst[] = {
 	{ .name = "bash", .installed = "5.3.3", .has_automatic = true,
 	    .automatic = false, .comment = "GNU Project's Bourne Again "
 	    "SHell", .has_size = true, .size = 9123456,
@@ -35,11 +35,11 @@ static const struct arc_package inst[] = {
 	{ .name = "git", .installed = "2.51.0", .has_automatic = true,
 	    .automatic = false, .origin = "devel/git" },
 };
-static const struct arc_package outd[] = {
+static const struct package outd[] = {
 	{ .name = "curl", .installed = "8.16.0", .available = "8.17.0" },
 	{ .name = "vim", .installed = "9.1.1", .available = "9.1.2" },
 };
-static const struct arc_package upg[] = {
+static const struct package upg[] = {
 	{ .name = "curl", .installed = "8.16.0", .available = "8.17.0" },
 };
 
@@ -75,8 +75,8 @@ same(const char *what, const struct cbl_ybuf *b1, const struct cbl_ybuf *b2)
 int
 main(void)
 {
-	struct arc_packages_rsp ri, ro;
-	struct arc_pkg_upgrade_rsp ru;
+	struct pkg_read ri, ro;
+	struct pkg_upgraded ru;
 	struct arcana_packages_packages host, hback;
 	struct arcana_packages_packages_upgrade_output up;
 	struct arcana_jails_jails js, jback;
@@ -89,13 +89,13 @@ main(void)
 	static const char *const repos[] = { "FreeBSD-ports", "builder" };
 
 	memset(&ri, 0, sizeof(ri));
-	ri.packages.n = 3;
-	ri.packages.v = inst;
-	ri.pkg_repos.n = 2;
-	ri.pkg_repos.v = repos;
+	ri.npackages = 3;
+	ri.packages = (struct package *)(uintptr_t)inst;
+	ri.nrepos = 2;
+	ri.repos = repos;
 	memset(&ro, 0, sizeof(ro));
-	ro.packages.n = 2;
-	ro.packages.v = outd;
+	ro.npackages = 2;
+	ro.packages = (struct package *)(uintptr_t)outd;
 	if ((a = cbl_yarena_new()) == NULL)
 		err(1, "cbl_yarena_new");
 	if ((error = ypackages_from(&ri, &ro, a, &host)) != 0)
@@ -141,8 +141,8 @@ main(void)
 	memset(&ru, 0, sizeof(ru));
 	ru.has_upgraded = true;
 	ru.upgraded = 1;
-	ru.packages.n = 1;
-	ru.packages.v = upg;
+	ru.npackages = 1;
+	ru.packages = (struct package *)(uintptr_t)upg;
 	if ((error = ypackages_upgraded(&ru, a, &up)) != 0)
 		errc(1, error, "ypackages_upgraded");
 	printf("upgraded %u\n", up.upgraded);

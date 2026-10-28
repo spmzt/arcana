@@ -338,7 +338,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "if [ \"$1\" = -e ]; then for f in %s/rc.d/*; do n=${f##*/}; "
 	    "grep -q \"^${n}_enable=\\\"YES\\\"\" \"$conf\" && echo \"$f\"; "
 	    "done; exit 0; fi\n"
-	    "r=$1; [ \"$1\" = speederv2 ] && r=$1${3:+_$3}\n"
+	    "r=$1; [ \"$1\" = arcana_relay ] && r=$1${3:+_$3}\n"
 	    "case \"$2\" in\n"
 	    "rcvar) echo \"${1}_enable=\\\"NO\\\"\" ;;\n"
 	    "enabled) grep -q \"^${1}_enable=\\\"YES\\\"\" \"$conf\" ;;\n"
@@ -797,18 +797,19 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(chmod("tools/smtpd", 0755) == 0);
 	ATF_REQUIRE(chmod("tools/smtpctl", 0755) == 0);
 	ATF_REQUIRE(chmod("tools/encrypt", 0755) == 0);
-	/* UDPspeeder's relay, a plugin, and its lines in syslog's file. */
+	/* UDPspeeder's relay, a plugin, and its lines in syslog's file:
+	 * Arcana's plain relay, arcana_relay's tag. */
 	put("tools/speederv2", "#!/bin/sh\nexit 0\n");
 	ATF_REQUIRE(chmod("tools/speederv2", 0755) == 0);
-	put("speeder.log", "Oct 23 14:22:39 h speederv2[7]: [2026-10-23 "
+	put("speeder.log", "Oct 23 14:22:39 h arcana_relay[7]: [2026-10-23 "
 	    "14:22:39][INFO]fec_inner_parameter=1:2,2:3\nOct 23 14:22:49 h "
-	    "speederv2[7]: [2026-10-23 14:22:49][INFO][report]client-->server:"
+	    "arcana_relay[7]: [2026-10-23 14:22:49][INFO][report]client-->server:"
 	    "(original:10 pkt;1000 byte) (fec:20 pkt,1500 byte)  server-->"
 	    "client:(original:10 pkt;1000 byte) (fec:20 pkt;1500 byte)\nOct 23 "
-	    "14:22:59 h speederv2[7]: [2026-10-23 14:22:59][INFO][report]"
+	    "14:22:59 h arcana_relay[7]: [2026-10-23 14:22:59][INFO][report]"
 	    "client-->server:(original:20 pkt;2000 byte) (fec:40 pkt,3000 byte)"
 	    "  server-->client:(original:20 pkt;2000 byte) (fec:40 pkt;3000 "
-	    "byte)\nOct 23 14:23:09 h speederv2[7]: [2026-10-23 14:23:09][INFO]"
+	    "byte)\nOct 23 14:23:09 h arcana_relay[7]: [2026-10-23 14:23:09][INFO]"
 	    "[report]client-->server:(original:30 pkt;3000 byte) (fec:60 pkt,"
 	    "4500 byte)  server-->client:(original:30 pkt;3000 byte) (fec:60 "
 	    "pkt;4500 byte)\n");

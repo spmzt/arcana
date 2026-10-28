@@ -861,10 +861,11 @@ word(ucl_object_t *args, const char *name, const char *fmt, ...)
  * listening where the wg peer points (its endpoint) and sending to the
  * far underlay at the relay's port; the far end's server, taking it
  * there and handing it to the far wg's own port.  Each a profile of
- * the plugin's rc script, named for its interface, with a fifo of its
- * own so that its ratios change without dropping the tunnel, run in a
- * service jail of rc.subr's (svcj-speederv2_<profile>) held to its
- * addresses; started, and taken away when the tunnel is.
+ * Arcana's rc script for the relays, arcana_relay, named for its
+ * interface, with a fifo of its own so that its ratios change without
+ * dropping the tunnel, run in a service jail of rc.subr's
+ * (svcj-arcana_relay_<profile>) held to its addresses; started, and
+ * taken away when the tunnel is.
  */
 static void
 relay_objs(struct plan *pl, const ucl_object_t *a, const ucl_object_t *b,
@@ -917,7 +918,7 @@ relay_objs(struct plan *pl, const ucl_object_t *a, const ucl_object_t *b,
 		word(args, "fec", "%s", fec);
 		word(args, "mode", "%jd", (intmax_t)mode);
 		word(args, "report", "10");
-		word(args, "fifo", "/var/run/speederv2/%s.fifo", prof);
+		word(args, "fifo", "/var/run/arcana_relay/%s.fifo", prof);
 		/* In rc.subr's service jail, held to the addresses it uses:
 		 * the client to its underlay and where the wg peer reaches
 		 * it, the server to its underlay and the loopback it hands

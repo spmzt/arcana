@@ -17,7 +17,8 @@ SRCS+=		bird.c birdwatch.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c
 		ybird.c ybuilder.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c jailallow.c packages.c pkgbase.c \
-		services.c update.c yjails.c yjf.c yjobs.c ypackages.c yservices.c ysvcedit.c
+		services.c update.c yjailedit.c yjails.c yjf.c yjobs.c \
+		ypackages.c yservices.c ysvcedit.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
 SRCS+=		record.c \
 		pools.c storage.c zfskey.c xfer.c health.c resources.c stats.c trace.c procs.c log.c \
@@ -61,9 +62,10 @@ LDADD+=		-lfetch -ljail -lgeom -lmemstat -lprocstat -ldevstat -lnv -lutil -lpthr
 # is missing, not at the first call to it, detached, its stderr closed.
 LDFLAGS+=	-Wl,-z,now
 
-# The agent's rc.d(8) script.
+# The agent's rc.d(8) script, and the one that runs its FEC relays
+# (share/rc.d/arcana_relay, as it is).
 FILESGROUPS+=	RC
-RC=		arcana_agent.sh
+RC=		arcana_agent.sh ${ARC_TOP}/share/rc.d/arcana_relay
 RCDIR=		${PREFIX}/etc/rc.d
 RCNAME_arcana_agent.sh=	arcana_agent
 RCMODE=		0555

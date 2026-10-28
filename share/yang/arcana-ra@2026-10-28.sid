@@ -1,0 +1,343 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-ra",
+    "module-revision": "2026-10-28",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-interfaces",
+        "module-revision": "2018-02-20"
+      },
+      {
+        "module-name": "ietf-ip",
+        "module-revision": "2018-02-22"
+      },
+      {
+        "module-name": "ietf-ipv6-unicast-routing",
+        "module-revision": "2018-03-13"
+      },
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "79400",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-ra",
+        "sid": "79400"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:clock-skew",
+        "sid": "79401"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:dnssl",
+        "sid": "79402"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:dnssl/domain",
+        "sid": "79403"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:dnssl/lifetime",
+        "sid": "79404"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:interface-prefixes",
+        "sid": "79405"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:link-mtu-auto",
+        "sid": "79406"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:other-capability",
+        "sid": "79407"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:pref64",
+        "sid": "79408"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:pref64/lifetime",
+        "sid": "79409"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:pref64/prefix",
+        "sid": "79410"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rdnss",
+        "sid": "79411"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rdnss/address",
+        "sid": "79412"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rdnss/lifetime",
+        "sid": "79413"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:route",
+        "sid": "79414"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:route/lifetime",
+        "sid": "79415"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:route/preference",
+        "sid": "79416"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:route/prefix",
+        "sid": "79417"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:router-preference",
+        "sid": "79418"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd",
+        "sid": "79419"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/clock-skew",
+        "sid": "79420"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/cur-hop-limit",
+        "sid": "79421"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/default-lifetime",
+        "sid": "79422"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/dnssl",
+        "sid": "79423"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/dnssl/domain",
+        "sid": "79424"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/dnssl/lifetime",
+        "sid": "79425"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/flags",
+        "sid": "79426"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/interface-prefixes",
+        "sid": "79427"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/last-send",
+        "sid": "79428"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/link-mtu",
+        "sid": "79429"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/managed-flag",
+        "sid": "79430"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/max-rtr-adv-interval",
+        "sid": "79431"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/min-rtr-adv-interval",
+        "sid": "79432"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/next-send",
+        "sid": "79433"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/other-config-flag",
+        "sid": "79434"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/pref64",
+        "sid": "79435"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/pref64/lifetime",
+        "sid": "79436"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/pref64/prefix",
+        "sid": "79437"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/prefix",
+        "sid": "79438"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/prefix/autonomous-flag",
+        "sid": "79439"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/prefix/on-link-flag",
+        "sid": "79440"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/prefix/origin",
+        "sid": "79441"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/prefix/preferred-expires",
+        "sid": "79442"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/prefix/preferred-lifetime",
+        "sid": "79443"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/prefix/prefix",
+        "sid": "79444"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/prefix/valid-expires",
+        "sid": "79445"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/prefix/valid-lifetime",
+        "sid": "79446"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/rdnss",
+        "sid": "79447"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/rdnss/address",
+        "sid": "79448"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/rdnss/lifetime",
+        "sid": "79449"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/reachable-time",
+        "sid": "79450"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/retrans-timer",
+        "sid": "79451"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/route",
+        "sid": "79452"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/route/lifetime",
+        "sid": "79453"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/route/preference",
+        "sid": "79454"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/route/prefix",
+        "sid": "79455"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/router-preference",
+        "sid": "79456"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:rtadvd/status",
+        "sid": "79457"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/arcana-ra:source-link-layer-address",
+        "sid": "79458"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/arcana-ra:preferred-lifetime-decrements",
+        "sid": "79459"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/arcana-ra:valid-lifetime-decrements",
+        "sid": "79460"
+      }
+    ]
+  }
+}

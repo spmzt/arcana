@@ -622,6 +622,79 @@ vc_cap_add_record(struct vc_capfile *f, const char *name,
 	return (rc);
 }
 
+/* render_cap() for a caller that writes whole records: NULL where the
+ * number is not one, or the type not a field's. */
+char *
+vc_cap_field(const char *cap, char type, const char *value)
+{
+
+	if (!cap_name_ok(cap) || (type != '#' && type != '=' && type != 0) ||
+	    (type != 0 && value == NULL))
+		return (NULL);
+	return (render_cap(cap, type, value));
+}
+
+/*
+ * The record named name written whole, as rtadvd.conf(5)'s examples
+ * are: its names line, then its fields packed on tab-indented lines of
+ * at most 72 columns, each line's ":" continued by "\".  One there is
+ * replaced where it is, its names kept; else the record is added at the
+ * end.  The caller orders the fields: a tc= last.
+ */
+int
+vc_cap_set_record(struct vc_capfile *f, const char *name,
+    const char *const *caps, size_t n, char *err, size_t errlen)
+{
+	const struct vc_record *r = vc_cap_record(f, name);
+	char *s = NULL;
+	size_t len = 0, col = 0, s0, e0;
+	FILE *fp;
+	int rc;
+
+	if (!cap_name_ok(name)) {
+		cfail(err, errlen, "%s: not a record's name", name);
+		errno = EINVAL;
+		return (-1);
+	}
+	for (size_t i = 0; i < n; i++)
+		if (caps[i][0] == '\0' || strchr(caps[i], '\n') != NULL) {
+			cfail(err, errlen, "%s: an empty field, or one with a "
+			    "newline", name);
+			errno = EINVAL;
+			return (-1);
+		}
+	if ((fp = open_memstream(&s, &len)) == NULL)
+		return (-1);
+	if (r == NULL && f->len > 0 && f->text[f->len - 1] != '\n')
+		fputc('\n', fp);
+	if (r != NULL)
+		for (size_t i = 0; i < r->nnames; i++)
+			fprintf(fp, "%s%s", i > 0 ? "|" : "", r->names[i]);
+	else
+		fputs(name, fp);
+	fputc(':', fp);
+	for (size_t i = 0; i < n; i++) {
+		size_t w = strlen(caps[i]) + 1;
+
+		if (col == 0 || col + w > 72) {
+			fprintf(fp, "\\\n\t:");
+			col = 9;
+		}
+		fprintf(fp, "%s:", caps[i]);
+		col += w;
+	}
+	fputc('\n', fp);
+	fclose(fp);
+	if (r != NULL) {
+		s0 = r->off;
+		e0 = r->end;
+	} else
+		s0 = e0 = f->len;
+	rc = cap_splice(f, s0, e0, s, len, err, errlen);
+	free(s);
+	return (rc);
+}
+
 /* The first record named name removed, its lines all. */
 int
 vc_cap_remove_record(struct vc_capfile *f, const char *name, char *err,

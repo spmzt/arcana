@@ -5,7 +5,7 @@
  */
 
 /*
- * yjails: the list operation's reply as arcana-jails has it (yjails.c),
+ * yjails: the jails read as arcana-jails has it (yjails.c),
  * for agent_test.sh: a reply of two jails, one running with a vnet of its
  * own, one configured and stopped, made into the module's data, written
  * a field a line, and through YANG-CBOR and back, the same bytes.
@@ -18,6 +18,7 @@
 
 #include <arcana.h>
 
+#include "agent.h"
 #include "collect.h"
 
 static const char *const scopes[] = { "/etc/jail.conf",
@@ -30,7 +31,7 @@ static const struct arc_param params[] = {
 	{ .key = "allow.raw_sockets", .values = { 1, allow } },
 	{ .key = "persist", .values = { 0, NULL } },
 };
-static const struct arc_conf_error cerr[] = {
+static const struct conf_error cerr[] = {
 	{ .scope = "/etc/jail.conf.d/bad.conf", .message = "line 3: syntax "
 	    "error" },
 };
@@ -110,7 +111,7 @@ show(const struct arcana_jails *d)
 int
 main(void)
 {
-	struct arc_list_rsp rsp;
+	struct jails_read rsp;
 	struct arcana_jails d, back;
 	struct cbl_ybuf b1 = { 0 }, b2 = { 0 };
 	cbl_yarena *a;
@@ -118,13 +119,13 @@ main(void)
 	int error;
 
 	memset(&rsp, 0, sizeof(rsp));
-	rsp.has_ok = rsp.ok = true;
-	rsp.scopes.n = 2;
-	rsp.scopes.v = scopes;
-	rsp.conf_errors.n = 1;
-	rsp.conf_errors.v = cerr;
-	rsp.jails.n = 2;
-	rsp.jails.v = jails;
+	rsp.ok = true;
+	rsp.nscopes = 2;
+	rsp.scopes = scopes;
+	rsp.nerrors = 1;
+	rsp.errors = (struct conf_error *)(uintptr_t)cerr;
+	rsp.njails = 2;
+	rsp.jails = (struct arc_jail *)(uintptr_t)jails;
 	if ((a = cbl_yarena_new()) == NULL)
 		err(1, "cbl_yarena_new");
 	if ((error = yjails_from_list(&rsp, a, &d)) != 0)

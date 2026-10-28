@@ -61,6 +61,7 @@ int		 arc_narrow(void);
 void		 arc_stream_send(const char *);
 int		 arc_map_w(void);
 int		 arc_map_h(void);
+void		 arc_fullscreen(const char *, int);
 void		 arc_title(const char *);
 char		*arc_loc_get(void);
 void		 arc_loc_set(const char *, int);
@@ -79,7 +80,11 @@ void		 arc_push_off(void);
 int		 arc_install_state(void);
 void		 arc_install_prompt(void);
 int		 arc_gl_probe(void);
-void		 arc_gl_report(int, int, int, int);
+void		 arc_gl_report(int, int, int, int, int, int, int, int, int,
+		    int);
+void		 arc_map_view(double, double, double);
+void		 arc_gl_note(const char *);
+void		 arc_gl_fresh(void);
 int		 arc_css_rgb(const char *);
 void		 arc_install_dismiss(void);
 
@@ -481,6 +486,7 @@ struct app {
 	enum link	 api;		/* /api/health */
 	bool		 visible;
 	bool		 fx;		/* blur and idle animations */
+	bool		 no_draw;	/* the action drew what it changed itself */
 	int		 notify;	/* 0 not asked, 1 granted, 2 denied, 3 none */
 	bool		 notify_off;	/* turned off here, though allowed */
 	int		 install;	/* 0 no offer, 1 prompt, 2 iOS, 3 menu */
@@ -823,6 +829,7 @@ void		 bird_session(const char *, const char *,
 void		 topo_bird_session(const char *, const char *,
 		    const struct bfsess *);
 bool		 topo_joining(void);
+bool		 topo_escape(void);
 /* birdform.c: BGP, OSPF and BFD protocols as forms. */
 struct bfconf;
 struct bfconf	*bf_new(const char *);
@@ -930,6 +937,11 @@ void		 glmap_target(double, double, double, double);
 void		 glmap_probe(double, double, double, double, double, double,
 		    double, double, double, double);
 void		 glmap_end(void);
+void		 glmap_scene_begin(void);
+void		 glmap_scene_link(double, double, double, double, double,
+		    double, int, bool, bool);
+void		 glmap_scene_end(void);
+void		 glmap_scene_clear(void);
 void		 topo_probe_tick(double);
 bool		 ecmp_shown(void);
 void		 ecmp_tick(double);
@@ -1069,6 +1081,12 @@ void		 view_nacm(struct html *, struct server *);
 bool		 nacm_action(const char *, const char *, const char *);
 bool		 nacm_form(const char *, const ucl_object_t *);
 void		 nacm_tick(double);
+/* ra.c: an interface's router advertisements (rtadvd.conf(5)), on the
+ * Network tab's Interfaces. */
+void		 view_ra(struct html *, struct server *);
+bool		 ra_action(const char *, const char *, const char *);
+bool		 ra_form(const char *, const ucl_object_t *);
+void		 ra_tick(double);
 void		 view_storage_geom(struct html *, struct server *, int);
 void		 view_syslogconf(struct html *, struct server *);
 void		 view_hardening(struct html *, struct server *);

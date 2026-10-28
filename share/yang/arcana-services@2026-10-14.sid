@@ -2,8 +2,14 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-services",
     "module-revision": "2026-10-14",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 200, 100.",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-netconf-acm",
+        "module-revision": "2018-02-14"
+      }
+    ],
     "assignment-range": [
       {
         "entry-point": "62200",
@@ -205,6 +211,71 @@
         "namespace": "data",
         "identifier": "/arcana-services:services/service/variable/value",
         "sid": "62238"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert",
+        "sid": "62239"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/input",
+        "sid": "62240"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/input/dry-run",
+        "sid": "62241"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/input/service",
+        "sid": "62242"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/output",
+        "sid": "62243"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/output/service",
+        "sid": "62244"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/output/service/name",
+        "sid": "62245"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/output/service/variable",
+        "sid": "62246"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/output/service/variable/file",
+        "sid": "62247"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/output/service/variable/left",
+        "sid": "62248"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/output/service/variable/line",
+        "sid": "62249"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/output/service/variable/name",
+        "sid": "62250"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/convert/output/service/variable/value",
+        "sid": "62251"
       }
     ]
   }

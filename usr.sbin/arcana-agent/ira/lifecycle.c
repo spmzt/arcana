@@ -59,9 +59,8 @@ cmp_jail(const void *a, const void *b)
  * config_only the running ones are not looked at.
  */
 int
-do_list(struct work *w, bool config_only, struct arc_list_rsp *rsp)
+do_list(struct work *w, bool config_only, struct jails_read *rsp)
 {
-	struct arc_host	*host;
 	struct arc_jail	*jails;
 	struct cconf	 conf;
 	struct jboot	 boot;
@@ -72,21 +71,18 @@ do_list(struct work *w, bool config_only, struct arc_list_rsp *rsp)
 
 	list = NULL;
 	n = 0;
-	rsp->has_ok = true;
+	memset(rsp, 0, sizeof(*rsp));
 	rsp->ok = true;
-	host = wcalloc(w, 1, sizeof(*host));
-	host_info(w, host);
-	rsp->host = host;
 	if (!config_only) {
 		if (jails_running(w, &list, &n, &rsp->error) == -1)
 			rsp->ok = false;
 		jails_procstats(w, list, n);
 	}
 	conf_read(w, &conf);
-	rsp->scopes.v = conf.scopes;
-	rsp->scopes.n = conf.nscopes;
-	rsp->conf_errors.v = conf.errors;
-	rsp->conf_errors.n = conf.nerrors;
+	rsp->scopes = conf.scopes;
+	rsp->nscopes = conf.nscopes;
+	rsp->errors = conf.errors;
+	rsp->nerrors = conf.nerrors;
 
 	refs = wcalloc(w, n + conf.njails + 1, sizeof(*refs));
 	for (k = 0; k < n; k++) {
@@ -105,8 +101,13 @@ do_list(struct work *w, bool config_only, struct arc_list_rsp *rsp)
 	}
 	qsort(refs, k, sizeof(*refs), cmp_jail);
 	jails = wcalloc(w, k + 1, sizeof(*jails));
-	/* What starts at boot: rc.conf read once for them all. */
-	jail_boot_read(w, &boot);
+	/* What starts at boot: rc.conf read once for them all, as the
+	 * files rc(8) reads have it for running (the configured alone),
+	 * as sysrc(8) resolves it for the state. */
+	if (config_only)
+		jail_boot_files(w, &boot);
+	else
+		jail_boot_read(w, &boot);
 	for (i = 0; i < k; i++) {
 		jail_record(w, &jails[i], refs[i].name, refs[i].ji,
 		    conf_jail(&conf, refs[i].name));
@@ -115,8 +116,8 @@ do_list(struct work *w, bool config_only, struct arc_list_rsp *rsp)
 			jails[i].boot = jail_boot_of(&boot, refs[i].name);
 		}
 	}
-	rsp->jails.v = jails;
-	rsp->jails.n = k;
+	rsp->jails = jails;
+	rsp->njails = k;
 	return (0);
 }
 
@@ -166,7 +167,7 @@ drop_aliases(struct work *w, const struct jinfo *ji, const struct cjail *cj,
 
 int
 do_action(struct work *w, const char *name, uint8_t action,
-    struct arc_action_rsp *rsp)
+    struct jail_done *rsp)
 {
 	const struct cjail	*cj;
 	struct execres		 res;
@@ -177,8 +178,7 @@ do_action(struct work *w, const char *name, uint8_t action,
 	size_t			 n, i;
 	int			 jid, step;
 
-	rsp->has_ok = true;
-	rsp->ok = false;
+	memset(rsp, 0, sizeof(*rsp));
 	/* Whoever asks (the operation, a YANG action): jail(8) gets it. */
 	if (name == NULL || !valid_jail(name)) {
 		rsp->error = "invalid jail name";

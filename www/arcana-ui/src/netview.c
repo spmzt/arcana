@@ -9,6 +9,7 @@
  * built from the JSON netstat(1) and sockstat(1) printed on the host.
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -620,6 +621,13 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 		    "description") : "");
 		h_attr(h, "data-value", buf);
 		h_raw(h, ">Edit</button>");
+		if (net_scope()[0] == '\0') {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "ra-open\" title=\"Router advertisements on it: its "
+			    "record in rtadvd.conf(5), what rtadvd(8) sends\"");
+			h_attr(h, "data-arg", name);
+			h_raw(h, ">RA</button>");
+		}
 		if (net_scope()[0] != '\0' && strncmp(name, "lo", 2) != 0) {
 			h_raw(h, "<button class=\"ghost small\" data-act=\""
 			    "if-vnet-back\" title=\"Take this interface out "
@@ -637,6 +645,8 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 	}
 	free(rows);
 	h_raw(h, "</tbody></table>");
+	/* One interface's router advertisements, opened from its row. */
+	view_ra(h, (struct server *)(uintptr_t)s);
 	return (n);
 }
 

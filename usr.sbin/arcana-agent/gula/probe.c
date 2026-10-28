@@ -37,6 +37,7 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <sys/time.h>
 
 #include <net/if.h>
@@ -123,6 +124,48 @@ struct target {
 static pthread_mutex_t	 lock = PTHREAD_MUTEX_INITIALIZER;
 static struct target	*targets;
 static int		 ntargets;
+
+/*
+ * The kernel hands an ICMP reply to the raw sockets of the FIB of the
+ * interface it came in on: a probe sent in a tunnel's table (its
+ * tunnelfib) over an uplink in another never hears its reply on its own
+ * socket.  So replies are listened for on a socket a FIB, a family,
+ * the host's, and told to the target by the echo's id.
+ */
+#define	RX_FIBS		16
+static int		 rx[2][RX_FIBS];
+static int		 nfibs = -1;
+
+static void
+rx_open(int af)
+{
+	struct icmp6_filter	f;
+	size_t			len = sizeof(nfibs);
+	int			k = af == AF_INET6, v;
+
+	if (nfibs < 0 && (sysctlbyname("net.fibs", &nfibs, &len, NULL, 0) != 0 ||
+	    nfibs < 1))
+		nfibs = 1;
+	for (int fib = 0; fib < nfibs && fib < RX_FIBS; fib++) {
+		if (rx[k][fib] > 0)
+			continue;
+		if ((v = socket(af, SOCK_RAW | SOCK_CLOEXEC | SOCK_NONBLOCK,
+		    af == AF_INET ? IPPROTO_ICMP : IPPROTO_ICMPV6)) == -1)
+			continue;
+		if (setsockopt(v, SOL_SOCKET, SO_SETFIB, &fib, sizeof(fib)) ==
+		    -1) {
+			close(v);
+			continue;
+		}
+		if (af == AF_INET6) {
+			ICMP6_FILTER_SETBLOCKALL(&f);
+			ICMP6_FILTER_SETPASS(ICMP6_ECHO_REPLY, &f);
+			(void)setsockopt(v, IPPROTO_ICMPV6, ICMP6_FILTER, &f,
+			    sizeof(f));
+		}
+		rx[k][fib] = v;
+	}
+}
 
 /*
  * The links an edge watches (Mplify 119's interface faults): its UCS
@@ -259,6 +302,9 @@ target_open(struct target *t)
 		target_close(t);
 		return (false);
 	}
+	/* Its reply may come in on an interface of another table. */
+	if (t->jail[0] == '\0' && t->fib != 0)
+		rx_open(t->af);
 	v = t->dscp << 2;
 	if (t->af == AF_INET)
 		(void)setsockopt(t->sock, IPPROTO_IP, IP_TOS, &v, sizeof(v));
@@ -522,11 +568,16 @@ target_send(struct target *t, double now)
 		t->next_send = now + t->interval / 1000.0;
 }
 
+/*
+ * What a socket of family af has: each echo reply to the target t, or
+ * with t NULL to the target of its id (a FIB's listener's).
+ */
 static void
-target_recv(struct target *t, double now)
+sock_recv(int sock, int af, struct target *t, double now)
 {
 	unsigned char		 pkt[PKT_MAX + 64];
 	struct sockaddr_storage	 from;
+	struct target		*x;
 	socklen_t		 flen;
 	ssize_t			 n;
 	uint16_t		 id, seq;
@@ -534,11 +585,11 @@ target_recv(struct target *t, double now)
 
 	for (;;) {
 		flen = sizeof(from);
-		n = recvfrom(t->sock, pkt, sizeof(pkt), 0, (struct sockaddr *)
+		n = recvfrom(sock, pkt, sizeof(pkt), 0, (struct sockaddr *)
 		    &from, &flen);
 		if (n <= 0)
 			return;
-		if (t->af == AF_INET) {
+		if (af == AF_INET) {
 			const struct ip		*ip = (const struct ip *)(void *)pkt;
 			const struct icmp	*ic;
 
@@ -560,12 +611,17 @@ target_recv(struct target *t, double now)
 			id = ntohs(ic->icmp6_id);
 			seq = ntohs(ic->icmp6_seq);
 		}
-		if (id != t->ident)
+		x = t;
+		for (i = 0; x == NULL && i < ntargets; i++)
+			if (targets[i].af == af && targets[i].sock != -1 &&
+			    targets[i].ident == id && targets[i].jail[0] == '\0')
+				x = &targets[i];
+		if (x == NULL || id != x->ident)
 			continue;
 		for (i = 0; i < OUT_MAX; i++)
-			if (t->out[i].live && t->out[i].seq == seq) {
-				t->out[i].live = false;
-				hit(t, (now - t->out[i].sent) * 1000);
+			if (x->out[i].live && x->out[i].seq == seq) {
+				x->out[i].live = false;
+				hit(x, (now - x->out[i].sent) * 1000);
 				break;
 			}
 	}
@@ -606,7 +662,10 @@ prober(void *arg __unused)
 	int		 i, n, ms;
 	bool		 moved;
 
-	pfd = calloc(TARGETS_MAX, sizeof(*pfd));
+	pfd = calloc(TARGETS_MAX + 2 * RX_FIBS, sizeof(*pfd));
+	for (int k = 0; k < 2; k++)
+		for (int fib = 0; fib < RX_FIBS; fib++)
+			rx[k][fib] = -1;
 	for (;;) {
 		pthread_mutex_lock(&lock);
 		now = now_s();
@@ -631,6 +690,14 @@ prober(void *arg __unused)
 			pfd[n].revents = 0;
 			n++;
 		}
+		for (int k = 0; k < 2; k++)
+			for (int fib = 0; fib < RX_FIBS; fib++)
+				if (rx[k][fib] != -1) {
+					pfd[n].fd = rx[k][fib];
+					pfd[n].events = POLLIN;
+					pfd[n].revents = 0;
+					n++;
+				}
 		moved = changed;
 		changed = false;
 		pthread_mutex_unlock(&lock);
@@ -649,9 +716,18 @@ prober(void *arg __unused)
 			if (t->sock == -1)
 				continue;
 			if (pfd[n].fd == t->sock && (pfd[n].revents & POLLIN))
-				target_recv(t, now);
+				sock_recv(t->sock, t->af, t, now);
 			n++;
 		}
+		for (int k = 0; k < 2; k++)
+			for (int fib = 0; fib < RX_FIBS; fib++)
+				if (rx[k][fib] != -1) {
+					if (pfd[n].fd == rx[k][fib] &&
+					    (pfd[n].revents & POLLIN))
+						sock_recv(rx[k][fib], k == 0 ?
+						    AF_INET : AF_INET6, NULL, now);
+					n++;
+				}
 		pthread_mutex_unlock(&lock);
 	}
 	return (NULL);

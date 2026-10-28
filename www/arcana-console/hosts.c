@@ -1311,6 +1311,209 @@ step_rx(const struct arc_step_ntf *ntf, void *arg)
 }
 
 /*
+ * The agent's steps of a request of family 1, heard on the steps group
+ * while it runs, as an operation's trace came in its reply: each step
+ * by its number, its last word kept, copied (the notification's go with
+ * it).  Not over SCTP's shared association, whose steps are every
+ * request's: the trace is the console's alone there.
+ */
+struct ysteps {
+	pthread_mutex_t	 lock;
+	struct arc_step	*v;
+	size_t		 n;
+	cbl_sub		*sub;
+	bool		 dirty;	/* steps may still come: not kept */
+};
+
+static void
+ystep_free(struct arc_step *s)
+{
+
+	free((void *)(uintptr_t)s->label);
+	free((void *)(uintptr_t)s->detail);
+	for (size_t i = 0; i < s->argv.n; i++)
+		free((void *)(uintptr_t)s->argv.v[i]);
+	free((void *)(uintptr_t)s->argv.v);
+	free((void *)(uintptr_t)s->output.p);
+	free((void *)(uintptr_t)s->error_output.p);
+}
+
+static const void *
+ybytes(const struct cbl_bytes *b)
+{
+	void	*p;
+
+	if (b->len == 0 || (p = malloc(b->len)) == NULL)
+		return (NULL);
+	memcpy(p, b->p, b->len);
+	return (p);
+}
+
+static void
+ystep_rx(const struct arc_step_ntf *ntf, void *arg)
+{
+	struct ysteps		*ys = arg;
+	const struct arc_step	*s;
+	struct arc_step		*d, *nv;
+	const char		**argv;
+	size_t			 k;
+
+	pthread_mutex_lock(&ys->lock);
+	for (size_t i = 0; i < ntf->trace.n; i++) {
+		s = &ntf->trace.v[i];
+		for (k = 0; k < ys->n && ys->v[k].id != s->id; k++)
+			;
+		if (k == ys->n) {
+			if ((nv = reallocarray(ys->v, ys->n + 1,
+			    sizeof(*nv))) == NULL)
+				break;
+			ys->v = nv;
+			ys->n++;
+		} else
+			ystep_free(&ys->v[k]);
+		d = &ys->v[k];
+		*d = *s;
+		d->label = s->label != NULL ? strdup(s->label) : NULL;
+		d->detail = s->detail != NULL ? strdup(s->detail) : NULL;
+		argv = calloc(s->argv.n + 1, sizeof(*argv));
+		for (size_t m = 0; argv != NULL && m < s->argv.n; m++)
+			argv[m] = strdup(s->argv.v[m]);
+		d->argv.v = argv;
+		d->argv.n = argv != NULL ? s->argv.n : 0;
+		d->output.p = ybytes(&s->output);
+		d->output.len = d->output.p != NULL ? s->output.len : 0;
+		d->error_output.p = ybytes(&s->error_output);
+		d->error_output.len = d->error_output.p != NULL ?
+		    s->error_output.len : 0;
+	}
+	pthread_mutex_unlock(&ys->lock);
+}
+
+/*
+ * The host's steps heard for the call's trace (a live read's box hears
+ * them already).
+ */
+static void
+ysteps_begin(struct arc_client *cl, const struct call *c, struct ysteps *ys)
+{
+	static const struct arc_steps_handlers h = { .step = ystep_rx };
+
+	if (ys->sub == NULL && c->on_step == NULL && !is_sctp(c->uri) &&
+	    cl->groups[ARC_MCGRP_STEPS] != 0)
+		(void)arc_steps_subscribe(cl, &h, ys, &ys->sub);
+}
+
+static int
+ystep_cmp(const void *a, const void *b)
+{
+	uint32_t	x = ((const struct arc_step *)a)->id;
+	uint32_t	y = ((const struct arc_step *)b)->id;
+
+	return (x < y ? -1 : x > y);
+}
+
+/*
+ * No more heard; those heard in order, *vp and *np.  cblink's
+ * unsubscribe does not wait for the host: its answer, and a step told
+ * meanwhile, would come later to the next request on the connection,
+ * unasked, and the pool closes such a one.  A ping after it answers
+ * after them; without its answer the connection is not kept.
+ */
+static void
+ysteps_end(struct arc_client *cl, struct ysteps *ys,
+    const struct arc_step **vp, size_t *np)
+{
+
+	if (ys->sub != NULL) {
+		(void)arc_steps_unsubscribe(ys->sub);
+		ys->sub = NULL;
+		ys->dirty = cbl_ping(cl->conn, 5000) != 0;
+	}
+	pthread_mutex_lock(&ys->lock);
+	if (ys->n > 0)
+		qsort(ys->v, ys->n, sizeof(*ys->v), ystep_cmp);
+	*vp = ys->v;
+	*np = ys->n;
+	pthread_mutex_unlock(&ys->lock);
+}
+
+static void
+ysteps_free(struct ysteps *ys)
+{
+
+	if (ys->sub != NULL)
+		(void)arc_steps_unsubscribe(ys->sub);
+	for (size_t i = 0; i < ys->n; i++)
+		ystep_free(&ys->v[i]);
+	free(ys->v);
+	pthread_mutex_destroy(&ys->lock);
+}
+
+/*
+ * A jail started at boot or not, c->action: the jail-action job, waited
+ * for, rc.conf by sysrc(8) as before arcana-jails (whose commit meets
+ * rc-conf-conflict wherever /etc/rc.conf sets jail_list, which the page
+ * does not ask to accept yet).  0 with *ok, why in err; or the call's
+ * error.
+ */
+static int
+jail_boot_job(struct arc_client *cl, const struct call *c, bool *ok,
+    char *err, size_t errlen)
+{
+	struct arc_job_submit_req	 sq;
+	struct arc_job_submit_rsp	*sr;
+	struct arc_job_req		 jq;
+	struct arc_job_rsp		*jr;
+	struct arc_job_spec		 sp;
+	const struct arc_job		*j;
+	uint64_t			 id;
+	int				 error;
+
+	*ok = false;
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_JAIL_ACTION;
+	sp.jail = c->jail;
+	sp.has_action = true;
+	sp.action = c->action;
+	memset(&sq, 0, sizeof(sq));
+	sq.batch.v = &sp;
+	sq.batch.n = 1;
+	if ((error = arc_job_submit(cl, &sq, &sr)) != 0)
+		return (error);
+	if (!sr->ok || sr->jobs.n != 1 || !sr->jobs.v[0].has_id) {
+		snprintf(err, errlen, "%s", sr->error != NULL ? sr->error :
+		    "not queued");
+		arc_job_submit_rsp_free(sr);
+		return (0);
+	}
+	id = sr->jobs.v[0].id;
+	arc_job_submit_rsp_free(sr);
+	/* rc.conf's two variables: done in a moment, else said so. */
+	for (int i = 0; i < 600; i++) {
+		memset(&jq, 0, sizeof(jq));
+		jq.has_id = true;
+		jq.id = id;
+		if ((error = arc_job(cl, &jq, &jr)) != 0)
+			return (error);
+		if ((j = jr->job) != NULL && j->has_state && j->state !=
+		    ARC_JOB_STATE_QUEUED && j->state != ARC_JOB_STATE_RUNNING) {
+			*ok = j->state == ARC_JOB_STATE_DONE && (!j->has_ok ||
+			    j->ok);
+			if (!*ok)
+				snprintf(err, errlen, "%s", j->error != NULL ?
+				    j->error : "failed");
+			arc_job_rsp_free(jr);
+			return (0);
+		}
+		arc_job_rsp_free(jr);
+		usleep(50000);
+	}
+	snprintf(err, errlen, "job %ju is not done yet", (uintmax_t)id);
+	return (0);
+}
+
+/*
  * The console's steps (the API call, the session check, the cblink
  * request) with the daemon's trace under the request.
  */
@@ -1662,11 +1865,10 @@ call_run(struct task *t)
 	struct call		*c;
 	struct arc_client	 cl;
 	struct arc_hello_rsp	*hr;
-	struct arc_list_req	 lq;
-	struct arc_list_rsp	*lr;
-	struct arc_action_req	 aq;
-	struct arc_action_rsp	*ar;
 	struct arc_address_rsp	*dr;
+	struct ysteps		 ys;
+	char			 ywhy[512];
+	bool			 dirty;
 	struct arc_services_rsp	*sr;
 	struct arc_service_action_req saq;
 	struct arc_service_action_rsp *sar;
@@ -1734,10 +1936,6 @@ call_run(struct task *t)
 	struct arc_fstab_rsp	*fsr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp *irr;
-	struct arc_packages_req	 pq;
-	struct arc_packages_rsp	*pr;
-	struct arc_pkg_upgrade_req uq;
-	struct arc_pkg_upgrade_rsp *ur;
 	struct arc_job_submit_req jsq;
 	struct arc_job_submit_rsp *jsr;
 	struct arc_jobs_rsp	*jlr;
@@ -1797,6 +1995,8 @@ call_run(struct task *t)
 	int			 error;
 
 	c = (struct call *)t;
+	memset(&ys, 0, sizeof(ys));
+	pthread_mutex_init(&ys.lock, NULL);
 	top = ucl_object_typed_new(UCL_OBJECT);
 	srv = ucl_object_typed_new(UCL_OBJECT);
 	put_str(srv, "id", c->sid);
@@ -1809,8 +2009,6 @@ call_run(struct task *t)
 	steps = NULL;
 	nsteps = 0;
 	hr = NULL;
-	lr = NULL;
-	ar = NULL;
 	dr = NULL;
 	sr = NULL;
 	sar = NULL;
@@ -1845,8 +2043,6 @@ call_run(struct task *t)
 	sgr = NULL;
 	fsr = NULL;
 	irr = NULL;
-	pr = NULL;
-	ur = NULL;
 	jsr = NULL;
 	jlr = NULL;
 	jr = NULL;
@@ -1949,42 +2145,35 @@ connected:
 		ok = true;
 		break;
 	case OP_LIST:
-		memset(&lq, 0, sizeof(lq));
-		lq.config_only = c->config_only;
-		if ((error = arc_list(&cl, &lq, &lr)) != 0)
+		/* The host by hello, its jails by arcana-jails (ytrans.c). */
+		if ((error = arc_hello(&cl, &hr)) != 0)
 			goto rpcfail;
-		ok = lr->ok;
-		put_str(top, "error", lr->error);
-		put(top, "host", host_object(lr->host));
-		a = ucl_object_typed_new(UCL_ARRAY);
-		for (i = 0; i < lr->jails.n; i++)
-			ucl_array_append(a, jail_object(&lr->jails.v[i]));
-		put(top, "jails", a);
-		put(top, "scopes", strs(lr->scopes.v, lr->scopes.n));
-		a = ucl_object_typed_new(UCL_ARRAY);
-		for (i = 0; i < lr->conf_errors.n; i++) {
-			e = ucl_object_typed_new(UCL_OBJECT);
-			put_str(e, "scope", lr->conf_errors.v[i].scope);
-			put_str(e, "message", lr->conf_errors.v[i].message);
-			ucl_array_append(a, e);
-		}
-		put(top, "conf_errors", a);
-		steps = lr->trace.v;
-		nsteps = lr->trace.n;
+		put(top, "host", host_object(hr->host));
+		ysteps_begin(&cl, c, &ys);
+		ok = ytrans_jails(cl.conn, c->config_only, top, ywhy,
+		    sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		break;
 	case OP_ACTION:
-		memset(&aq, 0, sizeof(aq));
-		aq.jail = c->jail;
-		aq.has_action = true;
-		aq.action = c->action;
-		if ((error = arc_action(&cl, &aq, &ar)) != 0)
-			goto rpcfail;
-		ok = ar->ok;
-		put_str(top, "error", ar->error);
-		if (ar->result != NULL)
-			put(top, "jail", jail_object(ar->result));
-		steps = ar->trace.v;
-		nsteps = ar->trace.n;
+		/* Started at boot or not: the jail-action job, as before
+		 * (rc.conf by sysrc(8)); the rest arcana-jails' actions. */
+		if (c->action == ARC_ACTION_ENABLE || c->action ==
+		    ARC_ACTION_DISABLE) {
+			if ((error = jail_boot_job(&cl, c, &ok, ywhy,
+			    sizeof(ywhy))) != 0)
+				goto rpcfail;
+		} else {
+			ysteps_begin(&cl, c, &ys);
+			ok = ytrans_jail_action(cl.conn, c->jail,
+			    action_names[c->action], ywhy, sizeof(ywhy)) == 0;
+			ysteps_end(&cl, &ys, &steps, &nsteps);
+		}
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if ((e = ytrans_jail(cl.conn, c->jail)) != NULL)
+			put(top, "jail", e);
 		break;
 	case OP_ADDRESS:
 		if ((error = arc_address(&cl, &c->addr, &dr)) != 0)
@@ -2024,72 +2213,25 @@ connected:
 		nsteps = sar->trace.n;
 		break;
 	case OP_PACKAGES:
-		memset(&pq, 0, sizeof(pq));
-		pq.jail = c->jail[0] != '\0' ? c->jail : NULL;
-		pq.refresh = c->refresh;
-		pq.has_pkg_installed = c->installed;
-		pq.pkg_installed = c->installed;
-		pq.has_pkg_ip = c->pkg_ip != 0;
-		pq.pkg_ip = c->pkg_ip;
-		pq.has_pkg_anyos = c->anyos;
-		pq.pkg_anyos = c->anyos;
-		if ((error = arc_packages(&cl, &pq, &pr)) != 0)
-			goto rpcfail;
-		ok = pr->ok;
-		put_str(top, "error", pr->error);
-		a = ucl_object_typed_new(UCL_ARRAY);
-		for (i = 0; i < pr->packages.n; i++) {
-			e = ucl_object_typed_new(UCL_OBJECT);
-			put_str(e, "name", pr->packages.v[i].name);
-			put_str(e, "installed", pr->packages.v[i].installed);
-			put_str(e, "available", pr->packages.v[i].available);
-			put_str(e, "origin", pr->packages.v[i].origin);
-			put_str(e, "comment", pr->packages.v[i].comment);
-			if (pr->packages.v[i].has_automatic)
-				put(e, "automatic", ucl_object_frombool(
-				    pr->packages.v[i].automatic));
-			if (pr->packages.v[i].has_size)
-				put(e, "size", ucl_object_fromint((int64_t)
-				    pr->packages.v[i].size));
-			ucl_array_append(a, e);
-		}
-		put(top, "packages", a);
-		/* pkg's repositories there, any of which -r may name. */
-		put(top, "repos", strs(pr->pkg_repos.v, pr->pkg_repos.n));
-		if (pr->has_pkgbase)
-			put(top, "pkgbase", ucl_object_frombool(pr->pkgbase));
-		steps = pr->trace.v;
-		nsteps = pr->trace.n;
+		/* arcana-packages' read and refresh actions (ytrans.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = ytrans_packages(cl.conn, c->jail[0] != '\0' ? c->jail :
+		    NULL, c->installed, c->refresh, c->pkg_ip, c->anyos, top,
+		    ywhy, sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		break;
 	case OP_PKG_UPGRADE:
-		memset(&uq, 0, sizeof(uq));
-		uq.jail = c->jail[0] != '\0' ? c->jail : NULL;
-		uq.dry_run = c->dry_run;
-		uq.has_ignore_osversion = c->anyos;
-		uq.ignore_osversion = c->anyos;
-		uq.has_pkg_ip = c->pkg_ip != 0;
-		uq.pkg_ip = c->pkg_ip;
-		uq.pkg_repo = c->pkg_repo[0] != '\0' ? c->pkg_repo : NULL;
-		uq.names.v = (const char *const *)c->names;
-		uq.names.n = c->nnames;
-		if ((error = arc_pkg_upgrade(&cl, &uq, &ur)) != 0)
-			goto rpcfail;
-		ok = ur->ok;
-		put_str(top, "error", ur->error);
-		put(top, "upgraded", ur->has_upgraded ?
-		    ucl_object_fromint(ur->upgraded) :
-		    ucl_object_typed_new(UCL_NULL));
-		a = ucl_object_typed_new(UCL_ARRAY);
-		for (i = 0; i < ur->packages.n; i++) {
-			e = ucl_object_typed_new(UCL_OBJECT);
-			put_str(e, "name", ur->packages.v[i].name);
-			put_str(e, "installed", ur->packages.v[i].installed);
-			put_str(e, "available", ur->packages.v[i].available);
-			ucl_array_append(a, e);
-		}
-		put(top, "packages", a);
-		steps = ur->trace.v;
-		nsteps = ur->trace.n;
+		/* arcana-packages' upgrade action (ytrans.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = ytrans_pkg_upgrade(cl.conn, c->jail[0] != '\0' ? c->jail :
+		    NULL, (const char *const *)c->names, c->nnames, c->dry_run,
+		    c->anyos, c->pkg_ip, c->pkg_repo, top, ywhy,
+		    sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		break;
 	case OP_JOB_SUBMIT:
 		memset(&jsq, 0, sizeof(jsq));
@@ -3373,12 +3515,10 @@ fail:
 done:
 	c->json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
+	dirty = ys.dirty || ys.sub != NULL;
+	ysteps_free(&ys);
 	if (hr != NULL)
 		arc_hello_rsp_free(hr);
-	if (lr != NULL)
-		arc_list_rsp_free(lr);
-	if (ar != NULL)
-		arc_action_rsp_free(ar);
 	if (dr != NULL)
 		arc_address_rsp_free(dr);
 	if (sr != NULL)
@@ -3444,10 +3584,6 @@ done:
 		arc_fstab_rsp_free(fsr);
 	if (irr != NULL)
 		arc_ipfw_rules_rsp_free(irr);
-	if (pr != NULL)
-		arc_packages_rsp_free(pr);
-	if (ur != NULL)
-		arc_pkg_upgrade_rsp_free(ur);
 	if (jsr != NULL)
 		arc_job_submit_rsp_free(jsr);
 	if (jlr != NULL)
@@ -3478,7 +3614,8 @@ done:
 	 */
 	if (box != NULL)
 		box->c = NULL;
-	if (cl.conn != NULL && !c->fresh && c->op != OP_AGENT_UPDATE &&
+	if (cl.conn != NULL && !c->fresh && !dirty &&
+	    c->op != OP_AGENT_UPDATE &&
 	    c->op != OP_CONSOLE_UPDATE && (c->status == 200 || cl.err !=
 	    NULL) && cbl_conn_is_open(conn)) {
 		arc_client_fini(&cl);

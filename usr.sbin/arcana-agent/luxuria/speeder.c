@@ -4,27 +4,30 @@
  */
 
 /*
- * UDPspeeder's FEC relay, a plugin: speederv2 (net/udpspeeder) as its
- * rc service runs it, under daemon(8) with the words of speederv2_flags,
- * of the host or of a jail.  The read says how it is set and what it
- * did: the flags (the key never), the redundant packets it adds for each
- * group size (as it logged them at its start), and, given --report, the
- * packets and bytes each way with the overhead the FEC added, read from
- * its lines in syslog (daemon -S: daemon.notice, /var/log/messages).
- * The job writes the flags from words checked one by one (rc.subr hands
- * them to a shell), changes the ratios of a running relay through its
- * --fifo without dropping the tunnel, and starts, stops and enables it.
- * On the host a safe change is undone: the two rc.conf variables and
- * whether it ran, put back (ira/jobs.c).
+ * UDPspeeder's FEC relay, a plugin: speederv2 (net/udpspeeder), run by
+ * Arcana's own rc script, arcana_relay (share/rc.d), under daemon(8)
+ * with the words of its flags, of the host or of a jail.  The read says
+ * how each relay is set and what it did: the flags (the key never), the
+ * redundant packets it adds for each group size (as it logged them at
+ * its start), and, given --report, the packets and bytes each way with
+ * the overhead the FEC added, read from its lines in syslog (daemon -S:
+ * daemon.notice, /var/log/messages).  The job writes the flags from
+ * words checked one by one (rc.subr hands them to a shell), changes the
+ * ratios of a running relay through its --fifo without dropping the
+ * tunnel, and starts, stops and enables it.  On the host a safe change
+ * is undone: the rc.conf variables and whether it ran, put back
+ * (ira/jobs.c).
  *
- * Several relays, where the port's rc script has speederv2_profiles: each
- * a profile, run as "service speederv2 <verb> <name>" under rc.subr's
- * name speederv2_<name>, so its variables are that name's
- * (speederv2_<name>_flags, _user, _svcj) and so is its syslog tag.  A
- * job names one with profile=<name>; without, it is the relay of
- * speederv2_flags, which the rc script runs only while no profile is
- * listed.  The port's script has no profiles yet: one relay a scope
- * there, the host's and each jail's.
+ * Several relays: each a profile of arcana_relay, run as "service
+ * arcana_relay <verb> <name>" under rc.subr's name arcana_relay_<name>,
+ * so its variables are that name's (arcana_relay_<name>_flags, _user,
+ * _svcj) and so is its syslog tag.  A job names one with profile=<name>;
+ * without, it is the relay of arcana_relay_flags, which the rc script
+ * runs only while no profile is listed.  The port's own rc script,
+ * speederv2, runs the admin's relay (speederv2_flags): read and reported
+ * here, never changed.  A relay Arcana made under that script's name
+ * before (speederv2_<name>_*) is moved to arcana_relay's at its next
+ * conf.
  *
  * Each relay may run in a service jail of rc.subr's own (rc.conf(5)'s
  * <name>_svcj, the jail svcj-<name>), held to the addresses of
@@ -54,7 +57,8 @@
 
 #include "agent.h"
 
-#define	SPEEDER		"speederv2"
+#define	SPEEDER		"speederv2"	/* the program; the port's service */
+#define	RELAY		"arcana_relay"	/* Arcana's service: its relays */
 #define	TAIL_BYTES	(256 * 1024)	/* of the log, read from its end */
 #define	LOG_LINES	20		/* its own, said back */
 #define	SERIES_MAX	240		/* intervals of the overhead kept */
@@ -297,45 +301,53 @@ extra_check(struct work *w, const char *extra)
 }
 
 /*
- * The relay's rc.conf variables, read and written without the key in the
- * trace: sysrc's output is left out (it says the value before and after)
- * and its command line shows the key as <hidden>.
+ * The relays' rc.conf variables, read and written without the key in
+ * the trace: sysrc's output is left out (it says the value before and
+ * after) and its command line shows the key as <hidden>.  Each relay's
+ * are its rc.subr name's: arcana_relay for the plain one,
+ * arcana_relay_<profile> for one of several, speederv2 for the admin's.
  */
-/* A profile's variable, or the plain relay's (prof NULL). */
 static const char *
-var_of(struct work *w, const char *prof, const char *what)
+var_of(struct work *w, const char *name, const char *what)
 {
 
-	return (prof == NULL ? wfmt(w, SPEEDER "_%s", what) : wfmt(w, SPEEDER
-	    "_%s_%s", prof, what));
+	return (wfmt(w, "%s_%s", name, what));
+}
+
+/* A profile's rc.subr name, or the plain relay's (prof NULL). */
+static const char *
+name_of(struct work *w, const char *prof)
+{
+
+	return (prof == NULL ? RELAY : wfmt(w, RELAY "_%s", prof));
 }
 
 static const char *
-flags_get(struct work *w, const char *prof)
+flags_get(struct work *w, const char *name)
 {
 	const char	*v;
 
 	exec_set_secret(true);
-	v = rc_get(w, var_of(w, prof, "flags"));
+	v = rc_get(w, var_of(w, name, "flags"));
 	exec_set_secret(false);
 	return (v);
 }
 
 static int
-flags_set(struct work *w, const char *prof, const char *flags,
+flags_set(struct work *w, const char *name, const char *flags,
     const char **errp)
 {
 	struct sflags	 f;
 	int		 rc;
 
 	if (flags == NULL) {
-		rc_unset(w, var_of(w, prof, "flags"));
+		rc_unset(w, var_of(w, name, "flags"));
 		return (0);
 	}
 	flags_parse(w, flags, &f);
 	exec_set_secret(true);
 	exec_set_hide(f.key);
-	rc = rc_set(w, var_of(w, prof, "flags"), "=", flags, errp);
+	rc = rc_set(w, var_of(w, name, "flags"), "=", flags, errp);
 	exec_set_hide(NULL);
 	exec_set_secret(false);
 	return (rc);
@@ -379,18 +391,18 @@ jaddrs_of(struct work *w, const char *list)
 /* Whether a conf moves the relay: its service jail taken or left, or a
  * jailed one's addresses changed. */
 static bool
-svcj_moves(struct work *w, const char *prof, const struct sjail *j)
+svcj_moves(struct work *w, const char *name, const struct sjail *j)
 {
 	const char	*ips;
 	bool		 was, now;
 
-	was = yes(rc_get(w, var_of(w, prof, "svcj")));
+	was = yes(rc_get(w, var_of(w, name, "svcj")));
 	now = j->on == -1 ? was : j->on == 1;
 	if (was != now)
 		return (true);
 	if (!now || j->ipaddrs == NULL)
 		return (false);
-	ips = rc_get(w, var_of(w, prof, "svcj_ipaddrs"));
+	ips = rc_get(w, var_of(w, name, "svcj_ipaddrs"));
 	return (strcmp(ips != NULL ? ips : "", j->ipaddrs) != 0);
 }
 
@@ -400,32 +412,32 @@ svcj_moves(struct work *w, const char *prof, const struct sjail *j)
  * addresses when given.
  */
 static int
-svcj_set(struct work *w, const char *prof, const struct sjail *j,
+svcj_set(struct work *w, const char *name, const struct sjail *j,
     const char **errp)
 {
 	const char	*v;
 
 	if (j->on == 0) {
-		rc_unset(w, var_of(w, prof, "svcj"));
-		rc_unset(w, var_of(w, prof, "svcj_options"));
-		rc_unset(w, var_of(w, prof, "svcj_ipaddrs"));
+		rc_unset(w, var_of(w, name, "svcj"));
+		rc_unset(w, var_of(w, name, "svcj_options"));
+		rc_unset(w, var_of(w, name, "svcj_ipaddrs"));
 		return (0);
 	}
 	if (j->on == 1) {
-		if (rc_set(w, var_of(w, prof, "svcj"), "=", "YES", errp) != 0)
+		if (rc_set(w, var_of(w, name, "svcj"), "=", "YES", errp) != 0)
 			return (-1);
-		if (((v = rc_get(w, var_of(w, prof, "svcj_options"))) == NULL ||
-		    *v == '\0') && rc_set(w, var_of(w, prof, "svcj_options"),
+		if (((v = rc_get(w, var_of(w, name, "svcj_options"))) == NULL ||
+		    *v == '\0') && rc_set(w, var_of(w, name, "svcj_options"),
 		    "=", SVCJ_OPTIONS, errp) != 0)
 			return (-1);
 	}
 	if (j->ipaddrs == NULL)
 		return (0);
 	if (*j->ipaddrs == '\0') {
-		rc_unset(w, var_of(w, prof, "svcj_ipaddrs"));
+		rc_unset(w, var_of(w, name, "svcj_ipaddrs"));
 		return (0);
 	}
-	return (rc_set(w, var_of(w, prof, "svcj_ipaddrs"), "=", j->ipaddrs,
+	return (rc_set(w, var_of(w, name, "svcj_ipaddrs"), "=", j->ipaddrs,
 	    errp));
 }
 
@@ -454,16 +466,17 @@ profile_ok(const char *s)
 	return (i > 0 && i <= PROFILE_MAX);
 }
 
-/* speederv2_profiles, its names one by one (n of them), or NULL. */
+/* <svc>_profiles, its names one by one (n of them), or NULL. */
 static const char **
-profiles_get(struct work *w, const char **listp, size_t *np)
+profiles_get(struct work *w, const char *svc, const char **listp,
+    size_t *np)
 {
 	const char	**v;
 	char		 *list, *p, *word;
 	size_t		  n;
 
 	*np = 0;
-	*listp = rc_get(w, SPEEDER "_profiles");
+	*listp = rc_get(w, var_of(w, svc, "profiles"));
 	if (*listp == NULL)
 		return (NULL);
 	list = wstrdup(w, *listp);
@@ -486,14 +499,15 @@ listed(const char **v, size_t n, const char *prof)
 	return (false);
 }
 
-/* speederv2_profiles written with prof added (add) or taken out. */
+/* <svc>_profiles written with prof added (add) or taken out. */
 static int
-profiles_put(struct work *w, const char *prof, bool add, const char **errp)
+profiles_put(struct work *w, const char *svc, const char *prof, bool add,
+    const char **errp)
 {
 	const char	**v, *list, *out;
 	size_t		  n, i;
 
-	v = profiles_get(w, &list, &n);
+	v = profiles_get(w, svc, &list, &n);
 	if (add == listed(v, n, prof))
 		return (0);
 	out = "";
@@ -503,130 +517,87 @@ profiles_put(struct work *w, const char *prof, bool add, const char **errp)
 	if (add)
 		out = wfmt(w, "%s%s%s", out, *out != '\0' ? " " : "", prof);
 	if (*out == '\0') {
-		rc_unset(w, SPEEDER "_profiles");
+		rc_unset(w, var_of(w, svc, "profiles"));
 		return (0);
 	}
-	return (rc_set(w, SPEEDER "_profiles", "=", out, errp));
+	return (rc_set(w, var_of(w, svc, "profiles"), "=", out, errp));
 }
 
 /*
- * Does the rc script run several relays?  Its text names
- * speederv2_profiles; looked for in the scope's rc.d directories.
+ * Is the port's own rc script, speederv2, in the scope's rc.d
+ * directories?  Then the admin's relay is reported.  Whether its text
+ * names speederv2_profiles (a script of the admin's own that ran
+ * several) says how a relay made under it before is stopped.
  */
 static bool
-profiles_supported(struct work *w)
+port_script(struct work *w, bool *profiles)
 {
 	char	*dirs, *p, *d, *text;
-	bool	 yes;
+	bool	 there;
 
-	yes = false;
+	there = false;
+	*profiles = false;
 	dirs = wstrdup(w, opts.rc_dirs);
-	for (p = dirs; !yes && (d = strsep(&p, ":")) != NULL; )
+	for (p = dirs; !there && (d = strsep(&p, ":")) != NULL; )
 		if (*d != '\0' && (text = scope_slurp(w, wfmt(w, "%s/" SPEEDER,
-		    d), NULL)) != NULL)
-			yes = strstr(text, SPEEDER "_profiles") != NULL;
-	return (yes);
+		    d), NULL)) != NULL) {
+			there = true;
+			*profiles = strstr(text, SPEEDER "_profiles") != NULL;
+		}
+	return (there);
 }
 
-/* A profile's relay, by "service speederv2 one<verb> <name>". */
+/*
+ * A service told, of the host or of the jail the work is in: "service
+ * <svc> one<verb> [<profile>]", as rc.subr takes a profile.  0, or -1
+ * with why when asked for it.
+ */
 static int
-profile_service(struct work *w, const char *prof, const char *verb,
-    const char **errp)
+service_told(struct work *w, const char *svc, const char *prof,
+    const char *verb, const char **errp)
 {
 	struct execres	 res;
 	char		*argv[5];
+	int		 n;
 
-	argv[0] = (char *)(uintptr_t)opts.service_bin;
-	argv[1] = (char *)(uintptr_t)SPEEDER;
-	argv[2] = wfmt(w, "one%s", verb);
-	argv[3] = (char *)(uintptr_t)prof;
-	argv[4] = NULL;
+	n = 0;
+	argv[n++] = (char *)(uintptr_t)opts.service_bin;
+	argv[n++] = (char *)(uintptr_t)svc;
+	argv[n++] = wfmt(w, "one%s", verb);
+	if (prof != NULL)
+		argv[n++] = (char *)(uintptr_t)prof;
+	argv[n] = NULL;
 	if (run_exec(w, scope_jexec(w, argv), &res) != 0 || res.status != 0) {
 		if (errp != NULL)
-			*errp = wtext(w, exec_error(w, &res, wfmt(w, "service "
-			    SPEEDER " one%s %s", verb, prof)));
+			*errp = wtext(w, exec_error(w, &res, wfmt(w, "service %s "
+			    "one%s%s%s", svc, verb, prof != NULL ? " " : "", prof !=
+			    NULL ? prof : "")));
 		return (-1);
 	}
 	return (0);
 }
 
-/* Its service, of the host or of the jail the work is in. */
-static bool
-running_of(struct work *w, const char *prof)
-{
-
-	return (prof == NULL ? speeder_running(w) : profile_service(w, prof,
-	    "status", NULL) == 0);
-}
-
+/* One of Arcana's relays: the plain one (prof NULL) or a profile. */
 static int
-service_of(struct work *w, const char *prof, const char *verb,
+relay_told(struct work *w, const char *prof, const char *verb,
     const char **errp)
 {
 
-	return (prof == NULL ? speeder_service(w, verb, errp) :
-	    profile_service(w, prof, verb, errp));
+	return (service_told(w, RELAY, prof, verb, errp));
 }
 
-bool
-speeder_running(struct work *w)
+static bool
+relay_running(struct work *w, const char *prof)
 {
-	struct execres	 res;
-	char		*argv[4];
-	bool		 running, enabled;
 
-	if (w->jail == NULL) {
-		running = enabled = false;
-		service_state(w, SPEEDER, &running, &enabled);
-		return (running);
-	}
-	argv[0] = (char *)(uintptr_t)opts.service_bin;
-	argv[1] = (char *)(uintptr_t)SPEEDER;
-	argv[2] = (char *)(uintptr_t)"onestatus";
-	argv[3] = NULL;
-	return (run_exec(w, scope_jexec(w, argv), &res) == 0 && res.status ==
-	    0);
+	return (relay_told(w, prof, "status", NULL) == 0);
 }
 
 static bool
 enabled_of(struct work *w)
 {
-	const char	*v;
 
-	v = rc_get(w, SPEEDER "_enable");
-	return (v != NULL && strcasecmp(v, "yes") == 0);
-}
-
-/* start, stop or restart it; 0, or -1 with why. */
-int
-speeder_service(struct work *w, const char *verb, const char **errp)
-{
-	struct arc_service_action_rsp	 r;
-	struct execres			 res;
-	char				*argv[4];
-
-	if (w->jail == NULL) {
-		memset(&r, 0, sizeof(r));
-		if (do_service_action(w, SPEEDER, strcmp(verb, "start") == 0 ?
-		    ARC_SERVICE_ACTION_START : strcmp(verb, "stop") == 0 ?
-		    ARC_SERVICE_ACTION_STOP : ARC_SERVICE_ACTION_RESTART, &r) !=
-		    0 || !r.ok) {
-			*errp = r.error != NULL ? r.error : wfmt(w, SPEEDER
-			    ": %s failed", verb);
-			return (-1);
-		}
-		return (0);
-	}
-	argv[0] = (char *)(uintptr_t)opts.service_bin;
-	argv[1] = (char *)(uintptr_t)SPEEDER;
-	argv[2] = wfmt(w, "one%s", verb);
-	argv[3] = NULL;
-	if (run_exec(w, scope_jexec(w, argv), &res) != 0) {
-		*errp = wtext(w, exec_error(w, &res, wfmt(w, "service " SPEEDER
-		    " one%s", verb)));
-		return (-1);
-	}
-	return (0);
+	return (yes(rc_get(w, RELAY "_enable")));
 }
 
 /* ---- The read --------------------------------------------------- */
@@ -817,7 +788,7 @@ groups_of(struct work *w, const char *line)
  * last few lines.
  */
 static void
-log_read(struct work *w, ucl_object_t *top, const char *prof)
+log_read(struct work *w, ucl_object_t *top, const char *name)
 {
 	struct way	 up[2], down[2], u, d;
 	ucl_object_t	*rep, *lines, *groups, *series, *row;
@@ -830,8 +801,8 @@ log_read(struct work *w, ucl_object_t *top, const char *prof)
 
 	if ((text = log_tail(w, opts.speederv2_log)) == NULL)
 		return;
-	tag = prof == NULL ? " " SPEEDER "[" : wfmt(w, " " SPEEDER "_%s[",
-	    prof);
+	/* Its syslog tag is its rc.subr name (daemon -T). */
+	tag = wfmt(w, " %s[", name);
 	memset(up, 0, sizeof(up));
 	memset(down, 0, sizeof(down));
 	at[0] = at[1] = -1;
@@ -967,14 +938,14 @@ installed(struct work *w)
 	return (rc == 0);
 }
 
-/* A relay's flags read into o, the key never. */
+/* A relay's flags read into o, the key never: by its rc.subr name. */
 static void
-relay_json(struct work *w, ucl_object_t *top, const char *prof)
+relay_json(struct work *w, ucl_object_t *top, const char *name)
 {
 	struct sflags	 f;
 	const char	*flags;
 
-	if ((flags = flags_get(w, prof)) != NULL && *flags != '\0') {
+	if ((flags = flags_get(w, name)) != NULL && *flags != '\0') {
 		flags_parse(w, flags, &f);
 		put_str(top, "flags", unkeyed(w, flags, f.key));
 		put_str(top, "role", f.role);
@@ -992,15 +963,15 @@ relay_json(struct work *w, ucl_object_t *top, const char *prof)
 			put_str(top, "extra", unkeyed(w, f.extra, f.key));
 	}
 	/* Its service jail, rc.subr's svcj-<name>, and what it is let do. */
-	if (yes(rc_get(w, var_of(w, prof, "svcj")))) {
+	if (yes(rc_get(w, var_of(w, name, "svcj")))) {
 		ucl_object_insert_key(top, ucl_object_frombool(true), "svcj", 0,
 		    false);
-		put_str(top, "svcj_options", rc_get(w, var_of(w, prof,
+		put_str(top, "svcj_options", rc_get(w, var_of(w, name,
 		    "svcj_options")));
-		put_str(top, "svcj_ipaddrs", rc_get(w, var_of(w, prof,
+		put_str(top, "svcj_ipaddrs", rc_get(w, var_of(w, name,
 		    "svcj_ipaddrs")));
 	}
-	log_read(w, top, prof);
+	log_read(w, top, name);
 }
 
 void
@@ -1010,6 +981,7 @@ do_speeder(struct work *w, struct arc_speeder_rsp *rsp)
 	const char	**v, *names;
 	char		*json;
 	size_t		  n, i;
+	bool		  port_profiles;
 
 	rsp->has_ok = true;
 	rsp->ok = false;
@@ -1018,24 +990,35 @@ do_speeder(struct work *w, struct arc_speeder_rsp *rsp)
 	    "installed", 0, false);
 	ucl_object_insert_key(top, ucl_object_frombool(enabled_of(w)),
 	    "enabled", 0, false);
-	ucl_object_insert_key(top, ucl_object_frombool(
-	    profiles_supported(w)), "profiles_supported", 0, false);
-	v = profiles_get(w, &names, &n);
+	/* Arcana's own rc script runs several: kept for the reader. */
+	ucl_object_insert_key(top, ucl_object_frombool(true),
+	    "profiles_supported", 0, false);
+	v = profiles_get(w, RELAY, &names, &n);
 	/* The plain relay runs only while no profile is listed. */
 	ucl_object_insert_key(top, ucl_object_frombool(n == 0 &&
-	    speeder_running(w)), "running", 0, false);
-	relay_json(w, top, NULL);
+	    relay_running(w, NULL)), "running", 0, false);
+	relay_json(w, top, RELAY);
 	if (n > 0) {
 		list = ucl_object_typed_new(UCL_ARRAY);
 		for (i = 0; i < n; i++) {
 			o = ucl_object_typed_new(UCL_OBJECT);
 			put_str(o, "name", v[i]);
 			ucl_object_insert_key(o, ucl_object_frombool(
-			    running_of(w, v[i])), "running", 0, false);
-			relay_json(w, o, v[i]);
+			    relay_running(w, v[i])), "running", 0, false);
+			relay_json(w, o, name_of(w, v[i]));
 			ucl_array_append(list, o);
 		}
 		ucl_object_insert_key(top, list, "profiles", 0, false);
+	}
+	/* The admin's relay, the port's own rc script's: read alone. */
+	if (port_script(w, &port_profiles)) {
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_frombool(yes(rc_get(w,
+		    SPEEDER "_enable"))), "enabled", 0, false);
+		ucl_object_insert_key(o, ucl_object_frombool(service_told(w,
+		    SPEEDER, NULL, "status", NULL) == 0), "running", 0, false);
+		relay_json(w, o, SPEEDER);
+		ucl_object_insert_key(top, o, SPEEDER, 0, false);
 	}
 	put_str(top, "log_path", opts.speederv2_log);
 	if (w->jail != NULL)
@@ -1067,26 +1050,30 @@ static size_t	nrates;
 static off_t	rates_off = -1;		/* how far the log is read */
 static ino_t	rates_ino;
 
-/* The tag of a relay's line, " speederv2[" or " speederv2_<name>[", into
- * tag; false for another's. */
+/* The tag of a relay's line, " arcana_relay[", " arcana_relay_<name>["
+ * or the admin's " speederv2[", into tag; false for another's. */
 static bool
 tag_of(const char *line, char *tag, size_t len)
 {
-	const char	*p, *b;
+	static const char *const	 svcs[] = { " " RELAY, " " SPEEDER };
+	const char			*p, *b;
+	size_t				 i;
 
-	for (p = line; (p = strstr(p, " " SPEEDER)) != NULL; p++) {
-		p++;
-		b = p + strlen(SPEEDER);
-		if (*b == '_')
-			for (b++; isalnum((unsigned char)*b) || *b == '_'; b++)
-				;
-		if (*b == '[' && (size_t)(b - p) < len && strchr(b, ':') !=
-		    NULL) {
-			memcpy(tag, p, (size_t)(b - p));
-			tag[b - p] = '\0';
-			return (true);
+	for (i = 0; i < nitems(svcs); i++)
+		for (p = line; (p = strstr(p, svcs[i])) != NULL; p++) {
+			p++;
+			b = p + strlen(svcs[i]) - 1;
+			if (*b == '_')
+				for (b++; isalnum((unsigned char)*b) || *b ==
+				    '_'; b++)
+					;
+			if (*b == '[' && (size_t)(b - p) < len && strchr(b,
+			    ':') != NULL) {
+				memcpy(tag, p, (size_t)(b - p));
+				tag[b - p] = '\0';
+				return (true);
+			}
 		}
-	}
 	return (false);
 }
 
@@ -1461,71 +1448,126 @@ fifo_send(struct work *w, const char *fifo, const char *fec,
 	return (0);
 }
 
+/*
+ * A relay Arcana made under the port's script's name before, as
+ * speederv2_<prof>: its variables unset and its name taken out of
+ * speederv2_profiles, stopped first where a script of the admin's own
+ * ran it under that name (the port's ignores the profile, so it is not
+ * told: it would stop the admin's relay).  Then written as
+ * arcana_relay_<prof>.
+ */
+static void
+migrate(struct work *w, const char *prof)
+{
+	const char	*old, *e;
+	bool		 profiles;
+
+	old = wfmt(w, SPEEDER "_%s", prof);
+	if (rc_get(w, var_of(w, old, "flags")) == NULL)
+		return;
+	if (port_script(w, &profiles) && profiles)
+		(void)service_told(w, SPEEDER, prof, "stop", NULL);
+	rc_unset(w, var_of(w, old, "flags"));
+	rc_unset(w, var_of(w, old, "user"));
+	rc_unset(w, var_of(w, old, "svcj"));
+	rc_unset(w, var_of(w, old, "svcj_options"));
+	rc_unset(w, var_of(w, old, "svcj_ipaddrs"));
+	(void)profiles_put(w, SPEEDER, prof, false, &e);
+}
+
+/*
+ * Every relay of the service enabled or disabled: arcana_relay_enable
+ * set, then each listed profile started or stopped, or the plain relay
+ * without any.
+ */
+static int
+enable_all(struct work *w, bool on, const char **errp)
+{
+	const char	**v, *names;
+	size_t		  n, i;
+
+	if (rc_set(w, RELAY "_enable", "=", on ? "YES" : "NO", errp) != 0)
+		return (-1);
+	v = profiles_get(w, RELAY, &names, &n);
+	if (n == 0) {
+		if (relay_running(w, NULL) == on)
+			return (0);
+		return (relay_told(w, NULL, on ? "start" : "stop", errp));
+	}
+	for (i = 0; i < n; i++)
+		if (relay_running(w, v[i]) != on && relay_told(w, v[i], on ?
+		    "start" : "stop", errp) != 0)
+			return (-1);
+	return (0);
+}
+
 int
 do_speeder_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
 {
 	struct sflags	 f;
 	struct sjail	 j;
-	const char	*old, *e, *prof, *word;
+	const char	*old, *e, *prof, *name, *word;
 	bool		 running, moves;
 
+	if (strcmp(sp->verb, "enable") == 0 || strcmp(sp->verb, "disable") ==
+	    0)
+		return (enable_all(w, strcmp(sp->verb, "enable") == 0, errp));
 	prof = profile_of(sp);
-	if (prof != NULL && !profiles_supported(w)) {
-		*errp = "the rc script of " SPEEDER " runs one relay: a port "
-		    "with " SPEEDER "_profiles runs several";
-		return (-1);
-	}
-	running = strcmp(sp->verb, "enable") == 0 || strcmp(sp->verb,
-	    "disable") == 0 ? speeder_running(w) : running_of(w, prof);
+	name = name_of(w, prof);
+	running = relay_running(w, prof);
 	if (strcmp(sp->verb, "conf") == 0) {
-		old = flags_get(w, prof);
+		if (prof != NULL)
+			migrate(w, prof);
+		old = flags_get(w, name);
 		if ((e = conf_of(w, sp, old, &f, &j)) != NULL) {
 			*errp = e;
 			return (-1);
 		}
 		/* Out of the jail it runs in, by the variables that made it,
 		 * before they change. */
-		moves = svcj_moves(w, prof, &j);
-		if (running && moves && service_of(w, prof, "stop", errp) != 0)
+		moves = svcj_moves(w, name, &j);
+		if (running && moves && relay_told(w, prof, "stop", errp) != 0)
 			return (-1);
-		if (flags_set(w, prof, flags_of(w, &f), errp) != 0)
+		if (flags_set(w, name, flags_of(w, &f), errp) != 0)
 			return (-1);
-		if (svcj_set(w, prof, &j, errp) != 0)
+		if (svcj_set(w, name, &j, errp) != 0)
 			return (-1);
-		if (prof != NULL && profiles_put(w, prof, true, errp) != 0)
+		if (prof != NULL && profiles_put(w, RELAY, prof, true, errp) !=
+		    0)
 			return (-1);
 		/* Taken where it runs; else at its next start. */
 		if (!running)
 			return (0);
-		return (service_of(w, prof, moves ? "start" : "restart", errp));
+		return (relay_told(w, prof, moves ? "start" : "restart", errp));
 	}
 	if (strcmp(sp->verb, "remove") == 0) {
-		if (running && service_of(w, prof, "stop", errp) != 0)
+		if (running && relay_told(w, prof, "stop", errp) != 0)
 			return (-1);
-		if (flags_set(w, prof, NULL, errp) != 0)
+		if (flags_set(w, name, NULL, errp) != 0)
 			return (-1);
-		rc_unset(w, var_of(w, prof, "user"));
+		rc_unset(w, var_of(w, name, "user"));
+		rc_unset(w, var_of(w, name, "enable"));
 		j.on = 0;
 		j.ipaddrs = NULL;
-		(void)svcj_set(w, prof, &j, errp);
-		return (profiles_put(w, prof, false, errp));
+		(void)svcj_set(w, name, &j, errp);
+		return (profiles_put(w, RELAY, prof, false, errp));
 	}
 	if (strcmp(sp->verb, "fec") == 0) {
-		if ((old = flags_get(w, prof)) == NULL || *old == '\0') {
+		if ((old = flags_get(w, name)) == NULL || *old == '\0') {
 			*errp = wfmt(w, "%s is not set: configure the relay "
-			    "first", var_of(w, prof, "flags"));
+			    "first", var_of(w, name, "flags"));
 			return (-1);
 		}
 		flags_parse(w, old, &f);
 		if (f.role == NULL || f.listen == NULL || f.remote == NULL) {
 			*errp = wfmt(w, "%s says no role, listen or remote: "
-			    "configure the relay again", var_of(w, prof, "flags"));
+			    "configure the relay again", var_of(w, name, "flags"));
 			return (-1);
 		}
 		words_of(sp, &word);
 		f.fec = word;
-		if (flags_set(w, prof, flags_of(w, &f), errp) != 0)
+		if (flags_set(w, name, flags_of(w, &f), errp) != 0)
 			return (-1);
 		/* A running relay takes them by its fifo, the tunnel kept;
 		 * without one, by a restart. */
@@ -1533,22 +1575,11 @@ do_speeder_job(struct work *w, const struct arc_job_spec *sp,
 			return (0);
 		if (f.fifo != NULL)
 			return (fifo_send(w, f.fifo, f.fec, errp));
-		return (service_of(w, prof, "restart", errp));
-	}
-	if (strcmp(sp->verb, "enable") == 0 || strcmp(sp->verb, "disable") ==
-	    0) {
-		if (rc_set(w, SPEEDER "_enable", "=", strcmp(sp->verb, "enable")
-		    == 0 ? "YES" : "NO", errp) != 0)
-			return (-1);
-		if (strcmp(sp->verb, "enable") == 0 && !running)
-			return (speeder_service(w, "start", errp));
-		if (strcmp(sp->verb, "disable") == 0 && running)
-			return (speeder_service(w, "stop", errp));
-		return (0);
+		return (relay_told(w, prof, "restart", errp));
 	}
 	if (strcmp(sp->verb, "stop") == 0 && !running)
 		return (0);
-	return (service_of(w, prof, strcmp(sp->verb, "start") == 0 && running ?
+	return (relay_told(w, prof, strcmp(sp->verb, "start") == 0 && running ?
 	    "restart" : sp->verb, errp));
 }
 
@@ -1560,38 +1591,39 @@ void
 speeder_snap(struct work *w, const struct arc_job_spec *sp,
     struct speeder_was *was)
 {
-	size_t	n;
+	const char	*name;
+	size_t		 n;
 
 	was->profile = profile_of(sp);
-	was->flags = flags_get(w, was->profile);
-	was->svcj = rc_get(w, var_of(w, was->profile, "svcj"));
-	was->svcj_options = rc_get(w, var_of(w, was->profile,
-	    "svcj_options"));
-	was->svcj_ipaddrs = rc_get(w, var_of(w, was->profile,
-	    "svcj_ipaddrs"));
-	was->enable = rc_get(w, SPEEDER "_enable");
-	profiles_get(w, &was->profiles, &n);
-	was->running = running_of(w, was->profile);
+	name = name_of(w, was->profile);
+	was->flags = flags_get(w, name);
+	was->svcj = rc_get(w, var_of(w, name, "svcj"));
+	was->svcj_options = rc_get(w, var_of(w, name, "svcj_options"));
+	was->svcj_ipaddrs = rc_get(w, var_of(w, name, "svcj_ipaddrs"));
+	was->enable = rc_get(w, RELAY "_enable");
+	profiles_get(w, RELAY, &was->profiles, &n);
+	was->running = relay_running(w, was->profile);
 }
 
 int
 speeder_back(struct work *w, const struct speeder_was *was,
     const char **errp)
 {
-	const char	*prof;
+	const char	*prof, *name;
 
 	prof = was->profile;
+	name = name_of(w, prof);
 	/* Stopped by the variables it runs by now, its jail's among them;
 	 * started again by those it ran by. */
-	if (running_of(w, prof) && service_of(w, prof, "stop", errp) != 0)
+	if (relay_running(w, prof) && relay_told(w, prof, "stop", errp) != 0)
 		return (-1);
-	if (flags_set(w, prof, was->flags, errp) != 0 || var_back(w,
-	    var_of(w, prof, "svcj"), was->svcj, errp) != 0 || var_back(w,
-	    var_of(w, prof, "svcj_options"), was->svcj_options, errp) != 0 ||
-	    var_back(w, var_of(w, prof, "svcj_ipaddrs"), was->svcj_ipaddrs,
-	    errp) != 0 || var_back(w, SPEEDER "_profiles", was->profiles,
-	    errp) != 0 || var_back(w, SPEEDER "_enable", was->enable, errp) !=
+	if (flags_set(w, name, was->flags, errp) != 0 || var_back(w,
+	    var_of(w, name, "svcj"), was->svcj, errp) != 0 || var_back(w,
+	    var_of(w, name, "svcj_options"), was->svcj_options, errp) != 0 ||
+	    var_back(w, var_of(w, name, "svcj_ipaddrs"), was->svcj_ipaddrs,
+	    errp) != 0 || var_back(w, RELAY "_profiles", was->profiles,
+	    errp) != 0 || var_back(w, RELAY "_enable", was->enable, errp) !=
 	    0)
 		return (-1);
-	return (was->running ? service_of(w, prof, "start", errp) : 0);
+	return (was->running ? relay_told(w, prof, "start", errp) : 0);
 }

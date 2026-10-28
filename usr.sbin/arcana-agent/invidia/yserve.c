@@ -105,6 +105,9 @@ ietf_interfaces_interfaces_get(cbl_req *req, struct ietf_interfaces *data,
 	    0 ||
 	    /* Their router advertisements, rtadvd.conf's (RFC 8349). */
 	    (what = "rtadvd.conf", error = yif_rtadv(data, a)) != 0 ||
+	    /* Operational: what rtadvd(8) sends, rtadvctl(8) show's. */
+	    (cbl_req_ydatastore(req) != CBL_YDS_RUNNING &&
+	    (what = "rtadvctl", error = yif_rtadv_show(data, a)) != 0) ||
 	    /* Running: what was configured, not what DHCP or SLAAC made. */
 	    (cbl_req_ydatastore(req) == CBL_YDS_RUNNING &&
 	    (what = "running", error = yif_running(data, a)) != 0) ||

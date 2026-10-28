@@ -74,6 +74,24 @@ ywork(cbl_yarena *a)
 	return (w);
 }
 
+/*
+ * The work of a request whose steps its requester hears (the steps
+ * group, as an operation's): its root step, what, begun; *root its
+ * index.  NULL: out of memory.
+ */
+struct work *
+ywork_told(cbl_req *req, cbl_yarena *a, const char *what, int *root)
+{
+	struct work	*w;
+
+	if ((w = ywork(a)) == NULL)
+		return (NULL);
+	trace_tell(w, req);
+	*root = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+	    what);
+	return (w);
+}
+
 /* An operation that failed: said in the log, cblink tells EIO. */
 static int
 failed(const char *what, const char *why)
@@ -257,29 +275,35 @@ restart_later(bool console)
 		    "hand");
 }
 
-/* A jail's action (ARC_ACTION_*) as the action operation does it. */
+/* A jail's action (ARC_ACTION_*): do_action()'s work, the jail after. */
 static int
 jail_action(cbl_req *req, const struct cbl_bytes *target, uint8_t action,
     bool *has_state, int *state, bool *has_jid, uint32_t *jid, cbl_yarena *a)
 {
 	static const char *const names[] = { "start", "stop", "restart",
 	    "kill" };
-	struct arc_action_rsp	 r;
+	struct jail_done	 r;
 	const void		**k;
-	const char		*name;
+	const char		*name, *what;
 	struct work		*w;
+	int			 root;
 
 	if ((k = keys_of(target, 1, a)) == NULL)
 		return (EINVAL);
 	name = *(const char *const *)k[0];
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
-	memset(&r, 0, sizeof(r));
-	if (!change_begin(wfmt(w, "%s %s", action < nitems(names) ?
-	    names[action] : "action", name)))
+	what = wfmt(w, "%s %s", action < nitems(names) ? names[action] :
+	    "action", name);
+	if ((w = ywork_told(req, a, what, &root)) == NULL)
+		return (ENOMEM);
+	if (!change_begin(what)) {
+		step_end(w, root, false, NULL);
 		return (said(req, "not done: arcana-agent is stopping"));
+	}
 	(void)do_action(w, name, action, &r);
 	change_end();
+	step_end(w, root, r.ok, NULL);
 	if (!r.ok)
 		return (said(req, r.error));
 	/* jail-state's values are the operation's. */
@@ -1014,22 +1038,6 @@ arcana_history_history_read_action(cbl_req *req, const struct cbl_bytes *target,
 }
 
 int
-arcana_jails_jails_get(cbl_req *req, struct arcana_jails *data, cbl_yarena *a)
-{
-	struct arc_list_rsp	 r;
-	struct work		*w;
-
-	(void)req;
-	if ((w = ywork(a)) == NULL)
-		return (ENOMEM);
-	memset(&r, 0, sizeof(r));
-	(void)do_list(w, false, &r);
-	if (!r.ok)
-		return (failed("list", r.error));
-	return (yjails_from_list(&r, a, data));
-}
-
-int
 arcana_jails_jails_jail_kill_action(cbl_req *req,
     const struct cbl_bytes *target,
     const struct arcana_jails_jails_jail_kill_input *in,
@@ -1326,7 +1334,7 @@ int
 arcana_packages_packages_get(cbl_req *req, struct arcana_packages *data,
     cbl_yarena *a)
 {
-	struct arc_packages_rsp		 r;
+	struct pkg_read			 r;
 	struct arcana_packages_packages	*o;
 	struct work			*w;
 	int				 error;
@@ -1334,7 +1342,6 @@ arcana_packages_packages_get(cbl_req *req, struct arcana_packages *data,
 	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
-	memset(&r, 0, sizeof(r));
 	/* Those installed; which are outdated asks the repository, not a
 	 * read's to do (the refresh action). */
 	(void)do_packages(w, NULL, false, true, 0, false, &r);
@@ -1348,33 +1355,87 @@ arcana_packages_packages_get(cbl_req *req, struct arcana_packages *data,
 	return (0);
 }
 
+/* The host's packages, or a jail's (the target's key, the jail). */
+static int
+pkg_target(cbl_req *req, const struct cbl_bytes *target, const char **jail,
+    cbl_yarena *a)
+{
+	const void	**k;
+
+	*jail = NULL;
+	if ((k = keys_of(target, 1, a)) != NULL &&
+	    !valid_jail(*jail = *(const char *const *)k[0]))
+		return (said(req, "invalid jail name"));
+	return (0);
+}
+
+int
+arcana_packages_packages_read_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_packages_packages_read_input *in,
+    struct arcana_packages_packages_read_output *out, cbl_yarena *a)
+{
+	struct pkg_read	 r;
+	const char	*jail;
+	struct work	*w;
+	int		 root, error;
+
+	(void)in;
+	if ((error = pkg_target(req, target, &jail, a)) != 0)
+		return (error);
+	if ((w = ywork_told(req, a, jail != NULL ? "packages installed of "
+	    "a jail" : "packages installed", &root)) == NULL)
+		return (ENOMEM);
+	(void)do_packages(w, jail, false, true, 0, false, &r);
+	step_end(w, root, r.ok, NULL);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (ypackages_listed(&r, NULL, a, &out->package.v,
+	    &out->package.n, &out->repository.v, &out->repository.n,
+	    &out->has_pkgbase, &out->pkgbase));
+}
+
 int
 arcana_packages_packages_refresh_action(cbl_req *req,
     const struct cbl_bytes *target,
     const struct arcana_packages_packages_refresh_input *in,
     struct arcana_packages_packages_refresh_output *out, cbl_yarena *a)
 {
-	struct arc_packages_rsp	 r;
-	const void		**k;
-	const char		*jail = NULL;
-	struct work		*w;
+	struct pkg_read	 r;
+	const char	*jail;
+	struct work	*w;
+	bool		 update;
+	int		 root, error;
 
-	(void)out;
-	/* The host's packages, or a jail's (the target's key, the jail). */
-	if ((k = keys_of(target, 1, a)) != NULL &&
-	    !valid_jail(jail = *(const char *const *)k[0]))
-		return (said(req, "invalid jail name"));
-	if ((w = ywork(a)) == NULL)
+	if ((error = pkg_target(req, target, &jail, a)) != 0)
+		return (error);
+	update = in->has_update && in->update;
+	if ((w = ywork_told(req, a, update ? "packages (refresh)" :
+	    "packages", &root)) == NULL)
 		return (ENOMEM);
-	memset(&r, 0, sizeof(r));
-	if (!change_begin(jail != NULL ? wfmt(w, "packages of %s (refresh)",
-	    jail) : "packages (refresh)"))
+	/* Only pkg update writes (the catalogue): a read without it
+	 * waits for no change, and none waits for it.  ip-version's
+	 * values are pkg's: 0, 4, 6. */
+	if (!update)
+		(void)do_packages(w, jail, false, false, in->has_ip_version ?
+		    (uint8_t)in->ip_version : 0, in->has_ignore_osversion &&
+		    in->ignore_osversion, &r);
+	else if (!change_begin(jail != NULL ? wfmt(w, "packages of %s "
+	    "(refresh)", jail) : "packages (refresh)")) {
+		step_end(w, root, false, NULL);
 		return (said(req, "not done: arcana-agent is stopping"));
-	/* ip-version's values are pkg-ip's: 0, 4, 6. */
-	(void)do_packages(w, jail, true, false, in->has_ip_version ?
-	    (uint8_t)in->ip_version : 0, false, &r);
-	change_end();
-	return (r.ok ? 0 : said(req, r.error));
+	} else {
+		(void)do_packages(w, jail, true, false, in->has_ip_version ?
+		    (uint8_t)in->ip_version : 0, in->has_ignore_osversion &&
+		    in->ignore_osversion, &r);
+		change_end();
+	}
+	step_end(w, root, r.ok, NULL);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (ypackages_listed(&r, NULL, a, &out->package.v,
+	    &out->package.n, &out->repository.v, &out->repository.n,
+	    &out->has_pkgbase, &out->pkgbase));
 }
 
 int
@@ -1383,38 +1444,48 @@ arcana_packages_packages_upgrade_action(cbl_req *req,
     const struct arcana_packages_packages_upgrade_input *in,
     struct arcana_packages_packages_upgrade_output *out, cbl_yarena *a)
 {
-	struct arc_pkg_upgrade_req	 q;
-	struct arc_pkg_upgrade_rsp	 r;
-	const void			**k;
-	const char			*jail = NULL;
-	struct work			*w;
+	struct pkg_upgrade	 q;
+	struct pkg_upgraded	 r;
+	const char		*jail, *what;
+	struct work		*w;
+	int			 root, error;
 
-	if ((k = keys_of(target, 1, a)) != NULL &&
-	    !valid_jail(jail = *(const char *const *)k[0]))
-		return (said(req, "invalid jail name"));
+	if ((error = pkg_target(req, target, &jail, a)) != 0)
+		return (error);
 	for (size_t i = 0; i < in->name.n; i++)
 		if (in->name.v[i] == NULL || in->name.v[i][0] == '\0')
 			return (said(req, "a package without a name"));
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&q, 0, sizeof(q));
+	/* Of the host's: in every running jail instead. */
+	if (in->has_every_jail && in->every_jail) {
+		if (jail != NULL)
+			return (said(req, "every-jail is the host's packages' "
+			    "alone"));
+		jail = "*";
+	}
 	q.jail = jail;
 	q.names.v = in->name.v;
 	q.names.n = in->name.n;
 	q.dry_run = in->has_dry_run && in->dry_run;
-	q.has_ignore_osversion = in->has_ignore_osversion;
-	q.ignore_osversion = in->ignore_osversion;
-	/* ip-version's values are pkg-ip's: 0, 4, 6. */
-	q.has_pkg_ip = in->has_ip_version;
+	q.ignore_osversion = in->has_ignore_osversion && in->ignore_osversion;
+	/* ip-version's values are pkg's: 0, 4, 6. */
 	q.pkg_ip = in->has_ip_version ? (uint8_t)in->ip_version : 0;
 	q.pkg_repo = in->repository != NULL && in->repository[0] != '\0' ?
 	    in->repository : NULL;
-	memset(&r, 0, sizeof(r));
-	if (!change_begin(wfmt(w, "pkg upgrade%s%s", jail != NULL ?
-	    " in jail " : "", jail != NULL ? jail : "")))
+	what = jail == NULL ? "pkg upgrade" : strcmp(jail, "*") == 0 ?
+	    "pkg upgrade in every jail" : wfmt(w, "pkg upgrade in jail %s",
+	    jail);
+	if ((w = ywork_told(req, a, what, &root)) == NULL)
+		return (ENOMEM);
+	if (!change_begin(what)) {
+		step_end(w, root, false, NULL);
 		return (said(req, "not done: arcana-agent is stopping"));
+	}
 	(void)do_pkg_upgrade(w, &q, &r);
 	change_end();
+	step_end(w, root, r.ok, NULL);
 	if (!r.ok)
 		return (said(req, r.error));
 	return (ypackages_upgraded(&r, a, out));
@@ -1647,6 +1718,29 @@ arcana_services_services_service_stop_action(cbl_req *req,
 	return (service_action(req, target, ARC_SERVICE_ACTION_STOP,
 	    &out->has_running, &out->running, &out->has_pid, &out->pid,
 	    &out->status, a));
+}
+
+/* The services' rc.conf configuration moved under Arcana: a change of
+ * the agent's own, as a commit's writes are (ira/ysvcedit.c). */
+int
+arcana_services_services_convert_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_services_services_convert_input *in,
+    struct arcana_services_services_convert_output *out, cbl_yarena *a)
+{
+	bool	dry = in->has_dry_run && in->dry_run;
+	int	error;
+
+	(void)target;
+	if (dry)
+		return (yservices_convert(req, in->service.v, in->service.n,
+		    true, a, out));
+	if (!change_begin("services convert"))
+		return (said(req, "not done: arcana-agent is stopping"));
+	error = yservices_convert(req, in->service.v, in->service.n, false, a,
+	    out);
+	change_end();
+	return (error);
 }
 
 int

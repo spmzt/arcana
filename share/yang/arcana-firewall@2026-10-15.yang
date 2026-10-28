@@ -619,7 +619,12 @@ module arcana-firewall {
 
   augment "/arcj:jails/arcj:jail" {
     description
-      "A vnet jail's own firewall: ipfw run inside it.";
-    uses firewall;
+      "A vnet jail's own firewall: ipfw run inside it, read with
+       the jail.";
+    uses firewall {
+      refine "firewall" {
+        config false;
+      }
+    }
   }
 }

@@ -28,7 +28,9 @@
  *	ipv4 mtu	"mtu N" on ifconfig_<if>
  *	instance	"fib N" first on ifconfig_<if>
  *	router adv.	its record in rtadvd.conf (rtadv.c), the interface on
- *			rtadvd_interfaces where it sends; rtadvd restarted
+ *			rtadvd_interfaces where it sends; rtadvctl reload of
+ *			it, or rtadvd restarted where the interfaces it is run
+ *			on change
  *	made		cloned_interfaces; create_args_<if> for a vlan,
  *			"tunnel a b" first on ifconfig_<if>
  *	destroyed	off cloned_interfaces, its variables dropped
@@ -235,6 +237,65 @@ yif_rtadv(struct ietf_interfaces *data, cbl_yarena *a)
 	if (rc)
 		rca_close(&x);
 	return (0);
+}
+
+/*
+ * What rtadvd(8) advertises, for the operational datastore: rtadvctl -v
+ * show parsed (rtadv.c) into each interface's arcana-ra rtadvd; an
+ * interface rtadvd knows that has no record gets the container for it
+ * alone.  rtadvd not running, rtadvctl failing: nothing.
+ */
+int
+yif_rtadv_show(struct ietf_interfaces *data, cbl_yarena *a)
+{
+	struct work	 w;
+	struct execres	 res;
+	yif		*v;
+	char		*argv[4];
+	int		 error = 0;
+
+	if (data->interfaces == NULL || data->interfaces->interface.n == 0)
+		return (0);
+	work_init(&w);
+	argv[0] = (char *)(uintptr_t)opts.rtadvctl_bin;
+	argv[1] = (char *)(uintptr_t)"-v";
+	argv[2] = (char *)(uintptr_t)"show";
+	argv[3] = NULL;
+	if (run_exec(&w, argv, &res) != 0 || res.status != 0 ||
+	    res.outlen == 0) {
+		work_free(&w);
+		return (0);
+	}
+	v = (yif *)(uintptr_t)data->interfaces->interface.v;
+	for (size_t i = 0; i < data->interfaces->interface.n; i++) {
+		const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_arcra_rtadvd
+		    *st;
+		yra *ra;
+		yip6 *p6;
+
+		if ((error = rtadvctl_parse(res.out, v[i].name, a, &st)) != 0)
+			break;
+		if (st == NULL)
+			continue;
+		if ((ra = cbl_yarena_alloc(a, sizeof(*ra))) == NULL ||
+		    (p6 = cbl_yarena_alloc(a, sizeof(*p6))) == NULL) {
+			error = ENOMEM;
+			break;
+		}
+		if (v[i].ip_ipv6 != NULL)
+			*p6 = *v[i].ip_ipv6;
+		else
+			memset(p6, 0, sizeof(*p6));
+		if (p6->v6ur_ipv6_router_advertisements != NULL)
+			*ra = *p6->v6ur_ipv6_router_advertisements;
+		else
+			memset(ra, 0, sizeof(*ra));
+		ra->arcra_rtadvd = st;
+		p6->v6ur_ipv6_router_advertisements = ra;
+		v[i].ip_ipv6 = p6;
+	}
+	work_free(&w);
+	return (error);
 }
 
 /* The router advertisements' node, for two of them compared. */
@@ -862,7 +923,20 @@ forget_made(struct work *w, struct rca *x, const char *ri)
 struct rtadv_change {
 	struct vc_capfile	 f;
 	bool			 read, changed, sends;
+	bool			 was_on;	/* rtadvd_enable before */
+	char			**was;		/* rtadvd_interfaces before */
+	size_t			 nwas;
+	char			**names;	/* the interfaces changed */
+	size_t			 nnames;
 };
+
+static bool
+yes(const char *on)
+{
+
+	return (on != NULL && (strcasecmp(on, "YES") == 0 || strcasecmp(on,
+	    "TRUE") == 0 || strcasecmp(on, "ON") == 0 || strcmp(on, "1") == 0));
+}
 
 /* The interface's record, or none, in rtadvd.conf; it on
  * rtadvd_interfaces where it advertises (RFC 8349's default: not). */
@@ -882,12 +956,17 @@ keep_ra(struct work *w, struct rca *x, struct rtadv_change *rt,
 		if ((error = rca_keep(x, opts.rtadvd_conf)) != 0)
 			return (error);
 		rt->read = true;
+		rt->was_on = yes(rca_get(x, "rtadvd_enable"));
+		rt->was = words(w, rca_get(x, "rtadvd_interfaces"), &rt->nwas);
+		rt->names = wcalloc(w, 64, sizeof(*rt->names));
 	}
 	if (ra == NULL)
 		(void)vc_cap_remove_record(&rt->f, ifname, err, errlen);
 	else if ((error = rtadv_write(&rt->f, ifname, ra, err, errlen)) != 0)
 		return (error);
 	rt->changed = true;
+	if (rt->nnames < 64)
+		rt->names[rt->nnames++] = wstrdup(w, ifname);
 	wv = words(w, rca_get(x, "rtadvd_interfaces"), &n);
 	for (size_t i = 0; i < n; i++)
 		if (strcmp(wv[i], ifname) == 0) {
@@ -910,19 +989,71 @@ keep_ra(struct work *w, struct rca *x, struct rtadv_change *rt,
 	return (error);
 }
 
-/* rtadvd(8) made to read rtadvd.conf again, or stopped where nothing
- * is advertised. */
+/* Whether the interfaces rtadvd(8) is run on are those it was: the
+ * same words of rtadvd_interfaces (none, or "auto": every one), and
+ * rtadvd_enable as it was. */
+static bool
+same_set(struct work *w, struct rca *x, const struct rtadv_change *rt)
+{
+	char	**now;
+	size_t	  n;
+	bool	  same = true;
+
+	if (yes(rca_get(x, "rtadvd_enable")) != rt->was_on)
+		return (false);
+	now = words(w, rca_get(x, "rtadvd_interfaces"), &n);
+	if (n != rt->nwas)
+		return (false);
+	for (size_t i = 0; same && i < n; i++) {
+		bool found = false;
+
+		for (size_t k = 0; !found && k < rt->nwas; k++)
+			found = strcmp(now[i], rt->was[k]) == 0;
+		same = found;
+	}
+	return (same);
+}
+
+/*
+ * rtadvd(8) made to read rtadvd.conf again: rtadvctl(8) reload of the
+ * interfaces changed where it runs on the same interfaces as before (a
+ * reload takes a record's change, not an interface added to or taken
+ * from those it was started with); else restarted, or stopped where
+ * nothing is advertised.
+ */
 static int
-rtadvd_again(struct work *w, struct rca *x, const char **errp)
+rtadvd_again(struct work *w, struct rca *x, const struct rtadv_change *rt,
+    const char **errp)
 {
 	struct execres	 res;
 	const char	*list = rca_get(x, "rtadvd_interfaces");
-	char		*argv[4];
+	char		*argv[70];
+	bool		 none = list == NULL || list[strspn(list, " \t")] ==
+			    '\0' || strcasecmp(list, "none") == 0;
 
 	argv[0] = (char *)(uintptr_t)opts.service_bin;
 	argv[1] = (char *)(uintptr_t)"rtadvd";
-	argv[2] = (char *)(uintptr_t)(list == NULL || list[strspn(list,
-	    " \t")] == '\0' ? "onestop" : "onerestart");
+	argv[2] = (char *)(uintptr_t)"onestatus";
+	argv[3] = NULL;
+	if (!none && yes(rca_get(x, "rtadvd_enable")) && same_set(w, x, rt) &&
+	    rt->nnames > 0 && run_exec(w, argv, &res) == 0 &&
+	    res.status == 0) {
+		size_t	n = 0;
+
+		argv[n++] = (char *)(uintptr_t)opts.rtadvctl_bin;
+		argv[n++] = (char *)(uintptr_t)"reload";
+		for (size_t i = 0; i < rt->nnames && n < nitems(argv) - 1;
+		    i++)
+			argv[n++] = rt->names[i];
+		argv[n] = NULL;
+		if (run_exec(w, argv, &res) == 0 && res.status == 0)
+			return (0);
+		/* Not reloaded: restarted, as below. */
+	}
+	argv[0] = (char *)(uintptr_t)opts.service_bin;
+	argv[1] = (char *)(uintptr_t)"rtadvd";
+	argv[2] = (char *)(uintptr_t)(none || !yes(rca_get(x,
+	    "rtadvd_enable")) ? "onestop" : "onerestart");
 	argv[3] = NULL;
 	if (run_exec(w, argv, &res) != 0 && strcmp(argv[2], "onestop") != 0) {
 		*errp = wtext(w, exec_error(w, &res, "service rtadvd"));
@@ -1454,7 +1585,7 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 			error = do_if_set(&w, t->ifname, &ch, false, &e);
 			break;
 		case M_RTADV:
-			error = rtadvd_again(&w, &x, &e);
+			error = rtadvd_again(&w, &x, &rt, &e);
 			break;
 		case M_LNE:
 			/* RFC 8530 section 3.1: lne-assignment-failed. */
@@ -1499,7 +1630,7 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 		if (rt.changed) {
 			const char *ue = NULL;
 
-			(void)rtadvd_again(&w, &x, &ue);
+			(void)rtadvd_again(&w, &x, &rt, &ue);
 		}
 		(void)cbl_req_set_yerr(req, err, 0);
 		logmsg(LOG_WARNING, "interfaces: %s: rc.conf as it was", err);

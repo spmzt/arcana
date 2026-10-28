@@ -234,7 +234,7 @@ includes_confdir(struct work *w, const char *main, const char *dir)
 void
 conf_read(struct work *w, struct cconf *conf)
 {
-	struct arc_conf_error	 e;
+	struct conf_error	 e;
 	struct cjail		*js;
 	const char		*errs, **scopes;
 	glob_t			 g;

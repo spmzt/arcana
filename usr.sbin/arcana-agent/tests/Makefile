@@ -9,6 +9,15 @@ ATF_TESTS_SH=	agent_test \
 # file of the case's, through libjail's jail_getv(3) preloaded.
 SUBDIR+=	libfakejail
 
+# Arcana's rc script for the FEC relays, as agent_test.sh's relay_rc
+# runs it under the real rc.subr(8).
+${PACKAGE}FILES+=	arcana_relay
+CLEANFILES+=	arcana_relay
+# bsd.progs.mk's all builds the programs alone.
+all: arcana_relay
+arcana_relay: ${.CURDIR}/../../../share/rc.d/arcana_relay
+	cp -f ${.ALLSRC} ${.TARGET}
+
 # The collectors of the standard models (invidia/y*.c), run alone over
 # the structs and tables the agent's build made (its ymodel.h and
 # ymodel_schema.c), for agent_root_test.sh's yang_* cases.
@@ -38,7 +47,7 @@ CFLAGS+=	-I${.CURDIR}/.. -I${YOBJ} -I${.CURDIR}/../../../lib/libvarconf
 # Arcana's own modules: each operation's reply as its module has it
 # (the collectors of yarcana.c's reads), from JSON a case gives.
 CFLAGS+=	${UCL_CFLAGS}
-# yjails: the list operation's reply as arcana-jails has it.
+# yjails: the jails read as arcana-jails has it.
 PROGS+=		yjails
 SRCS.yjails=	yjails_test.c yjails.c ymodel_schema.c
 LDADD.yjails+=	${CBLINK_LIBS}
@@ -98,7 +107,7 @@ LDADD.yprocs+=	${CBLINK_LIBS} ${UCL_LIBS}
 PROGS+=		ystorage
 SRCS.ystorage=	ystorage_test.c ystorage.c yjson.c ymodel_schema.c
 LDADD.ystorage+=	${CBLINK_LIBS} ${UCL_LIBS}
-# ypackages: the packages operations' replies as arcana-packages has
+# ypackages: pkg's reads as arcana-packages has
 # them.
 PROGS+=		ypackages
 SRCS.ypackages=	ypackages_test.c ypackages.c ymodel_schema.c

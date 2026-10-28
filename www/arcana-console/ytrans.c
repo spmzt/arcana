@@ -567,11 +567,14 @@ yget_into(cbl_conn *conn, const struct cbl_ynode *n, int ds, void *data,
 	return (error == ENOENT ? 0 : error);
 }
 
-/* Action act of container n (no keys), in its input, out its output. */
+/*
+ * Action act of node n, the list entry of keys vals (nvals of them) or
+ * a container's, in its input (NULL: none given), out its output.
+ */
 static int
-yaction(cbl_conn *conn, const struct cbl_ynode *n,
-    const struct cbl_ynode *act, const void *in, void *out, cbl_yarena *a,
-    char *err, size_t errlen)
+yaction_at(cbl_conn *conn, const struct cbl_ynode *n, const void *const *vals,
+    size_t nvals, const struct cbl_ynode *act, const void *in, void *out,
+    cbl_yarena *a, char *err, size_t errlen)
 {
 	const struct cbl_ynode	*inode, *onode;
 	struct cbl_ybuf		 t = { NULL, 0, 0 };
@@ -583,7 +586,10 @@ yaction(cbl_conn *conn, const struct cbl_ynode *n,
 		snprintf(err, errlen, "%s: not in the tables", act->name);
 		return (ENOENT);
 	}
-	if ((error = cbl_yiid_write(n, NULL, 0, &t)) != 0 ||
+	if (in == NULL && (in = cbl_yarena_alloc(a, inode->size)) == NULL)
+		return (ENOMEM);
+	if ((error = cbl_yiid_write(n, (const void **)(uintptr_t)vals, nvals,
+	    &t)) != 0 ||
 	    (error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_RPC, 0, &req)) != 0) {
 		cbl_ybuf_free(&t);
@@ -600,9 +606,20 @@ yaction(cbl_conn *conn, const struct cbl_ynode *n,
 	cbl_ybuf_free(&t);
 	if ((error = ask(conn, req, &rep, err, errlen)) != 0)
 		return (error);
-	error = cbl_msg_ydecode(rep, onode, out, a, 0, err, errlen);
+	error = out != NULL ? cbl_msg_ydecode(rep, onode, out, a, 0, err,
+	    errlen) : 0;
 	cbl_msg_free(rep);
 	return (error == ENOENT ? 0 : error);
+}
+
+/* Action act of container n (no keys), in its input, out its output. */
+static int
+yaction(cbl_conn *conn, const struct cbl_ynode *n,
+    const struct cbl_ynode *act, const void *in, void *out, cbl_yarena *a,
+    char *err, size_t errlen)
+{
+
+	return (yaction_at(conn, n, NULL, 0, act, in, out, a, err, errlen));
 }
 
 /* A value as the sysctl page's row: name, value, type, rw, tun, descr. */
@@ -841,4 +858,310 @@ ytrans_kernel(cbl_conn *conn, ucl_object_t **data, char *err, size_t errlen)
 	}
 	cbl_yarena_free(a);
 	return (0);
+}
+
+static const char *const jail_states[] = {
+	[ARCANA_JAILS_JAILS_JAIL_STATE_RUNNING] = "running",
+	[ARCANA_JAILS_JAILS_JAIL_STATE_STOPPED] = "stopped",
+	[ARCANA_JAILS_JAILS_JAIL_STATE_DYING] = "dying",
+	[ARCANA_JAILS_JAILS_JAIL_STATE_ABSENT] = "absent",
+};
+
+static void
+put_text(ucl_object_t *o, const char *key, const char *v)
+{
+
+	if (v != NULL)
+		put(o, key, ucl_object_fromstring(v));
+}
+
+/* A jail as the page has it (hosts.c's jail_object()'s keys). */
+static ucl_object_t *
+jail_row(const struct arcana_jails_jails_jail *j)
+{
+	ucl_object_t	*o, *ps, *p;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put_text(o, "name", j->name);
+	put_text(o, "state", j->has_state && (size_t)j->state <
+	    nitems(jail_states) ? jail_states[j->state] : "unknown");
+	put(o, "jid", j->has_jid ? ucl_object_fromint(j->jid) :
+	    ucl_object_typed_new(UCL_NULL));
+	put(o, "configured", ucl_object_frombool(j->configured));
+	put_text(o, "scope", j->scope);
+	put_text(o, "hostname", j->hostname);
+	put_text(o, "path", j->path);
+	put(o, "ip4", strings(j->ip4.n, j->ip4.v));
+	put(o, "ip6", strings(j->ip6.n, j->ip6.v));
+	put(o, "vnet", ucl_object_frombool(j->vnet));
+	if (j->plugin.n > 0)
+		put(o, "plugins", strings(j->plugin.n, j->plugin.v));
+	put_text(o, "osrelease", j->osrelease);
+	put(o, "persist", ucl_object_frombool(j->persist));
+	/* Started at boot (rc.conf's jail_list): told of a jail defined. */
+	if (j->has_boot)
+		put(o, "boot", ucl_object_frombool(j->boot));
+	if (j->allow.n > 0)
+		put(o, "allow", strings(j->allow.n, j->allow.v));
+	put_text(o, "interface", j->interface);
+	if (j->has_nproc) {
+		put(o, "nproc", ucl_object_fromint(j->nproc));
+		put(o, "rss_kb", ucl_object_fromint((int64_t)j->rss));
+		put(o, "cpu_pct", ucl_object_fromdouble((double)j->cpu /
+		    100.0));
+		put(o, "securelevel", ucl_object_fromint(j->securelevel));
+		put(o, "children", ucl_object_fromint(j->children));
+	}
+	ps = ucl_object_typed_new(UCL_ARRAY);
+	for (size_t i = 0; i < j->param.n; i++) {
+		p = ucl_object_typed_new(UCL_OBJECT);
+		put_text(p, "key", j->param.v[i].name);
+		put(p, "values", strings(j->param.v[i].value.n,
+		    j->param.v[i].value.v));
+		ucl_array_append(ps, p);
+	}
+	put(o, "params", ps);
+	return (o);
+}
+
+/* arcana-jails' jails of the operational state, d's (a's). */
+static int
+jails_get(cbl_conn *conn, struct arcana_jails *d, cbl_yarena *a, char *err,
+    size_t errlen)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n;
+
+	if ((n = top_of("arcana-jails", "jails", &m)) == NULL) {
+		snprintf(err, errlen, "arcana-jails is not in the tables");
+		return (ENOENT);
+	}
+	memset(d, 0, sizeof(*d));
+	return (yget_into(conn, n, -1, d, a, err, errlen));
+}
+
+int
+ytrans_jails(cbl_conn *conn, bool config_only, ucl_object_t *top, char *err,
+    size_t errlen)
+{
+	const struct arcana_jails_jails	*js;
+	struct arcana_jails		 d;
+	ucl_object_t			*rows, *errs, *e;
+	cbl_yarena			*a;
+	int				 error;
+
+	err[0] = '\0';
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	if ((error = jails_get(conn, &d, a, err, errlen)) != 0) {
+		cbl_yarena_free(a);
+		return (error);
+	}
+	rows = ucl_object_typed_new(UCL_ARRAY);
+	errs = ucl_object_typed_new(UCL_ARRAY);
+	if ((js = d.jails) != NULL) {
+		for (size_t i = 0; i < js->jail.n; i++)
+			if (!config_only || js->jail.v[i].configured)
+				ucl_array_append(rows, jail_row(&js->jail.v[i]));
+		for (size_t i = 0; i < js->conf_error.n; i++) {
+			e = ucl_object_typed_new(UCL_OBJECT);
+			put_text(e, "scope", js->conf_error.v[i].scope);
+			put_text(e, "message", js->conf_error.v[i].message);
+			ucl_array_append(errs, e);
+		}
+	}
+	put(top, "jails", rows);
+	put(top, "scopes", js != NULL ? strings(js->scope.n, js->scope.v) :
+	    ucl_object_typed_new(UCL_ARRAY));
+	put(top, "conf_errors", errs);
+	cbl_yarena_free(a);
+	return (0);
+}
+
+ucl_object_t *
+ytrans_jail(cbl_conn *conn, const char *name)
+{
+	struct arcana_jails	 d;
+	ucl_object_t		*o = NULL;
+	cbl_yarena		*a;
+	char			 err[256];
+
+	if ((a = cbl_yarena_new()) == NULL)
+		return (NULL);
+	if (jails_get(conn, &d, a, err, sizeof(err)) == 0 && d.jails != NULL)
+		for (size_t i = 0; o == NULL && i < d.jails->jail.n; i++)
+			if (strcmp(d.jails->jail.v[i].name, name) == 0)
+				o = jail_row(&d.jails->jail.v[i]);
+	cbl_yarena_free(a);
+	return (o);
+}
+
+int
+ytrans_jail_action(cbl_conn *conn, const char *name, const char *verb,
+    char *err, size_t errlen)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n, *act;
+	const void			*vals[1];
+	cbl_yarena			*a;
+	int				 error;
+
+	err[0] = '\0';
+	if ((n = top_of("arcana-jails", "jails", &m)) == NULL ||
+	    (n = child_of(n, "jail")) == NULL || (act = child_of(n, verb)) ==
+	    NULL) {
+		snprintf(err, errlen, "arcana-jails has no %s", verb);
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	vals[0] = &name;
+	error = yaction_at(conn, n, vals, 1, act, NULL, NULL, a, err, errlen);
+	cbl_yarena_free(a);
+	return (error);
+}
+
+typedef struct arcana_packages_package ypkg;
+
+/* Packages as the page has them; with all, what pkg query says too. */
+static ucl_object_t *
+pkg_rows(const ypkg *v, size_t n, bool all)
+{
+	ucl_object_t	*rows, *e;
+
+	rows = ucl_object_typed_new(UCL_ARRAY);
+	for (size_t i = 0; i < n; i++) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put_text(e, "name", v[i].name);
+		put_text(e, "installed", v[i].installed);
+		put_text(e, "available", v[i].available);
+		if (all) {
+			put_text(e, "origin", v[i].origin);
+			put_text(e, "comment", v[i].comment);
+			if (v[i].has_automatic)
+				put(e, "automatic", ucl_object_frombool(
+				    v[i].automatic));
+			if (v[i].has_size)
+				put(e, "size", ucl_object_fromint((int64_t)
+				    v[i].size));
+		}
+		ucl_array_append(rows, e);
+	}
+	return (rows);
+}
+
+/* arcana-packages' node: the host's, or jail's (vals[0] its key). */
+static const struct cbl_ynode *
+pkg_node(const char **jail, const void **vals, size_t *nvals)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n;
+
+	*nvals = 0;
+	if (*jail == NULL || (*jail)[0] == '\0')
+		return (top_of("arcana-packages", "packages", &m));
+	if ((n = top_of("arcana-jails", "jails", &m)) == NULL || (n =
+	    child_of(n, "jail")) == NULL)
+		return (NULL);
+	vals[0] = jail;
+	*nvals = 1;
+	return (child_of(n, "packages"));
+}
+
+int
+ytrans_packages(cbl_conn *conn, const char *jail, bool installed, bool refresh,
+    uint8_t ip, bool anyos, ucl_object_t *top, char *err, size_t errlen)
+{
+	struct arcana_packages_packages_refresh_input	 ri;
+	struct arcana_packages_packages_refresh_output	 ro;
+	struct arcana_packages_packages_read_output	 io;
+	const struct cbl_ynode				*n, *act;
+	const void					*vals[1];
+	cbl_yarena					*a;
+	size_t						 nvals;
+	int						 error;
+
+	err[0] = '\0';
+	if ((n = pkg_node(&jail, vals, &nvals)) == NULL || (act = child_of(n,
+	    installed ? "read" : "refresh")) == NULL) {
+		snprintf(err, errlen, "arcana-packages is not in the tables");
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&ri, 0, sizeof(ri));
+	memset(&ro, 0, sizeof(ro));
+	memset(&io, 0, sizeof(io));
+	if (installed)
+		error = yaction_at(conn, n, vals, nvals, act, NULL, &io, a,
+		    err, errlen);
+	else {
+		ri.has_update = ri.update = refresh;
+		/* ip-version's values are pkg's: 0, 4, 6. */
+		ri.has_ip_version = ip != 0;
+		ri.ip_version = ip;
+		ri.has_ignore_osversion = ri.ignore_osversion = anyos;
+		error = yaction_at(conn, n, vals, nvals, act, &ri, &ro, a, err,
+		    errlen);
+	}
+	if (error == 0 && installed) {
+		put(top, "packages", pkg_rows(io.package.v, io.package.n, true));
+		put(top, "repos", strings(io.repository.n, io.repository.v));
+		if (io.has_pkgbase)
+			put(top, "pkgbase", ucl_object_frombool(io.pkgbase));
+	} else if (error == 0) {
+		put(top, "packages", pkg_rows(ro.package.v, ro.package.n, true));
+		put(top, "repos", strings(ro.repository.n, ro.repository.v));
+		if (ro.has_pkgbase)
+			put(top, "pkgbase", ucl_object_frombool(ro.pkgbase));
+	} else {
+		put(top, "packages", ucl_object_typed_new(UCL_ARRAY));
+		put(top, "repos", ucl_object_typed_new(UCL_ARRAY));
+	}
+	cbl_yarena_free(a);
+	return (error);
+}
+
+int
+ytrans_pkg_upgrade(cbl_conn *conn, const char *jail,
+    const char *const *names, size_t nnames, bool dry_run, bool anyos,
+    uint8_t ip, const char *repo, ucl_object_t *top, char *err, size_t errlen)
+{
+	struct arcana_packages_packages_upgrade_input	 ui;
+	struct arcana_packages_packages_upgrade_output	 uo;
+	const struct cbl_ynode				*n, *act;
+	const void					*vals[1];
+	cbl_yarena					*a;
+	size_t						 nvals;
+	int						 error;
+
+	err[0] = '\0';
+	memset(&ui, 0, sizeof(ui));
+	/* In every running jail: the host's, every-jail. */
+	if (jail != NULL && strcmp(jail, "*") == 0) {
+		jail = NULL;
+		ui.has_every_jail = ui.every_jail = true;
+	}
+	if ((n = pkg_node(&jail, vals, &nvals)) == NULL || (act = child_of(n,
+	    "upgrade")) == NULL) {
+		snprintf(err, errlen, "arcana-packages is not in the tables");
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	ui.name.v = names;
+	ui.name.n = nnames;
+	ui.has_dry_run = ui.dry_run = dry_run;
+	ui.has_ignore_osversion = ui.ignore_osversion = anyos;
+	ui.has_ip_version = ip != 0;
+	ui.ip_version = ip;
+	ui.repository = repo != NULL && repo[0] != '\0' ? repo : NULL;
+	memset(&uo, 0, sizeof(uo));
+	error = yaction_at(conn, n, vals, nvals, act, &ui, &uo, a, err, errlen);
+	put(top, "upgraded", error == 0 && uo.has_upgraded ?
+	    ucl_object_fromint(uo.upgraded) : ucl_object_typed_new(UCL_NULL));
+	put(top, "packages", error == 0 ? pkg_rows(uo.package.v, uo.package.n,
+	    false) : ucl_object_typed_new(UCL_ARRAY));
+	cbl_yarena_free(a);
+	return (error);
 }

@@ -16,6 +16,7 @@
 
 #include <sys/param.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 
 #include <netinet/in.h>
@@ -89,10 +90,13 @@ wd(const char *method, const char *path, const char *body)
  * layout, which no assertion sees.
  */
 static const char	*shots;
+/* More of the browser's command line, for a case that needs it. */
+static const char	*browser_flags = "";
 
 static void	run(const char *);
 static void	dock_closed(void);
 static void	queued_run(void);
+static void	moves_measure(void);
 
 static void
 shot(const char *name)
@@ -357,13 +361,16 @@ browser_start(const atf_tc_t *tc)
 	    "\"webauthn:virtualAuthenticators\":true,"
 	    "\"goog:chromeOptions\":{\"binary\":\"%s\",\"args\":["
 	    "\"--headless=new\",\"--no-sandbox\",\"--user-data-dir=%s/chrome\","
-	    "\"--window-size=1280,800\"]}}}}", chrome, cwd);
+	    "\"--window-size=1280,800\"%s]}}}}", chrome, cwd, browser_flags);
 	wd_sid[0] = '\0';
 	v = wd("POST", "/session", body);
 	ATF_REQUIRE(v != NULL && ucl_object_lookup(v, "sessionId") != NULL);
 	snprintf(wd_sid, sizeof(wd_sid), "%s", ucl_object_tostring(
 	    ucl_object_lookup(v, "sessionId")));
 	ucl_object_unref(v);
+	/* A script waits its turn behind a page busy drawing a large map:
+	 * far longer than the driver's half minute. */
+	ucl_object_unref(wd("POST", "/session/timeouts", "{\"script\":600000}"));
 	v = wd("POST", "/session/webauthn/authenticator", "{\"protocol\":"
 	    "\"ctap2\",\"transport\":\"usb\",\"hasResidentKey\":false,"
 	    "\"hasUserVerification\":true,\"isUserConsenting\":true,"
@@ -3675,9 +3682,9 @@ part_relay(void)
 	    "'192.0.2.1:14350'; f.fec.value = '1:2,2:3,8:4,20:10'; f.mode.value "
 	    "= '1'; f.key.value = 'pwasecret'; f.requestSubmit();");
 	queued_run();
-	for (i = 0; i < 300 && system("grep -q '^speederv2_flags=\"-c "
+	for (i = 0; i < 300 && system("grep -q '^arcana_relay_flags=\"-c "
 	    "-l127.0.0.1:51821 -r192.0.2.1:14350 -k pwasecret --mode 1 "
-	    "-f1:2,2:3,8:4,20:10 --report 10 --fifo /var/run/speederv2/fifo\"$' "
+	    "-f1:2,2:3,8:4,20:10 --report 10 --fifo /var/run/arcana_relay/fifo\"$' "
 	    "rc.conf") != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the relay's flags are not written");
@@ -3725,14 +3732,9 @@ part_relay(void)
 	for (i = 0; i < 300 && access("monitors.json", F_OK) == 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the comparison's monitors stayed");
-	/* Another relay, a profile of the rc script's: its own flags, the
-	 * plain one's said not to run while profiles are listed; picked,
-	 * started and removed (asked first).  The port's rc script that
-	 * runs several, here for these steps alone (a service of the
-	 * host's otherwise). */
-	ATF_REQUIRE((fp = fopen("rc.d/speederv2", "w")) != NULL);
-	fputs("#!/bin/sh\n# speederv2_profiles\n", fp);
-	fclose(fp);
+	/* Another relay, a profile of Arcana's rc script: its own flags,
+	 * the plain one's said not to run while profiles are listed;
+	 * picked, started and removed (asked first). */
 	click_when("button[data-act=rl-add]", 30);
 	wait_js("document.querySelector('form[data-form=rl-conf] input"
 	    "[name=profile]')", 10);
@@ -3742,26 +3744,26 @@ part_relay(void)
 	    "f.svcj.checked = true; f.svcj_ipaddrs.value = "
 	    "'192.0.2.2,127.0.0.1'; f.requestSubmit();");
 	queued_run();
-	for (i = 0; i < 300 && system("grep -q '^speederv2_profiles=\"lte\"$' "
-	    "rc.conf && grep -q '^speederv2_lte_flags=\"-s -l192.0.2.2:14351 "
+	for (i = 0; i < 300 && system("grep -q '^arcana_relay_profiles=\"lte\"$' "
+	    "rc.conf && grep -q '^arcana_relay_lte_flags=\"-s -l192.0.2.2:14351 "
 	    "-r127.0.0.1:51822' rc.conf") != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the second relay's flags are not written");
 	/* In rc.subr's service jail of its own, held to its addresses. */
-	ATF_CHECK(system("grep -q '^speederv2_lte_svcj=\"YES\"$' rc.conf && "
-	    "grep -q '^speederv2_lte_svcj_options=\"net_basic\"$' rc.conf && "
-	    "grep -q '^speederv2_lte_svcj_ipaddrs=\"192.0.2.2 127.0.0.1\"$' "
+	ATF_CHECK(system("grep -q '^arcana_relay_lte_svcj=\"YES\"$' rc.conf && "
+	    "grep -q '^arcana_relay_lte_svcj_options=\"net_basic\"$' rc.conf && "
+	    "grep -q '^arcana_relay_lte_svcj_ipaddrs=\"192.0.2.2 127.0.0.1\"$' "
 	    "rc.conf") == 0);
 	dock_closed();
 	wait_js("document.querySelector('nav.relays button.on[data-act=rl-pick]"
 	    "[data-arg=lte]') && document.querySelector('.relayview .notice."
-	    "warn code')?.textContent === 'speederv2_flags' && document."
+	    "warn code')?.textContent === 'arcana_relay_flags' && document."
 	    "querySelector('.relayview dl.kv').textContent.includes("
 	    "'192.0.2.2:14351') && document.querySelector('.relayview dl.kv')"
-	    ".textContent.includes('svcj-speederv2_lte')", 20);
+	    ".textContent.includes('svcj-arcana_relay_lte')", 20);
 	click_when("button[data-act=rl-start]", 10);
 	queued_run();
-	for (i = 0; i < 300 && access("running.speederv2_lte", F_OK) != 0; i++)
+	for (i = 0; i < 300 && access("running.arcana_relay_lte", F_OK) != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the second relay is not started");
 	dock_closed();
@@ -3778,15 +3780,14 @@ part_relay(void)
 	run("document.querySelector('form[data-form=confirm]')"
 	    ".requestSubmit();");
 	queued_run();
-	for (i = 0; i < 300 && system("! grep -q 'speederv2_lte_\\|"
-	    "speederv2_profiles' rc.conf") != 0; i++)
+	for (i = 0; i < 300 && system("! grep -q 'arcana_relay_lte_\\|"
+	    "arcana_relay_profiles' rc.conf") != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the second relay is not removed");
-	ATF_CHECK(access("running.speederv2_lte", F_OK) != 0);
+	ATF_CHECK(access("running.arcana_relay_lte", F_OK) != 0);
 	dock_closed();
 	wait_js("!document.querySelector('nav.relays button[data-arg=lte]')",
 	    20);
-	unlink("rc.d/speederv2");
 	/*
 	 * Its overhead kept in the host's history, beside the interfaces'
 	 * rates: two reports of now in its log, read on by the sampler, and
@@ -3804,11 +3805,11 @@ part_relay(void)
 		strftime(now, sizeof(now), "%Y-%m-%d %H:%M:%S", localtime_r(&t,
 		    &tm));
 		ATF_REQUIRE((fp = fopen("speeder.log", "a")) != NULL);
-		fprintf(fp, "Oct 28 10:00:00 h speederv2[7]: [%s][INFO][report]"
+		fprintf(fp, "Oct 28 10:00:00 h arcana_relay[7]: [%s][INFO][report]"
 		    "client-->server:(original:100 pkt;100000 byte) (fec:150 pkt,"
 		    "160000 byte)  server-->client:(original:50 pkt;40000 byte) "
 		    "(fec:80 pkt;60000 byte)\n", was);
-		fprintf(fp, "Oct 28 10:00:10 h speederv2[7]: [%s][INFO][report]"
+		fprintf(fp, "Oct 28 10:00:10 h arcana_relay[7]: [%s][INFO][report]"
 		    "client-->server:(original:200 pkt;200000 byte) (fec:300 pkt,"
 		    "330000 byte)  server-->client:(original:100 pkt;80000 byte) "
 		    "(fec:160 pkt;120000 byte)\n", now);
@@ -3817,7 +3818,7 @@ part_relay(void)
 	run("document.querySelector('li[data-act=select-usage]').click()");
 	wait_js("[...document.querySelectorAll('section.ucard figure.uplot "
 	    "figcaption b')].some(b => b.textContent === 'FEC relay · "
-	    "speederv2') && [...document.querySelectorAll('.urelays + .upick "
+	    "arcana_relay') && [...document.querySelectorAll('.urelays + .upick "
 	    "+ p.ujails')].some(p => p.textContent.includes('Overhead over "
 	    "the window: 64.3%'))", 40);
 	run("document.querySelector('.urelays').scrollIntoView({block: "
@@ -7428,7 +7429,7 @@ part_routes(void)
 	    "includes('YANG model')); const t = s.textContent; return "
 	    "t.includes('arcana-jails@2026-10-14') && "
 	    "t.includes('module: arcana-jails') && t.includes('+---x start') "
-	    "&& t.includes('+--ro jail* [name]'); })()"));
+	    "&& t.includes('+--rw jail* [name]'); })()"));
 	shot("3d-yang");
 	run("document.querySelector('.schema-tabs button[data-arg=cbor]')."
 	    "click()");
@@ -7568,6 +7569,85 @@ ATF_TC_CLEANUP(pwa_nacm, tc)
 	browser_stop();
 }
 
+/*
+ * An interface's router advertisements, from its row on the Network
+ * tab: the form read from the host's running datastore, the interval
+ * and a DNS server set, saved as a confirmed commit; the host's
+ * warning (rc-conf-files) shown and accepted; the host's rtadvd.conf
+ * has the record.
+ */
+ATF_TC_WITH_CLEANUP(pwa_ra);
+ATF_TC_HEAD(pwa_ra, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "An interface's router advertisements (rtadvd.conf) edited and saved by a confirmed commit");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_ra, tc)
+{
+	char	conf[4096];
+	FILE	*fp;
+	size_t	n;
+
+	prologue(tc, 1);
+	(void)mkdir("root/usr", 0755);
+	(void)mkdir("root/usr/local", 0755);
+	(void)mkdir("root/usr/local/etc", 0755);
+	(void)mkdir("root/usr/local/etc/rc.conf.d", 0755);
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]')", 10);
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]').click()");
+	wait_js("document.querySelector('tr.iface[data-if=lo0] button[data-act="
+	    "ra-open]')", 20);
+	run("document.querySelector('tr.iface[data-if=lo0] button[data-act="
+	    "ra-open]').click()");
+	wait_js("document.querySelector('#ra form[data-form=ra-main]') && "
+	    "document.querySelector('#ra .ra-state')", 20);
+	shot("8r1-ra");
+	/* No record yet: the form empty, rtadvd not running. */
+	ATF_CHECK(js_true("document.querySelector('#ra form[data-form=ra-main] "
+	    "input[name=maxinterval]').value === ''"));
+	ATF_CHECK(js_true("document.querySelector('#ra .ra-state').textContent"
+	    ".includes('does not run')"));
+	run("const f = document.querySelector('form[data-form=ra-main]'); "
+	    "f.maxinterval.value = '300'; f.send.checked = true; "
+	    "f.pref.value = 'high'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=ra-save]')", 10);
+	run("const f = document.querySelector('form[data-form=ra-rdnss]'); "
+	    "f.address.value = '2001:db8::53'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('#ra table[data-list=\"arcana-ra:"
+	    "rdnss\"] td')].some(t => t.textContent === '2001:db8::53')", 10);
+	run("document.querySelector('button[data-act=ra-save]').click()");
+	/* The host stops at its warning: accepted here. */
+	wait_js("document.querySelector('button[data-act=ra-accept]')", 30);
+	ATF_CHECK(js_true("document.querySelector('#ra .note').textContent"
+	    ".includes('rc_conf_files')"));
+	shot("8r2-ra-warning");
+	run("document.querySelector('button[data-act=ra-accept]').click()");
+	wait_js("document.body.textContent.includes('Saved: rtadvd.conf holds "
+	    "the record')", 30);
+	shot("8r3-ra-saved");
+	/* Read again from the host: the form has what was saved. */
+	wait_js("!document.querySelector('button[data-act=ra-save]') && "
+	    "document.querySelector('#ra form[data-form=ra-main] "
+	    "input[name=maxinterval]').value === '300'", 20);
+	ATF_CHECK(js_true("document.querySelector('#ra form[data-form=ra-main] "
+	    "select[name=pref]').value === 'high'"));
+	ATF_REQUIRE((fp = fopen("rtadvd.conf", "r")) != NULL);
+	n = fread(conf, 1, sizeof(conf) - 1, fp);
+	conf[n] = '\0';
+	fclose(fp);
+	ATF_CHECK_MSG(strstr(conf, "lo0:\\\n\t:maxinterval#300:raflags=\"h\":"
+	    "rdnss=\"2001:db8::53\":\n") != NULL, "%s", conf);
+}
+ATF_TC_CLEANUP(pwa_ra, tc)
+{
+
+	browser_stop();
+}
+
 ATF_TC_WITH_CLEANUP(pwa_nettab);
 ATF_TC_HEAD(pwa_nettab, tc)
 {
@@ -7637,6 +7717,7 @@ part_mesh(void)
 	click_at("button[data-act=topo-fit]");
 	usleep(500000);
 	shot("9-mesh-map");
+	moves_measure();
 	click_at("button[data-act=topo-stencil]");
 	wait_js("document.querySelector('svg.topo.stencil') && document."
 	    "querySelectorAll('svg.topo .tnode circle.glyph').length >= 4 && "
@@ -8018,6 +8099,353 @@ part_safefuse(void)
 	shot("8-network-safe");
 	ATF_REQUIRE(rename("jgd.sock.away", "jgd.sock") == 0);
 	wait_js("!document.querySelector('svg.topo text.tsafe')", 60);
+}
+
+/* What a script says, as text. */
+static void
+js_str(char *out, size_t len, const char *expr)
+{
+	ucl_object_t	*v;
+	char		 script[1024];
+
+	snprintf(script, sizeof(script), "return (%s);", expr);
+	v = js(script);
+	snprintf(out, len, "%s", v != NULL && ucl_object_tostring(v) != NULL ?
+	    ucl_object_tostring(v) : "");
+	if (v != NULL)
+		ucl_object_unref(v);
+}
+
+/*
+ * What a pointer move costs the page, measured in the browser: the
+ * time spent in arc_on_action (the action and the drawing after it)
+ * for forty moves of a host, forty of the map, and forty turns of the
+ * wheel, with how many times the SVG was changed meanwhile.  Printed
+ * for docs/notes/webgl-map.md; what is asserted is in the caller.
+ */
+static void
+moves_measure(void)
+{
+	char	s[400];
+
+	run("window.ptr = (el, type, x, y) => { const r = el."
+	    "getBoundingClientRect(); (type === 'pointerdown' ? el : document)"
+	    ".dispatchEvent(new PointerEvent(type, { bubbles: true, button: "
+	    "0, clientX: x === undefined ? r.x + r.width / 2 : x, clientY: "
+	    "y === undefined ? r.y + r.height / 2 : y })); };"
+	    "window.raf = () => new Promise(r => requestAnimationFrame(r));"
+	    "if (!window.arcT) { window.arcT = []; const f0 = Module."
+	    "_arc_on_action; Module._arc_on_action = function (a, b, c) { const "
+	    "t = performance.now(); f0.call(this, a, b, c); window.arcT.push("
+	    "performance.now() - t); }; }"
+	    "window.muts = 0; window.mo = new MutationObserver(ms => { window."
+	    "muts += ms.length; });"
+	    "window.stat = (t) => { if (!t.length) return 'none'; const s = t."
+	    "slice().sort((a, b) => a - b); return 'n=' + t.length + ' mean=' + "
+	    "(t.reduce((a, b) => a + b, 0) / t.length).toFixed(1) + ' median=' + "
+	    "s[s.length >> 1].toFixed(1) + ' max=' + s[s.length - 1].toFixed(1) "
+	    "+ ' ms'; };"
+	    "window.dragMoves = async (sel, n) => { const el = document."
+	    "querySelector(sel), r = el.getBoundingClientRect(); let x = r.x + "
+	    "r.width / 2, y = r.y + r.height / 2; window.lastWires = 0; "
+	    "ptr(el, 'pointerdown', x, y); "
+	    "for (let i = 0; i < n; i++) { x += 3; y += 2; ptr(document."
+	    "documentElement, 'pointermove', x, y); await raf(); await raf(); "
+	    "if (i === 0) { "
+	    "arcT.length = 0; muts = 0; mo.observe(document.querySelector("
+	    "'svg.topo'), { attributes: true, childList: true, subtree: true }); "
+	    "} window.lastWires = Math.max(window.lastWires || 0, (window.arcGl "
+	    "|| {}).wires || 0); } const out = stat(arcT) + ' svg-changes=' + "
+	    "muts + ' canvas-lines=' + window.lastWires; window.lastMuts = muts; "
+	    "if (sel.includes('tnode')) { window.hostWires = window.lastWires; "
+	    "window.hostMuts = muts; } mo.disconnect(); ptr(document."
+	    "documentElement, 'pointerup', x, y); await raf(); await raf(); "
+	    "return out; };"
+	    "window.wheelMoves = async (n) => { const s = document.querySelector("
+	    "'svg.topo'), r = s.getBoundingClientRect(); arcT.length = 0; for "
+	    "(let i = 0; i < n; i++) { s.dispatchEvent(new WheelEvent('wheel', { "
+	    "deltaY: i % 2 ? 100 : -100, clientX: r.x + r.width / 2, clientY: "
+	    "r.y + r.height / 2, bubbles: true, cancelable: true })); await raf(); "
+	    "} return stat(arcT); };");
+	run("window.res = null; dragMoves('svg.topo .tnode .box', 40).then(s "
+	    "=> { window.res = s; }, e => { window.res = 'error: ' + (e.stack || "
+	    "e); });");
+	wait_js("window.res !== null", 60);
+	js_str(s, sizeof(s), "window.res");
+	fprintf(stderr, "nodes=%d links=%d host drag: %s\n", (int)js_num(
+	    "document.querySelectorAll('svg.topo .tnode').length"), (int)js_num(
+	    "document.querySelectorAll('svg.topo .tlink').length"), s);
+	ATF_CHECK_MSG(strncmp(s, "error", 5) != 0, "%s", s);
+	run("window.res = null; dragMoves('svg.topo .bg', 40).then(s => { "
+	    "window.res = s; }, e => { window.res = 'error: ' + (e.stack || e); "
+	    "});");
+	wait_js("window.res !== null", 60);
+	js_str(s, sizeof(s), "window.res");
+	fprintf(stderr, "map drag: %s\n", s);
+	ATF_CHECK_MSG(strncmp(s, "error", 5) != 0, "%s", s);
+	run("window.res = null; wheelMoves(40).then(s => { window.res = s; }, "
+	    "e => { window.res = 'error: ' + (e.stack || e); });");
+	wait_js("window.res !== null", 60);
+	js_str(s, sizeof(s), "window.res");
+	fprintf(stderr, "wheel: %s\n", s);
+	ATF_CHECK_MSG(strncmp(s, "error", 5) != 0, "%s", s);
+	/* The zoom buttons draw the whole map again each: what a move cost
+	 * before the canvas took the moving lines, at this size. */
+	run("window.res = null; (async () => { arcT.length = 0; for (let i = 0; "
+	    "i < 10; i++) { document.querySelector('button[data-act=topo-zoom-' "
+	    "+ (i % 2 ? 'out' : 'in') + ']').click(); await raf(); } window.res "
+	    "= stat(arcT); })();");
+	wait_js("window.res !== null", 120);
+	js_str(s, sizeof(s), "window.res");
+	fprintf(stderr, "a whole redraw (the zoom buttons): %s\n", s);
+	js_str(s, sizeof(s), "JSON.stringify(window.arcGl) + ' ' + (window."
+	    "arcGlNote || '')");
+	fprintf(stderr, "the layer: %s\n", s);
+	usleep(300000);
+}
+
+/*
+ * The map itself, on the one lab host: over the whole screen (the
+ * Fullscreen API, which the browser allows from a click of the hand),
+ * its box is the screen and the WebGL canvas is drawn at that size; a
+ * redraw keeps the box the screen was given to; F on the map gives it
+ * back, as Escape would.
+ */
+static void
+part_map(void)
+{
+
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelector('svg.topo .tnode.up') && window.arcGl "
+	    "!== undefined", 30);
+	fprintf(stderr, "WebGL 2: %s\n", js_true("window.arcGl.ok") ? "yes" :
+	    "no");
+	run("window.cw0 = document.querySelector('#map-box').clientWidth;");
+	click_at("button[data-act=topo-full]");
+	wait_js("document.fullscreenElement === document.querySelector("
+	    "'#map-box') && document.querySelector('#map-box').clientWidth > "
+	    "window.cw0 && document.querySelector('button[data-act=topo-full]')"
+	    ".getAttribute('aria-pressed') === 'true'", 5);
+	wait_js("!window.arcGl.ok || document.querySelector('canvas#map-gl')."
+	    "width >= Math.floor(document.querySelector('#map-box').clientWidth "
+	    "* Math.min(devicePixelRatio, 2)) - 2", 5);
+	shot("8-network-fullscreen");
+	run("document.querySelector('button[data-act=topo-zoom-in]').click();");
+	usleep(300000);
+	ATF_CHECK(js_true("document.fullscreenElement === document.querySelector("
+	    "'#map-box')"));
+	run("const m = document.querySelector('#map-box'); m.focus(); "
+	    "m.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: "
+	    "true }));");
+	wait_js("!document.fullscreenElement && document.querySelector('button"
+	    "[data-act=topo-full]').getAttribute('aria-pressed') === 'false'", 5);
+	moves_measure();
+
+	/*
+	 * Draw mode: kept for this viewer; what a line makes picked by its
+	 * key; a line drawn by the hand lights the hosts that can take it
+	 * and says why of those that cannot; by the keys (C on a host, an
+	 * arrow, Enter) it ends in the dialog with its plan beside it and
+	 * a ghost on the map, which, applied, goes planned or pending as
+	 * its ends' jobs say; a list says the same for a screen reader.
+	 */
+	click_at("button[data-act=topo-draw]");
+	wait_js("document.querySelector('button[data-act=topo-draw]')."
+	    "getAttribute('aria-pressed') === 'true' && localStorage.getItem("
+	    "'arc_topo_draw') === 'on'", 5);
+	run("const m = document.querySelector('#map-box'); m.focus(); m."
+	    "dispatchEvent(new KeyboardEvent('keydown', { key: 'b', bubbles: "
+	    "true }));");
+	wait_js("document.querySelector('button[data-act=topo-dkind][data-arg="
+	    "bgp]').getAttribute('aria-pressed') === 'true'", 5);
+	run("const ns = document.querySelectorAll('svg.topo .tnode'), p = ns[0]"
+	    ".querySelector('.port'), r = ns[1].querySelector('.box')."
+	    "getBoundingClientRect(); ptr(p, 'pointerdown'); ptr(document."
+	    "documentElement, 'pointermove', r.x + r.width / 2, r.y + r.height + "
+	    "60);");
+	wait_js("(n => n.classList.contains('target') || (n.classList.contains("
+	    "'invalid') && n.querySelector('text.why').textContent.length > 3))"
+	    "(document.querySelectorAll('svg.topo .tnode')[1])", 5);
+	fprintf(stderr, "a BGP session from the first host: %s\n", js_true(
+	    "document.querySelectorAll('svg.topo .tnode')[1].classList."
+	    "contains('target')") ? "can end at the second" : "cannot end at "
+	    "the second, and says why");
+	shot("8e-draw-targets");
+	run("const r = document.querySelector('svg.topo').getBoundingClientRect(); "
+	    "ptr(document.documentElement, 'pointerup', r.x + 5, r.y + r.height "
+	    "- 5);");
+	run("const m = document.querySelector('#map-box'); m.dispatchEvent(new "
+	    "KeyboardEvent('keydown', { key: 't', bubbles: true }));");
+	wait_js("document.querySelector('button[data-act=topo-dkind][data-arg="
+	    "tunnel]').getAttribute('aria-pressed') === 'true'", 5);
+	run("const n = document.querySelector('svg.topo .tnode'); n.focus(); n."
+	    "dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: "
+	    "true }));");
+	wait_js("document.activeElement && document.activeElement.classList."
+	    "contains('kbsel') && document.activeElement.classList.contains("
+	    "'target')", 5);
+	run("document.activeElement.dispatchEvent(new KeyboardEvent('keydown', "
+	    "{ key: 'Enter', bubbles: true }));");
+	wait_js("document.querySelector('form[data-form=tunnel] section.tun-plan"
+	    ".plan-side') && document.querySelector('svg.topo .tghost.s-ghost."
+	    "k-tunnel')", 5);
+	shot("8e-draw-plan");
+	run("const f = document.querySelector('form[data-form=tunnel]'); "
+	    "f.persist.checked = false; f.requestSubmit();");
+	usleep(500000);
+	run("const b = document.querySelector('button[data-act=queue-run]'); "
+	    "if (b) b.click();");
+	wait_js("document.querySelector('svg.topo .tghost:is(.s-planned, "
+	    ".s-pending, .s-live, .failed)')", 30);
+	wait_js("document.querySelector('.map-wrap .sr-only ul[aria-label="
+	    "Drawn]').textContent.includes('A tunnel between')", 5);
+	run("const d = document.querySelector('.dock.open > header'); if (d) "
+	    "d.click();");
+	shot("8e-draw-applied");
+	{
+		char	st[200];
+
+		js_str(st, sizeof(st), "document.querySelector('svg.topo .tghost "
+		    "text.st').textContent");
+		fprintf(stderr, "the tunnel drawn: %s\n", st);
+	}
+	click_at("button[data-act=topo-draw]");
+	wait_js("localStorage.getItem('arc_topo_draw') === 'off'", 5);
+	/*
+	 * A fleet of 40 hosts and 500 links invented here, every host's
+	 * agent answered from the browser: a size the map has to stay
+	 * usable at (a thousand links do not even load in the case's time:
+	 * every poll's answer rebuilds the links, docs/notes/webgl-map.md).
+	 * Its links are point to point, each a /30 whose two ends name
+	 * each other.
+	 */
+	run("window.synN = 40; window.synL = 500; window.synIfs = (id) => { "
+	    "const n = parseInt(id.slice(2)) - 1, out = []; for (let k = 0; k < "
+	    "synL; k++) { const a = k % synN, b = (a + 1 + Math.floor(k / synN)) "
+	    "% synN; if (a !== n && b !== n) continue; const me = a === n, x = "
+	    "(k >> 8) & 255, y = k & 255; out.push({ name: 'p' + k + (me ? 'a' : "
+	    "'b'), up: true, ibytes: k * 1000, obytes: k * 500, addresses: [{ "
+	    "address: '10.' + x + '.' + y + (me ? '.1' : '.2'), prefixlen: 30, "
+	    "destination: '10.' + x + '.' + y + (me ? '.2' : '.1') }] }); } "
+	    "return out; }; window.fetch0 = window.fetch; window.fetch = (u, o) "
+	    "=> { const s = String(u), m = /\\/api\\/servers\\/(sy\\d+)\\/(.*)$/"
+	    ".exec(s); if (m) { let body = { ok: true, data: {} }; if (m[2]."
+	    "startsWith('net/interfaces')) body = { ok: true, data: { time: "
+	    "Date.now(), interfaces: synIfs(m[1]) } }; return Promise.resolve("
+	    "new Response(JSON.stringify(body), { status: 200, headers: { "
+	    "'Content-Type': 'application/json' } })); } if (/\\/api\\/servers"
+	    "(\\?|$)/.test(s) && (!o || !o.method || o.method === 'GET')) return "
+	    "fetch0(u, o).then(r => r.text().then(t => { const j = JSON.parse(t); "
+	    "for (let i = 1; i <= synN; i++) j.servers.push({ id: 'sy' + "
+	    "String(i).padStart(2, '0'), name: 'n' + i, uri: 'tcp://n' + i + "
+	    "'.example:4310', local: false }); return new Response(JSON."
+	    "stringify(j), { status: r.status, headers: r.headers }); })); "
+	    "return fetch0(u, o); };");
+	run("const b = document.createElement('button'); b.dataset.act = "
+	    "'servers-again'; document.body.appendChild(b); b.click(); "
+	    "b.remove();");
+	wait_js("document.querySelectorAll('svg.topo .tnode').length === 40 && "
+	    "document.querySelectorAll('svg.topo .tlink').length >= 500", 600);
+	/* Measured with the page offline: every host is polled every five
+	 * seconds and each answer draws the map again, which at this size
+	 * is a page busy with nothing else (docs/notes/webgl-map.md). */
+	run("window.dispatchEvent(new Event('offline'));");
+	usleep(3000000);
+	click_at("button[data-act=topo-fit]");
+	usleep(1000000);
+	shot("8-network-500");
+	moves_measure();
+	/*
+	 * Which backend drew: WebGPU only where the browser has it and gave
+	 * a device, else WebGL 2 (this headless Chromium has none unless
+	 * started for it: pwa_mapgpu), else the SVG alone.  While a host
+	 * is dragged its lines are the canvas's and the SVG changes only
+	 * by the host's own transform, once a move, not a thousand links.
+	 */
+	ATF_CHECK(js_true("!navigator.gpu ? window.arcGl.gpu === 0 && "
+	    "window.arcGl.backend === 'webgl2' : window.arcGl.gpu === 2 ? "
+	    "window.arcGl.backend === 'webgpu' : window.arcGl.backend === "
+	    "'webgl2'"));
+	ATF_CHECK(js_true("!window.arcGl.ok || (window.hostWires > 0 && "
+	    "window.hostMuts <= 100)"));
+	/* The hand let go: the SVG's lines are drawn again, none hidden. */
+	wait_js("!document.querySelector('svg.topo .tlink.moving') && "
+	    "window.arcGl.wires === 0", 5);
+}
+
+/* The same map, moved by the WebGPU backend, in a browser started with
+ * WebGPU on; skipped where it gives no device. */
+static void
+part_mapgpu(void)
+{
+
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelector('svg.topo .tnode.up') && window.arcGl "
+	    "!== undefined && window.arcGl.gpu !== 1", 30);
+	if (!js_true("navigator.gpu && window.arcGl.gpu === 2"))
+		atf_tc_skip("this headless Chromium gives no WebGPU device");
+	ATF_CHECK(js_true("window.arcGl.backend === 'webgpu'"));
+	moves_measure();
+	shot("8-network-webgpu");
+	/*
+	 * A device the browser takes away (SwiftShader's WebGPU in headless
+	 * Chromium does, "Device was destroyed"): asked for again, and
+	 * after the third the map is WebGL 2's, on a fresh canvas; the
+	 * drag goes on there.
+	 */
+	if (js_true("window.arcGl.losts > 0")) {
+		char	note[300];
+
+		wait_js("window.arcGl.ok && (window.arcGl.backend === 'webgl2' || "
+		    "window.arcGl.backend === 'webgpu')", 20);
+		js_str(note, sizeof(note), "window.arcGlNote || ''");
+		moves_measure();
+		ATF_REQUIRE(js_true("window.hostWires > 0 && window.hostMuts <= "
+		    "100"));
+		atf_tc_skip("this headless Chromium's WebGPU device does not "
+		    "last (%s); the fallback to WebGL 2 worked", note);
+	}
+	ATF_CHECK(js_true("window.hostWires > 0 && window.hostMuts <= 100"));
+}
+
+ATF_TC_WITH_CLEANUP(pwa_mapgpu);
+ATF_TC_HEAD(pwa_mapgpu, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The network map drawn by WebGPU, where headless Chromium has it");
+	atf_tc_set_md_var(tc, "timeout", "300");
+}
+ATF_TC_BODY(pwa_mapgpu, tc)
+{
+
+	browser_flags = ",\"--enable-unsafe-webgpu\",\"--enable-features=Vulkan\","
+	    "\"--use-angle=swiftshader\"";
+	prologue(tc, 2);
+	part_mapgpu();
+}
+ATF_TC_CLEANUP(pwa_mapgpu, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_map);
+ATF_TC_HEAD(pwa_map, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The network map: over the whole screen, and moved");
+	atf_tc_set_md_var(tc, "timeout", "900");
+}
+ATF_TC_BODY(pwa_map, tc)
+{
+
+	prologue(tc, 2);
+	part_map();
+}
+ATF_TC_CLEANUP(pwa_map, tc)
+{
+
+	browser_stop();
 }
 
 ATF_TC_WITH_CLEANUP(pwa_plugins);
@@ -8909,8 +9337,11 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_routes);
 	ATF_TP_ADD_TC(tp, pwa_hosts);
 	ATF_TP_ADD_TC(tp, pwa_nacm);
+	ATF_TP_ADD_TC(tp, pwa_ra);
 	ATF_TP_ADD_TC(tp, pwa_nettab);
 	ATF_TP_ADD_TC(tp, pwa_plugins);
+	ATF_TP_ADD_TC(tp, pwa_map);
+	ATF_TP_ADD_TC(tp, pwa_mapgpu);
 	ATF_TP_ADD_TC(tp, pwa_mesh);
 	ATF_TP_ADD_TC(tp, pwa_scale);
 	ATF_TP_ADD_TC(tp, pwa_storage);

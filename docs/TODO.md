@@ -2,16 +2,6 @@
 
 ## To do
 
-- FEC relays, the user's (the port's maintainer): net/udpspeeder's rc
-  script runs one relay (`name=speederv2`, one pidfile), so a host has
-  one a scope and SD-WAN's relays (`plugin: speederv2`, each a
-  profile) are refused on it.  The agent and the console take a
-  script with `speederv2_profiles` that runs each profile under
-  rc.subr's name `speederv2_<profile>` (its `_flags`, `_user`, `_svcj`,
-  `_svcj_ipaddrs` its own, its jail `svcj-speederv2_<profile>`, its
-  syslog tag the name) and hands the profile on to `run_rc_command`
-  so that a service jail's `exec.start` runs it again.
-
 - IPFIX export in ng_netflow(4), kernel work and the user's:
   ng_netflow exports NetFlow v5 and v9 only (both hooks at once,
   nothing else); pflow(4) has IPFIX but serves pf.

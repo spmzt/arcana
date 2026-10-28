@@ -79,9 +79,9 @@ on the wire.
 | 61 800 | 100 | `ietf-network-instance@2019-01-21` (no IETF range) | `share/yang/ietf-network-instance@2019-01-21.sid` (21 used) |
 | 61 900 | 100 | `arcana-network-instance` | `share/yang/arcana-network-instance@2026-10-14.sid` (2 used) |
 | 62 000 | 100 | `ietf-logical-network-element@2019-01-25` (no IETF range) | `share/yang/ietf-logical-network-element@2019-01-25.sid` (12 used) |
-| 62 100 | 100 | `arcana-jails` | `share/yang/arcana-jails@2026-10-14.sid` (51 used) |
+| 62 100 | 100 | `arcana-jails` | `share/yang/arcana-jails@2026-10-14.sid` (53 used) |
 | 62 200 | 100 | `arcana-services` | `share/yang/arcana-services@2026-10-14.sid` (39 used) |
-| 62 300 | 100 | `arcana-packages` | `share/yang/arcana-packages@2026-10-14.sid` (63 used) |
+| 62 300 | 100 | `arcana-packages` | `share/yang/arcana-packages@2026-10-14.sid` (100 used; its rest at 79 500) |
 | 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (355 used; room for the kinds to come) |
 | 63 400 | 200 | `arcana-storage` | `share/yang/arcana-storage@2026-10-14.sid` (144 used) |
 | 63 600 | 100 | `arcana-sysctl` | `share/yang/arcana-sysctl@2026-10-14.sid` (12 used) |
@@ -122,7 +122,7 @@ on the wire.
 | 72 300 | 100 | `arcana-sshd` | `share/yang/arcana-sshd@2026-10-15.sid` (69 used) |
 | 72 400 | 200 | `arcana-builder` | `share/yang/arcana-builder@2026-10-17.sid` (98 used) |
 | 72 600 | 100 | `arcana-notify` | `share/yang/arcana-notify@2026-10-17.sid` (7 used) |
-| 73 000 | 4 000 | `arcana`, the wire of the family spec (`share/arcana/arcana.yaml`, written by `share/arcana/wire.awk`: an rpc an operation) | `share/yang/arcana@2026-10-22.sid` (1 652 used; `make regen-wire` numbers a new item, `make check-wire` holds the rest) |
+| 73 000 | 4 000 | `arcana`, the wire of the family spec (`share/arcana/arcana.yaml`, written by `share/arcana/wire.awk`: an rpc an operation) | `share/yang/arcana@2026-10-22.sid` (1 709 used, 224 obsolete; `make regen-wire` numbers a new item, `make check-wire` holds the rest) |
 | 77 000 | 200 | `arcana-cluster`, the consoles' own family (`share/arcana/cluster.yaml`) | `share/yang/arcana-cluster@2026-10-22.sid` (84 used) |
 | 77 200 | 100 | `ietf-yang-library@2019-01-04`, RFC 8525 (no IETF range) | `share/yang/ietf-yang-library@2019-01-04.sid` (51 used) |
 | 77 300 | 100 | `ietf-datastores@2018-02-14`, RFC 8342 (no IETF range; its identities used) | `share/yang/ietf-datastores@2018-02-14.sid` (9 used) |
@@ -141,6 +141,8 @@ on the wire.
 | 79 100 | 100 | `ietf-https-notif-transport@2026-06-30`, draft-ietf-netconf-https-notif: the https-receiver, its endpoints (no IETF range) | `share/yang/ietf-https-notif-transport@2026-06-30.sid` (19 used) |
 | 79 200 | 100 | `ietf-http-client@2024-08-15`, draft-ietf-netconf-http-client-server: imported alone, its groupings the endpoints' (no IETF range) | `share/yang/ietf-http-client@2024-08-15.sid` (6 used) |
 | 79 300 | 100 | `arcana-notif`, the https-receiver's bearer token | `share/yang/arcana-notif@2026-10-28.sid` (2 used) |
+| 79 400 | 100 | `arcana-ra`, rtadvd.conf(5) beyond RFC 8349 and rtadvctl(8) show | `share/yang/arcana-ra@2026-10-28.sid` (61 used) |
+| 79 500 | 100 | `arcana-packages`, its second range: the read action, pkgbase, the refresh action's update, ignore-osversion and output, every-jail | `share/yang/arcana-packages@2026-10-14.sid` (17 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

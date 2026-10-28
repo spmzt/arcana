@@ -275,9 +275,36 @@ addToLibrary({
 				    "", t.type === "checkbox" ? (t.checked ?
 				    "true" : "false") : t.value);
 		});
+		/*
+		 * Keys: Escape closes what is open; inside something that
+		 * names what its keys do (data-keys), a key not meant for a
+		 * field or a button is handed to the page with the key's
+		 * name and what has the focus (its data-arg).
+		 */
 		document.addEventListener("keydown", function (e) {
-			if (e.key === "Escape")
+			var k, on;
+
+			if (e.key === "Escape") {
 				act("escape", "", "");
+				return;
+			}
+			if (e.ctrlKey || e.metaKey || e.altKey || !e.target.closest)
+				return;
+			k = e.target.closest("[data-keys]");
+			if (k === null || e.target.closest("input, select, " +
+			    "textarea, button, a, summary, [contenteditable]") !==
+			    null)
+				return;
+			on = e.target.closest("[data-arg]") || k;
+			act(k.dataset.keys, e.key, on.dataset.arg || "");
+			if (/^(Arrow|Enter| )/.test(e.key))
+				e.preventDefault();
+		});
+		/* The map over the whole screen, or given back: the page is
+		 * told by the browser's word (Escape leaves too). */
+		document.addEventListener("fullscreenchange", function () {
+			act("topo-fullscreen", document.fullscreenElement ?
+			    "on" : "off", "");
 		});
 
 		/*
@@ -763,6 +790,13 @@ addToLibrary({
 		 */
 		var drag = null;
 
+		/* Where in the drawing a point of the screen is, or null. */
+		function inside(cx, cy) {
+			var m = drag.svg.getScreenCTM();
+
+			return (m ? new DOMPoint(cx, cy).matrixTransform(
+			    m.inverse()) : null);
+		}
 		function where(e) {
 			var m = drag.svg.getScreenCTM(), p;
 
@@ -774,11 +808,36 @@ addToLibrary({
 			    e.clientX + "," + e.clientY + "," +
 			    (1 / m.a).toFixed(4));
 		}
+		/*
+		 * What says data-follow goes with the hand by its own
+		 * transform, from where it was when taken hold of, without
+		 * waiting for the page to draw it there: the page's own
+		 * redraw, when it comes, puts it in the same place.
+		 */
+		function follow(e) {
+			var p = inside(e.clientX, e.clientY), el = drag.el;
+
+			if (p === null || drag.p0 === undefined)
+				return;
+			if (!document.contains(el))
+				el = drag.el = drag.svg.querySelector("[data-drag=\"" +
+				    drag.name + "\"][data-arg=\"" + CSS.escape(drag.arg) +
+				    "\"]");
+			if (el !== null)
+				el.setAttribute("transform", "translate(" + (drag.fx +
+				    p.x - drag.p0.x).toFixed(1) + "," + (drag.fy + p.y -
+				    drag.p0.y).toFixed(1) + ")");
+		}
 		document.addEventListener("pointerdown", function (e) {
 			var t = e.target.closest ? e.target.closest(
-			    "[data-drag]") : null, svg;
+			    "[data-drag]") : null, svg, a;
 
 			if (t === null || e.button > 0)
+				return;
+			/* A button inside what is dragged (Draw mode's ring
+			 * on a host's port) is pressed, not dragged. */
+			a = e.target.closest("[data-act]");
+			if (a !== null && t.contains(a))
 				return;
 			svg = t.closest("svg");
 			if (svg === null)
@@ -787,7 +846,8 @@ addToLibrary({
 				return;
 			drag = { name: t.dataset.drag, arg: t.dataset.arg || "",
 			    svg: svg, svgid: svg.id, x: e.clientX, y: e.clientY,
-			    moved: false, last: null, frame: 0, id: e.pointerId };
+			    moved: false, last: null, frame: 0, id: e.pointerId,
+			    el: t, follow: t.hasAttribute("data-follow") };
 			/*
 			 * The pointer is the drawing's until let go: over
 			 * the panels, outside the window, it still moves
@@ -807,8 +867,17 @@ addToLibrary({
 			    Math.abs(e.clientY - drag.y) < 5)
 				return;
 			if (!drag.moved) {
+				var tr;
+
 				/* Where it was taken hold of, before it moves. */
 				drag.moved = true;
+				if (drag.follow) {
+					tr = /translate\(\s*([-\d.]+)[ ,]+([-\d.]+)/.exec(
+					    drag.el.getAttribute("transform") || "");
+					drag.fx = tr ? parseFloat(tr[1]) : 0;
+					drag.fy = tr ? parseFloat(tr[2]) : 0;
+					drag.p0 = inside(drag.x, drag.y) || undefined;
+				}
 				act(drag.name + "-start", drag.arg, where({
 				    clientX: drag.x, clientY: drag.y }));
 				if (drag === null)
@@ -827,6 +896,8 @@ addToLibrary({
 						    drag.svgid)) || document.
 						    querySelector("svg.topo") ||
 						    drag.svg;
+					if (drag.follow)
+						follow(drag.last);
 					act(drag.name + "-move", drag.arg,
 					    where(drag.last));
 				});
@@ -1917,6 +1988,21 @@ addToLibrary({
 		return (Date.now());
 	},
 
+	/* An element over the whole screen (the Fullscreen API), or the
+	 * screen given back; what the browser refuses stays as it is. */
+	arc_fullscreen__deps: ["$UTF8ToString"],
+	arc_fullscreen: function (selp, on) {
+		var el = document.querySelector(UTF8ToString(selp));
+
+		try {
+			if (on && el !== null && el.requestFullscreen)
+				el.requestFullscreen().catch(function () {});
+			else if (!on && document.fullscreenElement)
+				document.exitFullscreen().catch(function () {});
+		} catch (e) {
+		}
+	},
+
 	/* The room the fleet's map has on the page, 0 when not drawn yet. */
 	arc_map_w: function () {
 		var el = document.querySelector(".netmap:not(.ngmap) " +
@@ -2060,9 +2146,10 @@ addToLibrary({
 	},
 
 	/*
-	 * The map's WebGL canvas: 0 when there is none; 1 when there is,
-	 * 2 more when the page has just made it (a context is to be made
-	 * on it), 4 more when motion is not wanted.
+	 * The map's canvas: 0 when there is none; 1 when there is, 2 more
+	 * when the page has just made it (a device or context is to be
+	 * made on it), 4 more when motion is not wanted, 8 more when the
+	 * browser has WebGPU to ask.
 	 */
 	arc_gl_probe: function () {
 		var c = document.getElementById("map-gl"), s;
@@ -2077,14 +2164,52 @@ addToLibrary({
 		if (window.matchMedia && window.matchMedia(
 		    "(prefers-reduced-motion: reduce)").matches)
 			s |= 4;
+		if (navigator.gpu)
+			s |= 8;
 		return (s);
 	},
-	/* What it drew, for whoever looks (the tests): whether WebGL 2 is
-	 * there, the points of the last frame, the links with traffic, the
-	 * tunnels whose probes are drawn. */
-	arc_gl_report: function (ok, points, flows, probes) {
+	/* What it drew, for whoever looks (the tests): whether a backend
+	 * is there and which, the points of the last frame, the links with
+	 * traffic, the tunnels whose probes are drawn, the lines moving
+	 * with the hand, and how WebGPU answered (0 not asked, 1 asked, 2 a
+	 * device, -1 none). */
+	arc_gl_report: function (ok, points, flows, probes, wires, be, gpu,
+	    fails, opens, losts) {
 		window.arcGl = { ok: ok !== 0, points: points, flows: flows,
-		    probes: probes };
+		    probes: probes, wires: wires, backend: be === 2 ? "webgpu" :
+		    be === 1 ? "webgl2" : "none", gpu: gpu, fails: fails,
+		    opens: opens, losts: losts };
+	},
+	/* The map's canvas swapped for a fresh one, the same in every
+	 * attribute, for a context of another kind than it had. */
+	arc_gl_fresh: function () {
+		var c = document.getElementById("map-gl"), n;
+
+		if (c === null)
+			return;
+		n = c.cloneNode(false);
+		n._arcSeen = true;
+		c.replaceWith(n);
+	},
+	/* A word from the layer for whoever looks: why a device went. */
+	arc_gl_note__deps: ["$UTF8ToString"],
+	arc_gl_note: function (p) {
+		window.arcGlNote = UTF8ToString(p);
+	},
+	/* The map's drawing and canvas moved as one by the browser, tx and
+	 * ty pixels and r times larger about the middle, while the hand
+	 * pans or the wheel zooms; the page draws the map anew when the
+	 * hand rests, and the transform goes with that redraw. */
+	arc_map_view: function (tx, ty, r) {
+		var t = tx === 0 && ty === 0 && r === 1 ? "" : "translate(" +
+		    tx.toFixed(1) + "px," + ty.toFixed(1) + "px) scale(" +
+		    r.toFixed(4) + ")", s = document.querySelector("svg.topo"),
+		    c = document.getElementById("map-gl");
+
+		if (s !== null)
+			s.style.transform = t;
+		if (c !== null)
+			c.style.transform = t;
 	},
 	/* A colour the theme defines (--name), as 0xrrggbb, or -1. */
 	arc_css_rgb__deps: ["$UTF8ToString"],

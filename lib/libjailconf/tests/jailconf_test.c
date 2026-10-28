@@ -149,6 +149,17 @@ ATF_TC_BODY(replace_value, tc)
 	ATF_CHECK_STREQ("j { path = \"/j\"; exec.start = \"sh /etc/rc\"; }\n",
 	    out);
 	free(out);
+	/* An empty value is a bare statement, a boolean set: in place of
+	 * one with a value, or new. */
+	out = replace("j {\n\tpath = \"/j\";\n\tpersist = 0;\n}\n", "j",
+	    "persist", "", &n);
+	ATF_CHECK_EQ(1, n);
+	ATF_CHECK_STREQ("j {\n\tpath = \"/j\";\n\tpersist;\n}\n", out);
+	free(out);
+	out = replace("j {\n\tpath = \"/j\";\n}\n", "j", "vnet", "", &n);
+	ATF_CHECK_EQ(0, n);
+	ATF_CHECK_STREQ("j {\n\tpath = \"/j\";\n\tvnet;\n}\n", out);
+	free(out);
 }
 
 ATF_TC_WITHOUT_HEAD(add_extends_list);
