@@ -720,14 +720,14 @@ whose first part is served.
 
 ### Y-2
 
-- 2.3.1 A: rc.conf reader and writer preserving comments and order,
+- 2.3.1 A (done): rc.conf reader and writer preserving comments and order,
   with `rc.conf.d/` fragments Arcana owns; check: a fixture corpus
   round-trips byte for byte.
-- 2.3.2 A: the conflict rule: a variable set in the user's rc.conf
+- 2.3.2 A (done): the conflict rule: a variable set in the user's rc.conf
   and in an Arcana fragment refused with a message; check: fixture.
-- 2.3.3 A: loader.conf, sysctl.conf and rtadvd.conf editors; check:
+- 2.3.3 A (done): loader.conf, sysctl.conf and rtadvd.conf editors; check:
   fixtures.
-- 2.3.4 A: `running` assembled from the files into an instance tree
+- 2.3.4 A (done): `running` assembled from the files into an instance tree
   for interfaces, ip, routing; check: equals the files on the VM.
 - 2.3 safety design, decided 2026-10-28:
   - rc.conf: one file of Arcana's, `/usr/local/etc/rc.conf.d/arcana`,
@@ -749,15 +749,15 @@ whose first part is served.
     Whatever cannot be rolled back safely says so beforehand.
   - Step by step: interfaces, addresses and routes first, then a
     module at a time.
-- 2.3.5 A: `EDIT` on `running`: validate the result, render the
+- 2.3.5 A (done): `EDIT` on `running`: validate the result, render the
   files (the rc.conf.d fragments in place of sysrc(8)), apply to the
   kernel, undo on failure (file copies restored); check: a failing
   ioctl leaves the files as they were.
 - 2.3.6 A: `arcana:live`: edits applied to the kernel only, origin
   `dynamic`; check: the `address live` test passes through it.
-- 2.3.7 A: `candidate`, `commit`, `discard-changes`; check: RFC 6241
+- 2.3.7 A (done): `candidate`, `commit`, `discard-changes`; check: RFC 6241
   §8.3's sequence.
-- 2.3.8 A: `confirmed-commit` with timeout and `persist`, the revert
+- 2.3.8 A (done): `confirmed-commit` with timeout and `persist`, the revert
   = safe mode; check: the safe-mode tests pass through it, including
   the one that cuts the connection.
 - 2.3.9 A (done, cblink 0.2.15): operational with `with-origin`
@@ -770,21 +770,21 @@ whose first part is served.
 - 2.3.10 A (done): `with-defaults` report-all, report-all-tagged
   (ietf-defaults' `default`, draft-ietf-netconf-default-attribute),
   trim, explicit served on GET; check: RFC 6243's examples.
-- 2.4.3 A (the rest): static routes in `running` written to rc.conf
+- 2.4.3 A (done): static routes in `running` written to rc.conf
   `static_routes`, `route_<name>`, `defaultrouter`, IPv6 variants by
   an `EDIT`; check: fixtures.
-- 2.4.4 A (the rest): an `EDIT`'s static routes applied to the
+- 2.4.4 A (done): an `EDIT`'s static routes applied to the
   kernel by netlink per FIB (`rcr_apply`); check: `route -n get`.
-- 2.5.1 A: rtadvd.conf ↔ the RA submodule in `running` (`rtadv_write`
+- 2.5.1 A (done): rtadvd.conf ↔ the RA submodule in `running` (`rtadv_write`
   behind an `EDIT`), `rtadvctl reload`; check: `rtadvctl show` after
   an edit.
 - 2.6.2 A (done): `vrf-root` mount serving routing per FIB, with
   `parent-reference` (`/if:interfaces`, in `schema-mounts`); check: the
   FIB's table under the mount.
-- 2.6.3 A (the rest): `bind-ni-name` written by an `EDIT`
+- 2.6.3 A (done): `bind-ni-name` written by an `EDIT`
   (`yni_bind_apply`: SIOCSIFFIB and rc.conf `fib`);
   `bind-ni-name-failed`; check: `ifconfig em0 fib 2` reads back.
-- 2.6.4 A (the rest): a new instance asked for by an `EDIT`
+- 2.6.4 A (done): a new instance asked for by an `EDIT`
   (`yni_grow`: `net.fibs` raised and kept in loader.conf) with the
   reboot-required flag in the reply; check: the flag in the reply.
 - 2.7.2 A (done): the attached helper (`invidia/lneroot.c`): the
@@ -920,7 +920,7 @@ whose first part is served.
 - 3.2.4 A (the rest): subtree filters on subscriptions, once their
   YANG-CBOR has an encoding (RFC 6241's are XML); the XPath filter
   meanwhile; check: one interface's counters only.
-- 3.2.7 A: configured subscriptions: the agent calling the console
+- 3.2.7 A (done): configured subscriptions: the agent calling the console
   as receiver; check: the console restarted, records resume.  Done
   (2026-10-28): RFC 8639's `configured` feature, the transport
   HTTPS-notif (draft-ietf-netconf-https-notif, its
@@ -947,12 +947,23 @@ whose first part is served.
   candidate (RESTCONF) and commit.  Checked: cblink's ysub_test
   (configured), agent_tls_test (configured, with a stand-in receiver),
   console_test (notif_receiver: the console restarted, the records
-  there, the agent back and what it missed replayed).  Left: no UI
-  form yet (the API gives the document to PUT); a plain-HTTP console
-  listener takes no records (no certificate to judge by); a receiver's
-  `reset` action and `suspended` are there but untested; subtree
-  filters as 3.2.4.
-- 3.3.1 A: NACM groups from the certificate's subject or the socket's
+  there, the agent back and what it missed replayed).  A per-host
+  token beside the certificate (2026-10-28): web.conf's `notif_auth`
+  (`certificate` the default, `token`, `either`); `POST
+  /api/servers/<host>/subscription/token` makes 32 random bytes and
+  shows them once, in the document, as the https-receiver's
+  `arcana-notif:token` (the vendored `ietf-http-client@2024-08-15` has
+  no client identity, so an augment of Arcana's, SIDs 79 300), the
+  console keeping the SHA-256 in the host's record; the agent sends it
+  as `Authorization: Bearer`, keeps it in `--subscriptions` (0600),
+  `nacm:default-deny-all`; a plain listener takes records by it.
+  Checked: console_test (notif_token: a plain listener, the agent
+  sending it, a new token retiring the old, either; notif_receiver:
+  the token alone refused with certificate), agent_tls_test
+  (configured: the header sent).  Left: no UI form yet (the API gives
+  the document to PUT); a receiver's `reset` action and `suspended`
+  are there but untested; subtree filters as 3.2.4.
+- 3.3.1 A (done): NACM groups from the certificate's subject or the socket's
   uid, rule-lists in `running`; check: RFC 8341's examples. RFC 8341
   followed strictly (decided 2026-10-28): its groups, rule-lists and
   defaults as written, not a mapping of the console's roles onto it.
@@ -961,9 +972,9 @@ whose first part is served.
   no rule and is refused. Open: data nodes and notifications (cblink has
   no hook for them), the ietf-netconf-acm module served read-only, and
   the user per request (3.3.3, a wire field).
-- 3.3.2 A: enforcement for rpcs, data nodes (read as omission) and
+- 3.3.2 A (done): enforcement for rpcs, data nodes (read as omission) and
   notifications; counters; check: one test per point.
-- 3.3.3 A, C: the console's user passed per connection to an agent
+- 3.3.3 A, C (done): the console's user passed per connection to an agent
   that trusts it by certificate role; check: two users, two views.
 - 3.4.1 C: one long-lived cblink connection per agent with streams;
   reconnect with backoff; check: an agent restarted.

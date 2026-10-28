@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.328.0"
+#define	ARCW_VERSION		"0.328.1"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -87,6 +87,8 @@ struct config {
 	char		*local_agent;	/* the agent beside the console, or NULL */
 	char		*notif_base;	/* where the hosts reach the console's
 					 * receiver (notif.c), or NULL: the origin */
+	char		*notif_auth;	/* how the receiver knows a host:
+					 * certificate, token or either */
 	char		*sendmail;	/* what mail is sent by */
 	int		 mail_tick;	/* s between reads of the events */
 	/* web.conf's for the mail; what is in force: settings_peek(). */
@@ -205,6 +207,7 @@ int		 api_notif_capabilities(struct http_request *);
 int		 api_notif_relay(struct http_request *);
 int		 api_notifications(struct http_request *);
 int		 api_subscription(struct http_request *);
+int		 api_subscription_token(struct http_request *);
 const char	*label_of(const char *, const char *, char *, size_t);
 const char	*token_who(struct http_request *);
 bool		 token_readable(const char *);
@@ -311,6 +314,7 @@ struct server {
 	int	 safe_wait;	/* s a safe change waits; 0 the agent's own */
 	ucl_object_t *pkg_repos;	/* {"jail, or . the host": {upgrade, install, base}}: pkg -r
 				 * chosen there per action, or NULL */
+	char	*notif_token;	/* SHA-256 of its receiver token, hex, or NULL */
 };
 
 void		 servers_init(void);
@@ -319,6 +323,8 @@ const struct server *server_find(const char *);
 const struct server *server_at(int);
 int		 servers_move(const char *, const char *);
 int		 servers_safe_wait(const char *);
+int		 servers_notif_token_new(const char *, char *, size_t);
+bool		 servers_notif_token_check(const char *, const char *);
 #define	SAFE_WAIT_MIN	10	/* s, a rollback timer at least */
 #define	SAFE_WAIT_MAX	3600
 

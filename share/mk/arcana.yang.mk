@@ -52,7 +52,7 @@ ARC_YMODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		ietf-netconf@2011-06-01 ietf-origin@2018-02-14 \
 		ietf-defaults@2024-04-03 ietf-yang-schema-mount@2019-01-14 \
 		ietf-subscribed-notif-receivers@2026-06-30 \
-		ietf-https-notif-transport@2026-06-30
+		ietf-https-notif-transport@2026-06-30 arcana-notif@2026-10-28
 # Modules only imported whose identities are used: their .sid files
 # alone (a VLAN tag's types, the PHY types, the port algorithms; the
 # routing protocols', whose identities name a route's origin).
@@ -90,7 +90,8 @@ ARC_YFEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-yang-push:on-change \
 		-F ietf-netconf-acm: -F ietf-netconf:candidate,confirmed-commit \
 		-F ietf-origin: -F ietf-defaults: -F ietf-yang-schema-mount: \
-		-F ietf-subscribed-notif-receivers: -F ietf-https-notif-transport:
+		-F ietf-subscribed-notif-receivers: -F ietf-https-notif-transport: \
+		-F arcana-notif:
 
 .if ${ARC_YANG_SERVER:Uno} == "yes"
 _arc_yparts=	h,schema,server

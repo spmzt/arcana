@@ -15,6 +15,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include <openssl/evp.h>
+
 #include <ctype.h>
 #include <errno.h>
 #include <pthread.h>
@@ -40,7 +42,7 @@ static pthread_mutex_t	table_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool	valid_name(const char *);
 static bool	valid_uri(const char *);
 static int	save(void);
-static ucl_object_t *server_object(const struct server *);
+static ucl_object_t *server_object(const struct server *, bool);
 static void	 add(const char *, const char *, const char *, const char *,
 		    const char *);
 static void	new_id(char *, size_t);
@@ -107,6 +109,7 @@ add(const char *id, const char *name, const char *uri, const char *peer,
 	    NULL;
 	s->safe_wait = 0;
 	s->pkg_repos = NULL;
+	s->notif_token = NULL;
 	pthread_mutex_unlock(&table_lock);
 }
 
@@ -122,6 +125,7 @@ servers_reload(void)
 		free(servers[i].uri);
 		free(servers[i].peer_name);
 		free(servers[i].tenant);
+		free(servers[i].notif_token);
 	}
 	nservers = 0;
 	pthread_mutex_unlock(&table_lock);
@@ -157,6 +161,9 @@ servers_init(void)
 		    UCL_OBJECT)
 			servers[nservers - 1].pkg_repos = ucl_object_ref(
 			    ucl_object_lookup(o, "pkg_repos"));
+		if ((name = ucl_str(o, "notif_token")) != NULL && strlen(name) ==
+		    64 && strspn(name, "0123456789abcdef") == 64)
+			servers[nservers - 1].notif_token = xstrdup(name);
 	}
 	local_done = ucl_flag(doc, "local_done");
 	ucl_object_unref(doc);
@@ -354,6 +361,75 @@ servers_safe_wait(const char *uri)
 	return (k);
 }
 
+/* SHA-256 of a token, hex, in out (65 bytes). */
+static void
+token_hash(const char *token, char *out)
+{
+	uint8_t		md[32];
+	unsigned int	len;
+
+	EVP_Digest(token, strlen(token), md, &len, EVP_sha256(), NULL);
+	for (size_t k = 0; k < sizeof(md); k++)
+		snprintf(out + 2 * k, 3, "%02x", md[k]);
+}
+
+/*
+ * A new receiver token for the server id, in token (65 bytes): 32
+ * random bytes in hex, its hash alone kept in place of the one before.
+ * ENOENT: no such server; an errno of the store otherwise.
+ */
+int
+servers_notif_token_new(const char *id, char *token, size_t len)
+{
+	uint8_t	raw[32];
+	char	hash[65];
+	int	i, error;
+
+	if (len < 65)
+		return (EINVAL);
+	arc4random_buf(raw, sizeof(raw));
+	for (size_t k = 0; k < sizeof(raw); k++)
+		snprintf(token + 2 * k, 3, "%02x", raw[k]);
+	explicit_bzero(raw, sizeof(raw));
+	token_hash(token, hash);
+	pthread_mutex_lock(&table_lock);
+	for (i = 0; i < nservers && strcmp(servers[i].id, id) != 0; i++)
+		;
+	if (i == nservers) {
+		pthread_mutex_unlock(&table_lock);
+		explicit_bzero(token, len);
+		return (ENOENT);
+	}
+	free(servers[i].notif_token);
+	servers[i].notif_token = xstrdup(hash);
+	error = save() == 0 ? 0 : EIO;
+	pthread_mutex_unlock(&table_lock);
+	return (error);
+}
+
+/* Whether token is the server id's: its hash, compared whole. */
+bool
+servers_notif_token_check(const char *id, const char *token)
+{
+	char	hash[65];
+	int	i;
+	bool	ok = false;
+
+	if (token == NULL || strlen(token) != 64)
+		return (false);
+	token_hash(token, hash);
+	pthread_mutex_lock(&table_lock);
+	for (i = 0; i < nservers; i++)
+		if (strcmp(servers[i].id, id) == 0) {
+			ok = servers[i].notif_token != NULL &&
+			    timingsafe_bcmp(servers[i].notif_token, hash, 64) ==
+			    0;
+			break;
+		}
+	pthread_mutex_unlock(&table_lock);
+	return (ok);
+}
+
 const struct server *
 server_find(const char *id)
 {
@@ -374,7 +450,7 @@ server_at(int i)
 }
 
 static ucl_object_t *
-server_object(const struct server *s)
+server_object(const struct server *s, bool kept)
 {
 	ucl_object_t	*o;
 
@@ -398,6 +474,13 @@ server_object(const struct server *s)
 	if (s->pkg_repos != NULL)
 		ucl_object_insert_key(o, ucl_object_ref(s->pkg_repos),
 		    "pkg_repos", 0, false);
+	/* The token's hash is the file's; the API says there is one. */
+	if (kept && s->notif_token != NULL)
+		ucl_object_insert_key(o, ucl_object_fromstring(s->notif_token),
+		    "notif_token", 0, false);
+	else if (!kept)
+		ucl_object_insert_key(o, ucl_object_frombool(s->notif_token !=
+		    NULL), "notif_token", 0, false);
 	return (o);
 }
 
@@ -410,7 +493,7 @@ save(void)
 	doc = ucl_object_typed_new(UCL_OBJECT);
 	a = ucl_object_typed_new(UCL_ARRAY);
 	for (i = 0; i < nservers; i++)
-		ucl_array_append(a, server_object(&servers[i]));
+		ucl_array_append(a, server_object(&servers[i], true));
 	ucl_object_insert_key(doc, a, "servers", 0, false);
 	ucl_object_insert_key(doc, ucl_object_frombool(local_done),
 	    "local_done", 0, false);
@@ -481,7 +564,7 @@ api_servers(struct http_request *req)
 	for (i = 0; i < nservers; i++) {
 		if (u != NULL && user_host(u, servers[i].id) == ROLE_NONE)
 			continue;
-		so = server_object(&servers[i]);
+		so = server_object(&servers[i], false);
 		if (u != NULL)
 			ucl_object_insert_key(so, ucl_object_fromstring(role_name(
 			    user_host(u, servers[i].id))), "role", 0, false);
@@ -651,6 +734,7 @@ api_server(struct http_request *req)
 	free(servers[i].uri);
 	free(servers[i].peer_name);
 	free(servers[i].tenant);
+	free(servers[i].notif_token);
 	if (servers[i].pkg_repos != NULL)
 		ucl_object_unref(servers[i].pkg_repos);
 	memmove(&servers[i], &servers[i + 1],

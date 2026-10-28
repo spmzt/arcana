@@ -11199,6 +11199,16 @@ notif_count(const char *id, const char *what, int want, int secs)
 	return (n);
 }
 
+/* The token in the document /subscription/token gives; a record. */
+#define	NOTIF_TOKEN_PATH \
+	"candidate.ietf-subscribed-notifications:subscriptions." \
+	"ietf-subscribed-notif-receivers:receiver-instances." \
+	"receiver-instance.0.ietf-https-notif-transport:https-receiver." \
+	"arcana-notif:token"
+#define	NOTIF_RECORD \
+	"{\"ietf-restconf:notification\":{\"eventTime\":" \
+	"\"2026-10-28T10:00:00Z\",\"arcana-events:event\":{\"id\":1}}}"
+
 /*
  * The console as a host's receiver (RFC 8639 section 2.5 over
  * HTTPS-notif): the host's candidate given what /subscription says and
@@ -11216,7 +11226,7 @@ ATF_TC_BODY(notif_receiver, tc)
 	ucl_object_t	*cand;
 	unsigned char	*json;
 	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64], id[16];
-	char		 path[256];
+	char		 path[256], path2[256], token[80];
 	int		 n, after;
 
 	harness_tls_port = 20000 + (int)(getpid() % 20000);
@@ -11251,9 +11261,27 @@ ATF_TC_BODY(notif_receiver, tc)
 	    "subscriptions.ietf-subscribed-notif-receivers:receiver-instances."
 	    "receiver-instance.0.ietf-https-notif-transport:https-receiver."
 	    "capabilities-endpoint.uri"));
+	ATF_CHECK_STREQ("certificate", jstr(&r, "notif_auth"));
+	ATF_CHECK_STREQ("false", jstr(&r, "token"));
 	cand = ucl_object_ref(ucl_object_lookup(r.json, "candidate"));
 	snprintf(path, sizeof(path), "%s", jstr(&r, "put"));
 	snprintf(body, sizeof(body), "%s", jstr(&r, "commit"));
+	resp_free(&r);
+	/* A token made for the host is shown once, in the document; the
+	 * receiver, by the certificate alone (notif_auth's default),
+	 * refuses a record with the token and no certificate. */
+	snprintf(path2, sizeof(path2), "/api/servers/%s/subscription/token",
+	    id);
+	http("POST", path2, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, NOTIF_TOKEN_PATH) != NULL);
+	snprintf(token, sizeof(token), "%s", jstr(&r, NOTIF_TOKEN_PATH));
+	ATF_CHECK_EQ(64, strlen(token));
+	resp_free(&r);
+	snprintf(path2, sizeof(path2), "/api/notif/%s/relay-notification", id);
+	http_bearer("POST", path2, token, NOTIF_RECORD, &r);
+	EXPECT(&r, 401);
+	ATF_CHECK_STREQ("certificate", jstr(&r, "error.code"));
 	resp_free(&r);
 	json = ucl_object_emit(cand, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(cand);
@@ -11324,10 +11352,148 @@ ATF_TC_BODY(notif_receiver, tc)
 	resp_free(&r);
 }
 
+/*
+ * The host's token beside its certificate (notif_auth = token): made
+ * and shown once in the subscription document, kept hashed; on the
+ * plain listener (TLS ended before it) it names the host, none or
+ * another is refused; the agent, handed it in its candidate, sends it;
+ * made anew, the one before is refused; with either, a bearer decides
+ * where there is one, the certificate else.
+ */
+CONSOLE_TC(notif_token, "A host's token for the console's receiver, "
+    "beside its certificate (notif_auth): records taken on a plain "
+    "listener, the agent sends it, a new one retires the old")
+ATF_TC_BODY(notif_token, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	ucl_object_t	*cand;
+	unsigned char	*json;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64], id[16];
+	char		 put[256], commit[256], relay[256], caps[256];
+	char		 path[256], token[80], token2[80];
+
+	harness_tls_port = 20000 + (int)(getpid() % 20000);
+	snprintf(harness_webconf, sizeof(harness_webconf),
+	    "notif_auth = \"token\";\n");
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\",\"peer_name\":\"localhost\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	ATF_CHECK_STREQ("false", jstr(&r, "servers.0.notif_token"));
+	resp_free(&r);
+	snprintf(relay, sizeof(relay), "/api/notif/%s/relay-notification", id);
+	snprintf(caps, sizeof(caps), "/api/notif/%s/capabilities", id);
+	/* Made and shown once, in the document; the listing says the host
+	 * has one, the GET of the document shows none. */
+	snprintf(path, sizeof(path), "/api/servers/%s/subscription/token", id);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("token", jstr(&r, "notif_auth"));
+	ATF_REQUIRE(jstr(&r, NOTIF_TOKEN_PATH) != NULL);
+	snprintf(token, sizeof(token), "%s", jstr(&r, NOTIF_TOKEN_PATH));
+	ATF_CHECK_EQ(64, strlen(token));
+	cand = ucl_object_ref(ucl_object_lookup(r.json, "candidate"));
+	snprintf(put, sizeof(put), "%s", jstr(&r, "put"));
+	snprintf(commit, sizeof(commit), "%s", jstr(&r, "commit"));
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "servers.0.notif_token"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/subscription", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "token"));
+	ATF_CHECK(strstr(r.body, "arcana-notif:token") == NULL);
+	ATF_CHECK(strstr(r.body, token) == NULL);
+	resp_free(&r);
+	/* On the plain listener: the token names the host; none, or
+	 * another, is refused. */
+	http_bearer("GET", caps, token, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "encoding:json") != NULL);
+	resp_free(&r);
+	http_bearer("POST", relay, token, NOTIF_RECORD, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("POST", relay, NOTIF_RECORD, &r);
+	EXPECT(&r, 401);
+	ATF_CHECK_STREQ("token", jstr(&r, "error.code"));
+	resp_free(&r);
+	snprintf(token2, sizeof(token2), "%064d", 0);
+	http_bearer("POST", relay, token2, NOTIF_RECORD, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/notifications", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("1", jstr(&r, "last"));
+	resp_free(&r);
+	/* The agent, handed the token in its candidate, sends it with
+	 * each request: its records come over the TLS listener, the token
+	 * judged. */
+	json = ucl_object_emit(cand, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(cand);
+	http("PUT", put, (const char *)json, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	free(json);
+	http("POST", commit, "{\"ietf-netconf:input\":{}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	ATF_REQUIRE_EQ(1, notif_count(id, "subscription-started", 1, 15));
+	ATF_REQUIRE_EQ(1, notif_count(id, "replay-completed", 1, 5));
+	/* The token is not read back from the host but by a rule that
+	 * permits it: the admin's does. */
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/host=%s"
+	    "/ietf-subscribed-notifications:subscriptions", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"state\":\"active\"") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	/* A new token: the one before is refused. */
+	snprintf(path, sizeof(path), "/api/servers/%s/subscription/token", id);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, NOTIF_TOKEN_PATH) != NULL);
+	snprintf(token2, sizeof(token2), "%s", jstr(&r, NOTIF_TOKEN_PATH));
+	resp_free(&r);
+	ATF_CHECK(strcmp(token, token2) != 0);
+	http_bearer("POST", relay, token, NOTIF_RECORD, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	http_bearer("POST", relay, token2, NOTIF_RECORD, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	/* either: a bearer decides where there is one; without one, the
+	 * certificate, which the plain listener has none of. */
+	ATF_REQUIRE_EQ(0, system("sed -i '' 's/notif_auth = \"token\"/"
+	    "notif_auth = \"either\"/' web.conf"));
+	restart_console();
+	http_bearer("POST", relay, token2, NOTIF_RECORD, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http_bearer("POST", relay, token, NOTIF_RECORD, &r);
+	EXPECT(&r, 401);
+	ATF_CHECK_STREQ("token", jstr(&r, "error.code"));
+	resp_free(&r);
+	http("POST", relay, NOTIF_RECORD, &r);
+	EXPECT(&r, 401);
+	ATF_CHECK_STREQ("certificate", jstr(&r, "error.code"));
+	resp_free(&r);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, cluster);
 	ATF_TP_ADD_TC(tp, notif_receiver);
+	ATF_TP_ADD_TC(tp, notif_token);
 
 	ATF_TP_ADD_TC(tp, unauthenticated);
 	ATF_TP_ADD_TC(tp, setup_token);

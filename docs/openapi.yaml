@@ -616,6 +616,90 @@ paths:
         "200": { $ref: "#/components/responses/Servers" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/servers/{server}/subscription:
+    get:
+      tags: [servers]
+      summary: The host's configured subscription to the console
+      description: |
+        What to put in the host's candidate for the console to be the
+        receiver of its configured subscription (RFC 8639 section 2.5
+        over HTTPS-notif): ietf-subscribed-notifications' subscriptions
+        container, the NETCONF stream whole with replay, its receiver
+        instance the console's endpoints for the host under notif_base
+        of web.conf (the origin without it); the RESTCONF paths to PUT
+        it at and to commit. The console knows the host by its
+        certificate (notif_auth certificate, the default), by the token
+        it handed the host (token), or by whichever a request carries
+        (either). The document carries no token: the console keeps a
+        hash alone; token says whether the host has one.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The document
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  candidate: { type: object, description: "the subscriptions container, as the PUT takes it" }
+                  put: { type: string, description: "/restconf/ds/ietf-datastores:candidate/arcana-fleet:fleet/host=<id>/ietf-subscribed-notifications:subscriptions" }
+                  commit: { type: string, description: "/restconf/data/arcana-fleet:fleet/host=<id>/ietf-netconf:commit" }
+                  notif_auth: { type: string, enum: [certificate, token, either] }
+                  token: { type: boolean, description: "the host has a token" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/subscription/token:
+    post:
+      tags: [servers]
+      summary: A new receiver token for the host
+      description: |
+        32 random bytes, in hex, made for the host and shown this once,
+        inside the same document GET gives, as the https-receiver's
+        arcana-notif:token; the console keeps its SHA-256 in the host's
+        record, the token before is forgotten. PUT and commit the
+        document for the agent to send it (Authorization: Bearer) with
+        each request to the receiver, where the agent keeps it with
+        running's subscriptions, nacm:default-deny-all. The receiver
+        takes it as notif_auth allows; with certificate it is refused.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The document, with the token
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/notifications:
+    get:
+      tags: [servers]
+      summary: The records the host's subscription sent
+      description: |
+        The records received at /api/notif/<id>/relay-notification and
+        kept (notif/<id>.jsonl of the data directory), the newest 500 at
+        most, each RFC 8040's notification with its number n, those
+        after n with ?after=n; last is the newest's number.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - in: query
+          name: after
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  records:
+                    type: array
+                    items: { type: object }
+                  last: { type: integer }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/servers/{server}/services:
     get:
       tags: [servers]

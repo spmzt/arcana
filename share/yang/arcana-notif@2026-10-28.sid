@@ -1,0 +1,44 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-notif",
+    "module-revision": "2026-10-28",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-subscribed-notifications",
+        "module-revision": "2019-09-09"
+      },
+      {
+        "module-name": "ietf-subscribed-notif-receivers",
+        "module-revision": "2026-06-30"
+      },
+      {
+        "module-name": "ietf-https-notif-transport",
+        "module-revision": "2026-06-30"
+      },
+      {
+        "module-name": "ietf-netconf-acm",
+        "module-revision": "2018-02-14"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "79300",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-notif",
+        "sid": "79300"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/arcana-notif:token",
+        "sid": "79301"
+      }
+    ]
+  }
+}

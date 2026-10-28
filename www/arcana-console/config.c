@@ -54,7 +54,10 @@ get(const ucl_object_t *top, const char *path, const char *def)
  * mail_faults, mail_jobs, mail_runs and mail_limits what Settings
  * starts from.  notif_base is where the hosts reach the console's
  * HTTPS-notif receiver (notif.c), "https://host[:port]"; the origin
- * without it.
+ * without it.  notif_auth is how the receiver knows a host:
+ * "certificate" (the host's, from the console's PKI; the default),
+ * "token" (the one the console handed it in its subscription), or
+ * "either" (whichever a request carries).
  *
  *	android { package = "..."; fingerprints = [ "AB:CD:..." ]; }
  *
@@ -114,8 +117,16 @@ config_load(const char *path)
 	/* Empty says: do not look for an agent beside the console. */
 	cfg.local_agent = get(top, "local_agent", ARCW_LOCAL_AGENT);
 	cfg.notif_base = get(top, "notif_base", NULL);
+	cfg.notif_auth = get(top, "notif_auth", "certificate");
 	if (cfg.local_agent != NULL && cfg.local_agent[0] == '\0')
 		cfg.local_agent = NULL;
+	if (strcmp(cfg.notif_auth, "certificate") != 0 && strcmp(cfg.notif_auth,
+	    "token") != 0 && strcmp(cfg.notif_auth, "either") != 0) {
+		log_msg(LOG_ERR, "%s: notif_auth is certificate, token or "
+		    "either", path);
+		ucl_object_unref(top);
+		return (-1);
+	}
 	if (cluster_config(top, path) == -1 || android_load(top, path) == -1) {
 		ucl_object_unref(top);
 		return (-1);

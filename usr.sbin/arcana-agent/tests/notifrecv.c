@@ -8,8 +8,9 @@
  * A stand-in HTTPS-notif receiver (draft-ietf-netconf-https-notif) for
  * agent_tls_test.sh: notifrecv cert key ca port log.  It listens on
  * 127.0.0.1 and takes one connection at a time, a client certificate
- * from ca required; each request is logged as "METHOD path" and its
- * body on the lines after, then a blank line.  A GET whose path ends in
+ * from ca required; each request is logged as "METHOD path", its
+ * Authorization header where it has one, and its body on the lines
+ * after, then a blank line.  A GET whose path ends in
  * /capabilities is answered with the receiver's capabilities, JSON
  * among them; a POST whose path ends in /relay-notification with 204;
  * anything else 404.  While the file "down" exists beside the log, a
@@ -54,7 +55,7 @@ reply(SSL *ssl, int status, const char *text, const char *body)
 static void
 serve(SSL *ssl, FILE *log)
 {
-	char	buf[65536], method[16], path[512], *e, *l;
+	char	buf[65536], method[16], path[512], auth[300], *e, *l;
 	size_t	len = 0, hlen, clen;
 	int	n;
 
@@ -72,18 +73,22 @@ serve(SSL *ssl, FILE *log)
 		if (sscanf(buf, "%15s %511s", method, path) != 2)
 			return;
 		clen = 0;
+		auth[0] = '\0';
 		for (l = strchr(buf, '\n'); l != NULL && l < e; l = strchr(l +
 		    1, '\n'))
 			if (strncasecmp(l + 1, "content-length:", 15) == 0)
 				clen = strtoul(l + 16, NULL, 10);
+			else if (strncasecmp(l + 1, "authorization:", 14) == 0)
+				snprintf(auth, sizeof(auth), "Authorization:%.*s"
+				    "\n", (int)strcspn(l + 15, "\r\n"), l + 15);
 		while (len - hlen < clen) {
 			if (len + 1 >= sizeof(buf) || (n = SSL_read(ssl, buf +
 			    len, (int)(sizeof(buf) - len - 1))) <= 0)
 				return;
 			len += (size_t)n;
 		}
-		fprintf(log, "%s %s\n%.*s\n\n", method, path, (int)clen, buf +
-		    hlen);
+		fprintf(log, "%s %s\n%s%.*s\n\n", method, path, auth, (int)clen,
+		    buf + hlen);
 		fflush(log);
 		if (strcmp(method, "GET") == 0 && strlen(path) >= 13 &&
 		    strcmp(path + strlen(path) - 13, "/capabilities") == 0)

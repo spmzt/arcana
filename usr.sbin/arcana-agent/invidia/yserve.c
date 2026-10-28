@@ -98,18 +98,21 @@ ietf_interfaces_interfaces_get(cbl_req *req, struct ietf_interfaces *data,
 	const struct ietf_network_instance_network_instances *ni;
 	int	error;
 
-	if ((error = yni_instances(a, &ni)) != 0 ||
-	    (error = yif_interfaces(data, ni, a)) != 0)
-		return (error);
-	/* Their router advertisements, rtadvd.conf's (RFC 8349). */
-	if ((error = yif_rtadv(data, a)) != 0)
-		return (error);
-	/* Running: what was configured, not what DHCP or SLAAC made. */
-	if (cbl_req_ydatastore(req) == CBL_YDS_RUNNING &&
-	    (error = yif_running(data, a)) != 0)
-		return (error);
-	/* Those in the vnet jails, each bound to its jail (RFC 8530). */
-	return (lne_bound_interfaces(data, a));
+	const char *what;
+
+	if ((what = "the instances", error = yni_instances(a, &ni)) != 0 ||
+	    (what = "the interfaces", error = yif_interfaces(data, ni, a)) !=
+	    0 ||
+	    /* Their router advertisements, rtadvd.conf's (RFC 8349). */
+	    (what = "rtadvd.conf", error = yif_rtadv(data, a)) != 0 ||
+	    /* Running: what was configured, not what DHCP or SLAAC made. */
+	    (cbl_req_ydatastore(req) == CBL_YDS_RUNNING &&
+	    (what = "running", error = yif_running(data, a)) != 0) ||
+	    /* Those in the vnet jails, each bound to its jail (RFC 8530). */
+	    (what = "the jails'", error = lne_bound_interfaces(data, a)) != 0)
+		logmsg(LOG_INFO, "a read of interfaces for a model failed: "
+		    "%s: %s", what, strerror(error));
+	return (error);
 }
 
 static int	routing_of(cbl_yarena *, int, struct ietf_routing *);

@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.230.0"
+#define	ARCANA_AGENT_VERSION	"0.230.1"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -101,6 +101,7 @@ struct opts {
 	const char	*jail_conf_d;
 	const char	*jail_bin;
 	const char	*rc_dirs;	/* colon separated */
+	gid_t		 sock_gid;	/* -g: the socket's group, the console's; -1 none */
 	const char	*service_bin;
 	const char	*sysrc_bin;
 	const char	*netstat_bin;

@@ -27,6 +27,7 @@
 #include <sys/param.h>
 
 #include <errno.h>
+#include <grp.h>
 #include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,11 +70,36 @@ peer_is_host(const cbl_peer *p)
 	return (false);
 }
 
+/* Whether uid is in the socket's group (-g), the console's by the
+ * configuration: its own, or one it is a member of. */
+static bool
+in_sock_group(uid_t uid, gid_t gid)
+{
+	struct passwd	 pw, *res;
+	char		 buf[1024];
+	gid_t		 groups[64];
+	int		 n = sizeof(groups) / sizeof(groups[0]);
+
+	if (opts.sock_gid == (gid_t)-1)
+		return (false);
+	if (gid == opts.sock_gid)
+		return (true);
+	if (getpwuid_r(uid, &pw, buf, sizeof(buf), &res) != 0 || res == NULL ||
+	    getgrouplist(res->pw_name, res->pw_gid, groups, &n) == -1)
+		return (false);
+	for (int i = 0; i < n; i++)
+		if (groups[i] == opts.sock_gid)
+			return (true);
+	return (false);
+}
+
 /*
  * Whom a request of peer p is for (cbl_user_f): root's or the agent's
- * own on the unix socket, the user it says or the recovery session;
- * another local account, "local:<login>"; the console, the user it
- * says or "console".  A host's certificate asks nothing.
+ * own on the unix socket, the user it says or the recovery session; a
+ * local account in the socket's group (-g, the console's user by the
+ * configuration), the console; another local account, "local:<login>";
+ * the console by its certificate, the user it says or "console".  A
+ * host's certificate asks nothing.
  */
 static int
 admit_user(const cbl_peer *p, const char *said, char *name, size_t len,
@@ -98,6 +124,11 @@ admit_user(const cbl_peer *p, const char *said, char *name, size_t len,
 				(void)strlcpy(name, said, len);
 			else
 				*recovery = true;
+			return (0);
+		}
+		if (in_sock_group(uid, gid)) {
+			(void)strlcpy(name, said != NULL ? said : NACM_CONSOLE,
+			    len);
 			return (0);
 		}
 		if (said != NULL)

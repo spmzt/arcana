@@ -2938,6 +2938,41 @@ commit_interface_cleanup()
 # it, kept in Arcana's rc.conf file (cloned_interfaces, ifconfig_gif57's
 # tunnel); not confirmed, destroyed again; confirmed, kept; then taken
 # away by a commit of its own.
+atf_test_case console_group cleanup
+console_group_head()
+{
+	atf_set "descr" "A local account in the socket's group (-g) is the" \
+	    "console: it may name the user it asks for"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+console_group_body()
+{
+	# A second socket where another account can reach it; its group
+	# is nobody's, so nobody is the console there.
+	rm -f /tmp/arcana-g57.sock
+	DAEMON_ARGS="-l unix:/tmp/arcana-g57.sock -g nobody"
+	start_daemon
+	atf_check -o match:'^Host: ' \
+	    su -m nobody -c "$JGC -c unix:/tmp/arcana-g57.sock -u admin hello"
+	atf_check -o match:'^Host: ' \
+	    su -m nobody -c "$JGC -c unix:/tmp/arcana-g57.sock hello"
+	kill "$(cat daemon.pid)"
+	sleep 0.5
+	rm -f /tmp/arcana-g57.sock s.sock
+	# Without -g, a local account that names a user is refused.
+	DAEMON_ARGS="-l unix:/tmp/arcana-g57.sock"
+	start_daemon
+	chmod 666 /tmp/arcana-g57.sock
+	atf_check -s exit:1 -e match:'Permission denied' \
+	    su -m nobody -c "$JGC -c unix:/tmp/arcana-g57.sock -u admin hello"
+}
+console_group_cleanup()
+{
+	rm -f /tmp/arcana-g57.sock
+	cleanup
+}
+
 atf_test_case onchange_address cleanup
 onchange_address_head()
 {
@@ -3257,6 +3292,7 @@ atf_init_test_cases()
 	atf_add_test_case lne_bind
 	atf_add_test_case commit_fib_route
 	atf_add_test_case commit_fib
+	atf_add_test_case console_group
 	atf_add_test_case onchange_address
 	atf_add_test_case commit_create
 	atf_add_test_case commit_interface

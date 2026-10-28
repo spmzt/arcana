@@ -427,15 +427,18 @@ EOF
 "ietf-subscribed-notif-receivers:receiver-instances":{"receiver-instance":[
 {"name":"lab","ietf-https-notif-transport:https-receiver":{
 "capabilities-endpoint":{"uri":"https://127.0.0.1:$RPORT/notif/capabilities"},
-"relay-notification-endpoint":{"uri":"https://127.0.0.1:$RPORT/notif/relay-notification"}}}]}}}
+"relay-notification-endpoint":{"uri":"https://127.0.0.1:$RPORT/notif/relay-notification"},
+"arcana-notif:token":"lab-token-7"}}]}}}
 EOF
 	atf_check $JC edit subscriptions @subs.json
 	atf_check $JC commit
 	# Connected: the capabilities asked, subscription-started and (a
-	# replay from its making, of nothing) replay-completed POSTed.
+	# replay from its making, of nothing) replay-completed POSTed, the
+	# instance's token sent with each as Authorization: Bearer.
 	wait_log '^POST ' 2 5
 	atf_check -o match:'^GET /notif/capabilities$' \
 	    -o match:'^POST /notif/relay-notification$' \
+	    -o match:'^Authorization: Bearer lab-token-7$' \
 	    -o match:'"ietf-restconf:notification":\{"eventTime":"[0-9T:-]+Z","ietf-subscribed-notifications:subscription-started":\{"id":7,"stream":"NETCONF","stream-xpath-filter":"/arcana-events:event"\}\}' \
 	    -o match:'"ietf-subscribed-notifications:replay-completed":\{"id":7\}' \
 	    cat recv.log

@@ -83,6 +83,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -1537,6 +1538,9 @@ yif_interfaces(struct ietf_interfaces *data,
 			    (const void *)ifa->ifa_addr, d, a);
 		if (error == 0)
 			error = tunnel(&v[n], s4, s6, a);
+		if (error != 0)
+			syslog(LOG_NOTICE, "interfaces: %s: not read: %s",
+			    ifa->ifa_name, strerror(error));
 		dn[ndn++].listed = v[n++].name;
 	}
 	for (size_t i = 0; i < n && error == 0; i++)
@@ -1570,10 +1574,12 @@ yif_interfaces(struct ietf_interfaces *data,
 	freeifaddrs(ifa0);
 	/* What ietf-ip adds to each (invidia/yip.c), and the network
 	 * instance each is bound to (invidia/yni.c). */
-	if (error == 0)
-		error = yip_interfaces(v, n, a);
-	if (error == 0 && ni != NULL)
-		error = yni_bind(v, n, ni, a);
+	if (error == 0 && (error = yip_interfaces(v, n, a)) != 0)
+		syslog(LOG_NOTICE, "interfaces: ietf-ip's not read: %s",
+		    strerror(error));
+	if (error == 0 && ni != NULL && (error = yni_bind(v, n, ni, a)) != 0)
+		syslog(LOG_NOTICE, "interfaces: the instances' binding not "
+		    "read: %s", strerror(error));
 	if (error != 0)
 		return (error);
 	ifs->interface.n = n;

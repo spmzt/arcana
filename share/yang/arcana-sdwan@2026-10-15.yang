@@ -188,9 +188,11 @@ module arcana-sdwan {
     }
     leaf conf {
       type string;
+      config false;
       description
-        "The program's configuration text, as the console writes
-         it.";
+        "The program's configuration text, as the agent rendered it
+         from the console's form (the forms are the console's SD-WAN
+         document's until the module says them).";
     }
   }
 

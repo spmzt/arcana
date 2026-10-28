@@ -24,19 +24,19 @@ module: arcana-sdwan
      +--rw bird-instance* [name]
      |  +--rw name    string
      |  +--rw fib?    uint16
-     |  +--rw conf?   string
+     |  +--ro conf?   string
      +--rw dhcp-instance* [name]
      |  +--rw name    string
      |  +--rw fib?    uint16
-     |  +--rw conf?   string
+     |  +--ro conf?   string
      +--rw dns-instance* [name]
      |  +--rw name    string
      |  +--rw fib?    uint16
-     |  +--rw conf?   string
+     |  +--ro conf?   string
      +--rw proxy-instance* [name]
      |  +--rw name    string
      |  +--rw fib?    uint16
-     |  +--rw conf?   string
+     |  +--ro conf?   string
      |  +--rw mode?   enumeration
      |  +--rw deny?   string
      +--rw ids-instance* [name]

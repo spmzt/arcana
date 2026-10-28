@@ -13,7 +13,13 @@
  * certificate from the console's CA: a request is taken when the
  * certificate verifies, names the host's role and the host (its
  * peer_name, or the host of its URI), on a TLS listener (server { }
- * with certfile); it is refused on a plain one.  The records are kept
+ * with certfile); it is refused on a plain one.  Or, as notif_auth of
+ * web.conf says, the agent sends the token the console handed the host
+ * in its subscription document (Authorization: Bearer; arcana-notif's
+ * leaf in the https-receiver), which the console keeps hashed in the
+ * host's record (servers.c), made anew by each POST of
+ * /api/servers/<host>/subscription/token: then a plain listener, TLS
+ * ended before it, takes the records too.  The records are kept
  * as the host's, in notif/<host>.jsonl of the data directory, a record
  * a line, so that they outlive a restart of the console: one received
  * again after a replay (the same record, the same event time) is kept
@@ -96,22 +102,38 @@ cert_is_agent(X509 *x)
 }
 
 /*
- * The agent of host id, by its certificate: verified by the console's
- * CA (web.c), of the host's role, and named as the host is known: its
- * peer_name, else the host of its URI.  On failure the reply has been
- * sent.
+ * The agent of host id, as notif_auth says: by its certificate,
+ * verified by the console's CA (web.c), of the host's role, and named
+ * as the host is known (its peer_name, else the host of its URI); by
+ * the token the console handed it, against the hash kept; or by
+ * either, the bearer deciding where a request carries one.  On
+ * failure the reply has been sent.
  */
 static bool
 agent_of(struct http_request *req, const char *id)
 {
 	const struct server	*s;
 	X509			*x;
+	const char		*v;
 	char			 host[256];
-	bool			 ok;
+	bool			 ok, bearer;
 
 	if ((s = server_find(id)) == NULL) {
 		reply_error(req, 404, "not_found", "no such host");
 		return (false);
+	}
+	bearer = http_request_header(req, "authorization", &v) &&
+	    strncmp(v, "Bearer ", 7) == 0;
+	if (strcmp(cfg.notif_auth, "token") == 0 || (bearer &&
+	    strcmp(cfg.notif_auth, "either") == 0)) {
+		if (!bearer || !servers_notif_token_check(id, v + 7)) {
+			log_msg(LOG_WARNING, "notif: a record for %s with %s "
+			    "token", s->name, bearer ? "another" : "no");
+			reply_error(req, 401, "token", "a receiver is reached "
+			    "with the host's token, Authorization: Bearer");
+			return (false);
+		}
+		return (true);
 	}
 	if ((x = web_peer_cert(req)) == NULL) {
 		reply_error(req, 401, "certificate", "a receiver is reached "
@@ -335,29 +357,24 @@ api_notifications(struct http_request *req)
 }
 
 /*
- * GET /api/servers/<id>/subscription: the subscriptions container to
- * put in the host's candidate for the console to be its receiver, as
- * RESTCONF's PUT takes it: the NETCONF stream, every event, replayed to
- * the console when it was away; the receiver instance the console's
- * endpoints for the host.
+ * The subscriptions container to put in the host id's candidate for the
+ * console to be its receiver, as RESTCONF's PUT takes it: the NETCONF
+ * stream, every event, replayed to the console when it was away; the
+ * receiver instance the console's endpoints for the host, with its
+ * token where one is given; with the PUT's and the commit's paths, and
+ * notif_auth.  NULL: web.conf names no https base.
  */
-int
-api_subscription(struct http_request *req)
+static ucl_object_t *
+subscription_doc(const char *id, const char *token)
 {
 	ucl_object_t	*top, *subs, *sub, *rcvs, *rcv, *insts, *inst, *https,
 			*ep, *list, *doc;
 	const char	*base;
-	char		 id[17], uri[512];
+	char		 uri[512];
 
-	if (!host_of(req->path, "/api/servers/", id, sizeof(id)))
-		return (reply_error(req, 404, "not_found", "no such host"));
-	if (!guard(req, false) || !host_allowed(req, id, false, false))
-		return (WEB_OK);
 	if ((base = cfg.notif_base != NULL ? cfg.notif_base : cfg.origin) ==
 	    NULL || strncmp(base, "https://", 8) != 0)
-		return (reply_error(req, 409, "config", "web.conf names no "
-		    "https origin (or notif_base) the hosts reach the console "
-		    "by"));
+		return (NULL);
 	sub = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(sub, ucl_object_fromint(1), "id", 0, false);
 	ucl_object_insert_key(sub, ucl_object_fromstring("NETCONF"), "stream",
@@ -390,6 +407,9 @@ api_subscription(struct http_request *req)
 	ucl_object_insert_key(ep, ucl_object_fromstring(uri), "uri", 0, false);
 	ucl_object_insert_key(https, ep, "relay-notification-endpoint", 0,
 	    false);
+	if (token != NULL)
+		ucl_object_insert_key(https, ucl_object_fromstring(token),
+		    "arcana-notif:token", 0, false);
 	inst = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(inst, ucl_object_fromstring("console"), "name", 0,
 	    false);
@@ -414,5 +434,61 @@ api_subscription(struct http_request *req)
 	    "ietf-netconf:commit", id);
 	ucl_object_insert_key(top, ucl_object_fromstring(uri), "commit", 0,
 	    false);
+	ucl_object_insert_key(top, ucl_object_fromstring(cfg.notif_auth),
+	    "notif_auth", 0, false);
+	return (top);
+}
+
+/*
+ * GET /api/servers/<id>/subscription: the document, without a token
+ * (the console keeps none to show): "token" says whether the host has
+ * one.  POST /api/servers/<id>/subscription/token: a new token made for
+ * the host, the one before forgotten, and the document with it, the
+ * once it is shown; the receiver takes it as notif_auth allows.
+ */
+int
+api_subscription(struct http_request *req)
+{
+	const struct server	*s;
+	ucl_object_t		*top;
+	char			 id[17];
+
+	if (!host_of(req->path, "/api/servers/", id, sizeof(id)) ||
+	    (s = server_find(id)) == NULL)
+		return (reply_error(req, 404, "not_found", "no such host"));
+	if (!guard(req, false) || !host_allowed(req, id, false, false))
+		return (WEB_OK);
+	if ((top = subscription_doc(id, NULL)) == NULL)
+		return (reply_error(req, 409, "config", "web.conf names no "
+		    "https origin (or notif_base) the hosts reach the console "
+		    "by"));
+	ucl_object_insert_key(top, ucl_object_frombool(s->notif_token != NULL),
+	    "token", 0, false);
+	return (reply_json(req, 200, top));
+}
+
+int
+api_subscription_token(struct http_request *req)
+{
+	ucl_object_t	*top;
+	char		 id[17], token[65];
+	int		 error;
+
+	if (!host_of(req->path, "/api/servers/", id, sizeof(id)) ||
+	    server_find(id) == NULL)
+		return (reply_error(req, 404, "not_found", "no such host"));
+	if (!guard(req, true) || !host_allowed(req, id, true, false))
+		return (WEB_OK);
+	if ((error = servers_notif_token_new(id, token, sizeof(token))) != 0)
+		return (reply_error(req, error == ENOENT ? 404 : 500,
+		    error == ENOENT ? "not_found" : "store", error == ENOENT ?
+		    "no such host" : "the token could not be kept"));
+	top = subscription_doc(id, token);
+	explicit_bzero(token, sizeof(token));
+	if (top == NULL)
+		return (reply_error(req, 409, "config", "web.conf names no "
+		    "https origin (or notif_base) the hosts reach the console "
+		    "by"));
+	log_msg(LOG_NOTICE, "server %s: a new receiver token", id);
 	return (reply_json(req, 200, top));
 }

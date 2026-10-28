@@ -21,10 +21,12 @@
  * ({"ietf-restconf:notification": {"eventTime": ..., "module:name":
  * {...}}}), HTTP/1.1 on one TLS connection kept open, the agent's own
  * certificate and key shown (-C, -K), the CA of -A and the system's
- * trusted.  A reply other than 2xx, or the connection gone, is the
- * receiver down: cblink connects it again later and replays what it
- * missed.  The console is the receiver meant: it authenticates the
- * agent by its certificate and keeps the records as the host's.
+ * trusted, and the instance's token (arcana-notif), where it has one,
+ * sent as Authorization: Bearer.  A reply other than 2xx, or the
+ * connection gone, is the receiver down: cblink connects it again
+ * later and replays what it missed.  The console is the receiver
+ * meant: it authenticates the agent by its certificate, or by the
+ * token it handed the host, and keeps the records as the host's.
  */
 
 #include <sys/param.h>
@@ -371,14 +373,15 @@ hconn_write(struct hconn *c, const void *p, size_t n)
 
 /*
  * One request, its reply: the status; its body (Content-Length's, up to
- * HTTP_BODY_MAX) in rbody when it is wanted.  The connection is for the
- * next request unless the reply says it closes.  EPIPE: the connection
- * is gone, or the reply was none.
+ * HTTP_BODY_MAX) in rbody when it is wanted; the token, where there is
+ * one, as Authorization: Bearer.  The connection is for the next
+ * request unless the reply says it closes.  EPIPE: the connection is
+ * gone, or the reply was none.
  */
 static int
 http_do(struct hconn *c, const char *method, const char *path,
-    const char *ctype, const char *body, size_t blen, int *status,
-    char *rbody, size_t rlen, bool *closes)
+    const char *token, const char *ctype, const char *body, size_t blen,
+    int *status, char *rbody, size_t rlen, bool *closes)
 {
 	char		 hdr[1024], *buf, *e, *l, *v;
 	size_t		 cap = 4096, len = 0, hlen, clen = 0;
@@ -387,7 +390,9 @@ http_do(struct hconn *c, const char *method, const char *path,
 
 	n = snprintf(hdr, sizeof(hdr), "%s %s HTTP/1.1\r\nHost: %s\r\n"
 	    "User-Agent: arcana-agent/%s\r\nAccept: application/yang-data+json"
-	    "\r\n%s%s%s", method, path, c->u.host, ARCANA_AGENT_VERSION,
+	    "\r\n%s%s%s%s%s%s", method, path, c->u.host, ARCANA_AGENT_VERSION,
+	    token != NULL ? "Authorization: Bearer " : "", token != NULL ?
+	    token : "", token != NULL ? "\r\n" : "",
 	    ctype != NULL ? "Content-Type: " : "", ctype != NULL ? ctype : "",
 	    ctype != NULL ? "\r\n" : "");
 	if (n < 0 || (size_t)n >= sizeof(hdr))
@@ -477,11 +482,13 @@ http_do(struct hconn *c, const char *method, const char *path,
 	return (0);
 }
 
-/* A receiver as the transport keeps it: its relay connection. */
+/* A receiver as the transport keeps it: its relay connection, and the
+ * instance's token; none: "". */
 struct rcv {
 	struct hconn	 c;
 	bool		 open;
 	struct uri	 relay;
+	char		 token[257];
 };
 
 /* The https-receiver of the instance named, from the kept
@@ -542,6 +549,8 @@ rcv_connect(struct cbl_ysub_rcv *r, void *arg)
 		    NULL ? r->instance : "(none)");
 		return (ENOENT);
 	}
+	strlcpy(rc->token, in->hnt_https_receiver->arcnf_token != NULL ?
+	    in->hnt_https_receiver->arcnf_token : "", sizeof(rc->token));
 	cbl_yarena_free(a);
 	if ((error = hconn_open(&rc->c, &cap, err, sizeof(err))) != 0) {
 		logmsg(LOG_WARNING, "subscription %u: receiver %s: %s", r->id,
@@ -549,7 +558,8 @@ rcv_connect(struct cbl_ysub_rcv *r, void *arg)
 		return (error);
 	}
 	if ((error = http_do(&rc->c, "GET", cap.path[0] != '\0' ? cap.path :
-	    "/", NULL, NULL, 0, &status, body, sizeof(body), &closes)) != 0) {
+	    "/", rc->token[0] != '\0' ? rc->token : NULL, NULL, NULL, 0,
+	    &status, body, sizeof(body), &closes)) != 0) {
 		hconn_close(&rc->c);
 		logmsg(LOG_WARNING, "subscription %u: receiver %s: no "
 		    "capabilities from %s: %s", r->id, r->name, cap.host,
@@ -634,8 +644,9 @@ rcv_send(struct cbl_ysub_rcv *r, uint64_t sid, const uint8_t *content,
 	if (json == NULL)
 		return (ENOMEM);
 	error = http_do(&rc->c, "POST", rc->relay.path[0] != '\0' ?
-	    rc->relay.path : "/", "application/yang-data+json", json,
-	    strlen(json), &status, NULL, 0, &closes);
+	    rc->relay.path : "/", rc->token[0] != '\0' ? rc->token : NULL,
+	    "application/yang-data+json", json, strlen(json), &status, NULL, 0,
+	    &closes);
 	free(json);
 	if (error == 0 && (status < 200 || status > 299)) {
 		logmsg(LOG_WARNING, "subscription %u: receiver %s answered %d "

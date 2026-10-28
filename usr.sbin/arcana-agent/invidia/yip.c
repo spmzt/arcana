@@ -75,6 +75,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <unistd.h>
 
 #include "collect.h"
@@ -651,8 +652,19 @@ yip_interfaces(yif *v, size_t n, cbl_yarena *a)
 			break;
 		}
 	}
+	/* The neighbours a jail's kernel refuses to tell (its netlink
+	 * answers EPERM): none, said once. */
 	if (error == 0 && (error = neighbours(&nbs, &nnbs)) == 0)
 		error = nb_fill(ips, n, nbs, nnbs, a);
+	else if (error == EPERM) {
+		static bool said;
+
+		if (!said)
+			syslog(LOG_NOTICE, "interfaces: the neighbours are not "
+			    "read here: %s", strerror(error));
+		said = true;
+		error = 0;
+	}
 	free(nbs);
 	host_read(&h);
 	for (size_t i = 0; i < n && error == 0; i++)

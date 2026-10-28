@@ -140,6 +140,7 @@ on the wire.
 | 79 000 | 100 | `ietf-subscribed-notif-receivers@2026-06-30`, draft-ietf-netconf-https-notif: the receiver instances a configured subscription's receivers name (no IETF range) | `share/yang/ietf-subscribed-notif-receivers@2026-06-30.sid` (5 used) |
 | 79 100 | 100 | `ietf-https-notif-transport@2026-06-30`, draft-ietf-netconf-https-notif: the https-receiver, its endpoints (no IETF range) | `share/yang/ietf-https-notif-transport@2026-06-30.sid` (19 used) |
 | 79 200 | 100 | `ietf-http-client@2024-08-15`, draft-ietf-netconf-http-client-server: imported alone, its groupings the endpoints' (no IETF range) | `share/yang/ietf-http-client@2024-08-15.sid` (6 used) |
+| 79 300 | 100 | `arcana-notif`, the https-receiver's bearer token | `share/yang/arcana-notif@2026-10-28.sid` (2 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

@@ -690,9 +690,14 @@ cmd_get(struct arc_client *cl, int argc, char **argv)
 	    sids, ns, xpath, wd, origin)) != 0 ||
 	    (said && (error = cbl_msg_set_datastore(req, ds)) != 0))
 		xo_errx(1, "get: %s", strerror(error));
-	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
-		xo_errx(1, "get: %s", rep != NULL && cbl_msg_err_str(rep) !=
-		    NULL ? cbl_msg_err_str(rep) : strerror(error));
+	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0) {
+		/* The node at fault, where the agent named one. */
+		n = rep != NULL && cbl_msg_err_sid(rep) != 0 ?
+		    cbl_yschema_node(&ymodel_schema, cbl_msg_err_sid(rep)) : NULL;
+		xo_errx(1, "get: %s%s%s", n != NULL ? n->name : "", n != NULL ?
+		    ": " : "", rep != NULL && cbl_msg_err_str(rep) != NULL ?
+		    cbl_msg_err_str(rep) : strerror(error));
+	}
 	/* Annotated: as an instance tree, which has them. */
 	if (origin || wd == CBL_YWD_REPORT_ALL_TAGGED) {
 		if ((t = cbl_dtree_new(&ymodel_schema)) == NULL)

@@ -1,0 +1,67 @@
+module arcana-notif {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-notif";
+  prefix arcnf;
+
+  import ietf-subscribed-notifications {
+    prefix sn;
+    reference
+      "RFC 8639: Subscription to YANG Notifications";
+  }
+  import ietf-subscribed-notif-receivers {
+    prefix snr;
+    reference
+      "draft-ietf-netconf-https-notif: An HTTPS-based Transport for
+       YANG Notifications";
+  }
+  import ietf-https-notif-transport {
+    prefix hnt;
+    reference
+      "draft-ietf-netconf-https-notif: An HTTPS-based Transport for
+       YANG Notifications";
+  }
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "What Arcana adds to a configured subscription's HTTPS-notif
+     receiver (RFC 8639 section 2.5, draft-ietf-netconf-https-notif):
+     a bearer token the receiver knows the host by, beside the
+     certificate the agent shows.  The console hands a host its token
+     inside the subscription document it writes to the host's
+     candidate, and keeps a hash of it; the agent sends it as
+     Authorization: Bearer with each request to the receiver's
+     endpoints, over TLS alone.  The token is kept with running's
+     subscriptions (arcana-agent --subscriptions, mode 0600) and is
+     nacm:default-deny-all: read or written only by a rule that permits
+     it, or the recovery session.";
+
+  revision 2026-10-28 {
+    description
+      "Initial revision.";
+  }
+
+  augment "/sn:subscriptions/snr:receiver-instances/snr:receiver-instance"
+        + "/snr:transport-type/hnt:https/hnt:https-receiver" {
+    description
+      "The receiver's token for this host.";
+    leaf token {
+      nacm:default-deny-all;
+      type string {
+        length "1..256";
+        pattern '[!-~]+';
+      }
+      description
+        "Sent as Authorization: Bearer with each request to the
+         receiver's endpoints; without it, the agent's certificate
+         alone names the host.";
+    }
+  }
+}

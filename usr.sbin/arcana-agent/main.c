@@ -400,6 +400,7 @@ main(int argc, char *argv[])
 	cafile = certfile = keyfile = NULL;
 	pidpath = PATH_PIDFILE;
 	gid = (gid_t)-1;
+	opts.sock_gid = (gid_t)-1;
 	nl = 0;
 	/* Run again by the daemon, to look at a jail from inside it: a
 	 * word no one gives as an option (-Q is sysctl's). */
@@ -496,6 +497,7 @@ main(int argc, char *argv[])
 			if ((gr = getgrnam(optarg)) == NULL)
 				errx(1, "unknown group %s", optarg);
 			gid = gr->gr_gid;
+			opts.sock_gid = gid;
 			break;
 		case 'j':
 			opts.jail_bin = optarg;

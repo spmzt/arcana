@@ -388,13 +388,24 @@ and
 and trusting the CA of
 .Fl A
 and the system's.
+An https-receiver with a token (arcana-notif's
+.Li token
+leaf) sends it with each request as
+.Li Authorization: Bearer ;
+it is kept with the container, which the file holds at mode 0600, and
+is
+.Ic nacm:default-deny-all :
+read or written by a rule that permits it, or the recovery session.
 A receiver that fails is connected again, a second on and doubling to
 a minute, told subscription-started with the time of the last record
 it had, and sent what it missed from the events kept (configured-replay)
 then replay-completed.
 The console is the receiver meant: its
 .Pa /api/servers/<host>/subscription
-says what to put in the candidate.
+says what to put in the candidate, and
+.Pa /api/servers/<host>/subscription/token
+hands the host a token in it, for a console that knows its hosts by
+their tokens (web.conf's notif_auth) rather than their certificates.
 .It Fl -bird-watch Ar seconds
 How often the BIRD of the host, and that of each running jail with a
 network of its own where
