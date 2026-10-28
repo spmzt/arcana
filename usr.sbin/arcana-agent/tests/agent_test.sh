@@ -6166,7 +6166,8 @@ EOS
 	chmod +x rc.d/arcana_agent
 	second=$(cat daemon.pid)
 	atf_check -o match:'queued' "$JGC" -q -c "$SOCK" service arcana_agent restart
-	for i in $(seq 1 100); do
+	# As long as the update's: a loaded machine runs sysrc(8) slowly.
+	for i in $(seq 1 300); do
 		[ "$(cat daemon.pid)" != "$second" ] &&
 		    "$JGC" -c "$SOCK" hello > /dev/null 2>&1 && break
 		sleep 0.1

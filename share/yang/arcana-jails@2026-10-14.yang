@@ -3,6 +3,12 @@ module arcana-jails {
   namespace "urn:arcana:yang:arcana-jails";
   prefix arcj;
 
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
   import ietf-logical-network-element {
     prefix lne;
     reference
@@ -239,6 +245,7 @@ module arcana-jails {
           "The logical network element it is, with a vnet of its own.";
       }
       action start {
+        nacm:default-deny-all;
         description
           "jail(8) -c with its configuration: its exec.prestart,
            exec.start and the rest run.";
@@ -247,6 +254,7 @@ module arcana-jails {
         }
       }
       action stop {
+        nacm:default-deny-all;
         description
           "jail(8) -r: its exec.stop and the rest run, then
            jail_remove(2).";
@@ -255,6 +263,7 @@ module arcana-jails {
         }
       }
       action restart {
+        nacm:default-deny-all;
         description
           "jail(8) -rc.";
         output {
@@ -262,6 +271,7 @@ module arcana-jails {
         }
       }
       action kill {
+        nacm:default-deny-all;
         description
           "jail_remove(2), without its stop scripts.";
         output {

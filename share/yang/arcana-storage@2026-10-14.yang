@@ -3,6 +3,12 @@ module arcana-storage {
   namespace "urn:arcana:yang:arcana-storage";
   prefix arcsto;
 
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
   organization
     "Arcana";
   contact
@@ -469,6 +475,7 @@ module arcana-storage {
           "The snapshot a clone was made of.";
       }
       action load-key {
+        nacm:default-deny-all;
         description
           "zfs load-key, the key on its standard input: on no disk, in
            no job, no trace, no log.";
@@ -482,10 +489,12 @@ module arcana-storage {
         }
       }
       action unload-key {
+        nacm:default-deny-all;
         description
           "zfs unload-key.";
       }
       action change-key {
+        nacm:default-deny-all;
         description
           "zfs change-key, loaded first with key where it is not.";
         input {
@@ -534,6 +543,7 @@ module arcana-storage {
           "When it was made, in seconds since the Epoch.";
       }
       action send {
+        nacm:default-deny-all;
         description
           "zfs send of it, its bytes the request's stream, each data
            message the next; half-closed when send ended well.";
@@ -650,6 +660,7 @@ module arcana-storage {
         }
       }
       action replace {
+        nacm:default-deny-all;
         description
           "A new text put in its place: it has to be an fstab, sha256
            that of the text it was made from; the one before is kept
@@ -706,6 +717,7 @@ module arcana-storage {
   }
 
   rpc receive {
+    nacm:default-deny-all;
     description
       "zfs receive -u into the dataset named, the bytes the request's
        stream, given to receive only as fast as it reads them; never

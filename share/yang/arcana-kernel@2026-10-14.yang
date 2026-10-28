@@ -3,6 +3,12 @@ module arcana-kernel {
   namespace "urn:arcana:yang:arcana-kernel";
   prefix arckern;
 
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
   organization
     "Arcana";
   contact
@@ -76,6 +82,7 @@ module arcana-kernel {
           "The modules it holds.";
       }
       action unload {
+        nacm:default-deny-all;
         description
           "kldunload(8).";
       }
@@ -177,6 +184,7 @@ module arcana-kernel {
   }
 
   rpc load {
+    nacm:default-deny-all;
     description
       "kldload(8) of a module.";
     input {

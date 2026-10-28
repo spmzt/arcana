@@ -3,6 +3,12 @@ module arcana-agent {
   namespace "urn:arcana:yang:arcana-agent";
   prefix arcagent;
 
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
   import ietf-yang-types {
     prefix yang;
     reference
@@ -328,6 +334,7 @@ module arcana-agent {
         }
       }
       action retry {
+        nacm:default-deny-all;
         description
           "Try SCTP again now.";
       }
@@ -357,6 +364,7 @@ module arcana-agent {
           "A key waits for its certificate (csr made).";
       }
       action csr {
+        nacm:default-deny-all;
         description
           "A new EC P-256 key made beside the host's (never sent) and
            a certificate request for it.";
@@ -369,6 +377,7 @@ module arcana-agent {
         }
       }
       action install {
+        nacm:default-deny-all;
         description
           "A certificate for the waiting key, the CAs to trust, or
            both; the files before kept beside; read again for the
@@ -395,6 +404,7 @@ module arcana-agent {
       }
     }
     action update {
+      nacm:default-deny-all;
       description
         "Replace arcana-agent with the program sent, checked by its
          SHA-256 and by running it with -V; the one before kept beside
@@ -439,6 +449,7 @@ module arcana-agent {
       }
     }
     action build {
+      nacm:default-deny-all;
       description
         "Build arcana-agent from a git repository on this host and
          give the program back; nothing installed.";
@@ -470,6 +481,7 @@ module arcana-agent {
       }
     }
     action console-update {
+      nacm:default-deny-all;
       description
         "Build the whole tree from a git repository on this host,
          install it and restart the console's service: how a console
@@ -560,6 +572,7 @@ module arcana-agent {
       }
     }
     action config-export {
+      nacm:default-deny-all;
       description
         "The host's configuration as a bundle.";
       input {
@@ -575,6 +588,7 @@ module arcana-agent {
       }
     }
     action config-apply {
+      nacm:default-deny-all;
       description
         "A bundle made this host's configuration: the hardware checked
          first, each file written with the ones before kept, the

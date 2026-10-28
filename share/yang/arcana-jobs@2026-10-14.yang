@@ -3,6 +3,12 @@ module arcana-jobs {
   namespace "urn:arcana:yang:arcana-jobs";
   prefix arcjob;
 
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
   include arcana-jobs-kinds {
     revision-date 2026-10-14;
   }
@@ -236,6 +242,7 @@ module arcana-jobs {
         }
       }
       action cancel {
+        nacm:default-deny-all;
         description
           "A job not yet started taken out of the queue.";
         output {
@@ -247,6 +254,7 @@ module arcana-jobs {
         }
       }
       action confirm {
+        nacm:default-deny-all;
         description
           "An unconfirmed job's change kept: that the request arrived
            is the point, the client still reaches the host.";
@@ -262,6 +270,7 @@ module arcana-jobs {
   }
 
   rpc submit {
+    nacm:default-deny-all;
     description
       "Changes queued, to run in the order given.";
     input {

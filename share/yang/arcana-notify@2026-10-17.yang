@@ -3,6 +3,12 @@ module arcana-notify {
   namespace "urn:arcana:yang:arcana-notify";
   prefix arcntf;
 
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
   organization
     "Arcana";
   contact
@@ -22,6 +28,7 @@ module arcana-notify {
   }
 
   rpc notify {
+    nacm:default-deny-all;
     description
       "Send a message to a Telegram chat.";
     input {

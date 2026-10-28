@@ -362,7 +362,12 @@ which may do anything, and anyone else may read and ask but change
 nothing; a command that changes the host is run only by a rule that
 permits it.
 Root on the unix socket is the recovery session, which no rule holds
-back.
+back; another local account is
+.Li local: Ns Ar login
+to the rules, never one of the console's users.
+An rpc or action of Arcana's modules that changes the host is
+.Ic nacm:default-deny-all :
+run only by a rule that permits it.
 .It Fl -bird-watch Ar seconds
 How often the BIRD of the host, and that of each running jail with a
 network of its own where

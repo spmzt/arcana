@@ -3,6 +3,12 @@ module arcana-builder {
   namespace "urn:arcana:yang:arcana-builder";
   prefix arcbld;
 
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
   import ietf-yang-types {
     prefix yang;
     reference
@@ -451,6 +457,7 @@ module arcana-builder {
       }
     }
     action port-options {
+      nacm:default-deny-all;
       description
         "A port's options as a build of jail, tree and set takes them:
          make showconfig with the options directory that build

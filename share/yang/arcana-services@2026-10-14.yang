@@ -3,6 +3,12 @@ module arcana-services {
   namespace "urn:arcana:yang:arcana-services";
   prefix arcsvc;
 
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
   organization
     "Arcana";
   contact
@@ -110,6 +116,7 @@ module arcana-services {
           "The script's extra commands (service extracommands).";
       }
       action start {
+        nacm:default-deny-all;
         description
           "service <name> start.";
         output {
@@ -117,6 +124,7 @@ module arcana-services {
         }
       }
       action stop {
+        nacm:default-deny-all;
         description
           "service <name> stop.";
         output {
@@ -124,6 +132,7 @@ module arcana-services {
         }
       }
       action restart {
+        nacm:default-deny-all;
         description
           "service <name> restart.";
         output {
@@ -131,6 +140,7 @@ module arcana-services {
         }
       }
       action reload {
+        nacm:default-deny-all;
         description
           "service <name> reload.";
         output {

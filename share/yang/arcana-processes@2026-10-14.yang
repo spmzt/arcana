@@ -3,6 +3,12 @@ module arcana-processes {
   namespace "urn:arcana:yang:arcana-processes";
   prefix arcproc;
 
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
   import openconfig-procmon {
     prefix oc-proc;
     reference
@@ -309,6 +315,7 @@ module arcana-processes {
         }
       }
       action signal {
+        nacm:default-deny-all;
         description
           "kill(2): a signal sent.";
         input {
@@ -322,6 +329,7 @@ module arcana-processes {
         }
       }
       action renice {
+        nacm:default-deny-all;
         description
           "setpriority(2): its nice value changed.";
         input {

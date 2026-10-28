@@ -3,6 +3,12 @@ module arcana-packages {
   namespace "urn:arcana:yang:arcana-packages";
   prefix arcpkg;
 
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
   import cblink-gen {
     prefix cg;
   }
@@ -114,6 +120,7 @@ module arcana-packages {
            enabled or not: an upgrade may be held to any of them.";
       }
       action refresh {
+        nacm:default-deny-all;
         description
           "pkg update: the repository's catalogue read again, and what
            it has newer.";
@@ -127,6 +134,7 @@ module arcana-packages {
         }
       }
       action upgrade {
+        nacm:default-deny-all;
         description
           "pkg upgrade -y, of the packages named or of all.";
         input {

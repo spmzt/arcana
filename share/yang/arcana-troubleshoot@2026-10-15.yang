@@ -3,6 +3,12 @@ module arcana-troubleshoot {
   namespace "urn:arcana:yang:arcana-troubleshoot";
   prefix arcts;
 
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+
   import ietf-inet-types {
     prefix inet;
     reference
@@ -556,6 +562,7 @@ module arcana-troubleshoot {
       }
     }
     action capture {
+      nacm:default-deny-all;
       description
         "Packets taken with tcpdump(1) off an interface, of the host
          or of a vnet jail's own network: an interface, a bridge's

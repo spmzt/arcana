@@ -161,7 +161,15 @@ mtls_body()
 	atf_check -s ignore -e not-match:'access denied' -o ignore \
 	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key \
 	    -u admin sysctl kern.hostname=x
-	atf_check -o match:'"denied-operations":1,' -o match:'"denied-data-writes":0' \
+	# A YANG action that changes the host is default-deny-all too: a
+	# job's cancel (of none) denied to bob, asked for the admin.
+	atf_check -s exit:1 -e match:'access denied' -o ignore \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key -u bob \
+	    action jobs/job 99999 cancel
+	atf_check -s ignore -e not-match:'access denied' -o ignore \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key \
+	    -u admin action jobs/job 99999 cancel
+	atf_check -o match:'"denied-operations":2,' -o match:'"denied-data-writes":0' \
 	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key get nacm
 	atf_check -o match:'^Host:' \
 	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key hello

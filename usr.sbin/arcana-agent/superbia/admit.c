@@ -68,7 +68,12 @@ peer_is_host(const cbl_peer *p)
 	return (false);
 }
 
-/* Whom a request of peer p is for (cbl_user_f). */
+/*
+ * Whom a request of peer p is for (cbl_user_f): root's or the agent's
+ * own on the unix socket, the user it says or the recovery session;
+ * another local account, "local:<login>"; the console, the user it
+ * says or "console".  A host's certificate asks nothing.
+ */
 static int
 admit_user(const cbl_peer *p, const char *said, char *name, size_t len,
     bool *recovery, void *arg __unused)
@@ -96,11 +101,13 @@ admit_user(const cbl_peer *p, const char *said, char *name, size_t len,
 		}
 		if (said != NULL)
 			return (EACCES);
+		/* A name of its own: a local account called admin is not
+		 * the console's admin. */
 		if (getpwuid_r(uid, &pw, buf, sizeof(buf), &res) == 0 &&
 		    res != NULL)
-			(void)strlcpy(name, res->pw_name, len);
+			(void)snprintf(name, len, "local:%s", res->pw_name);
 		else
-			(void)snprintf(name, len, "%u", (unsigned)uid);
+			(void)snprintf(name, len, "local:%u", (unsigned)uid);
 		return (0);
 	}
 	(void)strlcpy(name, said != NULL ? said : NACM_CONSOLE, len);
