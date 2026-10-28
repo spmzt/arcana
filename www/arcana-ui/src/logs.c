@@ -189,10 +189,56 @@ event_line(const ucl_object_t *e)
 		    (long long)jint(d, "prefixlen", 0), kind[8] == 'd' ?
 		    "taken off" : "on", jstr(d, "interface") != NULL ?
 		    jstr(d, "interface") : "?");
-	else
+	else if (strcmp(kind, "undo-failed") == 0) {
+		/* A commit not confirmed that the host could not take back:
+		 * its report, the failure's alone, for the admin to file. */
+		snprintf(buf, sizeof(buf), "a commit not confirmed in time "
+		    "could not be undone at %s: %s; the rest stays as "
+		    "committed", jstr(d, "node") != NULL ? jstr(d, "node") :
+		    "?", jstr(d, "message") != NULL ? jstr(d, "message") : "?");
+		if (jstr(d, "report") != NULL)
+			ucl_object_insert_key(l, ucl_object_fromstring(jstr(d,
+			    "report")), "report", 0, false);
+	} else
 		buf[0] = '\0';
 	ucl_object_insert_key(l, ucl_object_fromstring(buf), "text", 0, false);
 	return (l);
+}
+
+/* s for a URL's query, %XX but letters, digits and -._~ (RFC 3986). */
+static void
+url_part(struct html *h, const char *s)
+{
+
+	for (; *s != '\0'; s++) {
+		unsigned char	c = (unsigned char)*s;
+
+		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+		    (c >= '0' && c <= '9') || strchr("-._~", c) != NULL)
+			h_fmt(h, "%c", c);
+		else
+			h_fmt(h, "%%%02X", c);
+	}
+}
+
+/*
+ * An undo's report: shown, and a link that opens an issue of Arcana's
+ * with it, for the admin to file if they choose; Arcana sends nothing.
+ */
+static void
+report_out(struct html *h, const char *report)
+{
+
+	h_raw(h, "<details class=\"report\"><summary>The report, of the "
+	    "failure alone: file it as a bug if you choose</summary><pre>");
+	h_txt(h, report);
+	h_raw(h, "</pre><a class=\"ghost small\" target=\"_blank\" "
+	    "rel=\"noopener\" href=\"https://github.com/spmzt/arcana/issues/"
+	    "new?title=");
+	url_part(h, "An undo of a confirmed commit failed");
+	h_raw(h, "&amp;body=");
+	url_part(h, report);
+	h_raw(h, "\">Open an issue with it</a></details>");
 }
 
 static void
@@ -562,6 +608,8 @@ view_logs(struct html *h, struct server *s)
 		h_txt(h, jstr(o, "pid"));
 		h_raw(h, "</td><td class=\"msg\">");
 		h_txt(h, jstr(o, "text"));
+		if (jstr(o, "report") != NULL)
+			report_out(h, jstr(o, "report"));
 		h_raw(h, "</td></tr>");
 	}
 	free(rows);

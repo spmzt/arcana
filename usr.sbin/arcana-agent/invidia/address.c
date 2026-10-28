@@ -215,8 +215,12 @@ do_address(struct work *w, const struct arc_address_req *rq,
 		{
 			char ebuf[512];
 
-			if (jc_edit(&jc, f, b, key, confval, add, &newbuf,
-			    &newlen, ebuf, sizeof(ebuf)) == -1) {
+			/* What jail(8) reads of the jail tells what the
+			 * block sets from what it inherits. */
+			vp = cjail_param(cj, key);
+			if (jc_edit(f, b, key, confval, add, vp != NULL ?
+			    vp->values.v : NULL, vp != NULL ? vp->values.n : 0,
+			    &newbuf, &newlen, ebuf, sizeof(ebuf)) == -1) {
 				rsp->error = wtext(w, wstrdup(w, ebuf));
 				step_end(w, step, false, "%s", ebuf);
 				goto out;

@@ -1859,6 +1859,8 @@ static const struct evk {
 	{ "sdwan-fault", "a fault is raised or cleared: SD-WAN's, or a "
 	    "BIRD session's",
 	    "sdwan-fault", NULL, NULL, NULL, NULL },
+	{ "undo-failed", "a commit not confirmed in time could not be undone",
+	    "undo-failed", NULL, NULL, NULL, NULL },
 	{ "custom", "something else, by its kind", NULL, NULL, NULL, NULL,
 	    NULL },
 };

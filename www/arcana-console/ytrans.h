@@ -33,5 +33,12 @@ int	ytrans_data(cbl_conn *conn, const char *names, ucl_object_t **out,
 int	ytrans_get(cbl_conn *conn, const uint64_t *sids, size_t ns,
 	    const char *xpath, ucl_object_t **out, char *err, size_t errlen,
 	    uint64_t *errsid);
+/* The same of datastore ds (CBL_YDS_*; -1, none said: the agent's
+ * default). */
+int	ytrans_get_ds(cbl_conn *conn, const uint64_t *sids, size_t ns,
+	    const char *xpath, int ds, ucl_object_t **out, char *err,
+	    size_t errlen, uint64_t *errsid);
+
+#include "yjsonin.h"
 
 #endif	/* !_ARCANA_YTRANS_H_ */

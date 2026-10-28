@@ -26,7 +26,11 @@ const struct route routes[] = {
 	{ "/restconf/yang-library-version", api_restconf_ylv, NULL,
 	    HTTP_METHOD_GET },
 	{ "^/restconf/data(/.*)?$", api_restconf_data, api_call_free,
-	    HTTP_METHOD_GET | HTTP_METHOD_POST },
+	    HTTP_METHOD_GET | HTTP_METHOD_POST | HTTP_METHOD_PUT |
+	    HTTP_METHOD_DELETE },
+	{ "^/restconf/ds/.*$", api_restconf_ds, api_call_free,
+	    HTTP_METHOD_GET | HTTP_METHOD_POST | HTTP_METHOD_PUT |
+	    HTTP_METHOD_DELETE },
 	{ "^/restconf/subscriptions/([0-9]+)$", api_restconf_subscription,
 	    api_restconf_stream_free, HTTP_METHOD_GET },
 	{ "^/restconf/streams/([0-9a-f]+)/json$", api_restconf_stream,

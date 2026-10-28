@@ -7,11 +7,16 @@
 /*
  * libjailconf: change values in jail.conf(5) in place.
  *
- * Reading configuration is jail(8)'s job ("jail -e").  This library
- * exists for the one thing jail(8) cannot do: add or remove a single
- * value of one jail's parameter while leaving every other byte of the
- * file, comments and layout included, as it was.  It parses with the
- * lexical rules of usr.sbin/jail/jaillex.l and keeps byte offsets.
+ * Reading configuration is jail(8)'s job: "jail -f file -e sep" says
+ * what each jail is configured with, globals, "*" blocks, variables and
+ * includes resolved, and libjail(3) what a running jail has.  This
+ * library exists for the one thing jail(8) cannot do: add or remove a
+ * single value of one jail's parameter while leaving every other byte
+ * of the file, comments and layout included, as it was.  It parses
+ * with the lexical rules of usr.sbin/jail/jaillex.l and keeps byte
+ * offsets of the jails' blocks; includes are followed only to find the
+ * file a jail's block is in, and global statements are not kept.  What
+ * a jail inherits comes from the caller, as jail(8) reads it.
  */
 
 #ifndef _JAILCONF_H_
@@ -65,8 +70,6 @@ struct jc_file {
 	char		*path;
 	char		*buf;
 	size_t		 len;
-	struct jc_stmt	*globals;
-	size_t		 nglobals;
 	struct jc_block	*blocks;
 	size_t		 nblocks;
 };
@@ -84,11 +87,9 @@ int		 jc_load_buf(struct jc_conf *, const char *, const char *,
 void		 jc_free(struct jc_conf *);
 struct jc_block	*jc_find(const struct jc_conf *, const char *,
 		    struct jc_file **);
-bool		 jc_block_has(const struct jc_block *, const char *,
-		    const char *);
-int		 jc_edit(const struct jc_conf *, struct jc_file *,
-		    struct jc_block *, const char *, const char *, bool,
-		    char **, size_t *, char *, size_t);
+int		 jc_edit(struct jc_file *, struct jc_block *, const char *,
+		    const char *, bool, const char *const *, size_t, char **,
+		    size_t *, char *, size_t);
 int		 jc_replace(struct jc_file *, const struct jc_block *,
 		    const char *, const char *, char **, size_t *);
 bool		 jc_verify(const char *, const char *, size_t, const char *,

@@ -33,6 +33,9 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 #include <ymodel.h>
+#include <ucl.h>
+
+#include "yjsonin.h"
 
 #define	PATH_SOCKET	"unix:/var/run/arcana-agent.sock"
 #define	MAX_FRAME	(8 * 1024 * 1024)
@@ -134,12 +137,17 @@ usage(void)
 {
 
 	xo_error("usage: arcanactl [-pqst] [-F fib] [-j jail] [-W seconds] "
-	    "[-c uri] "
+	    "[-c uri] [-u user] "
 	    "[-A cafile -C certfile\n                 -K keyfile] [-N name] "
 	    "command\n"
 	    "commands:\n"
 	    "    hello\n"
-	    "    get [-x xpath] [node ...]\n"
+	    "    get [-d datastore] [-x xpath] [node ...]\n"
+	    "    edit [-r] [-a warning]... node value | @file\n"
+	    "    commit [-c seconds [-p persist]] [-i persist-id] "
+	    "[-a warning]...\n"
+	    "    cancel-commit [-i persist-id]\n"
+	    "    discard\n"
 	    "    action path [key ...] action [leaf=value ...]\n"
 	    "    notifications\n"
 	    "    subscribe [-n count] [-o seconds | -p seconds | -r time]\n"
@@ -598,6 +606,8 @@ ytop_named(const char *name)
 	return (NULL);
 }
 
+static enum cbl_yds_name ds_named(const char *);
+
 /*
  * get [-x xpath] [node ...]: what the agent serves of the models, by
  * cblink's YANG family (family 1), as RFC 7951's JSON: the top-level
@@ -617,15 +627,25 @@ cmd_get(struct arc_client *cl, int argc, char **argv)
 	void				*data;
 	char				 why[256], *out;
 	const char			*xpath;
-	bool				 first = true;
+	enum cbl_yds_name		 ds;
+	bool				 first = true, said;
 	int				 error;
 
-	/* -x expression: what an XPath selects of them alone. */
+	/* -d datastore: running's or the candidate's, configuration
+	 * alone (RFC 8342); -x expression: what an XPath selects. */
 	xpath = NULL;
+	ds = CBL_YDS_OPERATIONAL;
+	said = false;
 	i = 1;
-	if (argc > 2 && strcmp(argv[1], "-x") == 0) {
-		xpath = argv[2];
+	if (argc > 2 && strcmp(argv[1], "-d") == 0) {
+		said = true;
+		if ((ds = ds_named(argv[2])) == (enum cbl_yds_name)-1)
+			xo_errx(2, "get: -d running, candidate or operational");
 		i = 3;
+	}
+	if (argc > (int)i + 1 && strcmp(argv[i], "-x") == 0) {
+		xpath = argv[i + 1];
+		i += 2;
 	}
 	for (; i < (uint32_t)argc; i++) {
 		if ((n = ytop_named(argv[i])) == NULL)
@@ -637,7 +657,8 @@ cmd_get(struct arc_client *cl, int argc, char **argv)
 	}
 	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_GET, 0, &req)) != 0 || ((ns > 0 || xpath != NULL) &&
-	    (error = cbl_msg_put_yget_xpath(req, sids, ns, xpath)) != 0))
+	    (error = cbl_msg_put_yget_xpath(req, sids, ns, xpath)) != 0) ||
+	    (said && (error = cbl_msg_set_datastore(req, ds)) != 0))
 		xo_errx(1, "get: %s", strerror(error));
 	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
 		xo_errx(1, "get: %s", rep != NULL && cbl_msg_err_str(rep) !=
@@ -672,6 +693,225 @@ cmd_get(struct arc_client *cl, int argc, char **argv)
 	cbl_ybuf_free(&b);
 	cbl_yarena_free(a);
 	cbl_msg_free(rep);
+	return (0);
+}
+
+/*
+ * edit [-r] [-a warning]... node value: an EDIT of the candidate (with
+ * -r, of running) of a top-level node, its value RFC 7951's JSON, given
+ * or @file, the node's own or {"module:node": value}; "null" deletes it.
+ * commit [-c seconds [-p persist]] [-i persist-id] [-a warning]...: the
+ * candidate put in use, confirmed within seconds or undone; cancel-commit
+ * [-i persist-id]; discard: the candidate forgotten.  A refusal a warning
+ * can be accepted for says its error-app-tag, for -a.
+ */
+static const char	*accepts[16];
+static size_t		 naccepts;
+
+static enum cbl_yds_name
+ds_named(const char *s)
+{
+
+	return (strcmp(s, "running") == 0 ? CBL_YDS_RUNNING :
+	    strcmp(s, "candidate") == 0 ? CBL_YDS_CANDIDATE :
+	    strcmp(s, "operational") == 0 ? CBL_YDS_OPERATIONAL :
+	    (enum cbl_yds_name)-1);
+}
+
+/* A refusal, said with what may accept it; exits. */
+static void
+refused(const char *what, const char *msg, const char *tag)
+{
+
+	if (tag != NULL && tag[0] != '\0')
+		xo_errx(1, "%s: %s (go on with -a %s)", what, msg, tag);
+	xo_errx(1, "%s: %s", what, msg);
+}
+
+/* The warnings an answer has, printed. */
+static void
+warnings_of(const cbl_msg *rep)
+{
+	const struct cbl_ywarning	*w;
+	cbl_yarena			*a;
+	size_t				 n;
+
+	if (rep == NULL || (a = cbl_yarena_new()) == NULL)
+		return;
+	if (cbl_msg_ywarnings(rep, a, &w, &n) == 0)
+		for (size_t i = 0; i < n; i++)
+			xo_emit("{Lw:warning}{:tag/%s}: {:text/%s}\n", w[i].tag,
+			    w[i].text);
+	cbl_yarena_free(a);
+}
+
+static int
+cmd_edit(struct arc_client *cl, int argc, char **argv)
+{
+	const struct cbl_ynode	*n;
+	struct ucl_parser	*p;
+	ucl_object_t		*top;
+	const ucl_object_t	*v;
+	enum cbl_yds_name	 ds = CBL_YDS_CANDIDATE;
+	char			 err[512], tag[80], key[256], *text;
+	uint64_t		 errsid;
+	int			 ch, error;
+
+	optind = 1;
+	while ((ch = getopt(argc, argv, "a:r")) != -1) {
+		switch (ch) {
+		case 'a':
+			if (naccepts < nitems(accepts))
+				accepts[naccepts++] = optarg;
+			break;
+		case 'r':
+			ds = CBL_YDS_RUNNING;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc - optind != 2)
+		usage();
+	if ((n = ytop_named(argv[optind])) == NULL)
+		xo_errx(1, "edit: %s is no node the agent serves",
+		    argv[optind]);
+	text = argv[optind + 1][0] == '@' ? slurp(argv[optind + 1] + 1) :
+	    strdup(argv[optind + 1]);
+	if (text == NULL)
+		xo_err(1, "edit");
+	top = NULL;
+	v = NULL;
+	if (strcmp(text, "null") != 0) {
+		if ((p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS)) == NULL)
+			xo_err(1, "edit");
+		if (!ucl_parser_add_string(p, text, 0))
+			xo_errx(1, "edit: not JSON: %s", ucl_parser_get_error(p));
+		top = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+		/* {"module:node": value}: the value. */
+		(void)snprintf(key, sizeof(key), "%s:%s", n->module->name,
+		    n->name);
+		v = ucl_object_lookup(top, key) != NULL &&
+		    ucl_object_type(top) == UCL_OBJECT ?
+		    ucl_object_lookup(top, key) : top;
+	}
+	error = yjson_edit(cl->conn, n, v, ds, accepts, naccepts, err,
+	    sizeof(err), &errsid, tag, sizeof(tag));
+	ucl_object_unref(top);
+	free(text);
+	if (error != 0)
+		refused("edit", err, tag);
+	return (0);
+}
+
+/* An rpc of ietf-netconf's, its input in, over cl. */
+static void
+netconf_rpc(struct arc_client *cl, const char *name, const void *in)
+{
+	const struct cbl_ynode	*rpc = NULL, *inode = NULL;
+	cbl_msg			*m, *rep = NULL;
+	int			 error;
+
+	for (uint32_t i = 0; rpc == NULL && i < ymodel_schema.nmod; i++)
+		if (strcmp(ymodel_schema.mod[i]->name, "ietf-netconf") == 0)
+			for (uint32_t k = 0; k < ymodel_schema.mod[i]->ntop; k++)
+				if (strcmp(ymodel_schema.mod[i]->top[k]->name,
+				    name) == 0)
+					rpc = ymodel_schema.mod[i]->top[k];
+	for (uint32_t i = 0; rpc != NULL && i < rpc->nchild; i++)
+		if (rpc->child[i]->kind == CBL_YN_INPUT)
+			inode = rpc->child[i];
+	if (inode == NULL)
+		xo_errx(1, "%s: not in the tables", name);
+	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_RPC, 0, &m)) != 0 || (error = cbl_msg_put_ynode(m, inode,
+	    in)) != 0 || (naccepts > 0 && (error = cbl_msg_set_accept(m,
+	    accepts, naccepts)) != 0))
+		xo_errx(1, "%s: %s", name, strerror(error));
+	if ((error = cbl_request(cl->conn, m, &rep, -1)) != 0)
+		refused(name, rep != NULL && cbl_msg_err_str(rep) != NULL ?
+		    cbl_msg_err_str(rep) : strerror(error), rep != NULL ?
+		    cbl_msg_err_apptag(rep) : NULL);
+	warnings_of(rep);
+	cbl_msg_free(rep);
+}
+
+static int
+cmd_commit(struct arc_client *cl, int argc, char **argv)
+{
+	struct ietf_netconf_commit_input	 in;
+	const char				*errstr;
+	char					 made[33];
+	int					 ch;
+
+	memset(&in, 0, sizeof(in));
+	optind = 1;
+	while ((ch = getopt(argc, argv, "a:c:i:p:")) != -1) {
+		switch (ch) {
+		case 'a':
+			if (naccepts < nitems(accepts))
+				accepts[naccepts++] = optarg;
+			break;
+		case 'c':
+			in.confirmed = true;
+			in.has_confirm_timeout = true;
+			in.confirm_timeout = (uint32_t)strtonum(optarg, 1,
+			    86400, &errstr);
+			if (errstr != NULL)
+				xo_errx(2, "commit: -c %s: %s", optarg, errstr);
+			break;
+		case 'i':
+			in.persist_id = optarg;
+			break;
+		case 'p':
+			in.persist = optarg;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc != optind || (in.persist != NULL && !in.confirmed))
+		usage();
+	/* Each run is a session, whose end undoes a confirmed commit
+	 * without persist (RFC 6241 8.4.1): one is made, said. */
+	if (in.confirmed && in.persist == NULL) {
+		(void)snprintf(made, sizeof(made), "%08x%08x%08x%08x",
+		    arc4random(), arc4random(), arc4random(), arc4random());
+		in.persist = made;
+	}
+	netconf_rpc(cl, "commit", &in);
+	if (in.confirmed)
+		xo_emit("{Lw:confirm within}{:seconds/%u}{L: seconds: "
+		    "arcanactl commit -i }{:persist-id/%s}\n",
+		    in.confirm_timeout, in.persist);
+	return (0);
+}
+
+static int
+cmd_cancel_commit(struct arc_client *cl, int argc, char **argv)
+{
+	struct ietf_netconf_cancel_commit_input	in;
+
+	memset(&in, 0, sizeof(in));
+	if (argc == 3 && strcmp(argv[1], "-i") == 0)
+		in.persist_id = argv[2];
+	else if (argc != 1)
+		usage();
+	netconf_rpc(cl, "cancel-commit", &in);
+	return (0);
+}
+
+static int
+cmd_discard(struct arc_client *cl, int argc, char **argv)
+{
+	struct ietf_netconf_discard_changes_input	in;
+
+	(void)argv;
+	if (argc != 1)
+		usage();
+	memset(&in, 0, sizeof(in));
+	netconf_rpc(cl, "discard-changes", &in);
 	return (0);
 }
 
@@ -5218,6 +5458,7 @@ main(int argc, char *argv[])
 	cbl_ctx			*ctx;
 	cbl_tls			*tls;
 	const char		*uri, *cafile, *certfile, *keyfile, *name, *errstr;
+	const char		*user;
 	cap_rights_t		 rd, wr;
 	char			**names;
 	int			 ch, error, rc, i, nnames;
@@ -5238,8 +5479,8 @@ main(int argc, char *argv[])
 			names[nnames++] = argv[i] + 1;
 	}
 	uri = PATH_SOCKET;
-	cafile = certfile = keyfile = name = NULL;
-	while ((ch = getopt(argc, argv, "+A:C:c:F:j:K:N:pqstW:")) != -1) {
+	cafile = certfile = keyfile = name = user = NULL;
+	while ((ch = getopt(argc, argv, "+A:C:c:F:j:K:N:pqstu:W:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -5282,6 +5523,9 @@ main(int argc, char *argv[])
 		case 't':
 			show_trace = true;
 			break;
+		case 'u':
+			user = optarg;
+			break;
 		default:
 			usage();
 		}
@@ -5298,6 +5542,8 @@ main(int argc, char *argv[])
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_REQUEST_MS, TIMEOUT_MS);
 	if ((error = cbl_conn_new(ctx, uri, 0, &conn)) != 0)
 		xo_errx(1, "%s: %s", uri, strerror(error));
+	if (user != NULL && (error = cbl_conn_set_user(conn, user)) != 0)
+		xo_errx(2, "-u %s: %s", user, strerror(error));
 	tls = NULL;
 	if (strncmp(uri, "unix:", 5) != 0) {
 		if (cafile == NULL || certfile == NULL || keyfile == NULL)
@@ -5341,6 +5587,14 @@ main(int argc, char *argv[])
 		rc = cmd_hello(&cl);
 	else if (strcmp(argv[0], "get") == 0)
 		rc = cmd_get(&cl, argc, argv);
+	else if (strcmp(argv[0], "edit") == 0)
+		rc = cmd_edit(&cl, argc, argv);
+	else if (strcmp(argv[0], "commit") == 0)
+		rc = cmd_commit(&cl, argc, argv);
+	else if (strcmp(argv[0], "cancel-commit") == 0)
+		rc = cmd_cancel_commit(&cl, argc, argv);
+	else if (strcmp(argv[0], "discard") == 0)
+		rc = cmd_discard(&cl, argc, argv);
 	else if (strcmp(argv[0], "action") == 0)
 		rc = cmd_yaction(&cl, argc, argv);
 	else if (strcmp(argv[0], "notifications") == 0)

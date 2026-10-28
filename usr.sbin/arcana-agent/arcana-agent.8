@@ -63,6 +63,7 @@
 .Op Fl P Ar pkg
 .Op Fl -pkg-idle Ar seconds
 .Op Fl -jobs-conf Ar file
+.Op Fl -nacm Ar file
 .Op Fl -bird-watch Ar seconds
 .Op Fl -smtpd-watch Ar seconds
 .Op Fl -sctp-also Ar addresses
@@ -351,6 +352,17 @@ Where how many jobs of pkg in jails run at once is kept
 .Pq Cm jobs-set ;
 .Pa /usr/local/etc/arcana/jobs.conf
 by default.
+.It Fl -nacm Ar file
+Where the access rules are kept: ietf-netconf-acm's nacm (RFC 8341), as
+YANG-CBOR, written whole by an EDIT of it;
+.Pa /usr/local/etc/arcana/nacm.cbor
+by default.
+Without it, the console's admin and the console are in group admin,
+which may do anything, and anyone else may read and ask but change
+nothing; a command that changes the host is run only by a rule that
+permits it.
+Root on the unix socket is the recovery session, which no rule holds
+back.
 .It Fl -bird-watch Ar seconds
 How often the BIRD of the host, and that of each running jail with a
 network of its own where
@@ -552,6 +564,72 @@ at nice 10
 so that what the console asks for, often, does not crowd the host's
 own work; a program run by a job, or for a change asked directly, runs
 at the agent's own priority.
+.Sh CONFIGURATION
+What the agent serves of the models by cblink's YANG family is also
+configuration, in RFC 8342's datastores:
+.Cm running ,
+what is in use, read from the kernel and from what
+.Xr rc 8
+reads, without what DHCP, SLAAC, the kernel or a routing protocol made;
+and
+.Cm candidate ,
+the configuration being made, shared by every session.
+Running changes by a confirmed commit of the candidate alone (RFC 6241
+section 8.4): undone at its timeout unless confirmed.
+A commit checks the model (types, keys, mandatory nodes,
+.Ic when
+and
+.Ic must )
+and NACM's write rules first, then changes, through the handlers, what
+it changes, all or nothing.
+So far a commit changes:
+.Bl -bullet -compact
+.It
+FIB 0's static routes, as
+.Pa /etc/rc.d/routing
+installs them
+.Pq Va static_routes , ipv6_static_routes , route_ Ns Ar name ;
+.It
+of an interface there already, its description, whether it is
+enabled, its IPv4 MTU and its static addresses
+.Pq Va ifconfig_ Ns Ar if , ifconfig_ Ns Ar if Ns Va _descr ,
+.Va ifconfig_ Ns Ar if Ns Va _alias Ns Ar n ;
+.It
+NACM's rules
+.Pq Fl -nacm ;
+.El
+anything else is refused as not supported yet.
+.Pp
+What a commit keeps of
+.Xr rc.conf 5
+it writes to
+.Pa /usr/local/etc/rc.conf.d/arcana ,
+which
+.Va rc_conf_files
+in
+.Pa /etc/rc.conf
+names, so that
+.Xr rc 8
+reads it after your files.
+Your files are left as they are but for what you accept with the
+request: naming the file in
+.Va rc_conf_files ,
+once
+.Pq Cm rc-conf-files ,
+and a variable Arcana writes that your files set too, taken out of
+yours
+.Pq Cm rc-conf-conflict .
+Every file is put back where the kernel refuses the change; a route the
+table changed meanwhile is tried once more first.
+.Pp
+An undo that fails (a commit not confirmed in time, or cancelled) stops
+there, what is left as committed: a Critical alarm
+.Pq Cm undo
+and an
+.Cm undo-failed
+event whose report says what failed and why, of the failure alone and
+not of the host's configuration, for you to file as a bug if you
+choose; Arcana files nothing.
 .Sh ITS OWN SERVICE
 A stop or restart of
 .Nm arcana_agent

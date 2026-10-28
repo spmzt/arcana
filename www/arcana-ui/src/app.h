@@ -1062,6 +1062,11 @@ void		 relay_refresh(void);
 void		 relay_tick(double);
 const char	*plugin_anywhere(const struct server *, const char *);
 void		 view_hostsec(struct html *, struct server *);
+/* nacm.c: a host's access rules (RFC 8341), on its Security tab. */
+void		 view_nacm(struct html *, struct server *);
+bool		 nacm_action(const char *, const char *, const char *);
+bool		 nacm_form(const char *, const ucl_object_t *);
+void		 nacm_tick(double);
 void		 view_storage_geom(struct html *, struct server *, int);
 void		 view_syslogconf(struct html *, struct server *);
 void		 view_hardening(struct html *, struct server *);

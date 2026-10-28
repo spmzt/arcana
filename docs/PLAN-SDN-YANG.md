@@ -95,10 +95,8 @@ does, but leaky: loopback visible in every FIB unless
 `net.add_addr_allfibs=0`, daemons need `setfib`, FIB count is a boot
 tunable) versus a vnet jail per `vpn-node` (real isolation, own lo0,
 own sysctls, own BIRD, dhcpd and ipfw; more processes, jail
-lifecycle). Recommendation: both, chosen per service: FIB by default,
-jail when the service needs DHCP, NAT or its own firewall.
-Both are modelled: FIB = `ietf-network-instance`, jail =
-`ietf-logical-network-element`.
+lifecycle). Decided (2026-10-28): one FIB per `vpn-node`, modelled
+as `ietf-network-instance`.
 
 **D-11 The ACP's routing.** RFC 8994 requires RPL (no FreeBSD
 implementation; the profile is a few thousand lines of our own)
@@ -710,7 +708,8 @@ whose first part is served.
   Expert Review, or a Private Enterprise Number's ranges by RFC 9997)
   recorded in `share/yang/SIDS.md`, Arcana's modules moved into it from
   the experimental range.
-- 0.6.1 D: D-5, D-6, D-11, D-12 taken or deferred, recorded here.
+- 0.6.1 D: D-5, D-11, D-12 taken or deferred, recorded here; D-6
+  taken (one FIB per vpn-node).
 
 ### Y-1
 
@@ -730,6 +729,26 @@ whose first part is served.
   fixtures.
 - 2.3.4 A: `running` assembled from the files into an instance tree
   for interfaces, ip, routing; check: equals the files on the VM.
+- 2.3 safety design, decided 2026-10-28:
+  - rc.conf: one file of Arcana's, `/usr/local/etc/rc.conf.d/arcana`,
+    named in `rc_conf_files` (one line in `/etc/rc.conf`, written once
+    with the user's confirmation), so every rc script reads it. A
+    variable also set in the user's files: a warning and an explicit
+    confirm to overwrite; overwritten, the new value is written to
+    Arcana's file and the conflicting item taken out of the user's.
+  - Changes through `candidate` and a confirmed commit, undone unless
+    confirmed.
+  - A boot-time tunable written to its file with a "takes effect after
+    reboot" warning; a live change that cannot be undone refused
+    unless the request accepts its warning.
+  - An undo that fails raises an alarm; where the subsystem allows a
+    safe try and error (routing), it is tried again; failing again,
+    the rollback stops and a bug report is written for the console,
+    which recommends filing it. Arcana never files it: it is for the
+    user to review, about the error and not the host's configuration.
+    Whatever cannot be rolled back safely says so beforehand.
+  - Step by step: interfaces, addresses and routes first, then a
+    module at a time.
 - 2.3.5 A: `EDIT` on `running`: validate the result, render the
   files (the rc.conf.d fragments in place of sysrc(8)), apply to the
   kernel, undo on failure (file copies restored); check: a failing
@@ -835,7 +854,14 @@ whose first part is served.
   as receiver over cblink; check: the console restarted, records
   resume.
 - 3.3.1 A: NACM groups from the certificate's subject or the socket's
-  uid, rule-lists in `running`; check: RFC 8341's examples.
+  uid, rule-lists in `running`; check: RFC 8341's examples. RFC 8341
+  followed strictly (decided 2026-10-28): its groups, rule-lists and
+  defaults as written, not a mapping of the console's roles onto it.
+  Done for the rpcs (0.227.0, superbia/admit.c): the console is in group
+  admin by default, whose rule-list permits every rpc; any other peer has
+  no rule and is refused. Open: data nodes and notifications (cblink has
+  no hook for them), the ietf-netconf-acm module served read-only, and
+  the user per request (3.3.3, a wire field).
 - 3.3.2 A: enforcement for rpcs, data nodes (read as omission) and
   notifications; counters; check: one test per point.
 - 3.3.3 A, C: the console's user passed per connection to an agent

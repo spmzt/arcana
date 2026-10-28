@@ -4,6 +4,7 @@
  * Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
  */
 
+#include <sys/param.h>
 #include <sys/stat.h>
 
 #include <atf-c.h>
@@ -25,18 +26,24 @@ put(const char *path, const char *text)
 
 /*
  * Write text to jail.conf, edit one value of one jail and return the new
- * text, or NULL with the error in err.
+ * text, or NULL with the error in err.  have is the jail's values of key
+ * as jail(8) -e reads them, split at ','.
  */
 static char *
 edit(const char *text, const char *jail, const char *key, const char *value,
-    bool add, char *err, size_t errlen)
+    bool add, const char *have, char *err, size_t errlen)
 {
 	struct jc_conf	 conf;
 	struct jc_block	*b;
 	struct jc_file	*f;
-	size_t		 len;
-	char		*out;
+	const char	*hv[16];
+	size_t		 len, nh;
+	char		*out, *hcopy, *p;
 
+	nh = 0;
+	ATF_REQUIRE((hcopy = strdup(have)) != NULL);
+	for (p = hcopy; *have != '\0' && p != NULL && nh < nitems(hv); )
+		hv[nh++] = strsep(&p, ",");
 	put("jail.conf", text);
 	ATF_REQUIRE_MSG(jc_load(&conf, "jail.conf") == 0, "load: %s",
 	    conf.error);
@@ -44,29 +51,32 @@ edit(const char *text, const char *jail, const char *key, const char *value,
 	    "no jail %s", jail);
 	out = NULL;
 	err[0] = '\0';
-	if (jc_edit(&conf, f, b, key, value, add, &out, &len, err,
+	if (jc_edit(f, b, key, value, add, hv, nh, &out, &len, err,
 	    errlen) == 0) {
 		ATF_CHECK_EQ(strlen(out), len);
 		ATF_CHECK_MSG(jc_verify("jail.conf", out, len, jail, key,
 		    value, add), "edit does not verify");
 	}
 	jc_free(&conf);
+	free(hcopy);
 	return (out);
 }
 
-#define	EDIT_OK(text, jail, key, value, add, want) do {			\
+#define	EDIT_OK(text, jail, key, value, add, have, want) do {		\
 	char	 _err[256], *_out;					\
 									\
-	_out = edit(text, jail, key, value, add, _err, sizeof(_err));	\
+	_out = edit(text, jail, key, value, add, have, _err,		\
+	    sizeof(_err));						\
 	ATF_REQUIRE_MSG(_out != NULL, "%s", _err);			\
 	ATF_CHECK_STREQ(want, _out);					\
 	free(_out);							\
 } while (0)
 
-#define	EDIT_FAILS(text, jail, key, value, add, msg) do {		\
+#define	EDIT_FAILS(text, jail, key, value, add, have, msg) do {		\
 	char	 _err[256], *_out;					\
 									\
-	_out = edit(text, jail, key, value, add, _err, sizeof(_err));	\
+	_out = edit(text, jail, key, value, add, have, _err,		\
+	    sizeof(_err));						\
 	ATF_CHECK_MSG(_out == NULL, "edit succeeded");			\
 	ATF_CHECK_MSG(strstr(_err, msg) != NULL, "error '%s' lacks '%s'",\
 	    _err, msg);							\
@@ -100,7 +110,6 @@ replace(const char *text, const char *jail, const char *key,
 ATF_TC_WITHOUT_HEAD(replace_value);
 ATF_TC_BODY(replace_value, tc)
 {
-	struct jc_conf	 conf;
 	char		*out;
 	int		 n;
 
@@ -126,10 +135,8 @@ ATF_TC_BODY(replace_value, tc)
 	ATF_CHECK_EQ(0, n);
 	ATF_CHECK_STREQ("j {\n\tpath = \"/j\";\n\tallow.sysvipc = 1;\n}\n",
 	    out);
-	ATF_CHECK(jc_load_buf(&conf, "jail.conf", out, strlen(out)) == 0);
-	ATF_CHECK(jc_block_has(jc_find(&conf, "j", NULL), "allow.sysvipc",
-	    "1"));
-	jc_free(&conf);
+	ATF_CHECK(jc_verify("jail.conf", out, strlen(out), "j",
+	    "allow.sysvipc", "1", true));
 	free(out);
 	out = replace("j {\n\tpath = \"/j\";\n\tallow.raw_sockets;\n"
 	    "\tpersist;\n}\n", "j", "allow.raw_sockets", NULL, &n);
@@ -149,7 +156,7 @@ ATF_TC_BODY(add_extends_list, tc)
 {
 
 	EDIT_OK("web {\n\tip4.addr = 10.0.0.10, \"10.0.0.11\";\n}\n",
-	    "web", "ip4.addr", "10.0.0.12", true,
+	    "web", "ip4.addr", "10.0.0.12", true, "10.0.0.10,10.0.0.11",
 	    "web {\n\tip4.addr = 10.0.0.10, \"10.0.0.11\", "
 	    "\"10.0.0.12\";\n}\n");
 }
@@ -159,7 +166,7 @@ ATF_TC_BODY(add_keeps_quote_style, tc)
 {
 
 	EDIT_OK("web {\n\tip4.addr = '10.0.0.10';\n}\n",
-	    "web", "ip4.addr", "10.0.0.12", true,
+	    "web", "ip4.addr", "10.0.0.12", true, "10.0.0.10",
 	    "web {\n\tip4.addr = '10.0.0.10', '10.0.0.12';\n}\n");
 }
 
@@ -168,7 +175,7 @@ ATF_TC_BODY(add_new_statement, tc)
 {
 
 	EDIT_OK("# web server\nweb {\n    path = \"/j/web\";\n}\n",
-	    "web", "ip6.addr", "2001:db8::12/64", true,
+	    "web", "ip6.addr", "2001:db8::12/64", true, "",
 	    "# web server\nweb {\n    path = \"/j/web\";\n"
 	    "    ip6.addr = \"2001:db8::12/64\";\n}\n");
 }
@@ -178,7 +185,7 @@ ATF_TC_BODY(add_one_line_block, tc)
 {
 
 	EDIT_OK("cache { host.hostname = 'cache'; }\n",
-	    "cache", "ip4.addr", "10.0.0.40", true,
+	    "cache", "ip4.addr", "10.0.0.40", true, "",
 	    "cache { host.hostname = 'cache'; ip4.addr = \"10.0.0.40\"; }\n");
 }
 
@@ -186,8 +193,9 @@ ATF_TC_WITHOUT_HEAD(add_inherited_uses_append);
 ATF_TC_BODY(add_inherited_uses_append, tc)
 {
 
+	/* jail(8) reads 10.1.0.1 in x, which its block does not set. */
 	EDIT_OK("ip4.addr = 10.1.0.1;\nx {\n\tpath = /;\n}\n",
-	    "x", "ip4.addr", "10.1.0.2", true,
+	    "x", "ip4.addr", "10.1.0.2", true, "10.1.0.1",
 	    "ip4.addr = 10.1.0.1;\nx {\n\tpath = /;\n"
 	    "\tip4.addr += \"10.1.0.2\";\n}\n");
 }
@@ -197,7 +205,7 @@ ATF_TC_BODY(add_star_block_inherited, tc)
 {
 
 	EDIT_OK("* {\n\tip4.addr = 10.2.0.1;\n}\nx {\n\tpath = /;\n}\n",
-	    "x", "ip4.addr", "10.2.0.2", true,
+	    "x", "ip4.addr", "10.2.0.2", true, "10.2.0.1",
 	    "* {\n\tip4.addr = 10.2.0.1;\n}\nx {\n\tpath = /;\n"
 	    "\tip4.addr += \"10.2.0.2\";\n}\n");
 }
@@ -207,7 +215,7 @@ ATF_TC_BODY(add_nested_child, tc)
 {
 
 	EDIT_OK("p {\n\tip4.addr = 10.0.1.1;\n\tc {\n\t\tip4.addr = 10.0.1.2;"
-	    "\n\t}\n}\n", "p.c", "ip4.addr", "10.0.1.3", true,
+	    "\n\t}\n}\n", "p.c", "ip4.addr", "10.0.1.3", true, "10.0.1.2",
 	    "p {\n\tip4.addr = 10.0.1.1;\n\tc {\n\t\tip4.addr = 10.0.1.2, "
 	    "\"10.0.1.3\";\n\t}\n}\n");
 }
@@ -217,9 +225,13 @@ ATF_TC_BODY(add_duplicate_refused, tc)
 {
 
 	EDIT_FAILS("web {\n\tip4.addr = \"em0|10.0.0.11/24\";\n}\n",
-	    "web", "ip4.addr", "10.0.0.11", true, "already");
+	    "web", "ip4.addr", "10.0.0.11", true, "em0|10.0.0.11/24",
+	    "already");
 	EDIT_FAILS("ip4.addr = 10.1.0.1;\nx {\n\tpath = /;\n}\n",
-	    "x", "ip4.addr", "10.1.0.1", true, "already");
+	    "x", "ip4.addr", "10.1.0.1", true, "10.1.0.1", "already");
+	/* A variable's value: its text differs, jail(8) reads the value. */
+	EDIT_FAILS("x {\n\t$ip = 10.1.0.7;\n\tip4.addr = \"$ip\";\n}\n",
+	    "x", "ip4.addr", "10.1.0.7", true, "10.1.0.7", "already");
 }
 
 ATF_TC_WITHOUT_HEAD(remove_first_value);
@@ -227,7 +239,7 @@ ATF_TC_BODY(remove_first_value, tc)
 {
 
 	EDIT_OK("web {\n\tip4.addr = 10.0.0.10, \"10.0.0.11\";\n}\n",
-	    "web", "ip4.addr", "10.0.0.10", false,
+	    "web", "ip4.addr", "10.0.0.10", false, "10.0.0.10,10.0.0.11",
 	    "web {\n\tip4.addr = \"10.0.0.11\";\n}\n");
 }
 
@@ -236,7 +248,7 @@ ATF_TC_BODY(remove_later_value, tc)
 {
 
 	EDIT_OK("web {\n\tip4.addr = a, 10.0.0.10, 10.0.0.11;\n}\n",
-	    "web", "ip4.addr", "10.0.0.10", false,
+	    "web", "ip4.addr", "10.0.0.10", false, "a,10.0.0.10,10.0.0.11",
 	    "web {\n\tip4.addr = a, 10.0.0.11;\n}\n");
 }
 
@@ -246,6 +258,7 @@ ATF_TC_BODY(remove_last_value_drops_line, tc)
 
 	EDIT_OK("db {\n\tpath = /j;\n\tip4.addr = \"em1|192.168.5.20/24\";  \n"
 	    "\tpersist;\n}\n", "db", "ip4.addr", "192.168.5.20", false,
+	    "em1|192.168.5.20/24",
 	    "db {\n\tpath = /j;\n\tpersist;\n}\n");
 }
 
@@ -254,7 +267,7 @@ ATF_TC_BODY(remove_keeps_comment_line, tc)
 {
 
 	EDIT_OK("db {\n\tip4.addr = 10.0.0.1; # primary\n}\n",
-	    "db", "ip4.addr", "10.0.0.1", false,
+	    "db", "ip4.addr", "10.0.0.1", false, "10.0.0.1",
 	    "db {\n\t # primary\n}\n");
 }
 
@@ -263,18 +276,20 @@ ATF_TC_BODY(remove_inherited_refused, tc)
 {
 
 	EDIT_FAILS("ip4.addr = 10.1.0.1;\nx {\n\tpath = /;\n}\n",
-	    "x", "ip4.addr", "10.1.0.1", false, "shared by all jails");
+	    "x", "ip4.addr", "10.1.0.1", false, "10.1.0.1",
+	    "not set by jail 'x' itself");
 	EDIT_FAILS("x {\n\tpath = /;\n}\n", "x", "ip4.addr", "10.1.0.1",
-	    false, "is not in ip4.addr");
+	    false, "", "is not in ip4.addr");
 }
 
 ATF_TC_WITHOUT_HEAD(own_set_overrides_shared);
 ATF_TC_BODY(own_set_overrides_shared, tc)
 {
 
-	/* The block's own "=" replaces the global value: it is not there. */
+	/* The block's own "=" replaces the global value: jail(8) does not
+	 * read it in x. */
 	EDIT_OK("ip4.addr = 10.1.0.1;\nx {\n\tip4.addr = 10.1.0.5;\n}\n",
-	    "x", "ip4.addr", "10.1.0.1", true,
+	    "x", "ip4.addr", "10.1.0.1", true, "10.1.0.5",
 	    "ip4.addr = 10.1.0.1;\nx {\n\tip4.addr = 10.1.0.5, "
 	    "\"10.1.0.1\";\n}\n");
 }
@@ -285,7 +300,7 @@ ATF_TC_BODY(other_params_compare_text, tc)
 
 	EDIT_OK("w {\n\texec.start = \"/bin/sh /etc/rc\";\n}\n",
 	    "w", "exec.start", "/usr/local/bin/app start", true,
-	    "w {\n\texec.start = \"/bin/sh /etc/rc\", "
+	    "/bin/sh /etc/rc", "w {\n\texec.start = \"/bin/sh /etc/rc\", "
 	    "\"/usr/local/bin/app start\";\n}\n");
 }
 
@@ -294,9 +309,8 @@ ATF_TC_BODY(values_escaped, tc)
 {
 
 	EDIT_OK("w {\n\texec.start = 'a';\n}\n", "w", "exec.start",
-	    "echo \"it's\" \\o/", true,
-	    "w {\n\texec.start = 'a', 'echo \"it\\'s\" \\\\o/';\n}\n");
-	EDIT_OK("w {\n}\n", "w", "exec.start", "say \"hi\"", true,
+	    "echo \"it's\" \\o/", true, "a", "w {\n\texec.start = 'a', 'echo \"it\\'s\" \\\\o/';\n}\n");
+	EDIT_OK("w {\n}\n", "w", "exec.start", "say \"hi\"", true, "",
 	    "w {\n\texec.start = \"say \\\"hi\\\"\";\n}\n");
 }
 
@@ -329,9 +343,12 @@ ATF_TC_BODY(lexical_forms, tc)
 	ATF_REQUIRE_MSG(jc_load(&conf, "jail.conf") == 0, "%s", conf.error);
 	ATF_REQUIRE((b = jc_find(&conf, "w", NULL)) != NULL);
 	ATF_CHECK_EQ(3, b->nstmts);
-	ATF_CHECK(jc_block_has(b, "ip4.addr", "10.0.0.2"));
-	ATF_CHECK(jc_block_has(b, "ip4.addr", "10.0.0.1/24"));
-	ATF_CHECK(!jc_block_has(b, "ip4.addr", "10.0.0.3"));
+	ATF_CHECK(jc_verify("jail.conf", conf.files[0]->buf,
+	    conf.files[0]->len, "w", "ip4.addr", "10.0.0.2", true));
+	ATF_CHECK(jc_verify("jail.conf", conf.files[0]->buf,
+	    conf.files[0]->len, "w", "ip4.addr", "10.0.0.1/24", true));
+	ATF_CHECK(jc_verify("jail.conf", conf.files[0]->buf,
+	    conf.files[0]->len, "w", "ip4.addr", "10.0.0.3", false));
 	jc_free(&conf);
 }
 

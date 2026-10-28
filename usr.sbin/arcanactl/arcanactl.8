@@ -14,6 +14,7 @@
 .Op Fl -libxo Ar options
 .Op Fl qst
 .Op Fl W Ar seconds
+.Op Fl u Ar user
 .Op Fl c Ar uri
 .Op Fl A Ar cafile Fl C Ar certfile Fl K Ar keyfile
 .Op Fl N Ar name
@@ -86,13 +87,20 @@ to 3600 seconds, in place of the daemon's own
 .It Fl t
 Also print the trace: every library call, system call, file and
 program the daemon used, with the programs' output.
+.It Fl u Ar user
+Ask as
+.Ar user ,
+whom the daemon's access rules (NACM, RFC 8341) then hold to: a
+console says so for its users.
+The daemon takes it from root, or its own user, on its unix socket,
+and from the console's certificate.
 .El
 .Pp
 The commands are:
 .Bl -tag -width Ds
 .It Cm hello
 Show the host.
-.It Cm get Oo Fl x Ar xpath Oc Op Ar node ...
+.It Cm get Oo Fl d Ar datastore Oc Oo Fl x Ar xpath Oc Op Ar node ...
 What the agent serves of the standard models, by cblink's YANG family:
 ietf-interfaces' interfaces with ietf-ip's addresses and neighbours and
 what augments them
@@ -138,6 +146,68 @@ it, as NETCONF's xpath filter; its prefixes are the modules' names:
 .Dl arcanactl get -x \(dq/ietf-interfaces:interfaces/interface[name='lo0']\(dq interfaces
 What a plugin's program reads (BIRD, WireGuard, netgraph) is left out
 where the program is not there.
+With
+.Fl d ,
+a datastore of RFC 8342's:
+.Cm running ,
+the configuration in use (what
+.Xr rc 8
+reads, without what DHCP, SLAAC or the kernel made), or
+.Cm candidate ,
+the configuration being made, shared by every session; both without
+state.
+.Cm operational ,
+the default, is what is.
+.It Cm edit Oo Fl r Oc Oo Fl a Ar warning Oc ... Ar node Ar value | @ Ns Ar file
+Replace a top-level node of the candidate with
+.Ar value ,
+RFC 7951's JSON: the node's own value or
+.Ql {\(dqmodule:node\(dq: value} ,
+as
+.Cm get -d candidate
+prints it, from
+.Ar file
+after an
+.Sq @ ;
+.Dq null
+deletes it.
+Checked against the model (types, mandatory nodes, keys, must and
+when) and NACM's write rules at once; nothing changes on the host
+until a
+.Cm commit .
+.Fl r
+edits running itself, which the agent refuses: its changes go through
+a confirmed commit of the candidate.
+.It Cm commit Oo Fl c Ar seconds Oo Fl p Ar persist Oc Oc Oo Fl i Ar persist-id Oc Oo Fl a Ar warning Oc ...
+Put the candidate in use (RFC 6241's commit).
+With
+.Fl c ,
+a confirmed commit: undone at
+.Ar seconds
+(1 to 86400) unless a second
+.Cm commit
+confirms it.
+Every run of
+.Nm
+is a session of its own, whose end would undo a confirmed commit
+without a persist token, so one is made unless
+.Fl p
+gives it, and printed:
+.Dl confirm within 600 seconds: arcanactl commit -i 3f9a0c2e8b71d465
+.Fl i
+names the token, to confirm (or extend, with
+.Fl c
+again) a confirmed commit from another session.
+An undo that fails stops there, raises a Critical alarm
+.Pq Cm undo
+and an
+.Cm undo-failed
+event with a report of the failure, for you to file as a bug if you
+choose.
+.It Cm cancel-commit Op Fl i Ar persist-id
+Undo a confirmed commit now.
+.It Cm discard
+Forget the candidate's changes: it is running again.
 .It Cm action Ar path Oo Ar key ... Oc Ar name Oo Ar leaf Ns = Ns Ar value ... Oc
 Call action
 .Ar name
@@ -2399,6 +2469,31 @@ With
 .Fl r
 the service is restarted; otherwise the new program runs from its next
 start.
+.El
+.Ss Warnings
+A change that needs your consent is refused with an error-app-tag,
+which
+.Fl a
+accepts on the next
+.Cm edit
+or
+.Cm commit :
+.Bl -tag -width rc-conf-conflict
+.It Cm rc-conf-files
+Arcana keeps what it writes of
+.Xr rc.conf 5
+in
+.Pa /usr/local/etc/rc.conf.d/arcana ,
+which
+.Xr rc 8
+reads where
+.Va rc_conf_files
+names it: accepted, it is added there in
+.Pa /etc/rc.conf ,
+once.
+.It Cm rc-conf-conflict
+A variable Arcana would write is set in your files too: accepted, it
+is taken out of yours and kept in Arcana's.
 .El
 .Pp
 With

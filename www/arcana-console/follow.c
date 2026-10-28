@@ -246,7 +246,7 @@ follow_start(struct conn *c, uint64_t id, const struct server *sv)
 	atomic_init(&f->ended, false);
 	pthread_mutex_init(&f->lock, NULL);
 	STAILQ_INIT(&f->queue);
-	if (pthread_create(&f->thread, NULL, follow_run, f) != 0) {
+	if (hosts_thread(&f->thread, follow_run, f) != 0) {
 		pthread_mutex_destroy(&f->lock);
 		free(f->uri);
 		free(f->peer);

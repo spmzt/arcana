@@ -566,7 +566,7 @@ rcs_start(struct http_request *req, const struct server *const *sv,
 	atomic_init(&rs->stop, false);
 	atomic_init(&rs->ended, false);
 	pthread_mutex_init(&rs->lock, NULL);
-	if (pthread_create(&rs->thread, NULL, rcs_run, rs) != 0) {
+	if (hosts_thread(&rs->thread, rcs_run, rs) != 0) {
 		rcs_clear(rs);
 		return (restconf_error(req, 503, "no thread for it"));
 	}

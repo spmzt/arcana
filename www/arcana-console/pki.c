@@ -1638,7 +1638,7 @@ api_ca(struct http_request *req)
 			ucl_object_replace_key(st, ucl_object_frombool(true),
 			    "running", 0, true);
 			state_write(st);
-			if (pthread_create(&tid, NULL, act[0] == 'r' ?
+			if (hosts_thread(&tid, act[0] == 'r' ?
 			    rollout_run : finish_run, ucl_object_toboolean(
 			    ucl_object_lookup(body, "force")) ? (void *)1 :
 			    NULL) != 0) {

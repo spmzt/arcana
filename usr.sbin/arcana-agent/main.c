@@ -80,6 +80,7 @@ struct opts opts = {
 	.log_dir = "/var/log",
 	.history_conf = "/usr/local/etc/arcana/history.conf",
 	.jobs_conf = "/usr/local/etc/arcana/jobs.conf",
+	.nacm_file = "/usr/local/etc/arcana/nacm.cbor",
 	.wg_bin = PATH_WG_BIN,
 	.wg_dir = PATH_WG_DIR,
 	.swanctl_bin = PATH_SWANCTL_BIN,
@@ -124,7 +125,7 @@ enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
     OPT_POUDRIERE, OPT_POUDRIERE_ETC, OPT_IFMCSTAT, OPT_FRESHCLAM_CONF,
     OPT_SURICATA_RULES, OPT_EXPORTS, OPT_CTL_CONF, OPT_HAST_CONF,
     OPT_SMTPD_CONF, OPT_SMTPD_DIR, OPT_PKG_IDLE, OPT_JOBS_CONF,
-    OPT_SPEEDER_LOG, OPT_SMTPD_WATCH };
+    OPT_SPEEDER_LOG, OPT_SMTPD_WATCH, OPT_NACM };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
@@ -132,6 +133,8 @@ static const struct option longopts[] = {
 	/* A pkg that says nothing for this long is stopped. */
 	{ "pkg-idle", required_argument, NULL, OPT_PKG_IDLE },
 	{ "jobs-conf", required_argument, NULL, OPT_JOBS_CONF },
+	/* NACM's rules (RFC 8341), as family 1 serves and edits them. */
+	{ "nacm", required_argument, NULL, OPT_NACM },
 	/* How often BIRD's sessions are looked at for faults; 0, never. */
 	{ "bird-watch", required_argument, NULL, OPT_BIRD_WATCH },
 	{ "smtpd-watch", required_argument, NULL, OPT_SMTPD_WATCH },
@@ -200,7 +203,7 @@ usage(void)
 	    "                 [--smtpd-conf file] [--smtpd-dir directory]\n"
 	    "                 [--smtpd-watch seconds]\n"
 	    "                 [--speederv2-log file]\n"
-	    "                 [--jobs-conf file]\n");
+	    "                 [--jobs-conf file] [--nacm file]\n");
 	exit(2);
 }
 
@@ -442,6 +445,9 @@ main(int argc, char *argv[])
 			break;
 		case OPT_JOBS_CONF:
 			opts.jobs_conf = optarg;
+			break;
+		case OPT_NACM:
+			opts.nacm_file = optarg;
 			break;
 		case OPT_PKG_IDLE:
 			opts.pkg_idle_s = (int)strtonum(optarg, 1, 86400, &errstr);

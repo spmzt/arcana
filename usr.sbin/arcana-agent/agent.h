@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.226.0"
+#define	ARCANA_AGENT_VERSION	"0.227.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -177,6 +177,7 @@ struct opts {
 	int		 pkg_idle_s;	/* --pkg-idle: a silent pkg, stopped after */
 	int		 pkg_lanes;	/* jobs of pkg in jails at once, at start */
 	const char	*jobs_conf;	/* where lanes is kept */
+	const char	*nacm_file;	/* NACM's rules (superbia/ynacm.c) */
 	char		 build[65];	/* SHA-256 of the running program */
 	bool		 debug;
 };
@@ -931,6 +932,14 @@ void		 yang_event(const char *);
 #define	YANG_ALARMS	1
 #define	YANG_JOBS	2
 void		 yang_changed(int);
+struct cbl_ynode;
+const struct cbl_ynode *ynode_named(const char *, const char *);
+
+/* superbia/admit.c, ynacm.c: NACM (RFC 8341).  The console's users in
+ * group admin by default: its admin, and the console itself for the
+ * requests it makes for nobody. */
+#define	NACM_ADMIN	"admin"
+#define	NACM_CONSOLE	"console"
 void		 event_add_jail(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);
 int		 do_events(struct work *, uint64_t, struct arc_events_rsp *);

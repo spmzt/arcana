@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.325.0"
+#define	ARCW_VERSION		"0.326.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -359,6 +359,8 @@ const char	*hosts_connect(const char *, const char *, cbl_conn **,
 		    cbl_tls **, struct arc_client *);
 void		 hosts_release(const char *, const char *, cbl_conn *,
 		    cbl_tls *, struct arc_client *, bool);
+void		 hosts_act_as(const char *);
+int		 hosts_thread(pthread_t *, void *(*)(void *), void *);
 
 /* Route handlers, named in routes.c. */
 int		 api_health(struct http_request *);
@@ -396,6 +398,7 @@ int		 api_restconf(struct http_request *);
 int		 api_restconf_ylv(struct http_request *);
 int		 api_restconf_data(struct http_request *);
 int		 api_restconf_host(struct http_request *);
+int		 api_restconf_ds(struct http_request *);
 int		 api_restconf_stream(struct http_request *);
 int		 api_restconf_fleet_stream(struct http_request *);
 void		 api_restconf_stream_free(struct http_request *);

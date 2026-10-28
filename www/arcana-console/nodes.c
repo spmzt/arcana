@@ -1788,6 +1788,19 @@ cluster_unlock(const char *name)
 
 /* ---- Start ---------------------------------------------------------------- */
 
+/* cbl_user_f: a node's request, made for whoever it says or for none. */
+static int
+peer_user(const cbl_peer *p, const char *said, char *name, size_t len,
+    bool *recovery, void *arg)
+{
+
+	(void)p;
+	(void)recovery;
+	(void)arg;
+	(void)snprintf(name, len, "%s", said != NULL ? said : "");
+	return (0);
+}
+
 int
 cluster_init(void)
 {
@@ -1830,6 +1843,9 @@ cluster_init(void)
 	(void)cbl_ctx_set_limit(cl.ctx, CBL_LIM_MAX_ATTRS, ACL_MAX_DOCS * 8 +
 	    64);
 	(void)cbl_ctx_set_limit(cl.ctx, CBL_LIM_REQUEST_MS, 5000);
+	/* A node's request says the user it was made for; this family has
+	 * no access rules of users, so whoever it names is let through. */
+	(void)cbl_ctx_set_user(cl.ctx, peer_user, NULL);
 	if ((error = acl_register(cl.ctx, NULL, NULL)) != 0) {
 		log_msg(LOG_ERR, "cluster: its family: %s", strerror(error));
 		return (-1);

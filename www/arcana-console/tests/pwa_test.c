@@ -7457,6 +7457,54 @@ ATF_TC_CLEANUP(pwa_hosts, tc)
 	browser_stop();
 }
 
+/*
+ * A host's access rules on its Security tab: read from its agent, a
+ * group added and the console's operators allowed in the page, saved
+ * as a confirmed commit confirmed at once, and the host has them.
+ */
+ATF_TC_WITH_CLEANUP(pwa_nacm);
+ATF_TC_HEAD(pwa_nacm, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The access rules (NACM) edited and saved by a confirmed commit");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_nacm, tc)
+{
+
+	prologue(tc, 1);
+	run("document.querySelector('button[data-act=tab][data-arg=security]')"
+	    ".click()");
+	wait_js("document.querySelector('#nacm') && [...document."
+	    "querySelectorAll('table.net')].some(t => t.textContent.includes("
+	    "'console') && t.textContent.includes('admin'))", 30);
+	shot("8n1-nacm");
+	run("const f = document.querySelector('form[data-form=nacm-group]'); "
+	    "f.name.value = 'audit'; f.users.value = 'carol, dave'; "
+	    "f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('table.net')].some(t => t."
+	    "textContent.includes('carol, dave'))", 10);
+	run("document.querySelector('button[data-act=nacm-operators]').click()");
+	wait_js("[...document.querySelectorAll('.nacm-rl h4')].some(h => h."
+	    "textContent.includes('operators'))", 10);
+	run("document.querySelector('button[data-act=nacm-save]').click()");
+	wait_js("document.querySelector('#nacm') && document.body.textContent"
+	    ".includes('Saved: the host holds every request to the new rules')",
+	    30);
+	shot("8n2-nacm-saved");
+	/* The host's own: read again, the group and the rule-list kept. */
+	wait_js("!document.querySelector('button[data-act=nacm-save]') && "
+	    "[...document.querySelectorAll('table.net')].some(t => t."
+	    "textContent.includes('carol, dave'))", 20);
+	ATF_CHECK(js_true("[...document.querySelectorAll('.nacm-rl h4')]."
+	    "some(h => h.textContent.includes('operators'))"));
+}
+ATF_TC_CLEANUP(pwa_nacm, tc)
+{
+
+	browser_stop();
+}
+
 ATF_TC_WITH_CLEANUP(pwa_nettab);
 ATF_TC_HEAD(pwa_nettab, tc)
 {
@@ -8761,6 +8809,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_pad);
 	ATF_TP_ADD_TC(tp, pwa_routes);
 	ATF_TP_ADD_TC(tp, pwa_hosts);
+	ATF_TP_ADD_TC(tp, pwa_nacm);
 	ATF_TP_ADD_TC(tp, pwa_nettab);
 	ATF_TP_ADD_TC(tp, pwa_plugins);
 	ATF_TP_ADD_TC(tp, pwa_mesh);

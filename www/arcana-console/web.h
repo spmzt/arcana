@@ -222,7 +222,15 @@ struct task {
 	STAILQ_HEAD(, task_msg)	 chan;		/* from the task to the loop */
 	TAILQ_ENTRY(task)	 list;
 	LIST_ENTRY(task)	 rlist;		/* its request's */
+	/* The console user it acts for, its request's: what the hosts'
+	 * access rules hold it to (hosts_act_as()); "": the console. */
+	char			 user[64];
 };
+
+/* The program's: the user a request acts for (NULL: none); this thread
+ * acting for a user (NULL: for nobody). */
+const char	*web_user(struct http_request *);
+void		 web_act_as(const char *);
 
 void		 task_create(struct task *, task_fn *);
 void		 task_bind_request(struct task *, struct http_request *);

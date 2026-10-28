@@ -70,7 +70,9 @@ comes back with its output.
 Reading configuration goes through jail(8) itself (`-e`), so variables,
 includes, `*` blocks and per-jail `jail.conf.d/<name>.conf` files mean
 exactly what they mean to jail(8).  libjailconf exists only for the one
-thing jail(8) cannot do: change a value in place.  After writing,
+thing jail(8) cannot do: change a value in place.  It parses a file only
+to find the jail's block and the bytes to change; what the jail already
+has or inherits it is told, from `jail -e`.  After writing,
 `arcana-agent` reads the file back with `jail -e` and restores the previous
 version if jail(8) disagrees with the edit.
 

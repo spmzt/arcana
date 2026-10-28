@@ -97,8 +97,7 @@ static int	add_file(struct jc_conf *, struct jc_file *, int);
 static bool	file_loaded(const struct jc_conf *, const char *);
 static bool	stmts_have(const struct jc_stmt *, size_t, const char *,
 		    const char *, size_t *, size_t *);
-static bool	shared_have(const struct jc_conf *, const char *, const char *,
-		    bool *, const char **, int *);
+static bool	block_has(const struct jc_block *, const char *, const char *);
 static size_t	count_lines(const char *, size_t, size_t);
 static void	emit_lines(struct strbuf *, const char *, size_t, size_t,
 		    char);
@@ -733,11 +732,13 @@ parse_body(struct lexer *lx, ssize_t block, const char *prefix)
 			stmt_free(&st);
 			continue;
 		}
+		/* A global statement is parsed, not kept: what a jail
+		 * inherits is jail(8)'s to say. */
 		if (block >= 0)
 			stmt_push(&f->blocks[block].stmts,
 			    &f->blocks[block].nstmts, &st);
 		else
-			stmt_push(&f->globals, &f->nglobals, &st);
+			stmt_free(&st);
 	}
 }
 
@@ -796,7 +797,10 @@ add_file(struct jc_conf *conf, struct jc_file *f, int depth)
 	return (parse_body(&lx, -1, NULL));
 }
 
-/* Load one configuration file and everything it includes. */
+/*
+ * Parse one configuration file and those it includes: the blocks of
+ * all, for jc_find() to tell which file holds a jail's.
+ */
 int
 jc_load(struct jc_conf *conf, const char *path)
 {
@@ -834,9 +838,6 @@ jc_free(struct jc_conf *conf)
 
 	for (i = 0; i < conf->nfiles; i++) {
 		f = conf->files[i];
-		for (j = 0; j < f->nglobals; j++)
-			stmt_free(&f->globals[j]);
-		free(f->globals);
 		for (j = 0; j < f->nblocks; j++) {
 			for (k = 0; k < f->blocks[j].nstmts; k++)
 				stmt_free(&f->blocks[j].stmts[k]);
@@ -853,6 +854,7 @@ jc_free(struct jc_conf *conf)
 	memset(conf, 0, sizeof(*conf));
 }
 
+/* The jail's block, and in *fp the file it is in, or NULL. */
 struct jc_block *
 jc_find(const struct jc_conf *conf, const char *name, struct jc_file **fp)
 {
@@ -957,75 +959,31 @@ stmts_have(const struct jc_stmt *st, size_t n, const char *key,
 }
 
 /* Is the value among the block's own values for key? */
-bool
-jc_block_has(const struct jc_block *b, const char *key, const char *value)
+static bool
+block_has(const struct jc_block *b, const char *key, const char *value)
 {
 
 	return (stmts_have(b->stmts, b->nstmts, key, value, NULL, NULL));
 }
 
 /*
- * Statements every jail of the configuration gets: global ones and the
- * "*" blocks.  Sets *any if key appears there at all, and returns the
- * location of a statement holding value, if one does.
- */
-static bool
-shared_have(const struct jc_conf *conf, const char *key, const char *value,
-    bool *any, const char **file, int *line)
-{
-	const struct jc_file	*f;
-	size_t			 i, j, k, si;
-
-	*any = false;
-	for (i = 0; i < conf->nfiles; i++) {
-		f = conf->files[i];
-		for (k = 0; k < f->nglobals; k++)
-			if (!f->globals[k].keyvar &&
-			    strcmp(f->globals[k].key, key) == 0)
-				*any = true;
-		if (stmts_have(f->globals, f->nglobals, key, value, &si,
-		    NULL)) {
-			*file = f->path;
-			*line = f->globals[si].line;
-			return (true);
-		}
-		for (j = 0; j < f->nblocks; j++) {
-			if (strcmp(f->blocks[j].name, "*") != 0)
-				continue;
-			for (k = 0; k < f->blocks[j].nstmts; k++)
-				if (!f->blocks[j].stmts[k].keyvar &&
-				    strcmp(f->blocks[j].stmts[k].key, key) == 0)
-					*any = true;
-			if (stmts_have(f->blocks[j].stmts, f->blocks[j].nstmts,
-			    key, value, &si, NULL)) {
-				*file = f->path;
-				*line = f->blocks[j].stmts[si].line;
-				return (true);
-			}
-		}
-	}
-	return (false);
-}
-
-/*
  * Add or remove one value of key in the jail's block b of file f,
- * changing as few bytes as possible.  conf is the configuration f
- * belongs to; its global statements and "*" blocks tell values the
- * block sets from ones it inherits.  The new contents of f are returned
- * in *outp; nothing is written.
+ * changing as few bytes as possible.  have[0..nhave-1] are the jail's
+ * values of key as jail(8) reads them ("jail -f file -e sep"): with
+ * them the values the block sets are told from those it inherits, from
+ * global statements, "*" blocks or variables.  The new contents of f
+ * are returned in *outp; nothing is written.
  */
 int
-jc_edit(const struct jc_conf *conf, struct jc_file *f, struct jc_block *b,
-    const char *key, const char *value, bool add, char **outp,
-    size_t *outlenp, char *errbuf, size_t errlen)
+jc_edit(struct jc_file *f, struct jc_block *b, const char *key,
+    const char *value, bool add, const char *const *have, size_t nhave,
+    char **outp, size_t *outlenp, char *errbuf, size_t errlen)
 {
 	const struct jc_stmt	*st, *last;
 	const struct jc_value	*lv;
 	struct strbuf		 ins, out;
-	const char		*sfile;
 	size_t			 cut_from, cut_to, at, ls, i, si, vi;
-	bool			 inherited, shared;
-	int			 sline;
+	bool			 had;
 	char			 q;
 
 	memset(&ins, 0, sizeof(ins));
@@ -1037,17 +995,13 @@ jc_edit(const struct jc_conf *conf, struct jc_file *f, struct jc_block *b,
 		    st->nvals > 0 && (st->op == JC_SET || st->op == JC_APPEND))
 			last = st;
 	}
-	sfile = NULL;
-	sline = 0;
-	shared = shared_have(conf, key, value, &inherited, &sfile, &sline);
-	/* A block's own "=" replaces what it would have inherited. */
-	for (i = 0; i < b->nstmts; i++)
-		if (!b->stmts[i].keyvar && strcmp(b->stmts[i].key, key) == 0 &&
-		    b->stmts[i].op == JC_SET)
-			shared = inherited = false;
+	had = false;
+	for (i = 0; i < nhave; i++)
+		if (jc_value_equal(key, have[i], value))
+			had = true;
 
 	if (add) {
-		if (jc_block_has(b, key, value) || shared) {
+		if (block_has(b, key, value) || had) {
 			snprintf(errbuf, errlen, "%s is already in %s of "
 			    "jail '%s'", value, key, b->name);
 			return (-1);
@@ -1083,14 +1037,14 @@ jc_edit(const struct jc_conf *conf, struct jc_file *f, struct jc_block *b,
 				} else
 					sb_putc(&ins, '\t');
 				sb_puts(&ins, key);
-				sb_puts(&ins, inherited ? " += " : " = ");
+				sb_puts(&ins, nhave > 0 ? " += " : " = ");
 				sb_putq(&ins, value, '"');
 				sb_puts(&ins, ";\n");
 			} else {
 				/* The block is written on one line. */
 				at = b->close;
 				sb_puts(&ins, key);
-				sb_puts(&ins, inherited ? " += " : " = ");
+				sb_puts(&ins, nhave > 0 ? " += " : " = ");
 				sb_putq(&ins, value, '"');
 				sb_puts(&ins, "; ");
 			}
@@ -1101,12 +1055,11 @@ jc_edit(const struct jc_conf *conf, struct jc_file *f, struct jc_block *b,
 		free(ins.s);
 	} else {
 		if (!stmts_have(b->stmts, b->nstmts, key, value, &si, &vi)) {
-			if (shared)
+			if (had)
 				snprintf(errbuf, errlen, "%s is not set by "
-				    "jail '%s' itself but by a statement "
-				    "shared by all jails (%s line %d); edit "
-				    "that instead", value, b->name, sfile,
-				    sline);
+				    "jail '%s' itself but comes from a "
+				    "statement all jails share or a variable; "
+				    "edit that instead", value, b->name);
 			else
 				snprintf(errbuf, errlen, "%s is not in %s of "
 				    "jail '%s'", value, key, b->name);
@@ -1264,7 +1217,7 @@ jc_verify(const char *path, const char *buf, size_t len, const char *jail,
 
 	ok = jc_load_buf(&conf, path, buf, len) == 0 &&
 	    (b = jc_find(&conf, jail, NULL)) != NULL &&
-	    jc_block_has(b, key, value) == add;
+	    block_has(b, key, value) == add;
 	jc_free(&conf);
 	return (ok);
 }

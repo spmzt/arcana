@@ -37,6 +37,7 @@ for `ietf-sid-file`:
 |---|---:|---:|---|
 | `ietf-yang-types@2025-12-22` | 1100 | 50 | `ietf-yang-types@2025-12-22.sid` (1 used) |
 | `ietf-inet-types@2025-12-22` | 1150 | 50 | `ietf-inet-types@2025-12-22.sid` (1 used) |
+| `ietf-netconf-acm@2018-02-14` | 1250 | 50 | `ietf-netconf-acm@2018-02-14.sid` (26 used) |
 | `ietf-interfaces@2018-02-20` | 1500 | 100 | `ietf-interfaces@2018-02-20.sid` (62 used) |
 | `ietf-ip@2018-02-22` | 1600 | 100 | `ietf-ip@2018-02-22.sid` (63 used) |
 | `iana-if-type@2026-03-17` | 1800 | 400 | `iana-if-type@2026-03-17.sid` (306 used) |
@@ -109,7 +110,7 @@ on the wire.
 | 70 200 | 300 | `arcana-firewall` | `share/yang/arcana-firewall@2026-10-15.sid` (223 used) |
 | 70 500 | 200 | `arcana-troubleshoot` | `share/yang/arcana-troubleshoot@2026-10-15.sid` (148 used) |
 | 70 700 | 100 | `arcana-history` | `share/yang/arcana-history@2026-10-15.sid` (72 used) |
-| 70 800 | 400 | `arcana-events` | `share/yang/arcana-events@2026-10-15.sid` (383 used) |
+| 70 800 | 400 | `arcana-events` | `share/yang/arcana-events@2026-10-15.sid` (384 used) |
 | 71 200 | 200 | `arcana-bird` | `share/yang/arcana-bird@2026-10-15.sid` (165 used) |
 | 71 400 | 100 | `arcana-wireguard` | `share/yang/arcana-wireguard@2026-10-15.sid` (33 used) |
 | 71 500 | 100 | `arcana-netgraph` | `share/yang/arcana-netgraph@2026-10-15.sid` (23 used) |
@@ -126,12 +127,13 @@ on the wire.
 | 77 200 | 100 | `ietf-yang-library@2019-01-04`, RFC 8525 (no IETF range) | `share/yang/ietf-yang-library@2019-01-04.sid` (51 used) |
 | 77 300 | 100 | `ietf-datastores@2018-02-14`, RFC 8342 (no IETF range; its identities used) | `share/yang/ietf-datastores@2018-02-14.sid` (9 used) |
 | 77 400 | 200 | `ietf-alarms@2019-09-11`, RFC 8632 (no IETF range) | `share/yang/ietf-alarms@2019-09-11.sid` (183 used) |
-| 77 600 | 100 | `arcana-alarms` | `share/yang/arcana-alarms@2026-10-27.sid` (16 used) |
+| 77 600 | 100 | `arcana-alarms` | `share/yang/arcana-alarms@2026-10-27.sid` (17 used) |
 | 77 700 | 200 | `ietf-hardware@2018-03-13`, RFC 8348 (no IETF range) | `share/yang/ietf-hardware@2018-03-13.sid` (51 used) |
 | 77 900 | 100 | `iana-hardware@2018-03-13`, RFC 8348's classes (no IETF range) | `share/yang/iana-hardware@2018-03-13.sid` (16 used) |
 | 78 000 | 200 | `ietf-subscribed-notifications@2019-09-09`, RFC 8639 (no IETF range) | `share/yang/ietf-subscribed-notifications@2019-09-09.sid` (156 used) |
 | 78 200 | 200 | `ietf-yang-push@2019-09-09`, RFC 8641 (no IETF range) | `share/yang/ietf-yang-push@2019-09-09.sid` (118 used) |
 | 78 400 | 100 | `arcana-fleet`, the console's RESTCONF fleet mount | `share/yang/arcana-fleet@2026-10-27.sid` (5 used) |
+| 78 500 | 200 | `ietf-netconf@2011-06-01`, RFC 6241: commit, cancel-commit, discard-changes (no IETF range) | `share/yang/ietf-netconf@2011-06-01.sid` (107 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

@@ -212,8 +212,6 @@ zfs_key(cbl_req *req, const struct cbl_bytes *target, const char *key,
 	const void		**k;
 	struct work		*w;
 
-	if (yang_refused(req))
-		return (EACCES);
 	if ((k = keys_of(target, 1, a)) == NULL)
 		return (EINVAL);
 	if ((w = ywork(a)) == NULL)
@@ -271,8 +269,6 @@ jail_action(cbl_req *req, const struct cbl_bytes *target, uint8_t action,
 	const char		*name;
 	struct work		*w;
 
-	if (yang_refused(req))
-		return (EACCES);
 	if ((k = keys_of(target, 1, a)) == NULL)
 		return (EINVAL);
 	name = *(const char *const *)k[0];
@@ -306,8 +302,6 @@ service_action(cbl_req *req, const struct cbl_bytes *target, uint8_t action,
 	const char			*name;
 	struct work			*w;
 
-	if (yang_refused(req))
-		return (EACCES);
 	if ((k = keys_of(target, 1, a)) == NULL)
 		return (EINVAL);
 	name = *(const char *const *)k[0];
@@ -342,8 +336,6 @@ process_action(cbl_req *req, const struct cbl_bytes *target, const char *verb,
 	uint64_t		 pid;
 	int			 rc;
 
-	if (yang_refused(req))
-		return (EACCES);
 	if ((k = keys_of(target, 1, a)) == NULL)
 		return (EINVAL);
 	pid = *(const uint64_t *)k[0];
@@ -378,8 +370,6 @@ job_action(cbl_req *req, const struct cbl_bytes *target, bool confirm,
 	const char		*e;
 	struct work		*w;
 
-	if (yang_refused(req))
-		return (EACCES);
 	if ((k = keys_of(target, 1, a)) == NULL)
 		return (EINVAL);
 	if ((w = ywork(a)) == NULL)
@@ -405,8 +395,6 @@ arcana_agent_agent_build_action(cbl_req *req, const struct cbl_bytes *target,
 	struct work			*w;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->source == NULL)
 		return (said(req, "a repository is needed"));
 	if ((w = ywork(a)) == NULL)
@@ -442,8 +430,6 @@ arcana_agent_agent_config_apply_action(cbl_req *req,
 	bool				 dry;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->bundle == NULL)
 		return (said(req, "a bundle is needed"));
 	if ((w = ywork(a)) == NULL)
@@ -475,8 +461,6 @@ arcana_agent_agent_config_export_action(cbl_req *req,
 	struct work			*w;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -496,8 +480,6 @@ arcana_agent_agent_console_update_action(cbl_req *req,
 	struct work			*w;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->source == NULL)
 		return (said(req, "a repository is needed"));
 	if ((w = ywork(a)) == NULL)
@@ -541,8 +523,7 @@ arcana_agent_agent_get(cbl_req *req, struct arcana_agent *data, cbl_yarena *a)
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL ||
@@ -579,8 +560,6 @@ arcana_agent_agent_source_head_action(cbl_req *req,
 	struct work			*w;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->source == NULL)
 		return (said(req, "a repository is needed"));
 	if ((w = ywork(a)) == NULL)
@@ -610,8 +589,6 @@ arcana_agent_agent_source_log_action(cbl_req *req,
 	struct work			*w;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->source == NULL)
 		return (said(req, "a repository is needed"));
 	if ((w = ywork(a)) == NULL)
@@ -638,8 +615,6 @@ arcana_agent_agent_tls_csr_action(cbl_req *req, const struct cbl_bytes *target,
 
 	(void)target;
 	(void)in;
-	if (yang_refused(req))
-		return (EACCES);
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -671,8 +646,6 @@ arcana_agent_agent_tls_install_action(cbl_req *req,
 
 	(void)target;
 	(void)out;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->certificate == NULL)
 		return (said(req, "a certificate is needed"));
 	if ((w = ywork(a)) == NULL)
@@ -704,8 +677,6 @@ arcana_agent_agent_transport_retry_action(cbl_req *req,
 	(void)target;
 	(void)in;
 	(void)out;
-	if (yang_refused(req))
-		return (EACCES);
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -724,8 +695,6 @@ arcana_agent_agent_update_action(cbl_req *req, const struct cbl_bytes *target,
 	bool				 local, restart;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->binary.len == 0 || in->sha256 == NULL ||
 	    strlen(in->sha256) != 64)
 		return (said(req, "a program and its SHA-256 are needed"));
@@ -776,8 +745,7 @@ arcana_bird_bird_get(cbl_req *req, struct arcana_bird *data, cbl_yarena *a)
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -808,8 +776,6 @@ arcana_bird_bird_routes_action(cbl_req *req, const struct cbl_bytes *target,
 	struct work		*w;
 	int			 error;
 
-	if (yang_refused(req))
-		return (EACCES);
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	if ((error = yjail_scope(req, target, w, a)) != 0)
@@ -830,8 +796,7 @@ arcana_builder_builder_get(cbl_req *req, struct arcana_builder *data,
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -855,8 +820,7 @@ arcana_events_events_get(cbl_req *req, struct arcana_events *data,
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -881,9 +845,8 @@ arcana_events_events_read_action(cbl_req *req, const struct cbl_bytes *target,
 	struct work			*w;
 	int				 error;
 
+	(void)req;
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -925,8 +888,7 @@ arcana_firewall_firewall_get(cbl_req *req, struct arcana_firewall *data,
 	struct work				*w;
 	int					 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -963,8 +925,6 @@ arcana_firewall_firewall_trace_action(cbl_req *req,
 	const void		**k;
 	struct work		*w;
 
-	if (yang_refused(req))
-		return (EACCES);
 	addr = in->has_address ? in->address.v.m0 : NULL;
 	if (addr == NULL || strlen(addr) > 64)
 		return (said(req, "the address to follow is an IPv4 or IPv6 "
@@ -1008,8 +968,7 @@ arcana_history_history_get(cbl_req *req, struct arcana_history *data,
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -1036,8 +995,6 @@ arcana_history_history_read_action(cbl_req *req, const struct cbl_bytes *target,
 	int				 error;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->after != NULL && !ytime_parse(in->after, &after))
 		return (said(req, "after is no date-and-time"));
 	if ((w = ywork(a)) == NULL)
@@ -1062,8 +1019,7 @@ arcana_jails_jails_get(cbl_req *req, struct arcana_jails *data, cbl_yarena *a)
 	struct arc_list_rsp	 r;
 	struct work		*w;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -1158,8 +1114,7 @@ arcana_jobs_jobs_get(cbl_req *req, struct arcana_jobs *data, cbl_yarena *a)
 	time_t			 since;
 	size_t			 n;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	jobs_list(w, &v, &n);
@@ -1216,8 +1171,6 @@ arcana_jobs_submit_rpc(cbl_req *req, const struct arcana_jobs_submit_input *in,
 	size_t				 n, nv, bad, i;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
 	bad = 0;
 	if ((error = yjobs_specs(in, a, &specs, &n, &bad)) != 0)
 		return (said(req, error == ENOMEM ? "out of memory" :
@@ -1260,8 +1213,6 @@ arcana_kernel_kernel_file_unload_action(cbl_req *req,
 
 	(void)in;
 	(void)out;
-	if (yang_refused(req))
-		return (EACCES);
 	if ((k = keys_of(target, 1, a)) == NULL)
 		return (EINVAL);
 	/* The file's name, as kldunload(8) takes it. */
@@ -1281,8 +1232,7 @@ arcana_kernel_kernel_get(cbl_req *req, struct arcana_kernel *data,
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -1303,8 +1253,6 @@ arcana_kernel_load_rpc(cbl_req *req, const struct arcana_kernel_load_input *in,
 {
 
 	(void)out;
-	if (yang_refused(req))
-		return (EACCES);
 	return (kmod(req, "load", in->name, a));
 }
 
@@ -1316,8 +1264,7 @@ arcana_log_logs_get(cbl_req *req, struct arcana_log *data, cbl_yarena *a)
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -1342,8 +1289,6 @@ arcana_log_logs_read_action(cbl_req *req, const struct cbl_bytes *target,
 	int			 error;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->name == NULL || (in->name[0] != '@' && !log_name_ok(in->name)))
 		return (said(req, "a log is named with letters, digits and "
 		    ". _ -"));
@@ -1371,8 +1316,7 @@ arcana_netgraph_netgraph_get(cbl_req *req, struct arcana_netgraph *data,
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -1402,8 +1346,6 @@ arcana_notify_notify_rpc(cbl_req *req,
 	int		 rc;
 
 	(void)out;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->token == NULL || in->chat == NULL || in->text == NULL)
 		return (said(req, "a token, a chat and a text are needed"));
 	if ((w = ywork(a)) == NULL)
@@ -1424,8 +1366,7 @@ arcana_packages_packages_get(cbl_req *req, struct arcana_packages *data,
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -1454,8 +1395,6 @@ arcana_packages_packages_refresh_action(cbl_req *req,
 	struct work		*w;
 
 	(void)out;
-	if (yang_refused(req))
-		return (EACCES);
 	/* The host's packages, or a jail's (the target's key, the jail). */
 	if ((k = keys_of(target, 1, a)) != NULL &&
 	    !valid_jail(jail = *(const char *const *)k[0]))
@@ -1485,8 +1424,6 @@ arcana_packages_packages_upgrade_action(cbl_req *req,
 	const char			*jail = NULL;
 	struct work			*w;
 
-	if (yang_refused(req))
-		return (EACCES);
 	if ((k = keys_of(target, 1, a)) != NULL &&
 	    !valid_jail(jail = *(const char *const *)k[0]))
 		return (said(req, "invalid jail name"));
@@ -1538,8 +1475,7 @@ arcana_probe_probes_get(cbl_req *req, struct arcana_probe *data, cbl_yarena *a)
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -1570,8 +1506,6 @@ arcana_probe_probes_read_action(cbl_req *req, const struct cbl_bytes *target,
 	int						 error;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->after != NULL && !ytime_parse(in->after, &after))
 		return (said(req, "after is no date-and-time"));
 	if ((w = ywork(a)) == NULL)
@@ -1618,8 +1552,7 @@ arcana_processes_processes_get(cbl_req *req, struct arcana_processes *data,
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -1681,8 +1614,7 @@ arcana_sdwan_sdwan_get(cbl_req *req, struct arcana_sdwan *data, cbl_yarena *a)
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -1718,8 +1650,7 @@ arcana_services_services_get(cbl_req *req, struct arcana_services *data,
 	struct arc_services_rsp	 r;
 	struct work		*w;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -1789,8 +1720,7 @@ arcana_sshd_sshd_get(cbl_req *req, struct arcana_sshd *data, cbl_yarena *a)
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -1858,8 +1788,6 @@ arcana_storage_storage_dataset_unload_key_action(cbl_req *req,
 
 	(void)in;
 	(void)out;
-	if (yang_refused(req))
-		return (EACCES);
 	if ((k = keys_of(target, 1, a)) == NULL)
 		return (EINVAL);
 	if ((w = ywork(a)) == NULL)
@@ -1891,8 +1819,6 @@ arcana_storage_storage_fstab_replace_action(cbl_req *req,
 	bool			 dry;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->text == NULL || in->sha256 == NULL)
 		return (said(req, "the text and the SHA-256 of the one it was "
 		    "made from are needed"));
@@ -1932,8 +1858,7 @@ arcana_storage_storage_get(cbl_req *req, struct arcana_storage *data,
 	size_t				 i;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL)
@@ -1989,8 +1914,7 @@ arcana_sysctl_sysctl_get(cbl_req *req, struct arcana_sysctl *data,
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -2019,8 +1943,6 @@ arcana_troubleshoot_troubleshoot_capture_action(cbl_req *req,
 	struct work		*w;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (in->jail != NULL && in->jail[0] != '\0' && !valid_jail(in->jail))
 		return (said(req, "invalid jail name"));
 	if ((w = ywork(a)) == NULL)
@@ -2063,7 +1985,8 @@ arcana_troubleshoot_troubleshoot_get(cbl_req *req,
 	(void)data;
 	(void)a;
 	/* Its actions alone: nothing to read. */
-	return (yang_refused(req) ? EACCES : 0);
+	(void)req;
+	return (0);
 }
 
 int
@@ -2079,8 +2002,6 @@ arcana_troubleshoot_troubleshoot_path_check_action(cbl_req *req,
 	struct work			*w;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	if (!in->has_source || !in->has_destination)
 		return (said(req, "a source and a destination are needed"));
 	if (in->jail != NULL && in->jail[0] != '\0' && !valid_jail(in->jail))
@@ -2115,8 +2036,6 @@ arcana_troubleshoot_troubleshoot_traceroute_action(cbl_req *req,
 	struct work			*w;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	addr = in->has_address ? in->address.v.m0 : NULL;
 	if (addr == NULL || addr[0] == '-' || addr[strspn(addr,
 	    "0123456789abcdefABCDEF.:")] != '\0')
@@ -2140,8 +2059,7 @@ arcana_wireguard_wireguard_get(cbl_req *req, struct arcana_wireguard *data,
 	struct work			*w;
 	int				 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
@@ -2178,8 +2096,7 @@ ietf_syslog_syslog_get(cbl_req *req, struct ietf_syslog *data, cbl_yarena *a)
 	size_t		 nu, i;
 	int		 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((error = ysyslog_read("/etc/syslog.conf", "/etc/newsyslog.conf", a,
 	    data, &u, &nu)) != 0)
 		return (error);
@@ -2200,8 +2117,7 @@ arcana_host_host_get(cbl_req *req, struct arcana_host *data, cbl_yarena *a)
 	struct work				*w;
 	int					 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&h, 0, sizeof(h));
@@ -2236,8 +2152,6 @@ arcana_builder_builder_port_options_action(cbl_req *req,
 	size_t				 n = 0;
 
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	/* As the builder-options operation takes them: jail=, ports=,
 	 * set=, origin=. */
 	if ((w = ywork(a)) == NULL)

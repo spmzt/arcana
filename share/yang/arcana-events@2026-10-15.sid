@@ -2,9 +2,13 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-events",
     "module-revision": "2026-10-15",
-    "sid-file-version": 3,
+    "sid-file-version": 4,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
+      {
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
+      },
       {
         "module-name": "ietf-inet-types",
         "module-revision": "2025-12-22"
@@ -1935,6 +1939,11 @@
         "namespace": "data",
         "identifier": "/arcana-events:events/read/output/event/zfs/type",
         "sid": "71182"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "undo-failed",
+        "sid": "71183"
       }
     ]
   }

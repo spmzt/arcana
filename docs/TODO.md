@@ -15,9 +15,9 @@
   it fills or the node shuts down, with no timer to send it; a flush
   belongs to the same work.
 - The SDN and YANG redesign: docs/PLAN-SDN-YANG.md. Open decisions:
-  D-5, D-6, D-11, D-12.
-  To do, the datastores first, their safety design the user's to
-  review before an EDIT of running is served: 2.3.x (candidate and
+  D-5, D-11, D-12 (D-6 taken: a FIB per vpn-node).
+  To do, the datastores first, to the safety design decided on
+  2026-10-28 (in the plan, 2.3): 2.3.x (candidate and
   running, with-origin 2.3.9, report-all-tagged), 2.3.5 the rc.conf.d
   fragments rendered (the agent edits rc.conf through sysrc(8)), the
   running datastore's use of rtadvd.conf (2.5.1), syslog.conf written

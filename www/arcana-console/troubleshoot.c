@@ -242,7 +242,7 @@ survey(struct tsh *t)
 		r->refs++;
 		r->pending++;
 		pthread_mutex_unlock(&r->m);
-		if (pthread_create(&th, NULL, ask_run, a[i]) != 0) {
+		if (hosts_thread(&th, ask_run, a[i]) != 0) {
 			/* No thread: asked here, in turn. */
 			pthread_mutex_lock(&r->m);
 			r->refs--;

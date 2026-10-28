@@ -54,6 +54,49 @@ struct yunread {
 	const char	*why;
 };
 
+/* Running's interfaces: what the get read but addresses and neighbours
+ * whose origin is not static (invidia/yifedit.c). */
+int	yif_running(struct ietf_interfaces *data, cbl_yarena *a);
+
+/*
+ * Arcana's rc.conf variables in a file of its own, named in
+ * rc_conf_files (invidia/rcarcana.c).  rca_open(): it, and the user's
+ * files rc(8) reads for service svc; rca_write(): f written, what the
+ * user has not accepted (rc-conf-files, rc-conf-conflict) refused for
+ * req (EEXIST, its error-app-tag), each file kept as it was; rca_undo():
+ * them put back.
+ */
+#define	RC_ARCANA	"/usr/local/etc/rc.conf.d/arcana"
+
+struct rca_was {
+	char		*path;
+	char		*text;
+	size_t		 len;
+	mode_t		 mode;
+	bool		 there;
+};
+
+struct rca {
+	char		 path[1024];	/* MAXPATHLEN */
+	struct vc_file	*f;
+	char		**user;
+	size_t		 nuser;
+	struct rca_was	*was;
+	size_t		 nwas;
+	struct vc_file	*uf;		/* the user's, read by rca_get() */
+};
+
+int	rca_open(struct rca *x, const char *svc, char *err, size_t errlen);
+int	rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen);
+void	rca_undo(struct rca *x);
+/* What rc(8) would have for name: Arcana's file's, else the last of the
+ * user's files that sets it; NULL, none.  rca_set(): name's value in
+ * Arcana's file ("" ends a list of aliases, as rc(8) reads it). */
+const char *rca_get(struct rca *x, const char *name);
+int	rca_set(struct rca *x, const char *name, const char *value,
+	    char *err, size_t errlen);
+void	rca_close(struct rca *x);
+
 /*
  * rc.conf's static routes, as rc.d/routing installs them, and
  * ietf-routing's static control-plane-protocol (invidia/rcroutes.c).
@@ -392,9 +435,10 @@ int	ybuilder_from_json(const char *json, cbl_yarena *a,
 int	ybuilder_options_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_builder_builder_port_options_output *out);
 
-/* The models served (invidia/yserve.c, yarcana.c); a request of
- * another host's certificate refused. */
+/* running and the candidate, by confirmed commit (invidia/ynetconf.c). */
+int	ynetconf_datastores(cbl_ctx *);
+
+/* The models served (invidia/yserve.c, yarcana.c). */
 int	yang_serve(cbl_ctx *);
-bool	yang_refused(cbl_req *);
 
 #endif	/* !_ARCANA_COLLECT_H_ */

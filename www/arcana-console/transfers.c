@@ -661,7 +661,7 @@ api_transfers(struct http_request *req)
 	ucl_object_unref(body);
 	xf_record(r, XF_RUNNING, NULL, 0, NULL);
 	n = r->id;
-	if (pthread_create(&tid, NULL, xf_run, r) != 0) {
+	if (hosts_thread(&tid, xf_run, r) != 0) {
 		xf_record(r, XF_FAILED, "no thread for it", time(NULL), NULL);
 		pthread_mutex_lock(&xf_lock);
 		xf_running--;

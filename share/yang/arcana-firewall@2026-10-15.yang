@@ -186,9 +186,11 @@ module arcana-firewall {
             "The whole file, as it is.";
         }
         list rule {
-          key "number";
+          config false;
           description
-            "Each add line of it, by number.";
+            "Each add line of it, in its order: what text says, read.
+             ipfw(8) takes rules of one number, so a number may come
+             again.";
           leaf number {
             type rule-number;
             description
@@ -293,10 +295,12 @@ module arcana-firewall {
             "net.inet.ip.fw.verbose: rules with log write to the log.";
         }
         list rule {
-          key "number set";
           description
-            "The ruleset, as ipfw -S show prints it: each rule with its
-             counters; the last, 65535, the kernel's own.";
+            "The ruleset, as ipfw -S show prints it, in its order: each
+             rule with its counters; the last, 65535, the kernel's own.
+             Rules may share a number and set (ipfw(8) adds a rule
+             after those of its number; the kernel's orphaned-states
+             counter is a second 65535), so the list has no key.";
           leaf number {
             type rule-number;
             description

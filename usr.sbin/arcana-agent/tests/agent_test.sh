@@ -340,7 +340,7 @@ start_daemon()
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
-	    --jobs-conf "$(pwd)/jobs.conf" \
+	    --jobs-conf "$(pwd)/jobs.conf" --nacm "$(pwd)/nacm.cbor" \
 	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
 	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" -8 "$(pwd)/fake-rtsol" \
 	    -9 "$(pwd)/fake-setkey" -0 "$(pwd)/fake-local-unbound" \
@@ -2901,9 +2901,18 @@ address_refused_head()
 address_refused_body()
 {
 	start_daemon
+	# An address jail(8) -e reads in lab through a variable.
+	printf 'lab {\n\t$a = "10.0.0.60";\n\tip4.addr = "$a";\n}\n' \
+	    >> etc/jail.conf
 	cp etc/jail.conf before
 	atf_check -s exit:1 -o ignore -e match:'is already in ip4.addr' \
 	    "$JGC" -c "$SOCK" address add -p web 10.0.0.11
+	atf_check -s exit:1 -o ignore \
+	    -e match:'10.0.0.60 is already in ip4.addr' \
+	    "$JGC" -c "$SOCK" address add -p lab 10.0.0.60
+	atf_check -s exit:1 -o ignore \
+	    -e match:"10.0.0.60 is not set by jail 'lab' itself" \
+	    "$JGC" -c "$SOCK" address remove -p lab 10.0.0.60
 	atf_check -s exit:1 -o ignore -e match:'vnet jail' \
 	    "$JGC" -c "$SOCK" address add -p vpn 10.0.0.50
 	atf_check -s exit:1 -o ignore -e match:"jail 'web' is not running" \
@@ -11131,8 +11140,107 @@ reboot_cleanup()
 	stop_daemon
 }
 
+# The datastores (RFC 8342): running read from what rc(8) reads, the
+# candidate edited and committed; Arcana's rc.conf file named in
+# rc_conf_files and the user's variables taken out only where accepted;
+# a commit whose kernel change fails leaves every file as it was.
+atf_test_case datastores cleanup
+datastores_head()
+{
+	atf_set "descr" "Running and the candidate; a commit's rc.conf rules and undo"
+}
+datastores_body()
+{
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\nstatic_routes="r1"\nroute_r1="-net 198.51.100.0/24 127.0.0.1"\n' \
+	    > root/etc/rc.conf
+	cp root/etc/rc.conf rc.conf.before
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	atf_check -o match:'"destination-prefix":"198.51.100.0/24"' \
+	    -o not-match:'"route-preference"' \
+	    "$JGC" -c "$SOCK" get -d running routing
+	# Running changes by a commit of the candidate alone.
+	"$JGC" -c "$SOCK" get -d running routing > run.json
+	sed -e 's|"route":\[|"route":[{"destination-prefix":"203.0.113.0/24","next-hop":{"next-hop-address":"127.0.0.1"}},|' \
+	    run.json > new.json
+	atf_check -s exit:1 -e match:'confirmed commit of the candidate' \
+	    "$JGC" -c "$SOCK" edit -r routing @new.json
+	atf_check "$JGC" -c "$SOCK" edit routing @new.json
+	atf_check -o match:'"203.0.113.0/24"' "$JGC" -c "$SOCK" get -d candidate routing
+	atf_check -o not-match:'"203.0.113.0/24"' "$JGC" -c "$SOCK" get -d running routing
+	# What is accepted first: rc_conf_files, then the user's variable.
+	atf_check -s exit:1 -e match:'rc_conf_files names it.*-a rc-conf-files' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check -s exit:1 -e match:'static_routes .*rc.conf line 2.*-a rc-conf-conflict' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-files
+	# Accepted, the kernel refuses (not root): the files as they were.
+	atf_check -s exit:1 -e match:'not permitted' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-files -a rc-conf-conflict
+	atf_check cmp rc.conf.before root/etc/rc.conf
+	atf_check test ! -e root/usr/local/etc/rc.conf.d/arcana
+	atf_check "$JGC" -c "$SOCK" discard
+	atf_check -o not-match:'"203.0.113.0/24"' "$JGC" -c "$SOCK" get -d candidate routing
+	# Only the static routes are changed so far.
+	sed -e 's|"name":"ipv4-master"|"name":"v4"|' run.json > ribs.json
+	atf_check "$JGC" -c "$SOCK" edit routing @ribs.json
+	atf_check -s exit:1 -e match:'only rc.conf.s static routes' \
+	    "$JGC" -c "$SOCK" commit
+}
+datastores_cleanup()
+{
+	stop_daemon
+}
+
+# The interfaces as configuration: running without what DHCP, SLAAC or
+# the kernel made; a commit of a description and an address refused
+# without its consent, then by the kernel (not root): the files as they
+# were; a change of more than is supported refused.
+atf_test_case datastores_interfaces cleanup
+datastores_interfaces_head()
+{
+	atf_set "descr" "Interfaces in running; a commit's rules and undo"
+}
+datastores_interfaces_body()
+{
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\nifconfig_lo0="inet 127.0.0.1/8"\n' > root/etc/rc.conf
+	cp root/etc/rc.conf rc.conf.before
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	"$JGC" -c "$SOCK" get -d running interfaces > run.json
+	atf_check -o match:'"ip":"127.0.0.1"' cat run.json
+	atf_check -o not-match:'"ip":"fe80::' cat run.json
+	atf_check -o not-match:'"origin"' cat run.json
+	sed -e 's|{"ip":"127.0.0.1","prefix-length":8}|{"ip":"127.0.0.1","prefix-length":8},{"ip":"192.0.2.9","prefix-length":32}|' \
+	    -e 's|"enabled":true,"name":"lo0"|"description":"lab loopback","enabled":true,"name":"lo0"|' \
+	    run.json > new.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @new.json
+	atf_check -o match:'"description":"lab loopback"' \
+	    "$JGC" -c "$SOCK" get -d candidate interfaces
+	atf_check -s exit:1 -e match:'-a rc-conf-files' "$JGC" -c "$SOCK" commit
+	atf_check -s exit:1 -e match:'commit: lo0: ' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-files
+	atf_check cmp rc.conf.before root/etc/rc.conf
+	atf_check test ! -e root/usr/local/etc/rc.conf.d/arcana
+	atf_check "$JGC" -c "$SOCK" discard
+	sed -e 's|"type":"iana-if-type:softwareLoopback"|"type":"iana-if-type:other"|' \
+	    run.json > type.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @type.json
+	atf_check -s exit:1 -e match:'lo0: only its description, enabled, IPv4 MTU and static addresses' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-files
+}
+datastores_interfaces_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case datastores_interfaces
+	atf_add_test_case datastores
 	atf_add_test_case reboot
 	atf_add_test_case jail_boot
 	atf_add_test_case bird_watch

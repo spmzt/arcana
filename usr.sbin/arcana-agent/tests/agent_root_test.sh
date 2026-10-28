@@ -55,7 +55,7 @@ EOF2
 	# the host's /usr/local/etc/arcana, where the next case would find it.
 	"$JGD" -F -l "$SOCK" -f "$(pwd)/etc/jail.conf" \
 	    -D "$(pwd)/etc/jail.conf.d" -1 "$(pwd)/history.conf" \
-	    ${DAEMON_ARGS:-} > daemon.out 2>&1 &
+	    --nacm "$(pwd)/nacm.cbor" ${DAEMON_ARGS:-} > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
 		grep -q 'ready' daemon.out 2>/dev/null && return
@@ -112,7 +112,8 @@ lifecycle_body()
 	atf_check -o ignore "$JGC" -c "$SOCK" start "$JAIL"
 	atf_check -o save:kill.out "$JGC" -t -c "$SOCK" kill "$JAIL"
 	atf_check -o match:'\[syscall\] jail_remove\(2\)' cat kill.out
-	atf_check -s exit:1 sh -c "grep '\[exec\]' kill.out | grep -v ' -e '"
+	atf_check -s exit:1 sh -c "grep '\[exec\]' kill.out | grep -v ' -e ' | \
+	    grep -v 'sysrc -i -n jail_'"
 	# Each coming and going was an event as it happened (EVFILT_JAIL).
 	sleep 0.5
 	atf_check -o save:ev.json "$JGC" -c "$SOCK" events
@@ -217,8 +218,10 @@ live_address_body()
 	atf_check -o match:'^IPv4: 127.0.10.1,127.0.10.2$' \
 	    -o match:'\[syscall\] ioctl\(SIOCAIFADDR\)' \
 	    -o match:'\[lib\] jailparam_set\(3\)' cat add.out
-	# Only jail(8) -e, reading the configuration, runs a program.
-	atf_check -s exit:1 sh -c "grep '\[exec\]' add.out | grep -v ' -e '"
+	# Only jail(8) -e, reading the configuration, runs a program, and
+	# sysrc(8) reading what starts at boot (the jail's record).
+	atf_check -s exit:1 sh -c "grep '\[exec\]' add.out | grep -v ' -e ' | \
+	    grep -v 'sysrc -i -n jail_'"
 	lo0_has 127.0.10.2 || atf_fail "alias not added"
 	atf_check -o inline:'127.0.10.1,127.0.10.2\n' \
 	    jls -j "$JAIL" ip4.addr
@@ -2835,8 +2838,106 @@ l2_vnet_cleanup()
 	cleanup
 }
 
+# A confirmed commit for real: a static route of the candidate made the
+# kernel's (FIB 0) and kept in Arcana's rc.conf file; not confirmed, both
+# undone at its timeout (arcanactl's session ended long before: the
+# persist-id it made keeps the commit); confirmed by its persist-id from
+# another session, kept.
+atf_test_case commit_route cleanup
+commit_route_head()
+{
+	atf_set "descr" "A confirmed commit of a static route, undone and kept"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+commit_route_body()
+{
+	if route -n get 203.0.113.0 2>/dev/null | grep -q 'destination: 203.0.113.0'; then
+		atf_skip "a route to 203.0.113.0 is there already"
+	fi
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\n' > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	"$JGC" -c "$SOCK" get -d running routing > run.json
+	sed -e 's|"ietf-ipv4-unicast-routing:ipv4":{}|"ietf-ipv4-unicast-routing:ipv4":{"route":[{"destination-prefix":"203.0.113.0/24","next-hop":{"next-hop-address":"127.0.0.1"}}]}|' \
+	    run.json > new.json
+	atf_check "$JGC" -c "$SOCK" edit routing @new.json
+	atf_check -o match:'^confirm within 3 seconds: arcanactl commit -i [0-9a-f]{32}$' \
+	    "$JGC" -c "$SOCK" commit -c 3 -a rc-conf-files
+	atf_check -o match:'gateway: 127.0.0.1' route -n get 203.0.113.0
+	atf_check -o match:'203.0.113.0/24 127.0.0.1' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^rc_conf_files=".*/usr/local/etc/rc.conf.d/arcana"' \
+	    cat root/etc/rc.conf
+	# Not confirmed: undone at its timeout, the kernel's and the file's.
+	sleep 5
+	atf_check -s ignore -o not-match:'destination: 203.0.113.0' -e ignore \
+	    route -n get 203.0.113.0
+	atf_check -o not-match:'203.0.113.0' cat root/usr/local/etc/rc.conf.d/arcana
+	# Confirmed by its persist-id from another session: kept.
+	atf_check "$JGC" -c "$SOCK" edit routing @new.json
+	atf_check -o match:'commit -i lab$' "$JGC" -c "$SOCK" commit -c 3 -p lab
+	atf_check "$JGC" -c "$SOCK" commit -i lab
+	sleep 5
+	atf_check -o match:'gateway: 127.0.0.1' route -n get 203.0.113.0
+}
+commit_route_cleanup()
+{
+	route -n delete -net 203.0.113.0/24 127.0.0.1 >/dev/null 2>&1
+	cleanup
+}
+
+# A confirmed commit of an interface for real, on a loopback the test
+# makes: an address and a description made the kernel's and kept in
+# Arcana's rc.conf file (the user's line for it taken out where
+# accepted); not confirmed, both undone at its timeout.
+atf_test_case commit_interface cleanup
+commit_interface_head()
+{
+	atf_set "descr" "A confirmed commit of an interface's address, undone"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+commit_interface_body()
+{
+	local lo
+
+	lo=$(ifconfig lo create) || atf_fail "no loopback made"
+	echo "$lo" > lo.name
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\nifconfig_%s="up"\n' "$lo" > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	"$JGC" -c "$SOCK" get -d running interfaces > run.json
+	sed -e "s|\"name\":\"$lo\"|\"description\":\"lab\",\"name\":\"$lo\",\"ietf-ip:ipv4\":{\"address\":[{\"ip\":\"192.0.2.9\",\"prefix-length\":32}]}|" \
+	    run.json > new.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @new.json
+	atf_check -o match:'confirm within 3 seconds' \
+	    "$JGC" -c "$SOCK" commit -c 3 -a rc-conf-files
+	atf_check -o match:'inet 192.0.2.9 netmask 0xffffffff' \
+	    -o match:'description: lab' ifconfig "$lo"
+	atf_check -o match:"^ifconfig_${lo}_alias0=\"inet 192.0.2.9/32\"" \
+	    -o match:"^ifconfig_${lo}_descr=\"lab\"" \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	sleep 5
+	atf_check -o not-match:'192.0.2.9' -o not-match:'description' \
+	    ifconfig "$lo"
+	atf_check -o not-match:'192.0.2.9' -o not-match:'lab' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+}
+commit_interface_cleanup()
+{
+	[ -s lo.name ] && ifconfig "$(cat lo.name)" destroy 2>/dev/null
+	cleanup
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case commit_interface
+	atf_add_test_case commit_route
 	atf_add_test_case l2_vnet
 	atf_add_test_case route_fib
 	atf_add_test_case devd_watch

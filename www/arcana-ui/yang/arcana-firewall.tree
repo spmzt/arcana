@@ -5,10 +5,10 @@ module: arcana-firewall
      |  +--ro present?   boolean
      |  +--ro sha256?    string
      |  +--rw text?      string
-     |  +--rw rule* [number]
-     |  |  +--rw number    rule-number
-     |  |  +--rw text?     string
-     |  |  +--rw source?   string
+     |  +--ro rule*
+     |  |  +--ro number?   rule-number
+     |  |  +--ro text?     string
+     |  |  +--ro source?   string
      |  +--rw other*     string
      |  +--rw alias* [name]
      |     +--rw name     string
@@ -22,9 +22,9 @@ module: arcana-firewall
      |  +--ro loaded?          boolean
      |  +--ro enabled?         boolean
      |  +--ro verbose?         boolean
-     |  +--ro rule* [number set]
-     |  |  +--ro number      rule-number
-     |  |  +--ro set         uint8
+     |  +--ro rule*
+     |  |  +--ro number?     rule-number
+     |  |  +--ro set?        uint8
      |  |  +--ro packets?    uint64
      |  |  +--ro octets?     uint64
      |  |  +--ro text?       string

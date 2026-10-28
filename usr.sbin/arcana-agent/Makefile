@@ -5,12 +5,12 @@ SRCS=		main.c handlers.c work.c
 # what the collectors (y*.c) read into their structs.
 SRCS+=		yjson.c
 # Superbia: identity, configuration, what is true of the host.
-SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c bundle.c l2.c ipfw.c netstore.c sysfiles.c geomjob.c \
+SRCS+=		admit.c ynacm.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c bundle.c l2.c ipfw.c netstore.c sysfiles.c geomjob.c \
 		yagent.c yhost.c yhw.c ysshd.c ysystem.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwmatch.c pathcheck.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		routes.c rtimes.c scope.c sdwan.c vnet.c wireguard.c \
-		yif.c yip.c yni.c yrt.c rcroutes.c rtadv.c ylne.c yfw.c yng.c ysd.c \
+		yif.c yip.c yni.c yrt.c rcroutes.c rcarcana.c ynetconf.c yifedit.c rtadv.c ylne.c yfw.c yng.c ysd.c \
 		yts.c ywg.c yserve.c yarcana.c
 # Luxuria: what is not FreeBSD's own, the plugins.
 SRCS+=		bird.c birdwatch.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c idsconf.c surules.c smtpd.c speeder.c telegram.c poudriere.c clamav.c \

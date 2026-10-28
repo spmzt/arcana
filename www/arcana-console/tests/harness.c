@@ -207,7 +207,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN], surules[MAXPATHLEN];
-	char	*argv[132];
+	char	*argv[134];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -1312,7 +1312,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[127] = (char *)(uintptr_t)"jobs.conf";
 	argv[128] = (char *)(uintptr_t)"--speederv2-log";
 	argv[129] = (char *)(uintptr_t)"speeder.log";
-	argv[130] = NULL;
+	/* Its access rules (NACM), the test's own. */
+	argv[130] = (char *)(uintptr_t)"--nacm";
+	argv[131] = (char *)(uintptr_t)"nacm.cbor";
+	argv[132] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(surules, sizeof(surules), "%s/rules", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);

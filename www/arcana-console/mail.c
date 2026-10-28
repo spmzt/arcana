@@ -648,6 +648,24 @@ event(const struct mailconf *mc, const char *host, const ucl_object_t *e)
 				    host, str(d, "severity"), str(d, "type"),
 				    str(d, "object"), str(d, "description") !=
 				    NULL ? str(d, "description") : "");
+		} else if (strcmp(kind, "undo-failed") == 0) {
+			/* Whatever the settings say: the host is left as
+			 * committed, which no one confirmed.  The report is
+			 * the admin's to file; Arcana files nothing. */
+			if (ch == CH_TELEGRAM)
+				hold(ch, "🚨 %s · a commit could not be undone\n"
+				    "%s: %s\nThe rest stays as committed.\n"
+				    "🕒 %s", host, str(d, "node"), str(d,
+				    "message"), when);
+			else
+				hold(ch, "%s %s: ALERT: a commit not confirmed "
+				    "in time could not be undone at %s: %s; the "
+				    "rest stays as committed. Its report, of the "
+				    "failure alone, to file at https://github.com/"
+				    "spmzt/arcana/issues if you choose:\n%s", when,
+				    host, str(d, "node"), str(d, "message"),
+				    str(d, "report") != NULL ? str(d, "report") :
+				    "");
 		} else if (strcmp(kind, "threshold") == 0 && limits) {
 			if (ch == CH_TELEGRAM) {
 				bool	over = ucl_object_toboolean(ucl_object_lookup(d,

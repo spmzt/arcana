@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <unistd.h>
 
 #include <cblink.h>
 #include <ucl.h>
@@ -54,20 +55,6 @@ ident_sid(const char *mod, const char *name)
 			return (id->sid);
 	}
 	return (0);
-}
-
-/* Another host's certificate: refused, as of the agent's own family. */
-bool
-yang_refused(cbl_req *req)
-{
-	const cbl_peer	*p;
-
-	if (!peer_is_host(p = cbl_req_peer(req)))
-		return (false);
-	logmsg(LOG_WARNING, "%s: a host's certificate asked for a model: "
-	    "refused, only the console asks", cbl_peer_subject(p) != NULL ?
-	    cbl_peer_subject(p) : "?");
-	return (true);
 }
 
 /*
@@ -104,11 +91,12 @@ ietf_interfaces_interfaces_get(cbl_req *req, struct ietf_interfaces *data,
 	const struct ietf_network_instance_network_instances *ni;
 	int	error;
 
-	if (yang_refused(req))
-		return (EACCES);
-	if ((error = instances(a, &ni)) != 0)
+	if ((error = instances(a, &ni)) != 0 ||
+	    (error = yif_interfaces(data, ni, a)) != 0)
 		return (error);
-	return (yif_interfaces(data, ni, a));
+	/* Running: what was configured, not what DHCP or SLAAC made. */
+	return (cbl_req_ydatastore(req) == CBL_YDS_RUNNING ?
+	    yif_running(data, a) : 0);
 }
 
 int
@@ -118,8 +106,7 @@ ietf_network_instance_network_instances_get(cbl_req *req,
 	const struct ietf_network_instance_network_instances *ni;
 	int	error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((error = instances(a, &ni)) != 0)
 		return (error);
 	/* None but the host's FIB 0: no instance, no container. */
@@ -134,10 +121,9 @@ ietf_interfaces_interfaces_state_get(cbl_req *req,
     struct ietf_interfaces *data, cbl_yarena *a)
 {
 
+	(void)req;
 	(void)data;
 	(void)a;
-	if (yang_refused(req))
-		return (EACCES);
 	return (0);
 }
 
@@ -148,8 +134,7 @@ ieee802_dot1ax_linkagg_linkagg_get(cbl_req *req,
 	struct ietf_interfaces	 ifs;
 	int			 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	memset(&ifs, 0, sizeof(ifs));
 	if ((error = yif_interfaces(&ifs, NULL, a)) != 0)
 		return (error);
@@ -166,8 +151,7 @@ ieee802_dot1q_bridge_bridges_get(cbl_req *req,
 	struct ietf_interfaces	 ifs;
 	int			 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	memset(&ifs, 0, sizeof(ifs));
 	if ((error = yif_interfaces(&ifs, NULL, a)) != 0)
 		return (error);
@@ -175,22 +159,6 @@ ieee802_dot1q_bridge_bridges_get(cbl_req *req,
 		return (0);
 	return (yif_bridges(ifs.interfaces->interface.v,
 	    ifs.interfaces->interface.n, a, data));
-}
-
-/*
- * Changes go by the agent's jobs still: an EDIT, or the RSTP's
- * protocol-migration-check, is not supported here yet (cblink says
- * operation-not-supported).
- */
-int
-ietf_interfaces_interfaces_edit(cbl_req *req,
-    const struct ietf_interfaces *before, const struct ietf_interfaces *after)
-{
-
-	(void)req;
-	(void)before;
-	(void)after;
-	return (EOPNOTSUPP);
 }
 
 /*
@@ -209,8 +177,8 @@ statics(cbl_yarena *a,
 	int		 error;
 
 	*out = NULL;
-	if (vc_rc_files("", "/usr/local", "routing", "arcana", &paths, &n, err,
-	    sizeof(err)) != 0) {
+	if (vc_rc_files(opts.root != NULL ? opts.root : "", "/usr/local",
+	    "routing", "arcana", &paths, &n, err, sizeof(err)) != 0) {
 		logmsg(LOG_WARNING, "static routes: %s", err);
 		return (0);
 	}
@@ -245,8 +213,7 @@ ietf_routing_routing_get(cbl_req *req, struct ietf_routing *data,
 	struct ietf_routing_routing_control_plane_protocols_control_plane_protocol *p;
 	int	error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((error = yrt_routing(data, 0, a)) != 0 ||
 	    (error = statics(a, &sr)) != 0)
 		return (error);
@@ -278,10 +245,9 @@ ietf_routing_routing_state_get(cbl_req *req, struct ietf_routing *data,
     cbl_yarena *a)
 {
 
+	(void)req;
 	(void)data;
 	(void)a;
-	if (yang_refused(req))
-		return (EACCES);
 	return (0);
 }
 
@@ -294,9 +260,8 @@ ietf_routing_routing_ribs_rib_active_route_action(cbl_req *req,
     cbl_yarena *a)
 {
 
+	(void)req;
 	(void)target;
-	if (yang_refused(req))
-		return (EACCES);
 	return (yrt_active_route(0, in, a, out));
 }
 
@@ -324,8 +289,7 @@ ietf_logical_network_element_logical_network_elements_get(cbl_req *req,
 	const struct ietf_logical_network_element_logical_network_elements *l;
 	int	error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((error = ylne_elements(a, &l)) != 0)
 		return (error);
 	if (l != NULL && l->logical_network_element.n > 0)
@@ -333,15 +297,112 @@ ietf_logical_network_element_logical_network_elements_get(cbl_req *req,
 	return (0);
 }
 
+/* The static routes of a routing tree, rc.conf's protocol of type
+ * static; *other: it has a protocol of another type. */
+static const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *
+static_of(const struct ietf_routing *r, bool *other)
+{
+	const struct ietf_routing_routing_control_plane_protocols *cpp;
+	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *sr = NULL;
+	uint64_t	st = ident_sid("ietf-routing", "static");
+
+	if (r == NULL || r->routing == NULL ||
+	    (cpp = r->routing->control_plane_protocols) == NULL)
+		return (NULL);
+	for (size_t i = 0; i < cpp->control_plane_protocol.n; i++) {
+		if (cpp->control_plane_protocol.v[i].type == st)
+			sr = cpp->control_plane_protocol.v[i].static_routes;
+		else
+			*other = true;
+	}
+	return (sr);
+}
+
+/* What r has, but its protocols, as YANG-CBOR, malloc'd. */
+static int
+but_protocols(const struct ietf_routing *r, struct cbl_ybuf *b)
+{
+	struct ietf_routing_routing	rt;
+	struct ietf_routing		ro;
+
+	memset(&ro, 0, sizeof(ro));
+	if (r->routing != NULL) {
+		rt = *r->routing;
+		rt.control_plane_protocols = NULL;
+		ro.routing = &rt;
+	}
+	if (!cbl_ymember_present(ynode_named("ietf-routing", "routing"), &ro))
+		return (0);
+	return (cbl_yencode_member(ynode_named("ietf-routing", "routing"), &ro,
+	    b));
+}
+
+/*
+ * A commit of FIB 0's static routes (PLAN-SDN-YANG 2.3.5, 2.4.3,
+ * 2.4.4): written to Arcana's rc.conf file as rc.d/routing reads them
+ * (rcr_write(), rcarcana.c's rules: rc_conf_files, the user's
+ * variables), then made the kernel's (rcr_apply()), tried again once
+ * where it fails, a route the table changed meanwhile; failing still,
+ * the files put back.  What else the tree changes is not done here yet.
+ */
 int
 ietf_routing_routing_edit(cbl_req *req, const struct ietf_routing *before,
     const struct ietf_routing *after)
 {
+	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *old, *new;
+	struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes none;
+	struct cbl_ybuf	 b1 = { NULL, 0, 0 }, b2 = { NULL, 0, 0 };
+	struct rca	 x;
+	char		 err[512];
+	bool		 other = false;
+	int		 error;
 
-	(void)req;
-	(void)before;
-	(void)after;
-	return (EOPNOTSUPP);
+	err[0] = '\0';
+	old = static_of(before, &other);
+	new = static_of(after, &other);
+	if ((error = but_protocols(before, &b1)) == 0)
+		error = but_protocols(after, &b2);
+	if (error == 0 && (other || b1.len != b2.len || (b1.len > 0 &&
+	    memcmp(b1.p, b2.p, b1.len) != 0)))
+		error = EOPNOTSUPP;
+	cbl_ybuf_free(&b1);
+	cbl_ybuf_free(&b2);
+	if (error != 0) {
+		if (error == EOPNOTSUPP)
+			(void)cbl_req_set_yerr(req, "only rc.conf's static "
+			    "routes are changed here yet", 0);
+		return (error);
+	}
+	memset(&none, 0, sizeof(none));
+	if (old == NULL)
+		old = &none;
+	if (new == NULL)
+		new = &none;
+	if ((error = rca_open(&x, "routing", err, sizeof(err))) != 0) {
+		(void)cbl_req_set_yerr(req, err, 0);
+		return (error);
+	}
+	if ((error = rcr_write(x.f, 0, new, err, sizeof(err))) != 0 ||
+	    (error = rca_write(&x, req, err, sizeof(err))) != 0) {
+		if (error != EEXIST)
+			(void)cbl_req_set_yerr(req, err, 0);
+		rca_close(&x);
+		return (error);
+	}
+	for (int tries = 0; tries < 2; tries++) {
+		if ((error = rcr_apply(0, old, new, err, sizeof(err))) == 0)
+			break;
+		if (tries == 0)
+			(void)usleep(200000);
+	}
+	if (error != 0) {
+		rca_undo(&x);
+		(void)cbl_req_set_yerr(req, err, 0);
+		logmsg(LOG_WARNING, "static routes: %s: rc.conf as it was",
+		    err);
+	}
+	rca_close(&x);
+	return (error);
 }
 
 int
@@ -433,8 +494,7 @@ ietf_yang_library_yang_library_get(cbl_req *req, struct ietf_yang_library *data,
 	size_t							 ni, nf, k;
 	uint32_t						 i, j;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((yl = cbl_yarena_alloc(a, sizeof(*yl))) == NULL ||
 	    (ms = cbl_yarena_alloc(a, sizeof(*ms))) == NULL ||
 	    (sc = cbl_yarena_alloc(a, sizeof(*sc))) == NULL ||
@@ -532,7 +592,8 @@ ietf_yang_library_modules_state_get(cbl_req *req, struct ietf_yang_library *data
 
 	(void)data;
 	(void)a;
-	return (yang_refused(req) ? EACCES : 0);
+	(void)req;
+	return (0);
 }
 
 /* RFC 8348's hardware: the chassis, CPUs and disks (superbia/yhw.c). */
@@ -543,8 +604,7 @@ ietf_hardware_hardware_get(cbl_req *req, struct ietf_hardware *data,
 	char	*json;
 	int	 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((error = yhw_json(&json)) != 0)
 		return (error);
 	error = yhw_from_json(json, a, data);
@@ -572,8 +632,7 @@ ietf_alarms_alarms_get(cbl_req *req, struct ietf_alarms *data, cbl_yarena *a)
 	char		*json;
 	int		 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	top = ucl_object_typed_new(UCL_OBJECT);
 	faults_json(top);
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
@@ -696,10 +755,9 @@ ietf_alarms_alarms_alarm_list_purge_alarms_action(cbl_req *req,
     cbl_yarena *a)
 {
 
+	(void)req;
 	(void)target;
 	(void)a;
-	if (yang_refused(req))
-		return (EACCES);
 	out->has_purged_alarms = true;
 	return (alarms_purge(in, &out->purged_alarms));
 }
@@ -712,10 +770,9 @@ ietf_alarms_alarms_alarm_list_compress_alarms_action(cbl_req *req,
     cbl_yarena *a)
 {
 
+	(void)req;
 	(void)target;
 	(void)a;
-	if (yang_refused(req))
-		return (EACCES);
 	out->has_compressed_alarms = true;
 	return (alarms_compress(in, &out->compressed_alarms));
 }
@@ -724,7 +781,7 @@ ietf_alarms_alarms_alarm_list_compress_alarms_action(cbl_req *req,
 static cbl_ctx		*yctx;
 
 /* A module's top-level node of that name, in the tables. */
-static const struct cbl_ynode *
+const struct cbl_ynode *
 ynode_named(const char *mod, const char *name)
 {
 	const struct cbl_ymodule	*m;
@@ -818,8 +875,7 @@ ietf_subscribed_notifications_streams_get(cbl_req *req,
 	struct ietf_subscribed_notifications_streams		*st;
 	struct ietf_subscribed_notifications_streams_stream	*v;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	if ((st = cbl_yarena_alloc(a, sizeof(*st))) == NULL ||
 	    (v = cbl_yarena_alloc(a, sizeof(*v))) == NULL)
 		return (ENOMEM);
@@ -852,7 +908,8 @@ ietf_subscribed_notifications_filters_get(cbl_req *req,
 
 	(void)data;
 	(void)a;
-	return (yang_refused(req) ? EACCES : 0);
+	(void)req;
+	return (0);
 }
 
 int
@@ -980,8 +1037,7 @@ ietf_subscribed_notifications_subscriptions_get(cbl_req *req,
 	struct ysubs						 ys;
 	int							 error;
 
-	if (yang_refused(req))
-		return (EACCES);
+	(void)req;
 	memset(&ys, 0, sizeof(ys));
 	ys.a = a;
 	if (yctx != NULL && (error = cbl_ysub_each(yctx, ysub_one, &ys)) != 0)
@@ -1037,8 +1093,6 @@ ietf_subscribed_notifications_modify_subscription_rpc(cbl_req *req,
 
 	(void)out;
 	(void)a;
-	if (yang_refused(req))
-		return (EACCES);
 	return (cbl_ysub_modify(req, in));
 }
 
@@ -1051,8 +1105,6 @@ ietf_yang_push_resync_subscription_rpc(cbl_req *req,
 
 	(void)out;
 	(void)a;
-	if (yang_refused(req))
-		return (EACCES);
 	return (cbl_ysub_resync(req, in->id));
 }
 
@@ -1066,8 +1118,6 @@ ietf_subscribed_notifications_delete_subscription_rpc(cbl_req *req,
 
 	(void)out;
 	(void)a;
-	if (yang_refused(req))
-		return (EACCES);
 	if (cbl_ysub_delete(req, in->id) != 0) {
 		(void)cbl_req_set_yerr(req, "no such subscription of this "
 		    "connection", 0);
@@ -1086,8 +1136,6 @@ ietf_subscribed_notifications_kill_subscription_rpc(cbl_req *req,
 
 	(void)out;
 	(void)a;
-	if (yang_refused(req))
-		return (EACCES);
 	if (yctx == NULL || cbl_ysub_kill(yctx, in->id) != 0) {
 		(void)cbl_req_set_yerr(req, "no such subscription", 0);
 		return (ENOENT);
@@ -1148,7 +1196,8 @@ yang_serve(cbl_ctx *ctx)
 
 	/* Each request on a thread of its own: a read of the storage or of
 	 * BIRD holds no other, as the agent's own family's slow reads. */
-	if ((error = cbl_yserver_add(ctx, &ymodel_server, NULL)) != 0)
+	if ((error = cbl_yserver_add(ctx, &ymodel_server, NULL)) != 0 ||
+	    (error = ynetconf_datastores(ctx)) != 0)
 		return (error);
 	yctx = ctx;
 	(void)cbl_ysub_set_replay(ctx, yreplay, NULL);

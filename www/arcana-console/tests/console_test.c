@@ -329,6 +329,215 @@ ATF_TC_BODY(unauthenticated, tc)
 CONSOLE_TC(restconf, "RESTCONF's reads: discovery, the root, the fleet "
     "and a host's data by api-path, content, depth, fields and "
     "with-defaults; its errors")
+/*
+ * NACM (RFC 8341) on the host: the console says whose each request is.
+ * An operator of the console's is in no group of the host's rules, so
+ * what changes the host is refused to him there; the admin's goes.
+ */
+ATF_TC_WITHOUT_HEAD(nacm_user);
+ATF_TC_BODY(nacm_user, tc)
+{
+	static const char job[] = "{\"jobs\":[{\"kind\":\"monitor\","
+	    "\"verb\":\"set\",\"args\":[\"name=gre8\",\"interface=gre8\","
+	    "\"address=192.0.2.8\",\"interval=500\",\"eval=10000\"]}]}";
+	struct authn	 a, b;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64], id[16];
+	char		 path[256], invite[80];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	http("PUT", "/api/roles/ops", "{\"console\":\"member\",\"hosts\":"
+	    "{\"*\":\"operator\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("PUT", "/api/users/bob", "{\"roles\":[\"ops\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/users/bob/invite", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", id);
+	/* bob: the console lets an operator change; the host does not. */
+	cookie[0] = '\0';
+	authn_new(&b, -8);
+	do_register(&b, invite, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r, "user"));
+	resp_free(&r);
+	http("POST", path, job, &r);
+	ATF_CHECK_MSG(strstr(r.body, "access denied: arcana:job-submit") !=
+	    NULL, "%d %s", r.status, r.body);
+	resp_free(&r);
+	/* The admin. */
+	cookie[0] = '\0';
+	do_login(&a, 1, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", path, job, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "access denied") == NULL);
+	resp_free(&r);
+}
+
+/*
+ * What the console does for no one (a workflow at its interval) it asks
+ * as NACM's user "console", never as the agent's recovery session, even
+ * over the local socket as the agent's own user: with "console" out of
+ * the agent's group admin, the run's change is refused.
+ */
+ATF_TC_WITHOUT_HEAD(nacm_console);
+ATF_TC_BODY(nacm_console, tc)
+{
+	static const char rules[] = "{\"groups\":{\"group\":[{\"name\":"
+	    "\"admin\",\"user-name\":[\"admin\"]}]},\"rule-list\":[{\"name\":"
+	    "\"admin\",\"group\":[\"admin\"],\"rule\":[{\"name\":\"all\","
+	    "\"module-name\":\"*\",\"access-operations\":\"*\",\"action\":"
+	    "\"permit\"}]}]}";
+	struct authn	 a;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 512], id[16];
+	char		 wid[16], cmd[3 * MAXPATHLEN];
+	const char	*ctl;
+	FILE		*fp;
+	int		 i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	ctl = locate(tc, "../../../usr.sbin/arcanactl/arcanactl", "arcanactl",
+	    "/usr/local/sbin/arcanactl");
+	/* The agent's rules, by its recovery session (this test's uid). */
+	ATF_REQUIRE((fp = fopen("rules.json", "w")) != NULL);
+	fprintf(fp, "%s\n", rules);
+	fclose(fp);
+	snprintf(cmd, sizeof(cmd), "%s -c unix:%s/jgd.sock edit nacm "
+	    "@rules.json && %s -c unix:%s/jgd.sock commit", ctl, cwd, ctl, cwd);
+	ATF_REQUIRE_EQ_MSG(0, system(cmd), "%s", cmd);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"each minute\",\"hosts\":"
+	    "[\"%s\"],\"every\":60,\"steps\":[{\"id\":\"s\",\"job\":{\"kind\":"
+	    "\"monitor\",\"verb\":\"set\",\"args\":[\"name=gre8\","
+	    "\"interface=gre8\",\"address=192.0.2.8\",\"interval=500\","
+	    "\"eval=10000\"]}}]}", id);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "id") != NULL);
+	snprintf(wid, sizeof(wid), "%s", jstr(&r, "id"));
+	resp_free(&r);
+	ATF_REQUIRE((fp = fopen("data/every.json", "w")) != NULL);
+	fprintf(fp, "{\"%s\": %lld}\n", wid, (long long)time(NULL) - 58);
+	fclose(fp);
+	restart_console();
+	for (i = 0; i < 300; i++) {
+		http("GET", "/api/runs", NULL, &r);
+		if (strstr(r.body, "\"each minute\"") != NULL &&
+		    strstr(r.body, "\"running\"") == NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(i < 300, "the workflow did not run");
+	ATF_CHECK_MSG(strstr(r.body, "access denied: arcana:job-submit") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+}
+
+/*
+ * RESTCONF's changes (RFC 8040, RFC 8527): running is not written; the
+ * candidate's node PUT, read back from the candidate's datastore; a
+ * confirmed commit refused without persist; with it, then confirmed by
+ * its persist-id; running has it.  NACM's rules, the agent's own file.
+ */
+ATF_TC_WITHOUT_HEAD(restconf_write);
+ATF_TC_BODY(restconf_write, tc)
+{
+	static const char rules[] = "{\"ietf-netconf-acm:nacm\":{"
+	    "\"groups\":{\"group\":[{\"name\":\"admin\",\"user-name\":"
+	    "[\"admin\",\"console\"]},{\"name\":\"ops\",\"user-name\":"
+	    "[\"bob\"]}]},\"rule-list\":[{\"name\":\"admin\",\"group\":"
+	    "[\"admin\"],\"rule\":[{\"name\":\"all\",\"module-name\":\"*\","
+	    "\"access-operations\":\"*\",\"action\":\"permit\"}]}]}}";
+	struct authn	 a;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64], id[16];
+	char		 data[256], cand[256], run[256], path[320];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(data, sizeof(data), "/restconf/data/arcana-fleet:fleet/"
+	    "host=%s", id);
+	snprintf(cand, sizeof(cand), "/restconf/ds/ietf-datastores:candidate/"
+	    "arcana-fleet:fleet/host=%s", id);
+	snprintf(run, sizeof(run), "/restconf/ds/ietf-datastores:running/"
+	    "arcana-fleet:fleet/host=%s", id);
+	/* Running is changed by a commit alone. */
+	snprintf(path, sizeof(path), "%s/ietf-netconf-acm:nacm", data);
+	http("PUT", path, rules, &r);
+	EXPECT(&r, 405);
+	ATF_CHECK_MSG(strstr(r.body, "confirmed commit of the candidate") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-netconf-acm:nacm", cand);
+	http("PUT", path, rules, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"ops\"") != NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-netconf-acm:nacm", run);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"ops\"") == NULL, "%s", r.body);
+	resp_free(&r);
+	/* Confirmed: its persist token, then confirmed by it. */
+	snprintf(path, sizeof(path), "%s/ietf-netconf:commit", data);
+	http("POST", path, "{\"ietf-netconf:input\":{\"confirmed\":[null],"
+	    "\"confirm-timeout\":60}}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK(strstr(r.body, "persist") != NULL);
+	resp_free(&r);
+	http("POST", path, "{\"ietf-netconf:input\":{\"confirmed\":[null],"
+	    "\"confirm-timeout\":60,\"persist\":\"t1\"}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("POST", path, "{\"ietf-netconf:input\":{\"persist-id\":\"t1\"}}",
+	    &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-netconf-acm:nacm", run);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"ops\"") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* What is not taken. */
+	snprintf(path, sizeof(path), "%s/ietf-netconf:lock", data);
+	http("POST", path, "{}", &r);
+	ATF_CHECK(r.status == 404 || r.status == 405 || r.status == 400);
+	resp_free(&r);
+}
+
 ATF_TC_BODY(restconf, tc)
 {
 	struct authn	 a;
@@ -9951,6 +10160,9 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, csrf);
 	ATF_TP_ADD_TC(tp, jails);
 	ATF_TP_ADD_TC(tp, restconf);
+	ATF_TP_ADD_TC(tp, restconf_write);
+	ATF_TP_ADD_TC(tp, nacm_user);
+	ATF_TP_ADD_TC(tp, nacm_console);
 	ATF_TP_ADD_TC(tp, services);
 	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, agent_build);

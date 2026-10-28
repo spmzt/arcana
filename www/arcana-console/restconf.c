@@ -68,6 +68,8 @@ struct rcseg {
 	size_t			 nkey;
 };
 
+#define	ACCEPT_MAX	8
+
 struct rcreq {
 	struct rcseg	 seg[SEG_MAX];
 	size_t		 nseg;
@@ -76,6 +78,13 @@ struct rcreq {
 	int		 content;
 	int		 defaults;
 	struct fsel	*fields;
+	/* Of the datastores (RFC 8527) and the changes: */
+	int		 ds;		/* CBL_YDS_*; -1, /restconf/data */
+	int		 method;	/* HTTP_METHOD_* */
+	ucl_object_t	*body;		/* a PUT's, an rpc's input */
+	const struct cbl_ynode *rpc;	/* POSTed: ietf-netconf's */
+	char		*accept[ACCEPT_MAX];
+	size_t		 naccept;
 };
 
 static char	*errors_of(int, const char *, const char *, const char *);
@@ -376,6 +385,23 @@ library_object(void)
 }
 
 /*
+ * /restconf/ds/ietf-datastores:<datastore>/... (RFC 8527 section 3.1):
+ * a host's running, candidate or operational state, below its entry.
+ */
+int
+api_restconf_ds(struct http_request *req)
+{
+	char	sid[16];
+
+	if (req->hdlr_extra != NULL || restconf_host(req->path, sid,
+	    sizeof(sid)))
+		return (api_restconf_host(req));
+	return (restconf_error(req, 404, "the datastores are each host's: "
+	    "/restconf/ds/ietf-datastores:<running|candidate|operational>/"
+	    "arcana-fleet:fleet/host=<id>"));
+}
+
+/*
  * GET /restconf/data[/...]: the console's own nodes here; a host's
  * (FLEET "/host=") read from its agent (hosts.c, restconf_run()).
  */
@@ -386,19 +412,21 @@ api_restconf_data(struct http_request *req)
 	const char	*p = req->path + strlen("/restconf/data");
 	char		 sid[16];
 
-	/* Of POSTs, establish-subscription under a host's entry alone. */
-	if (req->method == HTTP_METHOD_POST) {
+	/* establish-subscription POSTed under a host's entry; what else
+	 * a host's is, hosts.c's (a change refused or run there). */
+	if (req->method == HTTP_METHOD_POST && req->hdlr_extra == NULL) {
 		const char	*e = strrchr(req->path, '/');
 
-		if (!restconf_host(req->path, sid, sizeof(sid)) || e == NULL ||
+		if (restconf_host(req->path, sid, sizeof(sid)) && e != NULL &&
 		    strcmp(e, "/ietf-subscribed-notifications:"
-		    "establish-subscription") != 0)
-			return (restconf_error(req, 405, "of what is POSTed, "
-			    "establish-subscription under a host's entry alone"));
-		return (restconf_establish(req, sid));
+		    "establish-subscription") == 0)
+			return (restconf_establish(req, sid));
 	}
 	if (restconf_host(req->path, sid, sizeof(sid)))
 		return (api_restconf_host(req));
+	if (req->method != HTTP_METHOD_GET)
+		return (restconf_error(req, 405, "the console's own data is "
+		    "read alone; a host's changes are below its entry"));
 	if (!guard(req, false))
 		return (WEB_OK);
 	if (req->query_string != NULL && req->query_string[0] != '\0')
@@ -428,16 +456,57 @@ api_restconf_data(struct http_request *req)
 	return (reply_doc(req, top));
 }
 
-/* path's host, when it is FLEET "/host=<id>"[/...]. */
+#define	DS_PREFIX	"/restconf/ds/ietf-datastores:"
+#define	HOST_SEG	"/arcana-fleet:fleet/host="
+
+/*
+ * What path names below a datastore's root: /restconf/data's (the
+ * agent's default, *ds -1), or an NMDA datastore's (RFC 8527 section
+ * 3.1: /restconf/ds/ietf-datastores:running, candidate, operational).
+ * NULL: neither.
+ */
+static const char *
+below_root(const char *path, int *ds)
+{
+	static const struct {
+		const char	*name;
+		int		 ds;
+	} dss[] = {
+		{ "running", CBL_YDS_RUNNING },
+		{ "candidate", CBL_YDS_CANDIDATE },
+		{ "operational", CBL_YDS_OPERATIONAL },
+	};
+	const char	*p, *e;
+
+	*ds = -1;
+	if (strncmp(path, "/restconf/data", 14) == 0)
+		return (path + 14);
+	if (strncmp(path, DS_PREFIX, sizeof(DS_PREFIX) - 1) != 0)
+		return (NULL);
+	p = path + sizeof(DS_PREFIX) - 1;
+	e = strchrnul(p, '/');
+	for (size_t i = 0; i < nitems(dss); i++)
+		if (strlen(dss[i].name) == (size_t)(e - p) &&
+		    strncmp(p, dss[i].name, (size_t)(e - p)) == 0) {
+			*ds = dss[i].ds;
+			return (e);
+		}
+	return (NULL);
+}
+
+/* path's host, when it is a host's entry "/host=<id>"[/...] below a
+ * datastore's root. */
 bool
 restconf_host(const char *path, char *sid, size_t len)
 {
 	const char	*p, *e;
 	size_t		 n;
+	int		 ds;
 
-	if (strncmp(path, FLEET "/host=", sizeof(FLEET "/host=") - 1) != 0)
+	if ((p = below_root(path, &ds)) == NULL || strncmp(p, HOST_SEG,
+	    sizeof(HOST_SEG) - 1) != 0)
 		return (false);
-	p = path + sizeof(FLEET "/host=") - 1;
+	p += sizeof(HOST_SEG) - 1;
 	e = strchrnul(p, '/');
 	n = (size_t)(e - p);
 	if (n == 0 || n >= len || strspn(p, "0123456789abcdef") < n)
@@ -517,6 +586,23 @@ node_named(const struct cbl_ynode *parent, const char *mod, const char *name)
 		    c->module == parent->module)
 			return (c);
 	}
+	return (NULL);
+}
+
+/* ietf-netconf's rpc of a datastore's, by name; NULL: no such one. */
+static const struct cbl_ynode *
+rpc_named(const char *mod, const char *name)
+{
+	const struct cbl_ymodule	*m;
+
+	if (strcmp(mod, "ietf-netconf") != 0 || (strcmp(name, "commit") !=
+	    0 && strcmp(name, "cancel-commit") != 0 && strcmp(name,
+	    "discard-changes") != 0) || (m = module_named(mod)) == NULL)
+		return (NULL);
+	for (uint32_t k = 0; k < m->ntop; k++)
+		if (m->top[k]->kind == CBL_YN_RPC && strcmp(m->top[k]->name,
+		    name) == 0)
+			return (m->top[k]);
 	return (NULL);
 }
 
@@ -609,6 +695,9 @@ restconf_free(struct rcreq *r)
 	if (r == NULL)
 		return;
 	fields_free(r->fields);
+	ucl_object_unref(r->body);
+	for (size_t i = 0; i < r->naccept; i++)
+		free(r->accept[i]);
 	/* The segment being read when it failed has keys too. */
 	for (size_t i = 0; i < SEG_MAX && i <= r->nseg; i++)
 		for (size_t k = 0; k < r->seg[i].nkey; k++)
@@ -635,6 +724,8 @@ restconf_parse(const char *path, const char *query, const char **why)
 		*why = "out of memory";
 		return (NULL);
 	}
+	r->ds = -1;
+	r->method = HTTP_METHOD_GET;
 	/* The query.  libwebsockets cuts it at ";" as at "&": a piece with
 	 * no "=" is the rest of the one before it (fields'). */
 	qcopy = query != NULL ? strdup(query) : NULL;
@@ -686,16 +777,34 @@ restconf_parse(const char *path, const char *query, const char **why)
 				    "in ( )";
 				goto bad;
 			}
+		} else if (strcmp(arg, "arcana-accept") == 0) {
+			/* Arcana's own: the warnings a change goes on
+			 * despite, each its error-app-tag, by commas. */
+			char	*t;
+
+			while ((t = strsep(&val, ",")) != NULL)
+				if (*t != '\0' && r->naccept < ACCEPT_MAX &&
+				    (r->accept[r->naccept++] = strdup(t)) ==
+				    NULL) {
+					*why = "out of memory";
+					goto bad;
+				}
 		} else {
 			*why = "of the query parameters content, depth, "
-			    "fields and with-defaults are taken";
+			    "fields, with-defaults and arcana-accept are "
+			    "taken";
 			goto bad;
 		}
 	}
 	free(qcopy);
 	qcopy = NULL;
 	/* The path below the host's entry, a segment a node. */
-	rest = strchr(path + sizeof(FLEET "/host=") - 1, '/');
+	if ((rest = (char *)(uintptr_t)below_root(path, &r->ds)) == NULL ||
+	    strncmp(rest, HOST_SEG, sizeof(HOST_SEG) - 1) != 0) {
+		*why = "no host's entry";
+		goto bad;
+	}
+	rest = strchr(rest + sizeof(HOST_SEG) - 1, '/');
 	if (rest == NULL || rest[1] == '\0')
 		return (r);
 	if ((copy = strdup(rest + 1)) == NULL) {
@@ -721,6 +830,11 @@ restconf_parse(const char *path, const char *query, const char **why)
 			mod = seg;
 			name = colon + 1;
 		}
+		/* An rpc of the host's, the path's only node: invoked as
+		 * an action of the mount (RFC 8528 section 3.3). */
+		if (r->nseg == 0 && rest == NULL && mod != NULL &&
+		    (r->rpc = rpc_named(mod, name)) != NULL)
+			break;
 		if ((sg->n = node_named(r->nseg == 0 ? NULL :
 		    r->seg[r->nseg - 1].n, mod, name)) == NULL) {
 			*why = r->nseg == 0 && mod == NULL ? "the first node "
@@ -1197,6 +1311,284 @@ node_path(uint64_t sid, char *buf, size_t len)
 }
 
 /*
+ * A change asked of a host (RFC 8040 section 4.5, 4.7, 3.6), checked
+ * before the host is: a top-level node PUT or DELETEd in the candidate,
+ * running changed by a commit of it alone (the agents take no other);
+ * ietf-netconf's commit, cancel-commit and discard-changes POSTed as
+ * the mount's actions.  Through the console a confirmed commit carries
+ * persist: its connections are shared by every user, whose closing must
+ * not undo it.  body is kept (NULL: none).  0, or the status and *why.
+ */
+int
+restconf_prepare(struct rcreq *r, int method, ucl_object_t *body,
+    const char **why)
+{
+	const struct cbl_ynode	*n = r->nseg > 0 ? r->seg[0].n : NULL;
+	const ucl_object_t	*in, *v;
+	char			 key[256];
+
+	r->method = method;
+	r->body = body;
+	if (method == HTTP_METHOD_GET)
+		return (r->rpc != NULL ? (*why = "an rpc is POSTed", 405) : 0);
+	if (method == HTTP_METHOD_POST) {
+		if (r->rpc == NULL || r->ds != -1) {
+			*why = "of what is POSTed under a host's entry, "
+			    "establish-subscription and ietf-netconf's commit, "
+			    "cancel-commit and discard-changes";
+			return (405);
+		}
+		in = ucl_object_lookup(body, "ietf-netconf:input");
+		if (body != NULL && in == NULL && ucl_object_type(body) ==
+		    UCL_OBJECT && body->len > 0) {
+			*why = "an rpc's body is {\"ietf-netconf:input\": "
+			    "{...}}";
+			return (400);
+		}
+		if (strcmp(r->rpc->name, "commit") == 0 && in != NULL &&
+		    ucl_object_lookup(in, "confirmed") != NULL &&
+		    ucl_object_lookup(in, "persist") == NULL) {
+			*why = "a confirmed commit through the console says "
+			    "persist: the console's connection to the host is "
+			    "every user's, and its session's end would undo it";
+			return (400);
+		}
+		return (0);
+	}
+	if (r->ds != CBL_YDS_CANDIDATE) {
+		*why = "running changes by a confirmed commit of the "
+		    "candidate: the node put or deleted under "
+		    "/restconf/ds/ietf-datastores:candidate, then "
+		    "ietf-netconf:commit POSTed under the host's entry";
+		return (405);
+	}
+	if (r->nseg != 1 || n == NULL || r->seg[0].nkey > 0 ||
+	    (n->flags & CBL_YNF_CONFIG) == 0) {
+		*why = "of the candidate, a host's top-level configuration "
+		    "node is put or deleted whole, so far";
+		return (501);
+	}
+	if (method == HTTP_METHOD_PUT) {
+		snprintf(key, sizeof(key), "%s:%s", n->module->name, n->name);
+		if ((v = ucl_object_lookup(body, key)) == NULL) {
+			*why = "a PUT's body is the node: {\"module:node\": "
+			    "...}";
+			return (400);
+		}
+		(void)v;
+	} else if (method != HTTP_METHOD_DELETE) {
+		*why = "GET, PUT, DELETE and POST";
+		return (405);
+	}
+	return (0);
+}
+
+/* Whether r confirms a commit: its connection one of its own, a proof
+ * that a new one reaches the host after the change. */
+bool
+restconf_confirms(const struct rcreq *r)
+{
+	const ucl_object_t	*in;
+
+	if (r->rpc == NULL || strcmp(r->rpc->name, "commit") != 0)
+		return (false);
+	in = ucl_object_lookup(r->body, "ietf-netconf:input");
+	return (ucl_object_lookup(in, "persist-id") != NULL &&
+	    ucl_object_lookup(in, "confirmed") == NULL);
+}
+
+/* The status and error-tag of an agent's refusal, RFC 8040 section 7. */
+static int
+refusal(int error, const char **tag)
+{
+
+	switch (error) {
+	case ENOENT:
+		*tag = "invalid-value";
+		return (404);
+	case EACCES:
+	case EPERM:
+		*tag = "access-denied";
+		return (403);
+	case EINVAL:
+	case ERANGE:
+		*tag = "invalid-value";
+		return (400);
+	case EOPNOTSUPP:
+		*tag = "operation-not-supported";
+		return (501);
+	case EBUSY:
+		*tag = "in-use";
+		return (409);
+	case EEXIST:
+		/* A change that needs consent: its error-app-tag says. */
+		*tag = "operation-failed";
+		return (409);
+	case ENOMEM:
+	case ENOSPC:
+		*tag = "resource-denied";
+		return (500);
+	default:
+		*tag = "operation-failed";
+		return (502);
+	}
+}
+
+/* An rpc of ietf-netconf's over conn, its input from r's body. */
+static int
+run_rpc(cbl_conn *conn, const struct rcreq *r, char *err, size_t errlen,
+    char *apptag, size_t taglen, ucl_object_t **warnings)
+{
+	const struct cbl_ywarning	*w;
+	const struct cbl_ynode		*inode = NULL;
+	const ucl_object_t		*in, *v;
+	struct ietf_netconf_commit_input cin;
+	struct ietf_netconf_cancel_commit_input kin;
+	struct ietf_netconf_discard_changes_input din;
+	const void			*input;
+	cbl_yarena			*a;
+	cbl_msg				*m, *rep = NULL;
+	size_t				 nw;
+	int				 error;
+
+	err[0] = apptag[0] = '\0';
+	*warnings = NULL;
+	for (uint32_t i = 0; i < r->rpc->nchild; i++)
+		if (r->rpc->child[i]->kind == CBL_YN_INPUT)
+			inode = r->rpc->child[i];
+	in = ucl_object_lookup(r->body, "ietf-netconf:input");
+	memset(&cin, 0, sizeof(cin));
+	memset(&kin, 0, sizeof(kin));
+	memset(&din, 0, sizeof(din));
+	if (strcmp(r->rpc->name, "commit") == 0) {
+		cin.confirmed = ucl_object_lookup(in, "confirmed") != NULL;
+		if ((v = ucl_object_lookup(in, "confirm-timeout")) != NULL) {
+			int64_t t = ucl_object_toint(v);
+
+			if (t < 1 || t > UINT32_MAX) {
+				snprintf(err, errlen, "confirm-timeout is 1 "
+				    "or more seconds");
+				return (EINVAL);
+			}
+			cin.has_confirm_timeout = true;
+			cin.confirm_timeout = (uint32_t)t;
+		}
+		cin.persist = ucl_object_tostring(ucl_object_lookup(in,
+		    "persist"));
+		cin.persist_id = ucl_object_tostring(ucl_object_lookup(in,
+		    "persist-id"));
+		input = &cin;
+	} else if (strcmp(r->rpc->name, "cancel-commit") == 0) {
+		kin.persist_id = ucl_object_tostring(ucl_object_lookup(in,
+		    "persist-id"));
+		input = &kin;
+	} else
+		input = &din;
+	if (inode == NULL)
+		return (EOPNOTSUPP);
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_RPC, 0, &m)) != 0)
+		return (error);
+	if ((error = cbl_msg_put_ynode(m, inode, input)) != 0 ||
+	    (r->naccept > 0 && (error = cbl_msg_set_accept(m,
+	    (const char *const *)r->accept, r->naccept)) != 0)) {
+		cbl_msg_free(m);
+		return (error);
+	}
+	if ((error = cbl_request(conn, m, &rep, -1)) != 0) {
+		snprintf(err, errlen, "%s", rep != NULL &&
+		    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
+		    strerror(error));
+		if (rep != NULL && cbl_msg_err_apptag(rep) != NULL)
+			snprintf(apptag, taglen, "%s",
+			    cbl_msg_err_apptag(rep));
+		cbl_msg_free(rep);
+		return (error);
+	}
+	/* What the host says it did, which needs telling. */
+	if ((a = cbl_yarena_new()) != NULL) {
+		if (cbl_msg_ywarnings(rep, a, &w, &nw) == 0 && nw > 0) {
+			*warnings = ucl_object_typed_new(UCL_ARRAY);
+			for (size_t i = 0; i < nw; i++) {
+				ucl_object_t *o = ucl_object_typed_new(
+				    UCL_OBJECT);
+
+				ucl_object_insert_key(o, ucl_object_fromstring(
+				    w[i].tag), "tag", 0, false);
+				ucl_object_insert_key(o, ucl_object_fromstring(
+				    w[i].text), "text", 0, false);
+				ucl_array_append(*warnings, o);
+			}
+		}
+		cbl_yarena_free(a);
+	}
+	cbl_msg_free(rep);
+	return (0);
+}
+
+/* A change of a host's (restconf_prepare()) over conn: 204, or the
+ * warnings it gives with 200; refused, ietf-restconf's errors. */
+static void
+change_run(cbl_conn *conn, const struct rcreq *r, char **json, int *status)
+{
+	const struct cbl_ynode	*n = r->nseg > 0 ? r->seg[0].n : NULL;
+	ucl_object_t		*warnings = NULL, *top, *e;
+	const char		*tag;
+	uint64_t		 errsid = 0;
+	char			 err[512], apptag[80], key[256], path[512];
+	int			 error;
+
+	apptag[0] = '\0';
+	if (r->rpc != NULL)
+		error = run_rpc(conn, r, err, sizeof(err), apptag,
+		    sizeof(apptag), &warnings);
+	else {
+		snprintf(key, sizeof(key), "%s:%s", n->module->name, n->name);
+		error = yjson_edit(conn, n, r->method == HTTP_METHOD_DELETE ?
+		    NULL : ucl_object_lookup(r->body, key), CBL_YDS_CANDIDATE,
+		    (const char *const *)r->accept, r->naccept, err,
+		    sizeof(err), &errsid, apptag, sizeof(apptag));
+	}
+	if (error != 0) {
+		*status = refusal(error, &tag);
+		top = NULL;
+		*json = errors_of(*status, tag, errsid != 0 ? node_path(errsid,
+		    path, sizeof(path)) : NULL, err);
+		/* The consent it waits for, as RFC 8040 section 7.1 has
+		 * an error-app-tag. */
+		if (apptag[0] != '\0' && *json != NULL) {
+			struct ucl_parser *p = ucl_parser_new(0);
+
+			if (ucl_parser_add_string(p, *json, 0) &&
+			    (top = ucl_parser_get_object(p)) != NULL &&
+			    (e = (ucl_object_t *)(uintptr_t)ucl_array_head(
+			    ucl_object_lookup_path(top,
+			    "ietf-restconf:errors.error"))) != NULL) {
+				ucl_object_insert_key(e, ucl_object_fromstring(
+				    apptag), "error-app-tag", 0, false);
+				free(*json);
+				*json = (char *)ucl_object_emit(top,
+				    UCL_EMIT_JSON_COMPACT);
+			}
+			ucl_object_unref(top);
+			ucl_parser_free(p);
+		}
+		return;
+	}
+	if (warnings == NULL) {
+		*status = 204;
+		*json = strdup("");
+		return;
+	}
+	*status = 200;
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, warnings, "arcana-fleet:warnings", 0,
+	    false);
+	*json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+}
+
+/*
  * A host's part of the datastore, read from its agent over conn: its
  * entry (id, name and what is mounted under it) or the node r names.
  * The reply's body in *json, malloc'd, and its status.
@@ -1214,46 +1606,19 @@ restconf_run(cbl_conn *conn, const struct rcreq *r, const char *id,
 	char			 err[256], path[512];
 	int			 error;
 
+	if (r->method != HTTP_METHOD_GET) {
+		change_run(conn, r, json, status);
+		return;
+	}
 	*status = 200;
 	sid = r->nseg > 0 ? r->seg[0].n->sid : 0;
-	if ((error = ytrans_get(conn, r->nseg > 0 ? &sid : NULL, r->nseg > 0 ?
-	    1 : 0, r->xpath, &doc, err, sizeof(err), &errsid)) != 0) {
+	if ((error = ytrans_get_ds(conn, r->nseg > 0 ? &sid : NULL, r->nseg >
+	    0 ? 1 : 0, r->xpath, r->ds, &doc, err, sizeof(err),
+	    &errsid)) != 0) {
 		/* The agent's refusal as RFC 8040 section 7 has it. */
 		const char	*tag;
 
-		switch (error) {
-		case ENOENT:
-			*status = 404;
-			tag = "invalid-value";
-			break;
-		case EACCES:
-		case EPERM:
-			*status = 403;
-			tag = "access-denied";
-			break;
-		case EINVAL:
-		case ERANGE:
-			*status = 400;
-			tag = "invalid-value";
-			break;
-		case EOPNOTSUPP:
-			*status = 501;
-			tag = "operation-not-supported";
-			break;
-		case EBUSY:
-			*status = 409;
-			tag = "in-use";
-			break;
-		case ENOMEM:
-		case ENOSPC:
-			*status = 500;
-			tag = "resource-denied";
-			break;
-		default:
-			*status = 502;
-			tag = "operation-failed";
-			break;
-		}
+		*status = refusal(error, &tag);
 		*json = errors_of(*status, tag, node_path(errsid, path,
 		    sizeof(path)), err);
 		return;

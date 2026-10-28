@@ -171,6 +171,13 @@ module arcana-events {
       "Suricata raised an alert in an IDS instance.";
   }
 
+  identity undo-failed {
+    base event-kind;
+    description
+      "The undo of a confirmed commit not confirmed in time failed: the
+       node, why, and a report to file as a bug.";
+  }
+
   grouping event {
     description
       "One event.";

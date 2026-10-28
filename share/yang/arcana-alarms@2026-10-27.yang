@@ -118,4 +118,12 @@ module arcana-alarms {
       "OpenSMTPD enabled and not running, or more queued than the
        limit set: the host's, or a jail's.";
   }
+
+  identity undo {
+    base arcana-fault;
+    description
+      "A confirmed commit that was not confirmed could not be undone:
+       what is left stays as committed, its report sent to the
+       console to be filed as a bug.";
+  }
 }

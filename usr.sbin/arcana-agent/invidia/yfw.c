@@ -112,6 +112,7 @@ kept_lists(cbl_yarena *a, const ucl_object_t *top, ykept *k)
 		if (!yj_num(e, "num", &num))
 			continue;
 		memset(&r[n], 0, sizeof(r[n]));
+		r[n].has_number = true;
 		r[n].number = (uint32_t)num;
 		r[n].text = yj_str(a, e, "text");
 		r[n].source = yj_str(a, e, "source");
@@ -289,9 +290,12 @@ yfw_from_json(const char *json, cbl_yarena *a, yfw *out)
 		if (!yj_num(e, "num", &num))
 			continue;
 		memset(&r[n], 0, sizeof(r[n]));
+		r[n].has_number = true;
 		r[n].number = (uint32_t)num;
-		if (yj_num(e, "set", &num))
+		if (yj_num(e, "set", &num)) {
+			r[n].has_set = true;
 			r[n].set = (uint8_t)num;
+		}
 		YJ_NUM(e, "pkts", &r[n], packets);
 		YJ_NUM(e, "bytes", &r[n], octets);
 		r[n].text = yj_str(a, e, "text");
@@ -428,6 +432,7 @@ yfw_kept_from_text(const char *text, const char *sha256, cbl_yarena *a,
 		}
 		if (strncmp(w, "add ", 4) == 0 && isdigit((unsigned char)w[4])) {
 			memset(&r[nr], 0, sizeof(r[nr]));
+			r[nr].has_number = true;
 			r[nr].number = (uint32_t)strtoul(w + 4, &num, 10);
 			num += strspn(num, " ");
 			r[nr].text = astrndup(a, num, (size_t)(e - num));

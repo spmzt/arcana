@@ -43,13 +43,14 @@ do_if_vnet(struct work *w, const char *ifname, const char *jail, bool back,
 {
 	struct cconf		 conf;
 	const struct cjail	*cj;
+	const struct arc_param	*p;
 	struct jc_conf		 jc;
 	struct jc_file		*f;
 	struct jc_block		*b;
 	const char		*e;
 	char			*newbuf, ebuf[512];
-	size_t			 newlen;
-	bool			 inside, edit;
+	size_t			 newlen, i;
+	bool			 inside, edit, has;
 	int			 jid, rc;
 
 	/* The jail runs, with a network of its own: jls says so. */
@@ -92,10 +93,17 @@ do_if_vnet(struct work *w, const char *ifname, const char *jail, bool back,
 			    ": " : "", jc.error != NULL ? jc.error : "");
 			goto out;
 		}
-		/* What the file says already stays as it is written. */
-		if (jc_block_has(b, "vnet.interface", ifname) == back) {
-			if (jc_edit(&jc, f, b, "vnet.interface", ifname, !back,
-			    &newbuf, &newlen, ebuf, sizeof(ebuf)) == -1) {
+		/* What jail(8) reads there already stays as it is written. */
+		p = cjail_param(cj, "vnet.interface");
+		has = false;
+		for (i = 0; p != NULL && i < p->values.n; i++)
+			if (strcmp(p->values.v[i], ifname) == 0)
+				has = true;
+		if (has == back) {
+			if (jc_edit(f, b, "vnet.interface", ifname, !back,
+			    p != NULL ? p->values.v : NULL, p != NULL ?
+			    p->values.n : 0, &newbuf, &newlen, ebuf,
+			    sizeof(ebuf)) == -1) {
 				*errp = wtext(w, wstrdup(w, ebuf));
 				goto out;
 			}

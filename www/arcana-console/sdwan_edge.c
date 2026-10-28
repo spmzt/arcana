@@ -10811,7 +10811,7 @@ apply_begin(struct plan *plp, ucl_object_t *st, ucl_object_t *chg, bool fresh,
 	plan_free(plp);
 	/* Counted before the thread runs: it frees r when it is done. */
 	nsteps = (int)ucl_array_size(r->steps);
-	if ((error = pthread_create(&tid, NULL, run_main, r)) != 0) {
+	if ((error = hosts_thread(&tid, run_main, r)) != 0) {
 		snprintf(why, wlen, "%s", strerror(error));
 		close(fd);
 		ucl_object_unref(r->st);

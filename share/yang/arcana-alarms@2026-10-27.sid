@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-alarms",
     "module-revision": "2026-10-27",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -96,6 +96,11 @@
         "namespace": "identity",
         "identifier": "mail",
         "sid": "77615"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "undo",
+        "sid": "77616"
       }
     ]
   }

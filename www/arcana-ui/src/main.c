@@ -507,6 +507,7 @@ tick(void *arg)
 			bird_tick(now);
 		if (app.online) {
 			transport_tick(now);
+			nacm_tick(now);
 			ca_tick(now);
 			cluster_tick(now);
 			net_live_tick(now);
@@ -658,7 +659,7 @@ submit(const char *form, const ucl_object_t *f)
 	    naspage_form(form, f) || sysview_form(form, f) || mail_form(form, f) || relay_form(form, f) || monitor_form(form, f) ||
 	    builder_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
-	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
+	    sysctl_form(form, f) || nacm_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
 		return;
 	submit_form(form, f);
@@ -1098,7 +1099,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	    user_action(act, arg) ||
 	    routing_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
-	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
+	    sysctl_action(act, arg, value) || nacm_action(act, arg, value) ||
+	    apidoc_action(act, arg, value) ||
 	    procs_action(act, arg, value) || logs_action(act, arg, value) ||
 	    usage_action(act, arg, value) || ecmp_action(act, arg, value) ||
 	    leaks_action(act, arg, value) ||

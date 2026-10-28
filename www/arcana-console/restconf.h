@@ -32,6 +32,12 @@ bool		 restconf_host(const char *path, char *sid, size_t len);
 struct rcreq	*restconf_parse(const char *path, const char *query,
 		    const char **why);
 void		 restconf_free(struct rcreq *r);
+/* A change's checks before the host is asked (body kept): 0, or the
+ * status and *why; restconf_confirms(): it confirms a commit, over a
+ * connection of its own. */
+int		 restconf_prepare(struct rcreq *r, int method,
+		    ucl_object_t *body, const char **why);
+bool		 restconf_confirms(const struct rcreq *r);
 void		 restconf_run(cbl_conn *conn, const struct rcreq *r,
 		    const char *id, const char *name, char **json, int *status);
 /* A reply of RFC 8040's media type, of top (consumed). */

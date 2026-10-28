@@ -68,7 +68,8 @@ start_daemon()
 		PORT=$(jot -r 1 20000 59999)
 		"$JGD" -F -l "tcp://127.0.0.1:$PORT" -A ca.pem -C server.pem \
 		    -K server.key -f "$(pwd)/etc/jail.conf" \
-		    -D "$(pwd)/etc/jail.conf.d" -I /usr/bin/false $DAEMON_ARGS \
+		    -D "$(pwd)/etc/jail.conf.d" -I /usr/bin/false \
+		    --nacm "$(pwd)/nacm.cbor" $DAEMON_ARGS \
 		    > daemon.out 2>&1 &
 		pid=$!
 		echo $pid > daemon.pid
@@ -136,13 +137,32 @@ mtls_body()
 	    "serverAuth,clientAuth"
 	atf_check -s exit:1 -e match:'[Pp]ermission denied' -o ignore \
 	    "$JGC" -c "$URI" -A ca.pem -C otherhost.pem -K otherhost.key hello
-	atf_check -o match:"a host's certificate asked for hello: refused" \
+	atf_check -o match:"a host's certificate asked: refused" \
 	    cat daemon.out
 	# Nor of the standard models (cblink's YANG family).
 	atf_check -s exit:1 -e not-empty -o ignore \
 	    "$JGC" -c "$URI" -A ca.pem -C otherhost.pem -K otherhost.key get
-	atf_check -o match:"a host's certificate asked for a model: refused" \
-	    cat daemon.out
+	# NACM's (RFC 8341) default: the console, which asks for nobody,
+	# and its admin may do anything; another user reads, and asks what
+	# changes nothing, but what changes the host is denied, counted.
+	atf_check -o match:'"group":\[\{"name":"admin","user-name":\["admin","console"\]\}\]' \
+	    -o match:'"write-default":"deny"' \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key get nacm
+	atf_check -o match:'^Host:' "$JGC" -c "$URI" -A ca.pem -C client.pem \
+	    -K client.key -u bob hello
+	atf_check -s exit:1 -e match:'access denied: arcana:job-submit' \
+	    -o ignore "$JGC" -c "$URI" -A ca.pem -C client.pem \
+	    -K client.key -u bob sysctl kern.hostname=x
+	# The rules themselves are the admin's (default-deny-all): left out
+	# of what another user reads.
+	atf_check -o not-match:'"group"' -o not-match:'"rule-list"' \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key -u bob \
+	    get nacm
+	atf_check -s ignore -e not-match:'access denied' -o ignore \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key \
+	    -u admin sysctl kern.hostname=x
+	atf_check -o match:'"denied-operations":1,' -o match:'"denied-data-writes":0' \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key get nacm
 	atf_check -o match:'^Host:' \
 	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key hello
 	# No TLS configuration at all is refused before connecting.

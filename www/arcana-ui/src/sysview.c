@@ -416,6 +416,9 @@ view_hostsec(struct html *h, struct server *s)
 	size_t			 i;
 	int			 k, now;
 
+	h_raw(h, "<section class=\"sysview\">");
+	view_nacm(h, s);
+	h_raw(h, "</section>");
 	if ((o = data(h, s)) == NULL)
 		return;
 	h_raw(h, "<section class=\"sysview\"><h3 class=\"secsub\">Audit "

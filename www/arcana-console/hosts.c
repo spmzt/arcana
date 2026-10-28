@@ -875,6 +875,80 @@ hosts_forget(const char *uri)
 }
 
 /*
+ * The console user this thread acts for: each request it sends a host
+ * says so, and the host's access rules (NACM, RFC 8341) hold it to them;
+ * NULL or "": the console itself, which asks for nobody.  A thread
+ * started with hosts_thread() acts for its starter's.
+ */
+static _Thread_local char	acting[64];
+
+void
+hosts_act_as(const char *user)
+{
+
+	(void)snprintf(acting, sizeof(acting), "%s", user != NULL ? user :
+	    "");
+	(void)cbl_thread_set_user(acting[0] != '\0' ? acting : NULL);
+}
+
+/*
+ * Who the console is to an agent when it acts for no one (a poll, a
+ * schedule): NACM's user "console", in group admin by the agent's
+ * default rules.  Said on every connection, below a thread's acting
+ * user; so the console is never the agent's recovery session, not even
+ * as root over the local agent's unix socket.
+ */
+#define	CONSOLE_USER	"console"
+
+/* web.h's: a request's user, its session's; acting for one. */
+const char *
+web_user(struct http_request *req)
+{
+
+	return (session_user(req));
+}
+
+void
+web_act_as(const char *user)
+{
+
+	hosts_act_as(user);
+}
+
+struct acting_start {
+	void	*(*fn)(void *);
+	void	*arg;
+	char	 user[64];
+};
+
+static void *
+acting_run(void *p)
+{
+	struct acting_start	s = *(struct acting_start *)p;
+
+	free(p);
+	hosts_act_as(s.user);
+	return (s.fn(s.arg));
+}
+
+/* pthread_create(3) of a thread that acts for this one's user. */
+int
+hosts_thread(pthread_t *tid, void *(*fn)(void *), void *arg)
+{
+	struct acting_start	*s;
+	int			 error;
+
+	if ((s = malloc(sizeof(*s))) == NULL)
+		return (ENOMEM);
+	s->fn = fn;
+	s->arg = arg;
+	(void)snprintf(s->user, sizeof(s->user), "%s", acting);
+	if ((error = pthread_create(tid, NULL, acting_run, s)) != 0)
+		free(s);
+	return (error);
+}
+
+/*
  * A connection to an agent for something that is not a call: one kept
  * from before or a new one, with the client set up on it.  NULL, or
  * why not.  hosts_release() gives it back, or closes it when it is not
@@ -921,6 +995,7 @@ hosts_dial(const char *uri, const char *peer, cbl_conn **connp,
 	tls = NULL;
 	if ((error = cbl_conn_new(ctx, uri, 0, &conn)) != 0)
 		return (strerror(error));
+	(void)cbl_conn_set_user(conn, CONSOLE_USER);
 	if (strncmp(uri, "unix:", 5) != 0) {
 		if (cfg.tls_ca == NULL || cfg.tls_cert == NULL ||
 		    cfg.tls_key == NULL) {
@@ -1824,6 +1899,7 @@ connect:
 		msg = strerror(error);
 		goto fail;
 	}
+	(void)cbl_conn_set_user(conn, CONSOLE_USER);
 	if (!local) {
 		if (cfg.tls_ca == NULL || cfg.tls_cert == NULL ||
 		    cfg.tls_key == NULL) {
@@ -3477,7 +3553,8 @@ call_new(struct http_request *req, enum op op)
 	c->safe_wait = servers_safe_wait(s->uri);
 	snprintf(c->route, sizeof(c->route), "%s %s",
 	    req->method == HTTP_METHOD_GET ? "GET" :
-	    req->method == HTTP_METHOD_DELETE ? "DELETE" : "POST", req->path);
+	    req->method == HTTP_METHOD_DELETE ? "DELETE" :
+	    req->method == HTTP_METHOD_PUT ? "PUT" : "POST", req->path);
 	return (c);
 }
 
@@ -4017,12 +4094,45 @@ setup_restconf(struct call *c, const struct rq *q)
 	return (NULL);
 }
 
-/* GET /restconf/data/arcana-fleet:fleet/host=<id>[/...] (restconf.c). */
+/*
+ * A host's entry below /restconf/data or a datastore's root
+ * (restconf.c): GET reads; PUT and DELETE change the candidate; a POST
+ * of ietf-netconf's commit, cancel-commit or discard-changes runs it,
+ * the commit that confirms over a connection of its own.
+ */
 int
 api_restconf_host(struct http_request *req)
 {
+	struct call	*c;
+	ucl_object_t	*body;
+	const char	*why = NULL;
+	int		 st;
 
-	return (read_route(req, OP_RESTCONF, setup_restconf));
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if (req->method == HTTP_METHOD_GET)
+		return (read_route(req, OP_RESTCONF, setup_restconf));
+	if ((c = call_new(req, OP_RESTCONF)) == NULL)
+		return (WEB_OK);
+	body = req->method != HTTP_METHOD_DELETE ? read_json(req) : NULL;
+	if (req->method == HTTP_METHOD_PUT && body == NULL) {
+		call_release(c);
+		free(c);
+		return (restconf_error(req, 400, "a PUT's body is the node, "
+		    "as RFC 7951's JSON"));
+	}
+	if ((c->rc = restconf_parse(req->path, req->query_string, &why)) ==
+	    NULL || (st = restconf_prepare(c->rc, req->method, body,
+	    &why)) != 0) {
+		if (c->rc == NULL)
+			ucl_object_unref(body);
+		st = c->rc == NULL ? 400 : st;
+		call_release(c);
+		free(c);
+		return (restconf_error(req, st, why));
+	}
+	c->fresh = restconf_confirms(c->rc);
+	return (call_start(req, c));
 }
 
 /*

@@ -47,6 +47,7 @@ static const struct kind {
 	{ "memory", { 5, 0 }, "the memory has been too full" },
 	{ "crash", { 5, 0 }, "a process died of a signal that dumps core" },
 	{ "mail", { 4, 5 }, "smtpd stopped, or too much queued" },
+	{ "undo", { 6, 0 }, "a confirmed commit could not be undone" },
 };
 
 /* An identity's SID, by its module and name; 0: none. */

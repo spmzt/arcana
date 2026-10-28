@@ -136,16 +136,59 @@ errors_body()
 	    "$JC" -f jail.conf web ip6.addr+=10.0.0.1
 	atf_check -s exit:1 -e match:'already in ip4.addr' \
 	    "$JC" -f jail.conf web ip4.addr+=em0\|10.0.0.11/24
-	atf_check -s exit:1 -e match:'shared by all jails' \
+	atf_check -s exit:1 -e match:'comes from a statement all jails share' \
 	    "$JC" -f jail.conf web exec.start-=/bin/sh\ /etc/rc
 	atf_check -s exit:1 -e match:'No such file' \
+	    -e match:'missing.conf: jail\(8\) does not read it' \
 	    "$JC" -f missing.conf web ip4.addr+=10.0.0.1
 	atf_check -s exit:2 -e match:usage "$JC" -f jail.conf web ip4.addr
 	atf_check -s exit:2 -e match:usage "$JC" web
 	atf_check cmp -s before jail.conf
+	# jail(8) reads the file first, and says what is wrong in it.
 	printf 'web {\n\tip4.addr = "10.0.0.1;\n}\n' > jail.conf
 	atf_check -s exit:1 -e match:'jail.conf line 2: unterminated string' \
+	    -e match:'jail.conf: jail\(8\) does not read it' \
 	    "$JC" -f jail.conf web ip4.addr+=10.0.0.2
+}
+
+atf_test_case jail8_reads
+jail8_reads_head()
+{
+	atf_set "descr" "What a jail inherits, from a * block or a" \
+	    "variable, is what jail(8) -e reads"
+}
+jail8_reads_body()
+{
+	setup
+	cat > jail.conf <<'CONF'
+$net = "192.0.2";
+* {
+	ip4.addr = "$net.1";
+}
+web {
+	$own = "$net.5";
+	ip4.addr += "$own";
+}
+mail {
+	path = /jails/mail;
+}
+CONF
+	cp jail.conf before
+	# jail(8) reads 192.0.2.1 and 192.0.2.5 in web: neither comes twice.
+	atf_check -s exit:1 -e match:'192.0.2.1 is already in ip4.addr' \
+	    "$JC" -f jail.conf web ip4.addr+=192.0.2.1
+	atf_check -s exit:1 -e match:'192.0.2.5/24 is already in ip4.addr' \
+	    "$JC" -f jail.conf web ip4.addr+=192.0.2.5/24
+	atf_check -s exit:1 -e match:"not set by jail 'mail' itself" \
+	    "$JC" -f jail.conf mail ip4.addr-=192.0.2.1
+	atf_check -s exit:1 -e match:"jail\(8\) reads no jail 'db' there" \
+	    "$JC" -f jail.conf db ip4.addr+=192.0.2.9
+	atf_check cmp -s before jail.conf
+	# mail inherits one: its own comes with +=, and jail(8) reads both.
+	atf_check "$JC" -f jail.conf mail ip4.addr+=192.0.2.9
+	atf_check -o match:'^	ip4.addr \+= "192.0.2.9";$' cat jail.conf
+	atf_check -o match:'^name=mail/ip4.addr=192.0.2.1,192.0.2.9/' \
+	    jail -f jail.conf -e /
 }
 
 atf_init_test_cases()
@@ -156,4 +199,5 @@ atf_init_test_cases()
 	atf_add_test_case verbose
 	atf_add_test_case included_file
 	atf_add_test_case errors
+	atf_add_test_case jail8_reads
 }

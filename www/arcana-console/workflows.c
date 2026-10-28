@@ -1814,8 +1814,7 @@ run_main(void *arg)
 
 	serial = ucl_flag(r->wf, "serial");
 	for (i = 0; i < r->nhosts; i++) {
-		r->hosts[i].started = pthread_create(&r->hosts[i].thread,
-		    NULL, host_run, &r->hosts[i]) == 0;
+		r->hosts[i].started = hosts_thread(&r->hosts[i].thread, host_run, &r->hosts[i]) == 0;
 		if (!serial)
 			continue;
 		/* One after the other: the next when this one is done; a
@@ -1988,7 +1987,7 @@ run_start(const ucl_object_t *wf, const ucl_object_t *hosts,
 	pthread_mutex_unlock(&r->lock);
 	/* Taken before the thread runs: it frees r when it is done. */
 	id = r->id;
-	if (pthread_create(&tid, NULL, run_main, r) != 0) {
+	if (hosts_thread(&tid, run_main, r) != 0) {
 		*whyp = "no thread for it";
 		pthread_mutex_lock(&running_lock);
 		nrunning--;
@@ -2346,7 +2345,7 @@ sub_keep(struct watched *x)
 	if (atomic_load(&x->running))
 		return;
 	atomic_store(&x->running, true);
-	if (pthread_create(&tid, NULL, sub_run, x) != 0) {
+	if (hosts_thread(&tid, sub_run, x) != 0) {
 		atomic_store(&x->running, false);
 		return;
 	}

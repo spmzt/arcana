@@ -48,7 +48,8 @@ ARC_YMODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		ietf-alarms@2019-09-11 arcana-alarms@2026-10-27 \
 		iana-hardware@2018-03-13 ietf-hardware@2018-03-13 \
 		ietf-subscribed-notifications@2019-09-09 \
-		ietf-yang-push@2019-09-09
+		ietf-yang-push@2019-09-09 ietf-netconf-acm@2018-02-14 \
+		ietf-netconf@2011-06-01
 # Modules only imported whose identities are used: their .sid files
 # alone (a VLAN tag's types, the PHY types, the port algorithms; the
 # routing protocols', whose identities name a route's origin).
@@ -82,7 +83,8 @@ ARC_YFEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-yang-library: -F ietf-datastores: \
 		-F ietf-alarms:alarm-summary,alarm-history -F arcana-alarms: \
 		-F iana-hardware: -F ietf-hardware:hardware-sensor \
-		-F ietf-subscribed-notifications:xpath,replay -F ietf-yang-push:on-change
+		-F ietf-subscribed-notifications:xpath,replay -F ietf-yang-push:on-change \
+		-F ietf-netconf-acm: -F ietf-netconf:candidate,confirmed-commit
 
 .if ${ARC_YANG_SERVER:Uno} == "yes"
 _arc_yparts=	h,schema,server
