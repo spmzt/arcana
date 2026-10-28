@@ -22,8 +22,15 @@
  */
 
 #include <sys/param.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/sockio.h>
+
+#include <net/if.h>
 
 #include <errno.h>
+#include <ifaddrs.h>
+#include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,8 +68,8 @@ ident_sid(const char *mod, const char *name)
  * The FIBs as network instances, their names from fibs.conf; what it
  * has that cannot be read so is logged, the instance fibN meanwhile.
  */
-static int
-instances(cbl_yarena *a,
+int
+yni_instances(cbl_yarena *a,
     const struct ietf_network_instance_network_instances **out)
 {
 	struct vc_file	 f;
@@ -91,12 +98,74 @@ ietf_interfaces_interfaces_get(cbl_req *req, struct ietf_interfaces *data,
 	const struct ietf_network_instance_network_instances *ni;
 	int	error;
 
-	if ((error = instances(a, &ni)) != 0 ||
+	if ((error = yni_instances(a, &ni)) != 0 ||
 	    (error = yif_interfaces(data, ni, a)) != 0)
+		return (error);
+	/* Their router advertisements, rtadvd.conf's (RFC 8349). */
+	if ((error = yif_rtadv(data, a)) != 0)
 		return (error);
 	/* Running: what was configured, not what DHCP or SLAAC made. */
 	return (cbl_req_ydatastore(req) == CBL_YDS_RUNNING ?
 	    yif_running(data, a) : 0);
+}
+
+static int	routing_of(cbl_yarena *, int, struct ietf_routing *);
+
+/* The mount point vrf-root of a network instance (RFC 8529, 8528). */
+static const struct cbl_ynode *
+vrf_root(void)
+{
+	static const struct cbl_ynode *n;
+	const struct cbl_ynode *c;
+
+	if (n != NULL)
+		return (n);
+	c = ynode_named("ietf-network-instance", "network-instances");
+	for (int depth = 0; c != NULL && depth < 2; depth++) {
+		const char *want = depth == 0 ? "network-instance" : "vrf-root";
+		const struct cbl_ynode *k = NULL;
+
+		for (uint32_t i = 0; i < c->nchild && k == NULL; i++)
+			if (strcmp(c->child[i]->name, want) == 0)
+				k = c->child[i];
+		c = k;
+	}
+	return (n = c);
+}
+
+/*
+ * Each instance's vrf-root, mounted: its FIB's routing (ietf-routing,
+ * the v4ur and v6ur augments with it), a shared schema.
+ */
+static int
+vrf_mounts(cbl_yarena *a,
+    const struct ietf_network_instance_network_instances *ni)
+{
+	struct ietf_network_instance_network_instances_network_instance *v;
+	struct ietf_network_instance_network_instances_network_instance_vrf_root *r;
+	struct ietf_routing *rt;
+	const struct cbl_ynode *n = vrf_root();
+	int error;
+
+	if (n == NULL || ni == NULL || ni->network_instance.n == 0)
+		return (0);
+	/* The list is the read's own, in a: filled in place. */
+	v = (struct ietf_network_instance_network_instances_network_instance *)
+	    (uintptr_t)ni->network_instance.v;
+	for (size_t i = 0; i < ni->network_instance.n; i++) {
+		if (!v[i].has_arcni_fib)
+			continue;
+		if ((r = cbl_yarena_alloc(a, sizeof(*r))) == NULL)
+			return (ENOMEM);
+		memset(r, 0, sizeof(*r));
+		if ((rt = cbl_ymount_data(n, r, ynode_named("ietf-routing",
+		    "routing")->module, a)) == NULL)
+			return (ENOMEM);
+		if ((error = routing_of(a, (int)v[i].arcni_fib, rt)) != 0)
+			return (error);
+		v[i].vrf_root = r;
+	}
+	return (0);
 }
 
 int
@@ -107,7 +176,8 @@ ietf_network_instance_network_instances_get(cbl_req *req,
 	int	error;
 
 	(void)req;
-	if ((error = instances(a, &ni)) != 0)
+	if ((error = yni_instances(a, &ni)) != 0 ||
+	    (error = vrf_mounts(a, ni)) != 0)
 		return (error);
 	/* None but the host's FIB 0: no instance, no container. */
 	if (ni->network_instance.n > 0)
@@ -167,7 +237,7 @@ ieee802_dot1q_bridge_bridges_get(cbl_req *req,
  * logged.  NULL with none.
  */
 static int
-statics(cbl_yarena *a,
+statics(cbl_yarena *a, int fib,
     const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes **out)
 {
 	struct vc_file	*f;
@@ -191,7 +261,7 @@ statics(cbl_yarena *a,
 			logmsg(LOG_WARNING, "%s: %s", paths[i], err);
 	u = NULL;
 	nu = 0;
-	error = rcr_read(f, n, 0, a, out, &u, &nu);
+	error = rcr_read(f, n, fib, a, out, &u, &nu);
 	for (i = 0; error == 0 && i < nu; i++)
 		logmsg(LOG_WARNING, "static routes: %s: %s", u[i].var,
 		    u[i].why);
@@ -203,9 +273,10 @@ statics(cbl_yarena *a,
 	return (error);
 }
 
-int
-ietf_routing_routing_get(cbl_req *req, struct ietf_routing *data,
-    cbl_yarena *a)
+/* FIB fib's routing: its RIBs from the kernel, its static routes as
+ * rc.d/routing installs them, the one protocol instance rc(8) is. */
+static int
+routing_of(cbl_yarena *a, int fib, struct ietf_routing *data)
 {
 	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *sr;
 	struct ietf_routing_routing				*rt;
@@ -213,9 +284,8 @@ ietf_routing_routing_get(cbl_req *req, struct ietf_routing *data,
 	struct ietf_routing_routing_control_plane_protocols_control_plane_protocol *p;
 	int	error;
 
-	(void)req;
-	if ((error = yrt_routing(data, 0, a)) != 0 ||
-	    (error = statics(a, &sr)) != 0)
+	if ((error = yrt_routing(data, fib, a)) != 0 ||
+	    (error = statics(a, fib, &sr)) != 0)
 		return (error);
 	if (sr == NULL || data->routing == NULL)
 		return (0);
@@ -237,6 +307,15 @@ ietf_routing_routing_get(cbl_req *req, struct ietf_routing *data,
 	rt->control_plane_protocols = cpp;
 	data->routing = rt;
 	return (0);
+}
+
+int
+ietf_routing_routing_get(cbl_req *req, struct ietf_routing *data,
+    cbl_yarena *a)
+{
+
+	(void)req;
+	return (routing_of(a, 0, data));
 }
 
 /* Deprecated, and NMDA's routing says it all: not there. */
@@ -345,8 +424,39 @@ but_protocols(const struct ietf_routing *r, struct cbl_ybuf *b)
  * where it fails, a route the table changed meanwhile; failing still,
  * the files put back.  What else the tree changes is not done here yet.
  */
+static int	statics_commit(cbl_req *, int, const struct ietf_routing *,
+		    const struct ietf_routing *);
+
+/* Whether two routings' configuration differ, as YANG-CBOR. */
+static bool
+routing_differs(const struct ietf_routing *a, const struct ietf_routing *b)
+{
+	const struct cbl_ynode *n = ynode_named("ietf-routing", "routing");
+	struct cbl_ybuf ba = { NULL, 0, 0 }, bb = { NULL, 0, 0 };
+	bool differ;
+
+	if (a != NULL && cbl_ymember_present(n, a))
+		(void)cbl_yencode_member(n, a, &ba);
+	if (b != NULL && cbl_ymember_present(n, b))
+		(void)cbl_yencode_member(n, b, &bb);
+	differ = ba.len != bb.len || (ba.len > 0 && memcmp(ba.p, bb.p,
+	    ba.len) != 0);
+	cbl_ybuf_free(&ba);
+	cbl_ybuf_free(&bb);
+	return (differ);
+}
+
 int
 ietf_routing_routing_edit(cbl_req *req, const struct ietf_routing *before,
+    const struct ietf_routing *after)
+{
+
+	return (statics_commit(req, 0, before, after));
+}
+
+/* The same of FIB fib's routing, a network instance's (vrf-root). */
+static int
+statics_commit(cbl_req *req, int fib, const struct ietf_routing *before,
     const struct ietf_routing *after)
 {
 	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *old, *new;
@@ -382,7 +492,7 @@ ietf_routing_routing_edit(cbl_req *req, const struct ietf_routing *before,
 		(void)cbl_req_set_yerr(req, err, 0);
 		return (error);
 	}
-	if ((error = rcr_write(x.f, 0, new, err, sizeof(err))) != 0 ||
+	if ((error = rcr_write(x.f, fib, new, err, sizeof(err))) != 0 ||
 	    (error = rca_write(&x, req, err, sizeof(err))) != 0) {
 		if (error != EEXIST)
 			(void)cbl_req_set_yerr(req, err, 0);
@@ -390,7 +500,7 @@ ietf_routing_routing_edit(cbl_req *req, const struct ietf_routing *before,
 		return (error);
 	}
 	for (int tries = 0; tries < 2; tries++) {
-		if ((error = rcr_apply(0, old, new, err, sizeof(err))) == 0)
+		if ((error = rcr_apply(fib, old, new, err, sizeof(err))) == 0)
 			break;
 		if (tries == 0)
 			(void)usleep(200000);
@@ -417,16 +527,201 @@ ietf_logical_network_element_logical_network_elements_edit(cbl_req *req,
 	return (EOPNOTSUPP);
 }
 
+/* A file's text as it is, to put back; *there: it was. */
+static char *
+file_text(const char *path, size_t *lenp, bool *there)
+{
+	FILE	*fp;
+	char	*buf = NULL;
+	size_t	 cap = 0;
+
+	*lenp = 0;
+	*there = false;
+	if ((fp = fopen(path, "re")) == NULL)
+		return (NULL);
+	*there = true;
+	for (;;) {
+		char	*nb;
+		size_t	 n;
+
+		if (cap - *lenp < 4096) {
+			if ((nb = realloc(buf, cap + 8192)) == NULL)
+				break;
+			buf = nb;
+			cap += 8192;
+		}
+		if ((n = fread(buf + *lenp, 1, cap - *lenp, fp)) == 0)
+			break;
+		*lenp += n;
+	}
+	fclose(fp);
+	return (buf);
+}
+
+static void
+file_back(const char *path, const char *text, size_t len, bool there)
+{
+	FILE	*fp;
+
+	if (!there) {
+		(void)unlink(path);
+		return;
+	}
+	if ((fp = fopen(path, "we")) == NULL)
+		return;
+	if (len > 0)
+		(void)fwrite(text, 1, len, fp);
+	fclose(fp);
+}
+
+/* An interface whose FIB is fib, in name (IFNAMSIZ); false: none. */
+static bool
+fib_in_use(int fib, char *name, size_t len)
+{
+	struct ifaddrs	*ifa0, *ifa;
+	struct ifreq	 ifr;
+	bool		 found = false;
+	int		 s;
+
+	if (getifaddrs(&ifa0) == -1)
+		return (false);
+	if ((s = socket(AF_LOCAL, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1) {
+		freeifaddrs(ifa0);
+		return (false);
+	}
+	for (ifa = ifa0; ifa != NULL && !found; ifa = ifa->ifa_next) {
+		memset(&ifr, 0, sizeof(ifr));
+		strlcpy(ifr.ifr_name, ifa->ifa_name, sizeof(ifr.ifr_name));
+		if (ioctl(s, SIOCGIFFIB, &ifr) == 0 && (int)ifr.ifr_fib ==
+		    fib) {
+			strlcpy(name, ifa->ifa_name, len);
+			found = true;
+		}
+	}
+	close(s);
+	freeifaddrs(ifa0);
+	return (found);
+}
+
+/*
+ * A commit of the network instances (RFC 8529, D-6: a FIB each): the
+ * names and descriptions into fibs.conf; an instance past the last FIB
+ * grows them (yni_grow(): net.fibs raised live where the kernel lets
+ * it, kept in loader.conf.d for the boot).  FreeBSD never lowers
+ * net.fibs, not even for an undo: that is said first, a warning to
+ * accept (net-fibs); a FIB made at the next boot alone is told after
+ * (after-reboot).  An instance taken away while an interface is in
+ * its FIB is refused.
+ */
 int
 ietf_network_instance_network_instances_edit(cbl_req *req,
     const struct ietf_network_instance *before,
     const struct ietf_network_instance *after)
 {
+	const struct ietf_network_instance_network_instances *ni =
+	    after != NULL ? after->network_instances : NULL;
+	const struct ietf_network_instance_network_instances *was =
+	    before != NULL ? before->network_instances : NULL;
+	struct vc_file	 lf, ff;
+	char		 lpath[MAXPATHLEN], fpath[MAXPATHLEN], err[512];
+	char		*ltext, *ftext, ifname[IFNAMSIZ];
+	size_t		 llen, flen;
+	bool		 lthere, fthere, reboot = false;
+	int		 nfibs = yni_nfibs(), had = nfibs, want = nfibs;
+	int		 error = 0;
 
-	(void)req;
-	(void)before;
-	(void)after;
-	return (EOPNOTSUPP);
+	err[0] = '\0';
+	/* What goes: no interface in its FIB. */
+	for (size_t i = 0; was != NULL && i < was->network_instance.n; i++) {
+		const char *name = was->network_instance.v[i].name;
+		int fib = was->network_instance.v[i].has_arcni_fib ?
+		    (int)was->network_instance.v[i].arcni_fib : -1;
+
+		if (fib <= 0 || yni_fib(ni, name) == fib)
+			continue;
+		if (fib_in_use(fib, ifname, sizeof(ifname))) {
+			(void)snprintf(err, sizeof(err), "%s: %s is in its FIB "
+			    "%d: bound elsewhere first", name, ifname, fib);
+			(void)cbl_req_set_yerr(req, err, 0);
+			return (EBUSY);
+		}
+	}
+	for (size_t i = 0; ni != NULL && i < ni->network_instance.n; i++)
+		if (ni->network_instance.v[i].has_arcni_fib &&
+		    (int)ni->network_instance.v[i].arcni_fib >= want)
+			want = (int)ni->network_instance.v[i].arcni_fib + 1;
+	if (want > nfibs && !cbl_req_yaccepts(req, "net-fibs")) {
+		(void)snprintf(err, sizeof(err), "FIB %d asks net.fibs to go "
+		    "from %d to %d, which FreeBSD never lowers again, not even "
+		    "for an undo: accept net-fibs to raise it", want - 1, nfibs,
+		    want);
+		(void)cbl_req_set_yapptag(req, "net-fibs");
+		(void)cbl_req_set_yerr(req, err, 0);
+		return (EEXIST);
+	}
+	(void)snprintf(lpath, sizeof(lpath), "%s/boot/loader.conf.d/arcana.conf",
+	    opts.root != NULL ? opts.root : "");
+	sdwan_conf_path(FIBS_CONF, fpath, sizeof(fpath));
+	ltext = file_text(lpath, &llen, &lthere);
+	ftext = file_text(fpath, &flen, &fthere);
+	memset(&lf, 0, sizeof(lf));
+	memset(&ff, 0, sizeof(ff));
+	if (vc_read(&lf, VC_LOADER, lpath, err, sizeof(err)) == -1 ||
+	    vc_read(&ff, VC_SH, fpath, err, sizeof(err)) == -1)
+		error = errno != 0 ? errno : EIO;
+	else if ((error = yni_grow(&lf, &nfibs, ni, &reboot, err,
+	    sizeof(err))) == 0 && want > had && vc_write(&lf, lpath, 0644,
+	    err, sizeof(err)) == -1)
+		error = errno != 0 ? errno : EIO;
+	if (error == 0 && (error = yni_write(&ff, nfibs, ni, err,
+	    sizeof(err))) == 0 && vc_write(&ff, fpath, 0644, err,
+	    sizeof(err)) == -1)
+		error = errno != 0 ? errno : EIO;
+	if (error != 0)
+		(void)cbl_req_set_yerr(req, err, 0);
+	/* Each instance's routing, mounted at its vrf-root: its FIB's
+	 * static routes, as FIB 0's are committed. */
+	for (size_t i = 0; error == 0 && ni != NULL &&
+	    i < ni->network_instance.n; i++) {
+		const struct ietf_network_instance_network_instances_network_instance *e =
+		    &ni->network_instance.v[i];
+		const struct ietf_routing *ra, *rb = NULL;
+		int fib = e->has_arcni_fib ? (int)e->arcni_fib : -1;
+
+		if (fib <= 0)
+			continue;
+		ra = cbl_ymount_find(vrf_root(), e->vrf_root,
+		    ynode_named("ietf-routing", "routing")->module);
+		for (size_t k = 0; was != NULL && k < was->network_instance.n;
+		    k++)
+			if (was->network_instance.v[k].has_arcni_fib &&
+			    (int)was->network_instance.v[k].arcni_fib == fib)
+				rb = cbl_ymount_find(vrf_root(),
+				    was->network_instance.v[k].vrf_root,
+				    ynode_named("ietf-routing", "routing")->module);
+		if (!routing_differs(rb, ra))
+			continue;
+		if (fib >= yni_nfibs()) {
+			(void)snprintf(err, sizeof(err), "%s: FIB %d is made at "
+			    "the next boot: its routes then", e->name, fib);
+			(void)cbl_req_set_yerr(req, err, 0);
+			error = EAGAIN;
+			break;
+		}
+		error = statics_commit(req, fib, rb, ra);
+	}
+	if (error != 0) {
+		file_back(lpath, ltext, llen, lthere);
+		file_back(fpath, ftext, flen, fthere);
+	} else if (reboot)
+		(void)cbl_req_ywarn(req, ynode_named("ietf-network-instance",
+		    "network-instances")->sid, "after-reboot",
+		    "the kernel makes the new FIBs at the next boot");
+	vc_free(&lf);
+	vc_free(&ff);
+	free(ltext);
+	free(ftext);
+	return (error);
 }
 
 int

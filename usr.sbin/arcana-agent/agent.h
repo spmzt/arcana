@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.228.0"
+#define	ARCANA_AGENT_VERSION	"0.229.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -39,7 +39,6 @@
 #define	PATH_TRACEROUTE_BIN	"/usr/sbin/traceroute"
 #define	PATH_IFCONFIG_BIN	"/sbin/ifconfig"
 #define	PATH_NGCTL_BIN		"/usr/sbin/ngctl"
-#define	PATH_JLS_BIN		"/usr/sbin/jls"
 #define	PATH_JEXEC_BIN		"/usr/sbin/jexec"
 #define	PATH_KLDLOAD_BIN	"/sbin/kldload"
 #define	PATH_KLDUNLOAD_BIN	"/sbin/kldunload"
@@ -111,7 +110,6 @@ struct opts {
 	const char	*self_path;	/* the program an update replaces */
 	const char	*ifconfig_bin;
 	const char	*ngctl_bin;
-	const char	*jls_bin;
 	const char	*jexec_bin;
 	const char	*kldload_bin;
 	const char	*kldunload_bin;
@@ -320,6 +318,7 @@ struct jinfo {
 int		 jails_running(struct work *, struct jinfo **, size_t *,
 		    const char **);
 void		 jails_procstats(struct work *, struct jinfo *, size_t);
+int		 jail_named(struct work *, const char *, struct jinfo *);
 int		 jail_lookup(struct work *, const char *);
 
 /* superbia/confread.c: configured jails, as jail(8) -e resolves them. */
@@ -491,6 +490,7 @@ int		 do_if_set(struct work *, const char *,
 int		 do_if_create(struct work *, const struct arc_job_spec *,
 		    const char **, const char **);
 int		 do_if_destroy(struct work *, const char *, bool, const char **);
+bool		 if_clonable(struct work *, const char *, const char **);
 void		 if_current(struct work *, const char *, unsigned int *, int *,
 		    int *, char *, size_t);
 bool		 if_is_up(struct work *, const char *, bool *);
@@ -987,6 +987,8 @@ const struct arc_job *jobs_confirm(struct work *, uint64_t, const char **);
 /* invidia/address.c, superbia/confedit.c */
 int		 ifaddr_change(struct work *, const char *, int, const void *,
 		    int, bool, const char **);
+int		 ifaddr_change_peer(struct work *, const char *, int,
+		    const void *, int, const void *, bool, const char **);
 const char	*list_edit(struct work *, const char *, const char *,
 		    const char *, bool);
 bool		 list_has(const char *, const char *, const char *);

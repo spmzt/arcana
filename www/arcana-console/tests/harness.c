@@ -207,6 +207,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN], surules[MAXPATHLEN];
+	char	 fjl[MAXPATHLEN], fjf[MAXPATHLEN + 8];
 	char	*argv[134];
 	FILE	*fp;
 	pid_t	 pid;
@@ -216,6 +217,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	snprintf(jgd, sizeof(jgd), "%s", locate(tc,
 	    "../../../usr.sbin/arcana-agent/arcana-agent", "arcana-agent",
 	    "/usr/local/sbin/arcana-agent"));
+	/* libjail's jail_getv(3) answering from ./jails, for the agent. */
+	snprintf(fjl, sizeof(fjl), "%s", locate(tc,
+	    "../../../usr.sbin/arcana-agent/tests/libfakejail/libfakejail.so",
+	    "libfakejail", "/usr/local/tests/arcana/arcana-agent/"
+	    "libfakejail.so"));
+	ATF_REQUIRE_MSG(access(fjl, R_OK) == 0, "no libfakejail.so at %s",
+	    fjl);
 	snprintf(console, sizeof(console), "%s", locate(tc, "../arcana-console",
 	    "arcana-console", "/usr/local/sbin/arcana-console"));
 	ATF_REQUIRE_MSG(access(console, X_OK) == 0, "no arcana-console at %s",
@@ -239,13 +247,12 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "db {\n\tip4.addr = 10.0.0.20;\n}\n"
 	    "gw {\n\tvnet;\n}\n");
 	/*
-	 * gw has a network of its own, and "runs": jls says so, jexec
-	 * runs what it is given, and the helper answers for the jail.
+	 * gw has a network of its own, and "runs": jail_getv(3) says so
+	 * (libfakejail, from ./jails), jexec runs what it is given, and
+	 * the helper answers for the jail.
 	 */
-	snprintf(buf, sizeof(buf), "#!/bin/sh\n[ \"$2\" = gw ] && { echo "
-	    "\"4 new %s/jroot\"; exit 0; }\necho \"jls: jail not found\" >&2\n"
-	    "exit 1\n", cwd);
-	put("fake-jls", buf);
+	snprintf(buf, sizeof(buf), "gw 4 new %s/jroot\n", cwd);
+	put("jails", buf);
 	/* The jail's /var/run is beneath its root here: what a program is
 	 * given there, it finds. */
 	snprintf(buf, sizeof(buf), "#!/bin/sh\necho \"jexec $*\" >> jexec.log\n"
@@ -285,7 +292,6 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "up) echo 1 ;;\ncurrent) printf '1500\\t' ;;\n"
 	    "prefix) [ \"$5\" = 10.99.0.2 ] && echo 10.99.0.2/24 ;;\nesac\n"
 	    "exit 0\n");
-	ATF_REQUIRE(chmod("fake-jls", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-jexec", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-helper", 0755) == 0);
 	ATF_REQUIRE(mkdir("jroot", 0755) == 0 || errno == EEXIST);
@@ -1214,108 +1220,106 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[41] = (char *)(uintptr_t)"./fake-bird";
 	argv[42] = (char *)(uintptr_t)"-a";
 	argv[43] = birdconf;
-	argv[44] = (char *)(uintptr_t)"-L";
-	argv[45] = (char *)(uintptr_t)"./fake-jls";
-	argv[46] = (char *)(uintptr_t)"-x";
-	argv[47] = (char *)(uintptr_t)"./fake-jexec";
-	argv[48] = (char *)(uintptr_t)"-H";
-	argv[49] = (char *)(uintptr_t)"./fake-helper";
-	argv[50] = (char *)(uintptr_t)"-T";
-	argv[51] = (char *)(uintptr_t)"./fake-kldload";
-	argv[52] = (char *)(uintptr_t)"-t";
-	argv[53] = (char *)(uintptr_t)"./fake-kldunload";
-	argv[54] = (char *)(uintptr_t)"-z";
-	argv[55] = (char *)(uintptr_t)"./fake-zfs";
-	argv[56] = (char *)(uintptr_t)"-Z";
-	argv[57] = (char *)(uintptr_t)"./fake-zpool";
-	argv[58] = (char *)(uintptr_t)"-q";
-	argv[59] = (char *)(uintptr_t)"./fake-gpart";
-	argv[60] = (char *)(uintptr_t)"-m";
-	argv[61] = (char *)(uintptr_t)"./fake-mount";
-	argv[62] = (char *)(uintptr_t)"-u";
-	argv[63] = (char *)(uintptr_t)"./fake-umount";
-	argv[64] = (char *)(uintptr_t)"-i";
-	argv[65] = (char *)(uintptr_t)"./fake-camcontrol";
-	argv[66] = (char *)(uintptr_t)"-S";
-	argv[67] = fstab;
-	argv[68] = (char *)(uintptr_t)"-Q";
-	argv[69] = (char *)(uintptr_t)"./fake-sysctl";
-	argv[70] = (char *)(uintptr_t)"-O";
-	argv[71] = (char *)(uintptr_t)"sysctl.conf";
-	argv[72] = (char *)(uintptr_t)"-h";
-	argv[73] = (char *)(uintptr_t)"./fake-ipfw";
-	argv[74] = (char *)(uintptr_t)"-J";
-	argv[75] = (char *)(uintptr_t)"ipfw.rules";
-	argv[76] = (char *)(uintptr_t)"-v";
-	argv[77] = (char *)(uintptr_t)"log";
-	argv[78] = (char *)(uintptr_t)"-1";
-	argv[79] = (char *)(uintptr_t)"history.conf";
-	argv[80] = (char *)(uintptr_t)"-2";
-	argv[81] = (char *)(uintptr_t)"tools";
-	argv[82] = (char *)(uintptr_t)"-r";
-	argv[83] = (char *)(uintptr_t)"./fake-swanctl";
-	argv[84] = (char *)(uintptr_t)"-5";
-	argv[85] = (char *)(uintptr_t)"swanctl";
-	argv[86] = (char *)(uintptr_t)"-X";
-	argv[87] = (char *)(uintptr_t)"./fake-traceroute";
-	argv[88] = (char *)(uintptr_t)"-3";
-	argv[89] = (char *)(uintptr_t)"./fake-setfib";
-	argv[90] = (char *)(uintptr_t)"-4";
-	argv[91] = ntpconf;
-	argv[92] = (char *)(uintptr_t)"-6";
-	argv[93] = rtadvdconf;
-	argv[94] = (char *)(uintptr_t)"-7";
-	argv[95] = (char *)(uintptr_t)"./fake-dnsmasq";
-	argv[96] = (char *)(uintptr_t)"-8";
-	argv[97] = (char *)(uintptr_t)"./fake-rtsol";
-	argv[98] = (char *)(uintptr_t)"-9";
-	argv[99] = (char *)(uintptr_t)"./fake-setkey";
-	argv[100] = (char *)(uintptr_t)"-0";
-	argv[101] = (char *)(uintptr_t)"./fake-local-unbound";
+	argv[44] = (char *)(uintptr_t)"-x";
+	argv[45] = (char *)(uintptr_t)"./fake-jexec";
+	argv[46] = (char *)(uintptr_t)"-H";
+	argv[47] = (char *)(uintptr_t)"./fake-helper";
+	argv[48] = (char *)(uintptr_t)"-T";
+	argv[49] = (char *)(uintptr_t)"./fake-kldload";
+	argv[50] = (char *)(uintptr_t)"-t";
+	argv[51] = (char *)(uintptr_t)"./fake-kldunload";
+	argv[52] = (char *)(uintptr_t)"-z";
+	argv[53] = (char *)(uintptr_t)"./fake-zfs";
+	argv[54] = (char *)(uintptr_t)"-Z";
+	argv[55] = (char *)(uintptr_t)"./fake-zpool";
+	argv[56] = (char *)(uintptr_t)"-q";
+	argv[57] = (char *)(uintptr_t)"./fake-gpart";
+	argv[58] = (char *)(uintptr_t)"-m";
+	argv[59] = (char *)(uintptr_t)"./fake-mount";
+	argv[60] = (char *)(uintptr_t)"-u";
+	argv[61] = (char *)(uintptr_t)"./fake-umount";
+	argv[62] = (char *)(uintptr_t)"-i";
+	argv[63] = (char *)(uintptr_t)"./fake-camcontrol";
+	argv[64] = (char *)(uintptr_t)"-S";
+	argv[65] = fstab;
+	argv[66] = (char *)(uintptr_t)"-Q";
+	argv[67] = (char *)(uintptr_t)"./fake-sysctl";
+	argv[68] = (char *)(uintptr_t)"-O";
+	argv[69] = (char *)(uintptr_t)"sysctl.conf";
+	argv[70] = (char *)(uintptr_t)"-h";
+	argv[71] = (char *)(uintptr_t)"./fake-ipfw";
+	argv[72] = (char *)(uintptr_t)"-J";
+	argv[73] = (char *)(uintptr_t)"ipfw.rules";
+	argv[74] = (char *)(uintptr_t)"-v";
+	argv[75] = (char *)(uintptr_t)"log";
+	argv[76] = (char *)(uintptr_t)"-1";
+	argv[77] = (char *)(uintptr_t)"history.conf";
+	argv[78] = (char *)(uintptr_t)"-2";
+	argv[79] = (char *)(uintptr_t)"tools";
+	argv[80] = (char *)(uintptr_t)"-r";
+	argv[81] = (char *)(uintptr_t)"./fake-swanctl";
+	argv[82] = (char *)(uintptr_t)"-5";
+	argv[83] = (char *)(uintptr_t)"swanctl";
+	argv[84] = (char *)(uintptr_t)"-X";
+	argv[85] = (char *)(uintptr_t)"./fake-traceroute";
+	argv[86] = (char *)(uintptr_t)"-3";
+	argv[87] = (char *)(uintptr_t)"./fake-setfib";
+	argv[88] = (char *)(uintptr_t)"-4";
+	argv[89] = ntpconf;
+	argv[90] = (char *)(uintptr_t)"-6";
+	argv[91] = rtadvdconf;
+	argv[92] = (char *)(uintptr_t)"-7";
+	argv[93] = (char *)(uintptr_t)"./fake-dnsmasq";
+	argv[94] = (char *)(uintptr_t)"-8";
+	argv[95] = (char *)(uintptr_t)"./fake-rtsol";
+	argv[96] = (char *)(uintptr_t)"-9";
+	argv[97] = (char *)(uintptr_t)"./fake-setkey";
+	argv[98] = (char *)(uintptr_t)"-0";
+	argv[99] = (char *)(uintptr_t)"./fake-local-unbound";
 	/* The system's files under a tree of the test's: config-export
 	 * reads them, and nothing reads the host's own. */
-	argv[102] = (char *)(uintptr_t)"--root";
-	argv[103] = rootdir;
+	argv[100] = (char *)(uintptr_t)"--root";
+	argv[101] = rootdir;
 	/* BIRD's sessions are not watched for faults by the tests'
 	 * agents: a fault would come among those a test looks for. */
-	argv[104] = (char *)(uintptr_t)"--bird-watch";
-	argv[105] = (char *)(uintptr_t)"0";
-	argv[106] = NULL;
+	argv[102] = (char *)(uintptr_t)"--bird-watch";
+	argv[103] = (char *)(uintptr_t)"0";
+	argv[104] = NULL;
 	/* Telegram's Bot API: a sink of the test's, or a port nothing
 	 * listens on; never the real one. */
-	argv[106] = (char *)(uintptr_t)"--telegram-api";
-	argv[107] = harness_telegram_api[0] != '\0' ? harness_telegram_api :
+	argv[104] = (char *)(uintptr_t)"--telegram-api";
+	argv[105] = harness_telegram_api[0] != '\0' ? harness_telegram_api :
 	    (char *)(uintptr_t)"http://127.0.0.1:9";
 	/* poudriere(8), a plugin: a stand-in, its poudriere.d the test's. */
-	argv[108] = (char *)(uintptr_t)"--poudriere";
-	argv[109] = (char *)(uintptr_t)"./fake-poudriere";
-	argv[110] = (char *)(uintptr_t)"--poudriere-etc";
-	argv[111] = pdetc;
-	argv[112] = (char *)(uintptr_t)"--ifmcstat";
-	argv[113] = (char *)(uintptr_t)"./fake-ifmcstat";
+	argv[106] = (char *)(uintptr_t)"--poudriere";
+	argv[107] = (char *)(uintptr_t)"./fake-poudriere";
+	argv[108] = (char *)(uintptr_t)"--poudriere-etc";
+	argv[109] = pdetc;
+	argv[110] = (char *)(uintptr_t)"--ifmcstat";
+	argv[111] = (char *)(uintptr_t)"./fake-ifmcstat";
 	/* Suricata's ruleset the test's, never the host's. */
-	argv[114] = (char *)(uintptr_t)"--suricata-rules";
-	argv[115] = surules;
+	argv[112] = (char *)(uintptr_t)"--suricata-rules";
+	argv[113] = surules;
 	/* The storage services' files, the test's. */
-	argv[116] = (char *)(uintptr_t)"--exports";
-	argv[117] = (char *)(uintptr_t)"exports";
-	argv[118] = (char *)(uintptr_t)"--ctl-conf";
-	argv[119] = (char *)(uintptr_t)"ctl.conf";
-	argv[120] = (char *)(uintptr_t)"--hast-conf";
-	argv[121] = (char *)(uintptr_t)"hast.conf";
-	argv[122] = (char *)(uintptr_t)"--smtpd-conf";
-	argv[123] = (char *)(uintptr_t)"./smtpd.conf";
-	argv[124] = (char *)(uintptr_t)"--smtpd-dir";
-	argv[125] = (char *)(uintptr_t)"smtpd.d";
+	argv[114] = (char *)(uintptr_t)"--exports";
+	argv[115] = (char *)(uintptr_t)"exports";
+	argv[116] = (char *)(uintptr_t)"--ctl-conf";
+	argv[117] = (char *)(uintptr_t)"ctl.conf";
+	argv[118] = (char *)(uintptr_t)"--hast-conf";
+	argv[119] = (char *)(uintptr_t)"hast.conf";
+	argv[120] = (char *)(uintptr_t)"--smtpd-conf";
+	argv[121] = (char *)(uintptr_t)"./smtpd.conf";
+	argv[122] = (char *)(uintptr_t)"--smtpd-dir";
+	argv[123] = (char *)(uintptr_t)"smtpd.d";
 	/* The lanes of pkg jobs, kept in the test's directory. */
-	argv[126] = (char *)(uintptr_t)"--jobs-conf";
-	argv[127] = (char *)(uintptr_t)"jobs.conf";
-	argv[128] = (char *)(uintptr_t)"--speederv2-log";
-	argv[129] = (char *)(uintptr_t)"speeder.log";
+	argv[124] = (char *)(uintptr_t)"--jobs-conf";
+	argv[125] = (char *)(uintptr_t)"jobs.conf";
+	argv[126] = (char *)(uintptr_t)"--speederv2-log";
+	argv[127] = (char *)(uintptr_t)"speeder.log";
 	/* Its access rules (NACM), the test's own. */
-	argv[130] = (char *)(uintptr_t)"--nacm";
-	argv[131] = (char *)(uintptr_t)"nacm.cbor";
-	argv[132] = NULL;
+	argv[128] = (char *)(uintptr_t)"--nacm";
+	argv[129] = (char *)(uintptr_t)"nacm.cbor";
+	argv[130] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(surules, sizeof(surules), "%s/rules", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
@@ -1334,7 +1338,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);
 	snprintf(rtadvdconf, sizeof(rtadvdconf), "%s/rtadvd.conf", cwd);
+	/* The jails it finds by name are ./jails', never the host's: in
+	 * its environment alone, not the console's. */
+	snprintf(fjf, sizeof(fjf), "%s/jails", cwd);
+	ATF_REQUIRE(setenv("FAKEJAIL", fjf, 1) == 0);
+	ATF_REQUIRE(setenv("LD_PRELOAD", fjl, 1) == 0);
 	pid = spawn_server(argv, "arcana-agent.out");
+	ATF_REQUIRE(unsetenv("LD_PRELOAD") == 0);
+	ATF_REQUIRE(unsetenv("FAKEJAIL") == 0);
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);
 	fclose(fp);
@@ -1769,16 +1780,10 @@ ts_net(const char *cwd, const char *r2routes, const char *r2fw)
 	FILE	*fp;
 	char	 buf[8192];
 
-	/* jls: r1, r2, r3 are jails 11, 12, 13 with networks of their own. */
-	snprintf(buf, sizeof(buf), "#!/bin/sh\ncase \"$2\" in\n"
-	    "r1) echo \"11 new %s/jroot\" ;;\nr2) echo \"12 new %s/jroot\" ;;\n"
-	    "r3) echo \"13 new %s/jroot\" ;;\n"
-	    "gw) echo \"4 new %s/jroot\" ;;\n"
-	    "*) echo \"jls: jail not found\" >&2; exit 1 ;;\nesac\n", cwd, cwd,
-	    cwd, cwd);
-	ATF_REQUIRE((fp = fopen("fake-jls", "w")) != NULL);
-	fputs(buf, fp);
-	fclose(fp);
+	/* The jails: r1, r2, r3 are 11, 12, 13 with networks of their own. */
+	snprintf(buf, sizeof(buf), "r1 11 new %s/jroot\nr2 12 new %s/jroot\n"
+	    "r3 13 new %s/jroot\ngw 4 new %s/jroot\n", cwd, cwd, cwd, cwd);
+	put("jails", buf);
 	/* jexec: ipfw's list and tables, the jail's own. */
 	ATF_REQUIRE((fp = fopen("fake-jexec", "w")) != NULL);
 	fputs("#!/bin/sh\necho \"jexec $*\" >> jexec.log\nj=$1; shift\n"
@@ -1808,7 +1813,7 @@ ts_net(const char *cwd, const char *r2routes, const char *r2fw)
 	    "a, d, best, g, fib, i }' best=-1 rt-$j 2>/dev/null ;;\n"
 	    "*) exit 0 ;;\nesac\nexit 0\n", fp);
 	fclose(fp);
-	ATF_REQUIRE(system("chmod 755 fake-jls fake-jexec fake-helper") == 0);
+	ATF_REQUIRE(system("chmod 755 fake-jexec fake-helper") == 0);
 #define	ADDR(j, a, l, i)	"{\"address\":\"" a "\",\"prefixlen\":" #l \
 	",\"interface\":\"" i "\",\"fib\":0,\"up\":true,\"loopback\":false}\n"
 	ATF_REQUIRE((fp = fopen("addrs-11", "w")) != NULL);

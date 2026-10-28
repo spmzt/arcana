@@ -44,6 +44,17 @@ int
 ifaddr_change(struct work *w, const char *ifname, int af, const void *addr,
     int plen, bool add, const char **errp)
 {
+
+	return (ifaddr_change_peer(w, ifname, af, addr, plen, NULL, add,
+	    errp));
+}
+
+/* The same, of a point-to-point interface: its far end peer (in the
+ * family's binary form; NULL, none). */
+int
+ifaddr_change_peer(struct work *w, const char *ifname, int af,
+    const void *addr, int plen, const void *peer, bool add, const char **errp)
+{
 	struct in_aliasreq	 ifra;
 	struct in6_aliasreq	 ifra6;
 	struct in6_ifreq	 ifr6;
@@ -70,6 +81,12 @@ ifaddr_change(struct work *w, const char *ifname, int af, const void *addr,
 		ifra.ifra_mask.sin_family = AF_INET;
 		ifra.ifra_mask.sin_addr.s_addr = htonl(plen == 0 ? 0 :
 		    0xffffffffU << (32 - plen));
+		if (peer != NULL) {
+			ifra.ifra_dstaddr.sin_len = sizeof(struct sockaddr_in);
+			ifra.ifra_dstaddr.sin_family = AF_INET;
+			memcpy(&ifra.ifra_dstaddr.sin_addr, peer,
+			    sizeof(struct in_addr));
+		}
 		rc = ioctl(s, SIOCAIFADDR, &ifra);
 	} else if (af == AF_INET) {
 		memset(&ifr, 0, sizeof(ifr));
@@ -91,6 +108,13 @@ ifaddr_change(struct work *w, const char *ifname, int af, const void *addr,
 		for (i = 0; i < plen; i++)
 			ifra6.ifra_prefixmask.sin6_addr.s6_addr[i / 8] |=
 			    (uint8_t)(0x80 >> (i % 8));
+		if (peer != NULL) {
+			ifra6.ifra_dstaddr.sin6_len =
+			    sizeof(struct sockaddr_in6);
+			ifra6.ifra_dstaddr.sin6_family = AF_INET6;
+			memcpy(&ifra6.ifra_dstaddr.sin6_addr, peer,
+			    sizeof(struct in6_addr));
+		}
 		ifra6.ifra_lifetime.ia6t_vltime = ND6_INFINITE_LIFETIME;
 		ifra6.ifra_lifetime.ia6t_pltime = ND6_INFINITE_LIFETIME;
 		rc = ioctl(s, SIOCAIFADDR_IN6, &ifra6);

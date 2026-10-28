@@ -57,7 +57,6 @@ struct opts opts = {
 	.traceroute_bin = PATH_TRACEROUTE_BIN,
 	.ifconfig_bin = PATH_IFCONFIG_BIN,
 	.ngctl_bin = PATH_NGCTL_BIN,
-	.jls_bin = PATH_JLS_BIN,
 	.jexec_bin = PATH_JEXEC_BIN,
 	.kldload_bin = PATH_KLDLOAD_BIN,
 	.kldunload_bin = PATH_KLDUNLOAD_BIN,
@@ -399,7 +398,7 @@ main(int argc, char *argv[])
 	if (argc >= 2 && strcmp(argv[1], "--scope-helper") == 0)
 		return (scope_helper(argc - 2, argv + 2));
 	/* The letters are all taken: what comes after has a name. */
-	while ((ch = getopt_long(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:X:0:1:2:3:4:5:6:7:8:9:x:Y:y:Z:z:", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:X:0:1:2:3:4:5:6:7:8:9:x:Y:y:Z:z:", longopts, NULL)) != -1) {
 		switch (ch) {
 		case OPT_ROOT:
 			opts.root = optarg;
@@ -560,9 +559,6 @@ main(int argc, char *argv[])
 			break;
 		case 'n':
 			opts.ngctl_bin = optarg;
-			break;
-		case 'L':
-			opts.jls_bin = optarg;
 			break;
 		case 'x':
 			opts.jexec_bin = optarg;

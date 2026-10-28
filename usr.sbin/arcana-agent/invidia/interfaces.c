@@ -1153,6 +1153,18 @@ clone_base(struct work *w, const char *name)
 	return (name);
 }
 
+/* Whether name is one a cloner makes ("gif3", "epair0a"); its base,
+ * as cloned_interfaces lists it, in *basep. */
+bool
+if_clonable(struct work *w, const char *name, const char **basep)
+{
+	const char	*base = clone_base(w, name);
+
+	if (basep != NULL)
+		*basep = base;
+	return (cloner_of(base) != -1);
+}
+
 /* Destroy a cloned interface; with persist, forget it in rc.conf. */
 int
 do_if_destroy(struct work *w, const char *ifname, bool persist,

@@ -5,6 +5,10 @@ ATF_TESTS_SH=	agent_test \
 		agent_tls_test \
 		agent_root_test
 
+# libfakejail.so: the jails agent_test.sh's agent finds by name, from a
+# file of the case's, through libjail's jail_getv(3) preloaded.
+SUBDIR+=	libfakejail
+
 # The collectors of the standard models (invidia/y*.c), run alone over
 # the structs and tables the agent's build made (its ymodel.h and
 # ymodel_schema.c), for agent_root_test.sh's yang_* cases.

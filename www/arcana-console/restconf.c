@@ -569,7 +569,9 @@ node_named(const struct cbl_ynode *parent, const char *mod, const char *name)
 	const struct cbl_ymodule	*m;
 	const struct cbl_ynode		*c;
 
-	if (parent == NULL) {
+	/* At the top, or below a mount point (RFC 8528): a module's
+	 * top-level node, named with its module. */
+	if (parent == NULL || (parent->flags & CBL_YNF_MOUNT) != 0) {
 		if (mod == NULL || (m = module_named(mod)) == NULL)
 			return (NULL);
 		for (uint32_t k = 0; k < m->ntop; k++)

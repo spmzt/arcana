@@ -57,6 +57,12 @@ struct yunread {
 /* Running's interfaces: what the get read but addresses and neighbours
  * whose origin is not static (invidia/yifedit.c). */
 int	yif_running(struct ietf_interfaces *data, cbl_yarena *a);
+/* Their router advertisements, as rtadvd.conf and rc.conf have them. */
+int	yif_rtadv(struct ietf_interfaces *data, cbl_yarena *a);
+/* The FIBs as network instances, their names from fibs.conf
+ * (invidia/yserve.c). */
+int	yni_instances(cbl_yarena *a,
+	    const struct ietf_network_instance_network_instances **out);
 
 /*
  * Arcana's rc.conf variables in a file of its own, named in
@@ -84,6 +90,8 @@ struct rca {
 	struct rca_was	*was;
 	size_t		 nwas;
 	struct vc_file	*uf;		/* the user's, read by rca_get() */
+	char		**drop;		/* taken out wherever they are */
+	size_t		 ndrop;
 };
 
 int	rca_open(struct rca *x, const char *svc, char *err, size_t errlen);
@@ -95,6 +103,11 @@ void	rca_undo(struct rca *x);
 const char *rca_get(struct rca *x, const char *name);
 int	rca_set(struct rca *x, const char *name, const char *value,
 	    char *err, size_t errlen);
+/* name taken out: of Arcana's file at once, of the user's files by
+ * rca_write() under rc-conf-conflict. */
+int	rca_drop(struct rca *x, const char *name);
+/* Another file a commit changes, kept as it is for rca_undo(). */
+int	rca_keep(struct rca *x, const char *path);
 void	rca_close(struct rca *x);
 
 /*

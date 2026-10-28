@@ -12,10 +12,12 @@
  * the neighbour protocols made: an address or neighbour whose origin
  * is not static is left out (RFC 8344 section 4: origin tells them).
  *
- * A commit changes, of an interface there already, its description,
- * whether it is enabled, its IPv4 MTU (the link's), and its static IPv4
- * and IPv6 addresses; what else the tree changes is refused as not
- * supported yet.  Each is
+ * A commit changes an interface's description, whether it is enabled,
+ * its IPv4 MTU (the link's), its network instance (bind-ni-name, its
+ * FIB: SIOCSIFFIB), and its static IPv4 and IPv6 addresses;
+ * makes one a cloner makes (with a gif's or gre's tunnel ends, a vlan's
+ * tag and parent), and destroys one; what else the tree changes is
+ * refused as not supported yet.  Each is
  * written to Arcana's rc.conf file as rc.d/netif reads it (rcarcana.c's
  * rules), then made the kernel's; failing, what was made is undone and
  * the files put back.
@@ -23,6 +25,12 @@
  *	description	ifconfig_<if>_descr
  *	enabled		"down" on ifconfig_<if>, or "up"
  *	ipv4 mtu	"mtu N" on ifconfig_<if>
+ *	instance	"fib N" first on ifconfig_<if>
+ *	router adv.	its record in rtadvd.conf (rtadv.c), the interface on
+ *			rtadvd_interfaces where it sends; rtadvd restarted
+ *	made		cloned_interfaces; create_args_<if> for a vlan,
+ *			"tunnel a b" first on ifconfig_<if>
+ *	destroyed	off cloned_interfaces, its variables dropped
  *	an address	ifconfig_<if>_alias<n> "inet a/len", "inet6 a/len";
  *			taken out of whichever of ifconfig_<if>,
  *			ifconfig_<if>_ipv6 or the aliases has it, the
@@ -143,15 +151,143 @@ yif_running(struct ietf_interfaces *data, cbl_yarena *a)
 	return (0);
 }
 
-/* An address of either family, as the kernel and rc.conf take it. */
+typedef struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements
+    yra;
+
+/* Whether rtadvd(8) advertises on ifname: rtadvd_enable, and the
+ * interface on rtadvd_interfaces (none listed: every one it has a
+ * record of, as rc.d/rtadvd's "auto" does). */
+static bool
+advertises(struct rca *x, const char *ifname)
+{
+	const char	*on = rca_get(x, "rtadvd_enable");
+	const char	*list = rca_get(x, "rtadvd_interfaces");
+	char		*copy, *p, *w;
+	bool		 found = false;
+
+	if (on == NULL || (strcasecmp(on, "YES") != 0 && strcasecmp(on,
+	    "TRUE") != 0 && strcasecmp(on, "ON") != 0 && strcmp(on, "1") != 0))
+		return (false);
+	if (list == NULL || list[strspn(list, " \t")] == '\0' ||
+	    strcmp(list, "auto") == 0)
+		return (true);
+	if ((copy = strdup(list)) == NULL)
+		return (false);
+	for (p = copy; !found && (w = strsep(&p, " \t")) != NULL;)
+		found = strcmp(w, ifname) == 0;
+	free(copy);
+	return (found);
+}
+
+/*
+ * Each interface's router advertisements (RFC 8349's submodule) as
+ * rtadvd.conf has them, its record's (rtadv.c), send-advertisements by
+ * rc.conf's rtadvd_enable and rtadvd_interfaces.  The interfaces are the
+ * get's, in a: copies made where something changes.
+ */
+int
+yif_rtadv(struct ietf_interfaces *data, cbl_yarena *a)
+{
+	struct vc_capfile	 f;
+	struct rca		 x;
+	yif			*v;
+	char			 err[256];
+	bool			 rc;
+
+	if (data->interfaces == NULL || data->interfaces->interface.n == 0)
+		return (0);
+	memset(&f, 0, sizeof(f));
+	if (vc_cap_read(&f, opts.rtadvd_conf, err, sizeof(err)) == -1)
+		return (0);	/* none: nothing advertised */
+	rc = rca_open(&x, "rtadvd", err, sizeof(err)) == 0;
+	v = (yif *)(uintptr_t)data->interfaces->interface.v;
+	for (size_t i = 0; i < data->interfaces->interface.n; i++) {
+		const yra *r;
+		yra *ra;
+		yip6 *p6;
+
+		if (rtadv_read(&f, v[i].name, a, &r) != 0 || r == NULL)
+			continue;
+		if ((ra = cbl_yarena_alloc(a, sizeof(*ra))) == NULL ||
+		    (p6 = cbl_yarena_alloc(a, sizeof(*p6))) == NULL) {
+			vc_cap_free(&f);
+			if (rc)
+				rca_close(&x);
+			return (ENOMEM);
+		}
+		*ra = *r;
+		ra->has_send_advertisements = true;
+		ra->send_advertisements = rc && advertises(&x, v[i].name);
+		if (v[i].ip_ipv6 != NULL)
+			*p6 = *v[i].ip_ipv6;
+		else
+			memset(p6, 0, sizeof(*p6));
+		p6->v6ur_ipv6_router_advertisements = ra;
+		v[i].ip_ipv6 = p6;
+	}
+	vc_cap_free(&f);
+	if (rc)
+		rca_close(&x);
+	return (0);
+}
+
+/* The router advertisements' node, for two of them compared. */
+static const struct cbl_ynode *
+ra_node(void)
+{
+	static const struct cbl_ynode *n;
+	static const char *const path[] = { "interface", "ipv6",
+	    "router-advertisements" };
+	const struct cbl_ynode *c;
+
+	if (n != NULL)
+		return (n);
+	c = ynode_named("ietf-interfaces", "interfaces");
+	for (size_t d = 0; c != NULL && d < nitems(path); d++) {
+		const struct cbl_ynode *k = NULL;
+
+		for (uint32_t i = 0; i < c->nchild && k == NULL; i++)
+			if (strcmp(c->child[i]->name, path[d]) == 0)
+				k = c->child[i];
+		c = k;
+	}
+	return (n = c);
+}
+
+/* Whether e's and f's router advertisements differ. */
+static bool
+ra_differs(const yra *e, const yra *f)
+{
+	const struct cbl_ynode *n = ra_node();
+	struct cbl_ybuf b1 = { NULL, 0, 0 }, b2 = { NULL, 0, 0 };
+	bool differ;
+
+	if (e == NULL || f == NULL)
+		return (e != f);
+	if (n == NULL || cbl_yencode(n, e, &b1) != 0 || cbl_yencode(n, f,
+	    &b2) != 0)
+		differ = true;
+	else
+		differ = b1.len != b2.len || memcmp(b1.p, b2.p, b1.len) != 0;
+	cbl_ybuf_free(&b1);
+	cbl_ybuf_free(&b2);
+	return (differ);
+}
+
+/* An address of either family, as the kernel and rc.conf take it; of
+ * a point-to-point interface, its far end too. */
+union bin {
+	struct in_addr	 v4;
+	struct in6_addr	 v6;
+};
+
 struct addr {
 	int		 af;
 	const char	*ip;
 	int		 plen;
-	union {
-		struct in_addr	 v4;
-		struct in6_addr	 v6;
-	}		 bin;
+	union bin	 bin;
+	const char	*peer;		/* NULL: none */
+	union bin	 pbin;
 };
 
 static bool
@@ -161,17 +297,32 @@ addr_of(int af, const char *ip, bool has, uint8_t plen, struct addr *x)
 	x->af = af;
 	x->ip = ip;
 	x->plen = has ? plen : (af == AF_INET ? 32 : 128);
+	x->peer = NULL;
 	return (ip != NULL && inet_pton(af, ip, &x->bin) == 1);
+}
+
+/* x's far end, peer; false, none of x's family. */
+static bool
+peer_of(const char *peer, struct addr *x)
+{
+
+	x->peer = peer;
+	return (peer == NULL || inet_pton(x->af, peer, &x->pbin) == 1);
 }
 
 static bool
 addr_in(const struct addr *v, size_t n, const struct addr *x)
 {
 
+	size_t	len = x->af == AF_INET ? sizeof(struct in_addr) :
+	    sizeof(struct in6_addr);
+
 	for (size_t i = 0; i < n; i++)
 		if (v[i].af == x->af && v[i].plen == x->plen &&
-		    memcmp(&v[i].bin, &x->bin, x->af == AF_INET ?
-		    sizeof(struct in_addr) : sizeof(struct in6_addr)) == 0)
+		    memcmp(&v[i].bin, &x->bin, len) == 0 &&
+		    (v[i].peer != NULL) == (x->peer != NULL) &&
+		    (x->peer == NULL || memcmp(&v[i].pbin, &x->pbin, len) ==
+		    0))
 			return (true);
 	return (false);
 }
@@ -191,8 +342,9 @@ addrs_of(const yif *e, struct addr **vp, size_t *np)
 	    i < e->ip_ipv4->address.n; i++) {
 		const yv4 *x = &e->ip_ipv4->address.v[i];
 
-		if (x->arcif_peer != NULL || !addr_of(AF_INET, x->ip,
-		    x->has_prefix_length, x->prefix_length, &v[n])) {
+		if (!addr_of(AF_INET, x->ip, x->has_prefix_length,
+		    x->prefix_length, &v[n]) || !peer_of(x->arcif_peer,
+		    &v[n])) {
 			free(v);
 			return (EOPNOTSUPP);
 		}
@@ -202,8 +354,9 @@ addrs_of(const yif *e, struct addr **vp, size_t *np)
 	    i < e->ip_ipv6->address.n; i++) {
 		const yv6 *x = &e->ip_ipv6->address.v[i];
 
-		if (x->arcif_peer != NULL || !addr_of(AF_INET6, x->ip,
-		    x->has_prefix_length, x->prefix_length, &v[n])) {
+		if (!addr_of(AF_INET6, x->ip, x->has_prefix_length,
+		    x->prefix_length, &v[n]) || !peer_of(x->arcif_peer,
+		    &v[n])) {
 			free(v);
 			return (EOPNOTSUPP);
 		}
@@ -227,6 +380,7 @@ rest_of(const yif *e, struct cbl_ybuf *b)
 	x = *e;
 	x.description = NULL;
 	x.has_enabled = false;
+	x.ni_bind_ni_name = NULL;
 	/* A container of addresses alone: as none (the first address
 	 * makes it, the last one's going takes it). */
 	if (x.ip_ipv4 != NULL) {
@@ -235,6 +389,7 @@ rest_of(const yif *e, struct cbl_ybuf *b)
 		p4.address.v = NULL;
 		p4.has_mtu = false;
 		p4.mtu = 0;
+		p4.ni_bind_ni_name = NULL;
 		x.ip_ipv4 = memcmp(&p4, &(yip4){ 0 }, sizeof(p4)) == 0 ? NULL :
 		    &p4;
 	}
@@ -244,6 +399,8 @@ rest_of(const yif *e, struct cbl_ybuf *b)
 		p6.address.v = NULL;
 		p6.has_mtu = false;
 		p6.mtu = 0;
+		p6.ni_bind_ni_name = NULL;
+		p6.v6ur_ipv6_router_advertisements = NULL;
 		x.ip_ipv6 = memcmp(&p6, &(yip6){ 0 }, sizeof(p6)) == 0 ? NULL :
 		    &p6;
 	}
@@ -328,6 +485,13 @@ line_without(struct work *w, const char *s, const struct addr *x)
 	if (i >= n)
 		return (NULL);
 	v[i - 1] = v[i] = NULL;
+	/* A point-to-point address's far end, right after it. */
+	if (i + 1 < n) {
+		union bin	b;
+
+		if (inet_pton(x->af, v[i + 1], &b) == 1)
+			v[++i] = NULL;
+	}
 	for (i++; i < n; i++) {
 		if (strcmp(v[i], "alias") == 0) {
 			v[i] = NULL;
@@ -374,8 +538,9 @@ keep_addr(struct work *w, struct rca *x, const char *ri,
 			return (E2BIG);
 		}
 		return (rca_set(x, wfmt(w, "ifconfig_%s_alias%zu", ri, n),
-		    wfmt(w, "%s %s/%d", ad->af == AF_INET ? "inet" : "inet6",
-		    ad->ip, ad->plen), err, errlen));
+		    wfmt(w, "%s %s/%d%s%s", ad->af == AF_INET ? "inet" :
+		    "inet6", ad->ip, ad->plen, ad->peer != NULL ? " " : "",
+		    ad->peer != NULL ? ad->peer : ""), err, errlen));
 	}
 	/* Out of the main lines, which may have it too. */
 	for (int k = 0; k < 2; k++) {
@@ -421,6 +586,47 @@ keep_enabled(struct work *w, struct rca *x, const char *ri, bool up,
 	return (rca_set(x, name, v, err, errlen));
 }
 
+/* The network instance e is bound to, of the interface and both its
+ * families alike ("": none, FIB 0); NULL: they differ. */
+static const char *
+bound_to(const yif *e)
+{
+	const char	*n = e->ni_bind_ni_name != NULL ? e->ni_bind_ni_name : "";
+	const char	*n4 = e->ip_ipv4 != NULL ? e->ip_ipv4->ni_bind_ni_name :
+			    NULL;
+	const char	*n6 = e->ip_ipv6 != NULL ? e->ip_ipv6->ni_bind_ni_name :
+			    NULL;
+
+	if (n[0] == '\0' && n4 != NULL)
+		n = n4;
+	if (n[0] == '\0' && n6 != NULL)
+		n = n6;
+	if ((n4 != NULL && strcmp(n4, n) != 0) || (n6 != NULL && strcmp(n6,
+	    n) != 0))
+		return (NULL);
+	return (n);
+}
+
+/* "fib N" first on ifconfig_<if>: an address set before it would have
+ * its route in FIB 0 (rc_word()'s rule); 0 takes it out. */
+static int
+keep_fib(struct work *w, struct rca *x, const char *ri, int fib, char *err,
+    size_t errlen)
+{
+	const char	*name = wfmt(w, "ifconfig_%s", ri);
+	char		**wv;
+	size_t		  n;
+
+	wv = words(w, rca_get(x, name), &n);
+	for (size_t i = 0; i + 1 < n; i++)
+		if (wv[i] != NULL && strcmp(wv[i], "fib") == 0)
+			wv[i] = wv[i + 1] = NULL;
+	if (fib == 0)
+		return (rca_set(x, name, joined(w, wv, n), err, errlen));
+	return (rca_set(x, name, wfmt(w, "fib %d%s%s", fib, n > 0 ? " " : "",
+	    joined(w, wv, n)), err, errlen));
+}
+
 /* "mtu N" on ifconfig_<if>: replaced where it is, else added. */
 static int
 keep_mtu(struct work *w, struct rca *x, const char *ri, unsigned mtu,
@@ -442,32 +648,281 @@ keep_mtu(struct work *w, struct rca *x, const char *ri, unsigned mtu,
 	    n > 0 ? " " : "", mtu), err, errlen));
 }
 
+/*
+ * A cloned interface as do_if_create() makes it, of entry e: its name,
+ * a gif's or gre's ends (arcana-interfaces' tunnel), a vlan's tag and
+ * the interface it rides (if-extensions, if-vlan-encapsulation).
+ */
+static void
+spec_of(const yif *e, struct arc_job_spec *sp)
+{
+	const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan *v;
+
+	memset(sp, 0, sizeof(*sp));
+	sp->interface = e->name;
+	if (e->arcif_tunnel != NULL && e->arcif_tunnel->has_local &&
+	    e->arcif_tunnel->has_remote) {
+		sp->tunnel_local = e->arcif_tunnel->local.v.m0;
+		sp->tunnel_remote = e->arcif_tunnel->remote.v.m0;
+	}
+	if (e->if_ext_encapsulation != NULL && (v =
+	    e->if_ext_encapsulation->if_vlan_dot1q_vlan) != NULL &&
+	    v->outer_tag != NULL && v->outer_tag->has_vlan_id) {
+		sp->has_id = true;
+		sp->id = v->outer_tag->vlan_id;
+	}
+	sp->parent = e->if_ext_parent_interface;
+}
+
+/* A new interface's entry has what spec_of() and the changes of an
+ * existing one take, and nothing else: 0, or EOPNOTSUPP. */
+static int
+created_ok(const yif *a)
+{
+	struct cbl_ybuf	 b1 = { NULL, 0, 0 }, b2 = { NULL, 0, 0 };
+	yif		 x, none;
+	int		 error;
+
+	x = *a;
+	x.has_type = false;
+	x.arcif_tunnel = NULL;
+	x.if_ext_parent_interface = NULL;
+	x.if_ext_encapsulation = NULL;
+	memset(&none, 0, sizeof(none));
+	none.name = a->name;
+	if ((error = rest_of(&x, &b1)) == 0 && (error = rest_of(&none,
+	    &b2)) == 0 && (b1.len != b2.len || memcmp(b1.p, b2.p, b1.len) !=
+	    0))
+		error = EOPNOTSUPP;
+	cbl_ybuf_free(&b1);
+	cbl_ybuf_free(&b2);
+	return (error);
+}
+
+/* cloned_interfaces with base on it, or off it. */
+static int
+keep_cloned(struct work *w, struct rca *x, const char *base, bool on,
+    char *err, size_t errlen)
+{
+	char	**wv;
+	size_t	  n;
+	bool	  there = false;
+
+	wv = words(w, rca_get(x, "cloned_interfaces"), &n);
+	for (size_t i = 0; i < n; i++)
+		if (strcmp(wv[i], base) == 0) {
+			there = true;
+			if (!on)
+				wv[i] = NULL;
+		}
+	if (there == on)
+		return (0);	/* there already, or not there */
+	if (!on)
+		return (rca_set(x, "cloned_interfaces", joined(w, wv, n), err,
+		    errlen));
+	return (rca_set(x, "cloned_interfaces", wfmt(w, "%s%s%s", joined(w,
+	    wv, n), n > 0 ? " " : "", base), err, errlen));
+}
+
+/* What rc.d/netif needs to make it again at boot: its create_args, a
+ * tunnel's ends first on ifconfig_<if>. */
+static int
+keep_made(struct work *w, struct rca *x, const char *ri,
+    const struct arc_job_spec *sp, char *err, size_t errlen)
+{
+	const char	*name = wfmt(w, "ifconfig_%s", ri);
+	char		**wv;
+	size_t		  n;
+	int		  error = 0;
+
+	if (sp->has_id && sp->parent != NULL)
+		error = rca_set(x, wfmt(w, "create_args_%s", ri), wfmt(w,
+		    "vlan %u vlandev %s", sp->id, sp->parent), err, errlen);
+	if (error != 0 || sp->tunnel_local == NULL)
+		return (error);
+	wv = words(w, rca_get(x, name), &n);
+	for (size_t i = 0; i + 2 < n; i++)
+		if (strcmp(wv[i], "tunnel") == 0)
+			wv[i] = wv[i + 1] = wv[i + 2] = NULL;
+	return (rca_set(x, name, wfmt(w, "tunnel %s %s%s%s", sp->tunnel_local,
+	    sp->tunnel_remote, n > 0 ? " " : "", joined(w, wv, n)), err,
+	    errlen));
+}
+
+/* Every variable rc.d/netif reads of interface ri, dropped. */
+static int
+forget_made(struct work *w, struct rca *x, const char *ri)
+{
+	static const char *const v[] = { "ifconfig_%s", "ifconfig_%s_descr",
+	    "ifconfig_%s_ipv6", "create_args_%s" };
+	int	error = 0;
+
+	for (size_t i = 0; error == 0 && i < nitems(v); i++)
+		error = rca_drop(x, wfmt(w, v[i], ri));
+	for (size_t i = 0; error == 0 && i < ALIAS_MAX; i++) {
+		const char *name = wfmt(w, "ifconfig_%s_alias%zu", ri, i);
+
+		if (rca_get(x, name) == NULL)
+			break;
+		error = rca_drop(x, name);
+	}
+	return (error);
+}
+
+/* rtadvd.conf as a commit changes it, and whether rtadvd sends. */
+struct rtadv_change {
+	struct vc_capfile	 f;
+	bool			 read, changed, sends;
+};
+
+/* The interface's record, or none, in rtadvd.conf; it on
+ * rtadvd_interfaces where it advertises (RFC 8349's default: not). */
+static int
+keep_ra(struct work *w, struct rca *x, struct rtadv_change *rt,
+    const char *ifname, const yra *ra, char *err, size_t errlen)
+{
+	char	**wv;
+	size_t	  n;
+	bool	  send = ra != NULL && ra->has_send_advertisements &&
+		    ra->send_advertisements, there = false;
+	int	  error;
+
+	if (!rt->read) {
+		if (vc_cap_read(&rt->f, opts.rtadvd_conf, err, errlen) == -1)
+			return (errno != 0 ? errno : EIO);
+		if ((error = rca_keep(x, opts.rtadvd_conf)) != 0)
+			return (error);
+		rt->read = true;
+	}
+	if (ra == NULL)
+		(void)vc_cap_remove_record(&rt->f, ifname, err, errlen);
+	else if ((error = rtadv_write(&rt->f, ifname, ra, err, errlen)) != 0)
+		return (error);
+	rt->changed = true;
+	wv = words(w, rca_get(x, "rtadvd_interfaces"), &n);
+	for (size_t i = 0; i < n; i++)
+		if (strcmp(wv[i], ifname) == 0) {
+			there = true;
+			if (!send)
+				wv[i] = NULL;
+		}
+	if (send && !there)
+		error = rca_set(x, "rtadvd_interfaces", wfmt(w, "%s%s%s",
+		    joined(w, wv, n), n > 0 ? " " : "", ifname), err, errlen);
+	else if (!send && there)
+		error = rca_set(x, "rtadvd_interfaces", joined(w, wv, n), err,
+		    errlen);
+	else
+		error = 0;
+	if (error == 0 && send) {
+		rt->sends = true;
+		error = rca_set(x, "rtadvd_enable", "YES", err, errlen);
+	}
+	return (error);
+}
+
+/* rtadvd(8) made to read rtadvd.conf again, or stopped where nothing
+ * is advertised. */
+static int
+rtadvd_again(struct work *w, struct rca *x, const char **errp)
+{
+	struct execres	 res;
+	const char	*list = rca_get(x, "rtadvd_interfaces");
+	char		*argv[4];
+
+	argv[0] = (char *)(uintptr_t)opts.service_bin;
+	argv[1] = (char *)(uintptr_t)"rtadvd";
+	argv[2] = (char *)(uintptr_t)(list == NULL || list[strspn(list,
+	    " \t")] == '\0' ? "onestop" : "onerestart");
+	argv[3] = NULL;
+	if (run_exec(w, argv, &res) != 0 && strcmp(argv[2], "onestop") != 0) {
+		*errp = wtext(w, exec_error(w, &res, "service rtadvd"));
+		return (-1);
+	}
+	return (0);
+}
+
 /* What was made live, to be undone in the other order. */
 struct made {
-	enum { M_ADDR, M_STATE, M_DESCR, M_MTU } kind;
+	enum { M_ADDR, M_STATE, M_DESCR, M_MTU, M_CREATE, M_DESTROY,
+	    M_FIB, M_RTADV } kind;
 	const char	*ifname;
 	struct addr	 ad;
 	bool		 add;		/* M_ADDR: added; M_STATE: brought up */
 	const char	*was;		/* M_DESCR: the description before */
 	unsigned	 mtu, was_mtu;	/* M_MTU */
+	int		 fib, was_fib;	/* M_FIB */
+	const yif	*entry;		/* M_CREATE, M_DESTROY: its entry */
 };
+
+static int	live_addr(struct work *, const char *, const struct addr *,
+		    bool, const char **);
+
+/* Interface e made again, as it was: by its spec, its description,
+ * addresses and state. */
+static int
+remake(struct work *w, const yif *e, const char **errp)
+{
+	struct arc_job_spec	 sp;
+	struct if_change	 ch = { 0, NULL, -1, -1, NULL };
+	struct addr		*v;
+	const char		*made;
+	size_t			 n;
+	int			 error;
+
+	spec_of(e, &sp);
+	if ((error = do_if_create(w, &sp, &made, errp)) != 0)
+		return (error);
+	if (e->description != NULL && e->description[0] != '\0') {
+		ch.descr = e->description;
+		(void)do_if_set(w, e->name, &ch, false, errp);
+	}
+	if (addrs_of(e, &v, &n) == 0) {
+		for (size_t i = 0; i < n; i++)
+			(void)live_addr(w, e->name, &v[i], true, errp);
+		free(v);
+	}
+	if (!e->has_enabled || e->enabled)
+		(void)do_if_state(w, e->name, true, errp);
+	return (0);
+}
+
+/* The made list grown by one, zeroed; NULL out of memory. */
+static struct made *
+made_new(struct made **mp, size_t *np, size_t *capp)
+{
+	struct made	*t;
+
+	if (*np == *capp) {
+		*capp = *capp * 2 + 8;
+		if ((t = reallocarray(*mp, *capp, sizeof(**mp))) == NULL)
+			return (NULL);
+		*mp = t;
+	}
+	t = &(*mp)[(*np)++];
+	memset(t, 0, sizeof(*t));
+	return (t);
+}
 
 static int
 live_addr(struct work *w, const char *ifname, const struct addr *ad,
     bool add, const char **errp)
 {
 
-	return (ifaddr_change(w, ifname, ad->af, &ad->bin, ad->plen, add,
-	    errp));
+	return (ifaddr_change_peer(w, ifname, ad->af, &ad->bin, ad->plen,
+	    ad->peer != NULL ? (const void *)&ad->pbin : NULL, add, errp));
 }
 
 int
 ietf_interfaces_interfaces_edit(cbl_req *req,
     const struct ietf_interfaces *before, const struct ietf_interfaces *after)
 {
+	const struct ietf_network_instance_network_instances *ni = NULL;
+	struct rtadv_change rt;
 	struct work	 w;
 	struct rca	 x;
 	struct made	*m = NULL;
+	cbl_yarena	*ya;
 	size_t		 nm = 0, cap = 0;
 	char		 err[512];
 	const char	*e = NULL;
@@ -475,6 +930,14 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 	int		 error = 0;
 
 	err[0] = '\0';
+	memset(&rt, 0, sizeof(rt));
+	if ((ya = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	/* The instances a bind-ni-name names: FIBs by name. */
+	if ((error = yni_instances(ya, &ni)) != 0) {
+		cbl_yarena_free(ya);
+		return (error);
+	}
 	work_init(&w);
 	/* What is not supported yet: an interface added or taken away,
 	 * or of one, more than this commit changes. */
@@ -484,9 +947,21 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 		struct cbl_ybuf b1 = { NULL, 0, 0 }, b2 = { NULL, 0, 0 };
 
 		if ((b = named(before, a->name)) == NULL) {
-			(void)snprintf(err, sizeof(err), "%s: an interface "
-			    "made by a commit is not supported yet", a->name);
-			error = EOPNOTSUPP;
+			/* Made: by a cloner, of what spec_of() takes. */
+			if (!if_clonable(&w, a->name, NULL) ||
+			    strncmp(a->name, "epair", 5) == 0) {
+				(void)snprintf(err, sizeof(err), "%s: no such "
+				    "interface; a commit makes one a cloner makes "
+				    "(gif, gre, vlan, lo, bridge, tap...), an "
+				    "epair's two sides not yet", a->name);
+				error = EOPNOTSUPP;
+			} else if ((error = created_ok(a)) != 0) {
+				(void)snprintf(err, sizeof(err), "%s: made with "
+				    "its type, tunnel ends, vlan tag and parent, "
+				    "description, state, IPv4 MTU and static "
+				    "addresses alone, so far", a->name);
+				error = EOPNOTSUPP;
+			}
 		} else if ((error = rest_of(a, &b1)) == 0 &&
 		    (error = rest_of(b, &b2)) == 0 && (b1.len != b2.len ||
 		    memcmp(b1.p, b2.p, b1.len) != 0)) {
@@ -501,10 +976,13 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 	for (size_t i = 0; error == 0 && before != NULL && before->interfaces
 	    != NULL && i < before->interfaces->interface.n; i++)
 		if (named(after, before->interfaces->interface.v[i].name) ==
-		    NULL) {
-			(void)snprintf(err, sizeof(err), "%s: an interface taken "
-			    "away by a commit is not supported yet",
-			    before->interfaces->interface.v[i].name);
+		    NULL && (!if_clonable(&w, before->interfaces->interface.v[i].
+		    name, NULL) || strncmp(before->interfaces->interface.v[i].
+		    name, "epair", 5) == 0)) {
+			(void)snprintf(err, sizeof(err), "%s: not one a cloner "
+			    "made (or an epair's side): it is not taken away "
+			    "by a commit", before->interfaces->interface.v[i].
+			    name);
 			error = EOPNOTSUPP;
 		}
 	if (error == 0 && (error = rca_open(&x, "netif", err,
@@ -514,19 +992,93 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 	for (size_t i = 0; error == 0 && after != NULL && after->interfaces !=
 	    NULL && i < after->interfaces->interface.n; i++) {
 		const yif *a = &after->interfaces->interface.v[i];
-		const yif *b = named(before, a->name);
-		const char *ri = rc_ifname(&w, a->name);
+		const yif *b0 = named(before, a->name), *b;
+		const char *ri = rc_ifname(&w, a->name), *base;
+		struct arc_job_spec sp;
 		struct addr *va, *vb;
+		struct made *mk;
 		size_t na, nb;
-		bool up_a = !a->has_enabled || a->enabled;
-		bool up_b = !b->has_enabled || b->enabled;
-		const char *da = a->description != NULL ? a->description : "";
-		const char *db = b->description != NULL ? b->description : "";
-		/* An MTU only where both say one: none given leaves it.
-		 * FreeBSD's IPv4 MTU is the link's (SIOCSIFMTU). */
-		bool mtu4 = a->ip_ipv4 != NULL && b->ip_ipv4 != NULL &&
-		    a->ip_ipv4->has_mtu && b->ip_ipv4->has_mtu &&
-		    a->ip_ipv4->mtu != b->ip_ipv4->mtu;
+		yif none;
+		/* Made by this commit: down, of nothing yet. */
+		bool made = b0 == NULL;
+		bool up_a, up_b, mtu4;
+		const char *da, *db;
+
+		memset(&none, 0, sizeof(none));
+		none.name = a->name;
+		b = made ? &none : b0;
+		up_a = !a->has_enabled || a->enabled;
+		up_b = !made && (!b->has_enabled || b->enabled);
+		da = a->description != NULL ? a->description : "";
+		db = b->description != NULL ? b->description : "";
+		/* An MTU only where both say one (or the new one does):
+		 * none given leaves it.  FreeBSD's IPv4 MTU is the link's
+		 * (SIOCSIFMTU). */
+		mtu4 = a->ip_ipv4 != NULL && a->ip_ipv4->has_mtu && (b->ip_ipv4 !=
+		    NULL && b->ip_ipv4->has_mtu ? a->ip_ipv4->mtu !=
+		    b->ip_ipv4->mtu : made);
+		if (made) {
+			spec_of(a, &sp);
+			(void)if_clonable(&w, a->name, &base);
+			if ((error = keep_cloned(&w, &x, base, true, err,
+			    sizeof(err))) != 0 || (error = keep_made(&w, &x, ri,
+			    &sp, err, sizeof(err))) != 0)
+				break;
+			if ((mk = made_new(&m, &nm, &cap)) == NULL) {
+				error = ENOMEM;
+				break;
+			}
+			mk->kind = M_CREATE;
+			mk->ifname = wstrdup(&w, a->name);
+			mk->entry = a;
+		}
+		/* Its network instance: its FIB, of both families. */
+		{
+			const char *ba = bound_to(a), *bb = bound_to(b);
+			int fa, fb;
+
+			if (ba == NULL) {
+				(void)snprintf(err, sizeof(err), "%s: FreeBSD "
+				    "binds an interface, both its address "
+				    "families, not one alone", a->name);
+				error = EINVAL;
+				break;
+			}
+			fa = ba[0] == '\0' ? 0 : yni_fib(ni, ba);
+			fb = bb == NULL || bb[0] == '\0' ? 0 : yni_fib(ni, bb);
+			if (fa == -1) {
+				(void)snprintf(err, sizeof(err), "%s: no network "
+				    "instance %s", a->name, ba);
+				error = ENOENT;
+				break;
+			}
+			if (fb == -1)
+				fb = 0;
+			if (fa != fb) {
+				if ((error = keep_fib(&w, &x, ri, fa, err,
+				    sizeof(err))) != 0)
+					break;
+				if ((mk = made_new(&m, &nm, &cap)) == NULL) {
+					error = ENOMEM;
+					break;
+				}
+				mk->kind = M_FIB;
+				mk->ifname = wstrdup(&w, a->name);
+				mk->fib = fa;
+				mk->was_fib = fb;
+			}
+		}
+		/* Its router advertisements: rtadvd.conf's record. */
+		{
+			const yra *ra = a->ip_ipv6 != NULL ?
+			    a->ip_ipv6->v6ur_ipv6_router_advertisements : NULL;
+			const yra *rb = b->ip_ipv6 != NULL ?
+			    b->ip_ipv6->v6ur_ipv6_router_advertisements : NULL;
+
+			if (ra_differs(ra, rb) && (error = keep_ra(&w, &x, &rt,
+			    a->name, ra, err, sizeof(err))) != 0)
+				break;
+		}
 
 		if (a->ip_ipv6 != NULL && b->ip_ipv6 != NULL &&
 		    a->ip_ipv6->has_mtu && b->ip_ipv6->has_mtu &&
@@ -540,8 +1092,8 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 		if ((error = addrs_of(a, &va, &na)) != 0) {
 			if (error == EOPNOTSUPP)
 				(void)snprintf(err, sizeof(err), "%s: an "
-				    "address with a peer, or not one, is not "
-				    "supported here yet", a->name);
+				    "address, or its peer, is not one of its "
+				    "family", a->name);
 			break;
 		}
 		if ((error = addrs_of(b, &vb, &nb)) != 0) {
@@ -613,12 +1165,48 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 			} else if (k == nb + na + 2 && mtu4) {
 				t->kind = M_MTU;
 				t->mtu = a->ip_ipv4->mtu;
-				t->was_mtu = b->ip_ipv4->mtu;
+				t->was_mtu = b->ip_ipv4 != NULL ?
+				    b->ip_ipv4->mtu : 0;
 				nm++;
 			}
 		}
 		free(va);
 		free(vb);
+	}
+	/* Taken away: off cloned_interfaces, its variables dropped. */
+	for (size_t i = 0; error == 0 && before != NULL && before->interfaces
+	    != NULL && i < before->interfaces->interface.n; i++) {
+		const yif *b = &before->interfaces->interface.v[i];
+		const char *base;
+		struct made *t;
+
+		if (named(after, b->name) != NULL)
+			continue;
+		(void)if_clonable(&w, b->name, &base);
+		if ((error = keep_cloned(&w, &x, base, false, err,
+		    sizeof(err))) != 0 || (error = forget_made(&w, &x,
+		    rc_ifname(&w, b->name))) != 0)
+			break;
+		if ((t = made_new(&m, &nm, &cap)) == NULL) {
+			error = ENOMEM;
+			break;
+		}
+		t->kind = M_DESTROY;
+		t->ifname = wstrdup(&w, b->name);
+		t->entry = b;
+	}
+	if (error == 0 && rt.changed) {
+		struct made *t;
+
+		if (vc_cap_write(&rt.f, opts.rtadvd_conf, 0644, err,
+		    sizeof(err)) == -1)
+			error = errno != 0 ? errno : EIO;
+		else if ((t = made_new(&m, &nm, &cap)) == NULL)
+			error = ENOMEM;
+		else {
+			t->kind = M_RTADV;
+			t->ifname = "rtadvd";
+		}
 	}
 	if (error == 0 && nm > 0)
 		error = rca_write(&x, req, err, sizeof(err));
@@ -627,8 +1215,11 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 			(void)cbl_req_set_yerr(req, err, 0);
 		if (opened)
 			rca_close(&x);
+		if (rt.read)
+			vc_cap_free(&rt.f);
 		free(m);
 		work_free(&w);
+		cbl_yarena_free(ya);
 		return (error);
 	}
 	/* The kernel; failing, what was made undone, the files back. */
@@ -651,6 +1242,24 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 			ch.mtu = t->mtu;
 			error = do_if_set(&w, t->ifname, &ch, false, &e);
 			break;
+		case M_CREATE: {
+			struct arc_job_spec	 cs;
+			const char		*got;
+
+			spec_of(t->entry, &cs);
+			error = do_if_create(&w, &cs, &got, &e);
+			break;
+		}
+		case M_DESTROY:
+			error = do_if_destroy(&w, t->ifname, false, &e);
+			break;
+		case M_FIB:
+			ch.fib = t->fib;
+			error = do_if_set(&w, t->ifname, &ch, false, &e);
+			break;
+		case M_RTADV:
+			error = rtadvd_again(&w, &x, &e);
+			break;
 		}
 		if (error == 0)
 			continue;
@@ -662,7 +1271,13 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 			t = &m[k];
 			ch.descr = t->kind == M_DESCR ? t->was : NULL;
 			ch.mtu = t->kind == M_MTU ? t->was_mtu : 0;
-			if (((t->kind == M_DESCR || t->kind == M_MTU) &&
+			ch.fib = t->kind == M_FIB ? t->was_fib : -1;
+			if ((t->kind == M_FIB && do_if_set(&w, t->ifname, &ch,
+			    false, &ue) != 0) || (t->kind == M_CREATE &&
+			    do_if_destroy(&w,
+			    t->ifname, false, &ue) != 0) || (t->kind ==
+			    M_DESTROY && remake(&w, t->entry, &ue) != 0) ||
+			    ((t->kind == M_DESCR || t->kind == M_MTU) &&
 			    do_if_set(&w, t->ifname, &ch, false, &ue) != 0) ||
 			    (t->kind == M_ADDR &&
 			    live_addr(&w, t->ifname, &t->ad, !t->add, &ue) !=
@@ -673,13 +1288,22 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 				    "?");
 		}
 		rca_undo(&x);
+		/* rtadvd.conf back, read again by rtadvd. */
+		if (rt.changed) {
+			const char *ue = NULL;
+
+			(void)rtadvd_again(&w, &x, &ue);
+		}
 		(void)cbl_req_set_yerr(req, err, 0);
 		logmsg(LOG_WARNING, "interfaces: %s: rc.conf as it was", err);
 		error = error > 0 ? error : EIO;
 		break;
 	}
 	rca_close(&x);
+	if (rt.read)
+		vc_cap_free(&rt.f);
 	free(m);
 	work_free(&w);
+	cbl_yarena_free(ya);
 	return (error);
 }

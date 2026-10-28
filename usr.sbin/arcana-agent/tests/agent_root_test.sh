@@ -2934,8 +2934,147 @@ commit_interface_cleanup()
 	cleanup
 }
 
+# A gif made by a confirmed commit, its tunnel ends and an address with
+# it, kept in Arcana's rc.conf file (cloned_interfaces, ifconfig_gif57's
+# tunnel); not confirmed, destroyed again; confirmed, kept; then taken
+# away by a commit of its own.
+atf_test_case commit_create cleanup
+commit_create_head()
+{
+	atf_set "descr" "A gif made and destroyed by confirmed commits"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+commit_create_body()
+{
+	ifconfig gif57 >/dev/null 2>&1 && atf_skip "gif57 is there already"
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\n' > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	"$JGC" -c "$SOCK" get -d running interfaces > run.json
+	sed -e 's|"interface":\[|"interface":[{"name":"gif57","type":"iana-if-type:tunnel","description":"lab","arcana-interfaces:tunnel":{"local":"192.0.2.1","remote":"192.0.2.2"},"ietf-ip:ipv4":{"address":[{"ip":"198.51.100.57","prefix-length":32,"arcana-interfaces:peer":"198.51.100.58"}]}},|' \
+	    run.json > new.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @new.json
+	atf_check -o match:'confirm within 3 seconds' \
+	    "$JGC" -c "$SOCK" commit -c 3 -a rc-conf-files
+	atf_check -o match:'tunnel inet 192.0.2.1 --> 192.0.2.2' \
+	    -o match:'inet 198.51.100.57 --> 198.51.100.58 ' \
+	    -o match:'description: lab' \
+	    -o match:'<UP,' ifconfig gif57
+	atf_check -o match:'^cloned_interfaces="gif57"' \
+	    -o match:'^ifconfig_gif57="tunnel 192.0.2.1 192.0.2.2 up"' \
+	    -o match:'^ifconfig_gif57_alias0="inet 198.51.100.57/32 198.51.100.58"' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	sleep 5
+	atf_check -s not-exit:0 -e ignore ifconfig gif57
+	atf_check -o not-match:'gif57' cat root/usr/local/etc/rc.conf.d/arcana
+	# Confirmed: kept.
+	atf_check "$JGC" -c "$SOCK" edit interfaces @new.json
+	atf_check -o match:'commit -i lab$' "$JGC" -c "$SOCK" commit -c 3 -p lab
+	atf_check "$JGC" -c "$SOCK" commit -i lab
+	sleep 4
+	atf_check -o match:'inet 198.51.100.57 ' ifconfig gif57
+	# Taken away: off cloned_interfaces, its variables gone.
+	atf_check "$JGC" -c "$SOCK" edit interfaces @run.json
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -s not-exit:0 -e ignore ifconfig gif57
+	atf_check -o not-match:'gif57' cat root/usr/local/etc/rc.conf.d/arcana
+}
+commit_create_cleanup()
+{
+	ifconfig gif57 destroy 2>/dev/null
+	cleanup
+}
+
+# An interface bound to a network instance by a commit: a loopback made
+# in FIB 1 (fib 1 on ifconfig_lo59, SIOCSIFFIB), undone at the timeout.
+atf_test_case commit_fib cleanup
+commit_fib_head()
+{
+	atf_set "descr" "An interface made in a FIB by a confirmed commit"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+commit_fib_body()
+{
+	[ "$(sysctl -n net.fibs)" -ge 2 ] || atf_skip "one FIB alone here"
+	ifconfig lo59 >/dev/null 2>&1 && atf_skip "lo59 is there already"
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\n' > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	"$JGC" -c "$SOCK" get -d running interfaces > run.json
+	sed -e 's|"interface":\[|"interface":[{"name":"lo59","type":"iana-if-type:softwareLoopback","ietf-network-instance:bind-ni-name":"fib1"},|' \
+	    run.json > new.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @new.json
+	atf_check -o match:'confirm within 3 seconds' \
+	    "$JGC" -c "$SOCK" commit -c 3 -a rc-conf-files
+	atf_check -o match:'fib: 1' ifconfig lo59
+	atf_check -o match:'^ifconfig_lo59="fib 1 up"' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'bind-ni-name":"fib1"' \
+	    "$JGC" -c "$SOCK" get -d running -x \
+	    "/ietf-interfaces:interfaces/interface[name='lo59']" interfaces
+	sleep 5
+	atf_check -s not-exit:0 -e ignore ifconfig lo59
+}
+commit_fib_cleanup()
+{
+	ifconfig lo59 destroy 2>/dev/null
+	cleanup
+}
+
+# A static route in FIB 1, committed through its network instance's
+# vrf-root (RFC 8529, 8528): the kernel's FIB 1 has it, rc.conf too;
+# not confirmed, both undone.
+atf_test_case commit_fib_route cleanup
+commit_fib_route_head()
+{
+	atf_set "descr" "A FIB's static route committed through its instance's mount"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+commit_fib_route_body()
+{
+	[ "$(sysctl -n net.fibs)" -ge 2 ] || atf_skip "one FIB alone here"
+	if route -n get -fib 1 203.0.113.0 2>/dev/null | grep -q 'destination: 203.0.113.0'; then
+		atf_skip "FIB 1 has a route to 203.0.113.0 already"
+	fi
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\n' > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	"$JGC" -c "$SOCK" get -d running network-instances > run.json
+	# FIB 1's (the first instance's) IPv4 static routes: one; the
+	# JSON is one line, and sed changes its first match alone.
+	sed -e 's|"ietf-ipv4-unicast-routing:ipv4":{}|"ietf-ipv4-unicast-routing:ipv4":{"route":[{"destination-prefix":"203.0.113.0/24","next-hop":{"next-hop-address":"127.0.0.1"}}]}|' \
+	    run.json > new.json
+	atf_check -o match:'"name":"fib1"' cat new.json
+	atf_check "$JGC" -c "$SOCK" edit network-instances @new.json
+	atf_check -o match:'confirm within 3 seconds' \
+	    "$JGC" -c "$SOCK" commit -c 3 -a rc-conf-files
+	atf_check -o match:'gateway: 127.0.0.1' route -n get -fib 1 203.0.113.0
+	atf_check -o match:'203.0.113.0/24 127.0.0.1.*-fib 1|-fib 1.*203.0.113.0/24' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	sleep 5
+	atf_check -s ignore -o not-match:'destination: 203.0.113.0' -e ignore \
+	    route -n get -fib 1 203.0.113.0
+}
+commit_fib_route_cleanup()
+{
+	route -n delete -fib 1 -net 203.0.113.0/24 127.0.0.1 >/dev/null 2>&1
+	cleanup
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case commit_fib_route
+	atf_add_test_case commit_fib
+	atf_add_test_case commit_create
 	atf_add_test_case commit_interface
 	atf_add_test_case commit_route
 	atf_add_test_case l2_vnet

@@ -38,7 +38,6 @@
 .Op Fl b Ar birdc
 .Op Fl e Ar bird
 .Op Fl a Ar file
-.Op Fl L Ar jls
 .Op Fl x Ar jexec
 .Op Fl T Ar kldload
 .Op Fl t Ar kldunload
@@ -493,13 +492,13 @@ The
 and
 .Xr kldunload 8
 programs, which load a kernel module and unload one.
-.It Fl L Ar jls , Fl x Ar jexec
+.It Fl x Ar jexec
 The
-.Xr jls 8
-and
 .Xr jexec 8
-programs: the first says whether a jail runs with a network of its own
-and where its root is, the second runs the jail's own programs in it.
+program, which runs the jail's own programs in it.
+Whether a jail runs with a network of its own, where its root is and
+its release are read with
+.Xr jail_getv 3 .
 .It Fl H Ar helper
 The program run to look at a jail's network from inside it: its
 interfaces, its routes through
@@ -595,10 +594,36 @@ FIB 0's static routes, as
 installs them
 .Pq Va static_routes , ipv6_static_routes , route_ Ns Ar name ;
 .It
-of an interface there already, its description, whether it is
-enabled, its IPv4 MTU and its static addresses
+an interface's description, whether it is enabled, its IPv4 MTU and
+its static addresses, a point-to-point one's with its peer
 .Pq Va ifconfig_ Ns Ar if , ifconfig_ Ns Ar if Ns Va _descr ,
 .Va ifconfig_ Ns Ar if Ns Va _alias Ns Ar n ;
+.It
+an interface a cloner makes, made (a gif's or gre's tunnel ends, a
+vlan's tag and parent) or destroyed
+.Pq Va cloned_interfaces , create_args_ Ns Ar if ;
+.It
+an interface's router advertisements (RFC 8349), its record in
+.Xr rtadvd.conf 5 ,
+.Va rtadvd_interfaces
+where it sends; rtadvd restarted;
+.It
+the network instance an interface is in, its FIB
+.Pq Dq fib Ar N No first on Va ifconfig_ Ns Ar if ,
+.Dv SIOCSIFFIB ;
+.It
+the network instances, a FIB each: their names and descriptions
+.Pq Pa fibs.conf ,
+and each one's static routes, its routing mounted at its
+.Ic vrf-root
+(RFC 8528);
+one past the last FIB raises
+.Va net.fibs ,
+live where the kernel lets it and in
+.Pa /boot/loader.conf.d/arcana.conf ,
+only where the request accepts
+.Cm net-fibs :
+FreeBSD never lowers it, not even for an undo;
 .It
 NACM's rules
 .Pq Fl -nacm ;

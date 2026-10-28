@@ -55,7 +55,8 @@
 
 /*
  * Have w work in the jail named, when one is: it must be running and
- * have a network of its own.  jls(8) says: "4 new /usr/jails/gateway".
+ * have a network of its own.  jail_getv(3) says: jid 4, vnet new, path
+ * /usr/jails/gateway.
  */
 int
 scope_enter(struct work *w, const char *jail, const char **errp)
@@ -69,49 +70,33 @@ int
 scope_enter_jail(struct work *w, const char *jail, const char **errp,
     bool vnet)
 {
-	struct execres	 res;
-	char		*argv[7], *line, *p, *vnetv;
+	struct jinfo	ji;
 
 	w->jail = NULL;
 	w->jid = 0;
 	w->jroot = NULL;
 	if (jail == NULL || jail[0] == '\0')
 		return (0);
-	argv[0] = (char *)(uintptr_t)opts.jls_bin;
-	argv[1] = (char *)(uintptr_t)"-j";
-	argv[2] = (char *)(uintptr_t)jail;
-	argv[3] = (char *)(uintptr_t)"jid";
-	argv[4] = (char *)(uintptr_t)"vnet";
-	argv[5] = (char *)(uintptr_t)"path";
-	argv[6] = NULL;
-	if (run_exec(w, argv, &res) != 0 || res.out == NULL) {
+	if (jail_named(w, jail, &ji) < 0) {
 		*errp = vnet ? wfmt(w, "the jail %s is not running: its "
 		    "network is there only while it runs", jail) : wfmt(w,
 		    "the jail %s is not running", jail);
 		return (-1);
 	}
-	line = wstrndup(w, res.out, strcspn(res.out, "\n"));
-	p = line;
-	w->jid = atoi(p);
-	p += strcspn(p, " ");
-	p += strspn(p, " ");
-	vnetv = p;
-	p += strcspn(p, " ");
-	if (*p != '\0')
-		*p++ = '\0';
-	p += strspn(p, " ");
-	if (w->jid <= 0 || p[0] != '/') {
-		*errp = wfmt(w, "jls did not say where the jail %s is", jail);
+	if (ji.path[0] != '/') {
+		*errp = wfmt(w, "jail_getv(3) did not say where the jail %s "
+		    "is", jail);
 		return (-1);
 	}
-	if (vnet && strcmp(vnetv, "new") != 0 && strcmp(vnetv, "1") != 0) {
+	if (vnet && !ji.vnet) {
 		*errp = wfmt(w, "the jail %s has no network of its own (vnet): "
 		    "its addresses are the host's, and are managed there",
 		    jail);
 		return (-1);
 	}
-	w->jail = wstrdup(w, jail);
-	w->jroot = wstrdup(w, p);
+	w->jid = ji.jid;
+	w->jail = ji.name;
+	w->jroot = ji.path;
 	return (0);
 }
 

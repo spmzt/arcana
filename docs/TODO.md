@@ -221,4 +221,8 @@ Written and tested with stand-ins only:
   release check, notifications) is the console's.  A plugin is still
   built into the agent and the page: what makes it one is that it is
   there only where its program is installed.
-- jls stays a program the tests can fake, where libjail could not be.
+- The agent runs no jls(8): a jail by name is read with jail_getv(3),
+  every jail with jailparam_get(3).  The unprivileged tests preload
+  libfakejail.so into the agent they start, whose jail_getv answers a
+  lookup by name or jid from a file of the test's; the list of every
+  jail is still the host's.

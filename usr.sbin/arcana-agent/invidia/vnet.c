@@ -53,7 +53,7 @@ do_if_vnet(struct work *w, const char *ifname, const char *jail, bool back,
 	bool			 inside, edit, has;
 	int			 jid, rc;
 
-	/* The jail runs, with a network of its own: jls says so. */
+	/* The jail runs, with a network of its own: jail_getv(3) says so. */
 	if (scope_enter(w, jail, errp) != 0)
 		return (-1);
 	jid = w->jid;

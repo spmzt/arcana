@@ -538,6 +538,39 @@ ATF_TC_BODY(restconf_write, tc)
 	resp_free(&r);
 }
 
+/* A path through a mount point (RFC 8528): a FIB's routing below its
+ * network instance's vrf-root. */
+ATF_TC_WITHOUT_HEAD(restconf_mount);
+ATF_TC_BODY(restconf_mount, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64], id[16];
+	char		 path[320];
+	int		 fibs = 0;
+	size_t		 len = sizeof(fibs);
+
+	if (sysctlbyname("net.fibs", &fibs, &len, NULL, 0) == -1 || fibs < 2)
+		atf_tc_skip("one FIB alone here");
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/host=%s"
+	    "/ietf-network-instance:network-instances/network-instance=fib1/"
+	    "vrf-root/ietf-routing:routing", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"ietf-routing:routing\"") != NULL &&
+	    strstr(r.body, "\"ribs\"") != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
 ATF_TC_BODY(restconf, tc)
 {
 	struct authn	 a;
@@ -10161,6 +10194,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, jails);
 	ATF_TP_ADD_TC(tp, restconf);
 	ATF_TP_ADD_TC(tp, restconf_write);
+	ATF_TP_ADD_TC(tp, restconf_mount);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_console);
 	ATF_TP_ADD_TC(tp, services);

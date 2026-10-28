@@ -34,6 +34,10 @@ programs()
 	JGC="$(atf_get_srcdir)/../../arcanactl/arcanactl"
 	[ -f "$JGC" -a -x "$JGC" ] ||
 	    JGC=$(atf_config_get arcanactl /usr/local/sbin/arcanactl)
+	# libjail's jail_getv(3) answering from ./jails: built beside the
+	# tests, or installed with them.
+	FJL="$(atf_get_srcdir)/libfakejail/libfakejail.so"
+	[ -f "$FJL" ] || FJL="$(atf_get_srcdir)/libfakejail.so"
 }
 
 write_conf()
@@ -325,6 +329,10 @@ start_daemon()
 	# Emptied here, before the daemon starts: its child empties it only
 	# once it runs, and the "ready" of the one before would be read.
 	: > daemon.out
+	# The jails it finds by name are ./jails' (none until a case
+	# writes it), never the host's.
+	[ -f "$FJL" ] || atf_fail "no libfakejail.so at $FJL"
+	FAKEJAIL="$(pwd)/jails" LD_PRELOAD="$FJL" \
 	"$JGD" -F -l "$SOCK" -f "$(pwd)/etc/jail.conf" \
 	    -D "$(pwd)/etc/jail.conf.d" -j "$(pwd)/fake-jail" \
 	    -R "$(pwd)/rc.d:$(pwd)/local/rc.d" -s "$(pwd)/fake-service" \
@@ -337,7 +345,7 @@ start_daemon()
 	    -k "$(pwd)/fake-wg" -o "$(pwd)/wg" -b "$(pwd)/fake-birdc" \
 	    -r "$(pwd)/fake-swanctl" -5 "$(pwd)/swanctl" \
 	    -e "$(pwd)/fake-bird" -a "$(pwd)/bird/bird.conf" \
-	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
+	    -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
 	    --jobs-conf "$(pwd)/jobs.conf" --nacm "$(pwd)/nacm.cbor" \
@@ -3228,16 +3236,11 @@ jail_base_body()
 	mkdir -p "$R/etc" "$R/usr/local/etc"
 	printf 'hostname="web"\n' > "$R/etc/rc.conf"
 	start_daemon
-	# jls: web runs, on 15.1; old, an older release; nothing else.
-	cat > fake-jls <<EOS
-#!/bin/sh
-case "\$2" in
-web) case "\$*" in *osrelease*) echo 15.1-RELEASE-p3 ;; *) echo "7 inherit $R" ;; esac ;;
-old) case "\$*" in *osrelease*) echo 14.3-RELEASE ;; *) echo "8 inherit $R" ;; esac ;;
-*) echo "jls: jail \"\$2\" not found" >&2; exit 1 ;;
-esac
+	# The jails: web runs, on 15.1; old, an older release; nothing else.
+	cat > jails <<EOS
+web 7 inherit $R 15.1-RELEASE-p3
+old 8 inherit $R 14.3-RELEASE
 EOS
-	chmod +x fake-jls
 	# Not running, not a verb, no release to go to: refused at once.
 	atf_check -s exit:1 -o match:'not running' \
 	    "$JGC" -c "$SOCK" jail-base nope convert
@@ -4631,13 +4634,7 @@ sdwan_jail_body()
 
 	R=$d/jroot
 	mkdir -p "$R/var/run"
-	cat > fake-jls <<EOS
-#!/bin/sh
-case "\$2" in
-gateway) echo "4 new $R" ;;
-*) echo "jls: jail \"\$2\" not found" >&2; exit 1 ;;
-esac
-EOS
+	echo "gateway 4 new $R" > jails
 	# jexec: logged; the rule file the jail's ipfw would read, read
 	# where the jail has it; a sysctl never run on the host.
 	cat > fake-jexec <<EOS
@@ -4655,7 +4652,7 @@ EOS
 echo "ipfw \$*" >> $d/ipfw.log
 exit 0
 EOS
-	chmod +x fake-jls fake-jexec fake-ipfw
+	chmod +x fake-jexec fake-ipfw
 	printf '#!/bin/sh\nexit 0\n' > fake-kldload
 	chmod +x fake-kldload
 	DAEMON_ARGS="-h $d/fake-ipfw -2 $d/tools"
@@ -4788,15 +4785,11 @@ vnet_body()
 	mkdir -p "$R/etc" "$R$(pwd)/bird" "$R$(pwd)/wg"
 	printf 'hostname="gateway"\n' > "$R/etc/rc.conf"
 	printf 'router id 10.0.0.1;\nfilter gw_in {\n\taccept;\n}\n' > "$R$(pwd)/bird/bird.conf"
-	# jls: gateway runs with a network of its own, web shares the
+	# The jails: gateway runs with a network of its own, web shares the
 	# host's, and nothing else runs.
-	cat > fake-jls <<EOS
-#!/bin/sh
-case "\$2" in
-gateway) echo "4 new $R" ;;
-web) echo "7 inherit $(pwd)/web" ;;
-*) echo "jls: jail \"\$2\" not found" >&2; exit 1 ;;
-esac
+	cat > jails <<EOS
+gateway 4 new $R
+web 7 inherit $(pwd)/web
 EOS
 	# jexec: the program, "in the jail": what it was given is logged.
 	cat > fake-jexec <<EOS
@@ -4847,7 +4840,7 @@ esac
 exit 0
 EOS
 	printf '#!/bin/sh\necho "bird $*" >> %s/birdc.log\ngrep -q BROKEN "%s$3" && { echo "syntax error" >&2; exit 1; }\nexit 0\n' "$(pwd)" "$R" > fake-bird
-	chmod +x fake-jls fake-jexec fake-helper fake-ifconfig fake-wg fake-birdc fake-bird
+	chmod +x fake-jexec fake-helper fake-ifconfig fake-wg fake-birdc fake-bird
 	printf '#!/bin/sh\necho "ipfw $*" >> %s/ipfw.log\nexit 0\n' "$(pwd)" > fake-ipfw
 	chmod +x fake-ipfw
 	DAEMON_ARGS="-h $(pwd)/fake-ipfw"
@@ -6166,8 +6159,9 @@ EOS
 	chmod +x rc.d/arcana_agent
 	second=$(cat daemon.pid)
 	atf_check -o match:'queued' "$JGC" -q -c "$SOCK" service arcana_agent restart
-	# As long as the update's: a loaded machine runs sysrc(8) slowly.
-	for i in $(seq 1 300); do
+	# A minute: under the whole suite at once the job's sysrc(8) -A
+	# alone has taken most of one.
+	for i in $(seq 1 600); do
 		[ "$(cat daemon.pid)" != "$second" ] &&
 		    "$JGC" -c "$SOCK" hello > /dev/null 2>&1 && break
 		sleep 0.1
@@ -6614,13 +6608,7 @@ EOS
 	# file of its own; the host's instance beside it, untouched.
 	R=$(pwd)/jroot
 	mkdir -p "$R/var/run"
-	cat > fake-jls <<EOS
-#!/bin/sh
-case "\$2" in
-gw) echo "7 new $R" ;;
-*) echo "jls: jail \"\$2\" not found" >&2; exit 1 ;;
-esac
-EOS
+	echo "gw 7 new $R" > jails
 	cat > fake-jexec <<EOS
 #!/bin/sh
 echo "jexec \$*" >> $(pwd)/jexec.log
@@ -6630,7 +6618,7 @@ n=0; for a; do case "\$a" in /var/run/*) a="$R\$a" ;; esac; set -- "\$@" "\$a"; 
 shift \$n
 exec "\$@"
 EOS
-	chmod +x fake-jls fake-jexec
+	chmod +x fake-jexec
 	atf_check -s exit:1 -e match:'not running' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"jail":"nope","instances":[{"name":"sw1-nope","fib":1,"conf":"router id 100.64.0.2;\n"}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
@@ -11232,14 +11220,124 @@ datastores_interfaces_body()
 	atf_check "$JGC" -c "$SOCK" edit interfaces @type.json
 	atf_check -s exit:1 -e match:'lo0: only its description, enabled, IPv4 MTU and static addresses' \
 	    "$JGC" -c "$SOCK" commit -a rc-conf-files
+	atf_check "$JGC" -c "$SOCK" discard
+	# Made by a commit: what a cloner makes alone, with what it takes.
+	sed -e 's|"interface":\[|"interface":[{"name":"em57","type":"iana-if-type:ethernetCsmacd"},|' \
+	    run.json > phys.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @phys.json
+	atf_check -s exit:1 -e match:'em57: no such interface; a commit makes one a cloner makes' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-files
+	atf_check "$JGC" -c "$SOCK" discard
+	sed -e 's|"interface":\[|"interface":[{"name":"gif57","type":"iana-if-type:tunnel","arcana-interfaces:tunnel-fib":3},|' \
+	    run.json > fib.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @fib.json
+	atf_check -s exit:1 -e match:'gif57: made with its type, tunnel ends' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-files
+	# The physical are not taken away.
+	atf_check "$JGC" -c "$SOCK" discard
+	sed -e 's|{"arcana-interfaces:capabilities":"[^"]*","arcana-interfaces:group":\["lo"\],"enabled":true,"name":"lo0"[^]]*\]}[^]]*\]}},||' \
+	    run.json > nolo.json
+	if ! cmp -s run.json nolo.json; then
+		atf_check "$JGC" -c "$SOCK" edit interfaces @nolo.json
+		atf_check -s exit:1 -e match:'lo0: not one a cloner made' \
+		    "$JGC" -c "$SOCK" commit -a rc-conf-files
+	fi
 }
 datastores_interfaces_cleanup()
 {
 	stop_daemon
 }
 
+# Network instances (RFC 8529), a FIB each: renamed by a commit, kept in
+# fibs.conf; one past the last FIB asks net.fibs raised, which is never
+# lowered again: refused unless accepted, then kept in Arcana's
+# loader.conf.d file and, the kernel not letting it live (not root),
+# told to come at the next boot.
+atf_test_case datastores_instances cleanup
+datastores_instances_head()
+{
+	atf_set "descr" "Network instances renamed and a FIB asked for by a commit"
+}
+datastores_instances_body()
+{
+	local n
+
+	n=$(sysctl -n net.fibs)
+	[ "$n" -ge 2 ] || atf_skip "one FIB alone here: net.fibs is $n"
+	mkdir -p root/etc/defaults root/usr/local/etc root/boot/loader.conf.d
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\n' > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	"$JGC" -c "$SOCK" get -d running network-instances > run.json
+	atf_check -o match:'"name":"fib1"' cat run.json
+	sed -e 's|"name":"fib1"|"description":"the lab'"'"'s","name":"blue"|' \
+	    run.json > blue.json
+	atf_check "$JGC" -c "$SOCK" edit network-instances @blue.json
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o match:'"name":"blue"' -o not-match:'"name":"fib1"' \
+	    "$JGC" -c "$SOCK" get -d running network-instances
+	# One past the last FIB.
+	"$JGC" -c "$SOCK" get -d running network-instances |
+	    sed -e "s|\"network-instance\":\[|\"network-instance\":[{\"name\":\"red\",\"vrf-root\":{},\"arcana-network-instance:fib\":$n},|" \
+	    > red.json
+	atf_check "$JGC" -c "$SOCK" edit network-instances @red.json
+	atf_check -s exit:1 -e match:"net.fibs to go from $n to $((n + 1)).*-a net-fibs" \
+	    "$JGC" -c "$SOCK" commit
+	atf_check -o match:'after-reboot.*next boot' \
+	    "$JGC" -c "$SOCK" commit -a net-fibs
+	atf_check -o match:"^net.fibs=\"?$((n + 1))\"?" \
+	    cat root/boot/loader.conf.d/arcana.conf
+	atf_check -o match:"\"$((n + 0))\"|$n" sysctl -n net.fibs
+}
+datastores_instances_cleanup()
+{
+	stop_daemon
+}
+
+# Router advertisements (RFC 8349's submodule) in running, rtadvd.conf's
+# record of an interface; a commit changes it, has the interface send
+# (rtadvd_interfaces, rtadvd_enable in Arcana's file) and restarts
+# rtadvd.
+atf_test_case datastores_ra cleanup
+datastores_ra_head()
+{
+	atf_set "descr" "Router advertisements read from rtadvd.conf and committed"
+}
+datastores_ra_body()
+{
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\n' > root/etc/rc.conf
+	printf 'lo0:\\\n\t:maxinterval#300:chlim#64:\n' > rtadvd.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	"$JGC" -c "$SOCK" get -d running interfaces > run.json
+	atf_check -o match:'"max-rtr-adv-interval":300' \
+	    -o match:'"send-advertisements":false' cat run.json
+	sed -e 's|"max-rtr-adv-interval":300|"max-rtr-adv-interval":400|' \
+	    -e 's|"send-advertisements":false|"send-advertisements":true|' \
+	    run.json > new.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @new.json
+	atf_check "$JGC" -c "$SOCK" commit -a rc-conf-files
+	atf_check -o match:'maxinterval#400' -o match:'chlim#64' cat rtadvd.conf
+	atf_check -o match:'^rtadvd_interfaces="lo0"' \
+	    -o match:'^rtadvd_enable="YES"' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check test -f running.rtadvd
+	atf_check -o match:'"max-rtr-adv-interval":400' \
+	    -o match:'"send-advertisements":true' \
+	    "$JGC" -c "$SOCK" get -d running interfaces
+}
+datastores_ra_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case datastores_ra
+	atf_add_test_case datastores_instances
 	atf_add_test_case datastores_interfaces
 	atf_add_test_case datastores
 	atf_add_test_case reboot

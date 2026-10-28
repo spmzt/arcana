@@ -14,9 +14,9 @@
  *
  *	rc-conf-files		rc_conf_files does not name Arcana's
  *				file: named, once, in /etc/rc.conf
- *	rc-conf-conflict	a variable Arcana writes the user's files
- *				set too: taken out of theirs, kept in
- *				Arcana's
+ *	rc-conf-conflict	a variable Arcana writes (or takes out) the
+ *				user's files set too: taken out of theirs,
+ *				kept in Arcana's
  *
  * Unaccepted, the request is refused with that error-app-tag and says
  * what it would do.  Every file is kept as it was until the change is
@@ -77,6 +77,13 @@ keep(struct rca *x, const char *path)
 	}
 	x->nwas++;
 	return (0);
+}
+
+int
+rca_keep(struct rca *x, const char *path)
+{
+
+	return (keep(x, path));
 }
 
 int
@@ -152,6 +159,24 @@ rca_set(struct rca *x, const char *name, const char *value, char *err,
 	return (0);
 }
 
+int
+rca_drop(struct rca *x, const char *name)
+{
+	char	**v, err[64];
+
+	(void)vc_unset(x->f, name, err, sizeof(err));
+	for (size_t i = 0; i < x->ndrop; i++)
+		if (strcmp(x->drop[i], name) == 0)
+			return (0);
+	if ((v = reallocarray(x->drop, x->ndrop + 1, sizeof(*v))) == NULL)
+		return (ENOMEM);
+	x->drop = v;
+	if ((x->drop[x->ndrop] = strdup(name)) == NULL)
+		return (ENOMEM);
+	x->ndrop++;
+	return (0);
+}
+
 void
 rca_close(struct rca *x)
 {
@@ -166,6 +191,9 @@ rca_close(struct rca *x)
 		free(x->f);
 	}
 	vc_rc_files_free(x->user, x->nuser);
+	for (size_t i = 0; i < x->ndrop; i++)
+		free(x->drop[i]);
+	free(x->drop);
 	for (size_t i = 0; i < x->nwas; i++) {
 		free(x->was[i].path);
 		free(x->was[i].text);
@@ -264,42 +292,47 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 		if (vc_read(&uf[i], VC_SH, x->user[i], err, errlen) == -1)
 			error = errno != 0 ? errno : EIO;
 	said[0] = '\0';
-	for (size_t j = 0; error == 0 && j < x->f->na; j++)
+	for (size_t j = 0; error == 0 && j < x->f->na + x->ndrop; j++)
 		for (size_t i = 0; i < x->nuser; i++) {
 			const struct vc_assign *u;
+			const char *name = j < x->f->na ? x->f->a[j].name :
+			    x->drop[j - x->f->na];
 
-			if ((u = vc_get(&uf[i], x->f->a[j].name)) == NULL)
+			if ((u = vc_get(&uf[i], name)) == NULL)
 				continue;
 			conflict = true;
 			if (off < sizeof(said))
 				off += (size_t)snprintf(said + off,
 				    sizeof(said) - off, "%s%s (%s line %d)",
-				    off == 0 ? "" : ", ", x->f->a[j].name,
-				    x->user[i], u->line);
+				    off == 0 ? "" : ", ", name, x->user[i],
+				    u->line);
 		}
 	if (error == 0 && conflict && !cbl_req_yaccepts(req,
 	    "rc-conf-conflict")) {
 		char	text[1200];
 
 		(void)snprintf(text, sizeof(text), "your files set what "
-		    "Arcana would write: %s; accept rc-conf-conflict to keep "
-		    "them in Arcana's file, taken out of yours", said);
+		    "Arcana would change: %s; accept rc-conf-conflict to have "
+		    "them in Arcana's file alone, taken out of yours", said);
 		error = refuse(req, "rc-conf-conflict", text);
 	}
 	/* Accepted: theirs taken out, every file kept as it was first. */
 	for (size_t i = 0; error == 0 && conflict && i < x->nuser; i++) {
 		bool changed = false;
 
-		for (size_t j = 0; error == 0 && j < x->f->na; j++)
-			if (vc_get(&uf[i], x->f->a[j].name) != NULL) {
+		for (size_t j = 0; error == 0 && j < x->f->na + x->ndrop; j++) {
+			const char *name = j < x->f->na ? x->f->a[j].name :
+			    x->drop[j - x->f->na];
+
+			if (vc_get(&uf[i], name) != NULL) {
 				if (!changed && (error = keep(x,
 				    x->user[i])) != 0)
 					break;
 				changed = true;
-				if (vc_unset(&uf[i], x->f->a[j].name, err,
-				    errlen) == -1)
+				if (vc_unset(&uf[i], name, err, errlen) == -1)
 					error = errno != 0 ? errno : EIO;
 			}
+		}
 		if (error == 0 && changed && vc_write(&uf[i], x->user[i], 0644,
 		    err, errlen) == -1)
 			error = errno != 0 ? errno : EIO;

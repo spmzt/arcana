@@ -134,27 +134,22 @@ pkg_failed(struct work *w, const struct execres *res, const char *prog)
 
 /*
  * The jail named, running: w works in it (its root, for the files),
- * and its release as jls(8) says it.
+ * and its release as jail_getv(3) gives it.
  */
 static const char *
 jail_of(struct work *w, const char *name, const char **releasep)
 {
-	struct execres	 res;
-	char		*argv[5];
+	struct jinfo	 ji;
 	const char	*e;
 
 	if (name == NULL || name[0] == '\0' || strcmp(name, "*") == 0)
 		return ("name the jail");
 	if (scope_enter_jail(w, name, &e, false) != 0)
 		return (e);
-	argv[0] = (char *)(uintptr_t)opts.jls_bin;
-	argv[1] = (char *)(uintptr_t)"-j";
-	argv[2] = (char *)(uintptr_t)name;
-	argv[3] = (char *)(uintptr_t)"osrelease";
-	argv[4] = NULL;
-	if (run_exec(w, argv, &res) != 0 || res.out == NULL)
-		return (wfmt(w, "jls did not say the release of jail %s", name));
-	*releasep = wstrndup(w, res.out, strcspn(res.out, " \n"));
+	if (jail_named(w, name, &ji) < 0 || ji.osrelease[0] == '\0')
+		return (wfmt(w, "jail_getv(3) did not say the release of "
+		    "jail %s", name));
+	*releasep = ji.osrelease;
 	return (NULL);
 }
 

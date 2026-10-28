@@ -56,6 +56,24 @@ child_named(const struct cbl_ynode *n, const char *key)
 	colon = strchr(key, ':');
 	name = colon != NULL ? colon + 1 : key;
 	mlen = colon != NULL ? (size_t)(colon - key) : 0;
+	/* A mount point's (RFC 8528): the schema's top-level nodes,
+	 * named with their modules. */
+	if ((n->flags & CBL_YNF_MOUNT) != 0 && colon != NULL) {
+		const struct cbl_yschema *sc = n->module->schema;
+
+		for (uint32_t j = 0; j < sc->nmod; j++) {
+			const struct cbl_ymodule *m = sc->mod[j];
+
+			if (strlen(m->name) != mlen || strncmp(m->name, key,
+			    mlen) != 0)
+				continue;
+			for (uint32_t k = 0; k < m->ntop; k++)
+				if (strcmp(m->top[k]->name, name) == 0 &&
+				    m->top[k]->off != CBL_YOFF_NONE)
+					return (m->top[k]);
+		}
+		return (NULL);
+	}
 	for (uint32_t i = 0; i < n->nchild; i++) {
 		const struct cbl_ynode *c = n->child[i];
 

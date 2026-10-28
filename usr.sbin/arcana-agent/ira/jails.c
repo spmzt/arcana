@@ -218,6 +218,35 @@ jails_procstats(struct work *w, struct jinfo *list, size_t n)
 	step_end(w, step, true, "%u processes scanned", cnt);
 }
 
+/*
+ * jail_getv(3): the running jail named, its jid, network, root and
+ * release in ji; -1 if it is not running.  What jls -j says of one.
+ */
+int
+jail_named(struct work *w, const char *name, struct jinfo *ji)
+{
+	/* The kernel's OSRELEASELEN is 32; vnet is new, inherit or disable. */
+	char	vnet[16], path[MAXPATHLEN], rel[64];
+	int	jid, step;
+
+	memset(ji, 0, sizeof(*ji));
+	step = step_begin(w, ARC_STEP_KIND_LIB, "jail_getv(3)",
+	    "name %s: vnet, path, osrelease", name);
+	jid = jail_getv(0, "name", name, "vnet", vnet, "path", path,
+	    "osrelease", rel, NULL);
+	if (jid < 0) {
+		step_end(w, step, true, "not running: %s", jail_errmsg);
+		return (-1);
+	}
+	ji->jid = jid;
+	ji->name = wstrdup(w, name);
+	ji->path = wstrdup(w, path);
+	ji->osrelease = wstrdup(w, rel);
+	ji->vnet = strcmp(vnet, "new") == 0 || strcmp(vnet, "1") == 0;
+	step_end(w, step, true, "jid %d, vnet %s, %s", jid, vnet, path);
+	return (jid);
+}
+
 /* jail_getid(3): the jid, or -1 if the jail is not running. */
 int
 jail_lookup(struct work *w, const char *name)
