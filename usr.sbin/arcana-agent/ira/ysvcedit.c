@@ -424,10 +424,13 @@ yservices_convert(cbl_req *req, const char *const *names, size_t n, bool dry,
 			work_free(&w);
 			return (ENOMEM);
 		}
+		/* A script whose name is no variable's stem (ftp-proxy,
+		 * its own name= another) has no <name>_ variables to take. */
+		nall = 0;
 		for (size_t i = 0; i < r.services.n; i++)
-			every[i] = r.services.v[i].name;
+			if (vc_name_ok(VC_SH, r.services.v[i].name))
+				every[nall++] = r.services.v[i].name;
 		all = every;
-		nall = r.services.n;
 	} else {
 		all = names;
 		nall = n;

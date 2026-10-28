@@ -12216,6 +12216,10 @@ datastores_services_body()
 	printf 'ntpd_flags="-g"\n' > root/etc/rc.conf.d/ntpd
 	DAEMON_ARGS="--root $(pwd)/root"
 	start_daemon
+	# A script whose name is no variable's stem (rc(8)'s own
+	# ftp-proxy): converting every script passes it by.
+	printf '#!/bin/sh\n' > rc.d/ftp-proxy
+	chmod +x rc.d/ftp-proxy
 	# Running: the scripts, with what the files rc(8) reads set.
 	atf_check -o save:run.json "$JGC" -c "$SOCK" get -d running services
 	atf_check -o match:'\{"enabled":true,"name":"sshd","variable":\[\{"name":"sshd_flags","value":"-4"\}\]\}' \
