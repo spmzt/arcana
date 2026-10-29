@@ -2023,6 +2023,7 @@ yang_kinds_head()
 	    "made: a vlan on a lagg, a bridge, a gif's tunnel FIB, an MTU" \
 	    "and a FIB, an epair whose other end is in a vnet jail"
 	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
 }
 yang_kinds_body()
 {
@@ -2217,6 +2218,7 @@ yang_ip_head()
 	    "autoconf by EUI-64 or not, link-local, 169.254/16, duplicate," \
 	    "IPv6 off"
 	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
 }
 yang_ip_body()
 {
@@ -2278,6 +2280,7 @@ yang_ecmp_head()
 	    "a prefix with two gateways, IPv4 and IPv6, in a vnet" \
 	    "jail's FIB"
 	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
 }
 yang_ecmp_body()
 {
@@ -2324,6 +2327,7 @@ yang_static_apply_head()
 	    "by netlink, undone, and undone on a" \
 	    "failure"
 	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
 }
 yang_static_apply_body()
 {
@@ -2409,6 +2413,7 @@ yang_route_times_head()
 	    "a route added while route events are heard has the time, one" \
 	    "not seen to change none"
 	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
 }
 yang_route_times_body()
 {
@@ -2454,6 +2459,7 @@ yang_lne_head()
 	    "vnet jail is one, a jail sharing the host's stack is not; as" \
 	    "jls says"
 	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
 }
 yang_lne_body()
 {
@@ -2486,6 +2492,7 @@ yang_ni_head()
 	atf_set "descr" "network instances on a host with net.fibs=4" \
 	    ": a vnet jail's, raised to 4"
 	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
 }
 yang_ni_body()
 {
@@ -2508,6 +2515,7 @@ yang_ni_grow_head()
 	atf_set "descr" "an instance past the last FIB:" \
 	    "net.fibs raised live and kept in loader.conf; a vnet jail's"
 	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
 }
 yang_ni_grow_body()
 {
@@ -2546,6 +2554,7 @@ yang_ni_bind_head()
 	    "read back as the instance's name, a name applied by SIOCSIFFIB" \
 	    "and kept in rc.conf, bind-ni-name-failed; a vnet jail's epair"
 	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
 }
 yang_ni_bind_body()
 {
@@ -2602,6 +2611,7 @@ yang_rtadv_head()
 	    "submodule, rtadvctl reload, rtadvctl show," \
 	    "a lab rtadvd in a vnet jail"
 	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
 }
 yang_rtadv_body()
 {

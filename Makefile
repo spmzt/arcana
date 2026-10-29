@@ -136,7 +136,8 @@ check: .PHONY
 
 # The cases that need root (vnet jails, routes, carp), as root through
 # mdo(1).  tools/closefds runs kyua with no descriptor above stderr:
-# jail_attach(2) refuses a process holding an open directory.
+# jail_attach(2) refuses a process holding an open directory.  One case
+# at a time: they share the host's jails, epairs and routing tables.
 check-root: .PHONY
 	@${MAKE} -j${CHECK_JOBS} -C ${.CURDIR} all
 	@${CC} -O2 -Wall -Werror -o ${.OBJDIR}/closefds \
