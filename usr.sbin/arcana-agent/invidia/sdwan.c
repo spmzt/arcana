@@ -346,25 +346,56 @@ ipfw_words(struct work *w, const char **errp, int quiet, ...)
 	return (ipfw_run(w, errp, quiet, words, n));
 }
 
+/*
+ * The same, quiet, in set s: the set's tables and NAT64 instances are
+ * its own, made there, so that its rules find them.  A rule looks a
+ * NAT64 instance up in its own set always, and a table there with
+ * net.inet.ip.fw.tables_sets=1; with 0 a table is set 0's whatever
+ * set it is made in, as it was before.
+ */
+static int
+set_words(struct work *w, const char **errp, int s, ...)
+{
+	const char	*words[18], *a;
+	char		 num[16];
+	va_list		 ap;
+	int		 n;
+
+	snprintf(num, sizeof(num), "%d", s);
+	n = 0;
+	words[n++] = "set";
+	words[n++] = num;
+	va_start(ap, s);
+	while ((a = va_arg(ap, const char *)) != NULL && n < 18)
+		words[n++] = a;
+	va_end(ap);
+	return (ipfw_run(w, errp, 1, words, n));
+}
+
 static const char *sval(const ucl_object_t *, const char *);
 
 /*
  * A table's entries put in by ipfw, ADD_CHUNK of them an atomic add
- * (one call each, all or nothing), into the table named; -1 and why.
+ * (one call each, all or nothing), into the table named of set s; -1
+ * and why.
  */
 static int
-table_fill(struct work *w, const char *name, const ucl_object_t *entries,
-    const char **errp)
+table_fill(struct work *w, int s, const char *name,
+    const ucl_object_t *entries, const char **errp)
 {
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
-	const char		*words[ADD_CHUNK * 2 + 4];
+	const char		*words[ADD_CHUNK * 2 + 6];
+	char			 num[16];
 	int			 n;
 
+	snprintf(num, sizeof(num), "%d", s);
 	n = 0;
 	it = NULL;
 	while ((e = ucl_object_iterate(entries, &it, true)) != NULL) {
 		if (n == 0) {
+			words[n++] = "set";
+			words[n++] = num;
 			words[n++] = "table";
 			words[n++] = name;
 			words[n++] = "atomic";
@@ -372,7 +403,7 @@ table_fill(struct work *w, const char *name, const ucl_object_t *entries,
 		}
 		words[n++] = ucl_object_tostring_forced(ucl_array_find_index(e, 0));
 		words[n++] = ucl_object_tostring_forced(ucl_array_find_index(e, 1));
-		if (n >= ADD_CHUNK * 2 + 4 - 2) {
+		if (n >= ADD_CHUNK * 2 + 6 - 2) {
 			if (ipfw_run(w, errp, 1, words, n) != 0)
 				return (-1);
 			n = 0;
@@ -542,11 +573,12 @@ steer_apply(struct work *w, struct edge *e, bool force,
     const char **errp)
 {
 	const struct table	*t;
-	const char		*words[ADD_CHUNK * 2 + 4];
-	char			 alt[72];
+	const char		*words[ADD_CHUNK * 2 + 6];
+	char			 alt[72], num[16];
 	int			 i, k, c, n, changed, st;
 	bool			 any;
 
+	snprintf(num, sizeof(num), "%d", e->set);
 	for (i = 0; i < e->nsteers; i++) {
 		if (table_find(e, e->steers[i].table) == NULL) {
 			*errp = wfmt(w, "table %s is not one of the rules'",
@@ -579,12 +611,12 @@ steer_apply(struct work *w, struct edge *e, bool force,
 		t = table_find(e, e->steers[i].table);
 		snprintf(alt, sizeof(alt), "%s_alt", t->name);
 		if (strcmp(t->valtype, "legacy") == 0)
-			(void)ipfw_words(w, NULL, 1, "table", alt, "create", "type",
-			    "addr", NULL);
+			(void)set_words(w, NULL, e->set, "table", alt, "create",
+			    "type", "addr", NULL);
 		else
-			(void)ipfw_words(w, NULL, 1, "table", alt, "create", "type",
-			    "addr", "valtype", t->valtype, NULL);
-		if (ipfw_words(w, errp, 1, "table", alt, "flush", NULL) != 0)
+			(void)set_words(w, NULL, e->set, "table", alt, "create",
+			    "type", "addr", "valtype", t->valtype, NULL);
+		if (set_words(w, errp, e->set, "table", alt, "flush", NULL) != 0)
 			return (-1);
 		any = false;
 		n = 0;
@@ -593,6 +625,8 @@ steer_apply(struct work *w, struct edge *e, bool force,
 			    e->steers[k].chosen < 0)
 				continue;
 			if (n == 0) {
+				words[n++] = "set";
+				words[n++] = num;
 				words[n++] = "table";
 				words[n++] = alt;
 				words[n++] = "atomic";
@@ -601,7 +635,7 @@ steer_apply(struct work *w, struct edge *e, bool force,
 			words[n++] = e->steers[k].prefix;
 			words[n++] = e->steers[k].cand[e->steers[k].chosen].via;
 			any = true;
-			if (n >= ADD_CHUNK * 2 + 4 - 2) {
+			if (n >= ADD_CHUNK * 2 + 6 - 2) {
 				if (ipfw_run(w, errp, 1, words, n) != 0)
 					return (-1);
 				n = 0;
@@ -609,10 +643,10 @@ steer_apply(struct work *w, struct edge *e, bool force,
 		}
 		if (n > 0 && ipfw_run(w, errp, 1, words, n) != 0)
 			return (-1);
-		if (ipfw_words(w, errp, 1, "table", t->name, "swap", alt,
+		if (set_words(w, errp, e->set, "table", t->name, "swap", alt,
 		    NULL) != 0)
 			return (-1);
-		(void)ipfw_words(w, NULL, 1, "table", alt, "flush", NULL);
+		(void)set_words(w, NULL, e->set, "table", alt, "flush", NULL);
 		(void)any;
 	}
 	e->steered = true;
@@ -925,17 +959,20 @@ rules_clear(struct work *w, const struct edge *e, int s)
 	(void)ipfw_words(w, NULL, 1, "set", "disable", num, NULL);
 	(void)ipfw_words(w, NULL, 1, "-f", "delete", "set", num, NULL);
 	for (i = 0; i < e->ntables; i++) {
-		(void)ipfw_words(w, NULL, 1, "table", e->tables[i].name,
+		(void)set_words(w, NULL, s, "table", e->tables[i].name,
 		    "destroy", NULL);
 		snprintf(alt, sizeof(alt), "%s_alt", e->tables[i].name);
-		(void)ipfw_words(w, NULL, 1, "table", alt, "destroy", NULL);
+		(void)set_words(w, NULL, s, "table", alt, "destroy", NULL);
 	}
 	/* The queues before the pipes they are in; a NAT64 instance is
-	 * destroyed, not deleted. */
+	 * the set's, destroyed, not deleted. */
 	for (i = e->nobjects - 1; i >= 0; i--)
-		(void)ipfw_words(w, NULL, 1, e->objects[i].kind,
-		    e->objects[i].num, strncmp(e->objects[i].kind, "nat64", 5) ==
-		    0 ? "destroy" : "delete", NULL);
+		if (strncmp(e->objects[i].kind, "nat64", 5) == 0)
+			(void)set_words(w, NULL, s, e->objects[i].kind,
+			    e->objects[i].num, "destroy", NULL);
+		else
+			(void)ipfw_words(w, NULL, 1, e->objects[i].kind,
+			    e->objects[i].num, "delete", NULL);
 }
 
 /*
@@ -1193,18 +1230,20 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 				continue;
 			snprintf(alt, sizeof(alt), "%s_alt", sval(t, "name"));
 			if (strcmp(sval(t, "valtype"), "legacy") == 0)
-				(void)ipfw_words(w, NULL, 1, "table", alt, "create",
-				    "type", "addr", NULL);
+				(void)set_words(w, NULL, (int)s, "table", alt,
+				    "create", "type", "addr", NULL);
 			else
-				(void)ipfw_words(w, NULL, 1, "table", alt, "create",
-				    "type", "addr", "valtype", sval(t, "valtype"),
-				    NULL);
-			if (ipfw_words(w, &err, 1, "table", alt, "flush", NULL) != 0 ||
-			    table_fill(w, alt, ucl_object_lookup(t, "entries"), &err)
-			    != 0 || ipfw_words(w, &err, 1, "table", sval(t, "name"),
+				(void)set_words(w, NULL, (int)s, "table", alt,
+				    "create", "type", "addr", "valtype", sval(t,
+				    "valtype"), NULL);
+			if (set_words(w, &err, (int)s, "table", alt, "flush",
+			    NULL) != 0 || table_fill(w, (int)s, alt,
+			    ucl_object_lookup(t, "entries"), &err) != 0 ||
+			    set_words(w, &err, (int)s, "table", sval(t, "name"),
 			    "swap", alt, NULL) != 0)
 				ok = false;
-			(void)ipfw_words(w, NULL, 1, "table", alt, "flush", NULL);
+			(void)set_words(w, NULL, (int)s, "table", alt, "flush",
+			    NULL);
 		}
 		step_end(w, step, ok, ok ? NULL : "%s", err);
 		pthread_mutex_unlock(&lock);
@@ -1247,21 +1286,27 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		goto bad;
 	}
 	snprintf(num, sizeof(num), "%jd", (intmax_t)s);
-	/* The objects first: the rules name them. */
+	/* The objects first: the rules name them.  A NAT64 instance and a
+	 * table are the set's own (set_words()). */
 	it = NULL;
 	while ((r = ucl_object_iterate(ucl_object_lookup(top, "objects"), &it,
-	    true)) != NULL)
-		fprintf(fp, "%s\n", ucl_object_tostring(r));
+	    true)) != NULL) {
+		line = ucl_object_tostring(r);
+		if (strncmp(line, "nat64", 5) == 0)
+			fprintf(fp, "set %s ", num);
+		fprintf(fp, "%s\n", line);
+	}
 	it = NULL;
 	while ((t = ucl_object_iterate(ucl_object_lookup(top, "tables"), &it,
 	    true)) != NULL) {
 		/* legacy, a plain number, is ipfw's default and not a word it
 		 * takes any more. */
 		if (strcmp(sval(t, "valtype"), "legacy") == 0)
-			fprintf(fp, "table %s create type addr\n", sval(t, "name"));
+			fprintf(fp, "set %s table %s create type addr\n", num,
+			    sval(t, "name"));
 		else
-			fprintf(fp, "table %s create type addr valtype %s\n", sval(t,
-			    "name"), sval(t, "valtype"));
+			fprintf(fp, "set %s table %s create type addr valtype %s\n",
+			    num, sval(t, "name"), sval(t, "valtype"));
 		/* Its entries, ADD_CHUNK an atomic add: a line each, not a call
 		 * each (large lists). */
 		eit = NULL;
@@ -1269,7 +1314,8 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		while ((e = ucl_object_iterate(ucl_object_lookup(t, "entries"),
 		    &eit, true)) != NULL) {
 			if (kk == 0)
-				fprintf(fp, "table %s atomic add", sval(t, "name"));
+				fprintf(fp, "set %s table %s atomic add", num,
+				    sval(t, "name"));
 			fprintf(fp, " %s %s", ucl_object_tostring_forced(
 			    ucl_array_find_index(e, 0)), ucl_object_tostring_forced(
 			    ucl_array_find_index(e, 1)));
@@ -1331,10 +1377,10 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	/* And the new tables' names, should an earlier agent have left
 	 * them in the kernel: a table is made anew, never reused. */
 	for (int ti = 0; ti < n; ti++) {
-		(void)ipfw_words(w, NULL, 1, "table", nt[ti].name, "destroy",
+		(void)set_words(w, NULL, (int)s, "table", nt[ti].name, "destroy",
 		    NULL);
 		snprintf(tmp, sizeof(tmp), "%s_alt", nt[ti].name);
-		(void)ipfw_words(w, NULL, 1, "table", tmp, "destroy", NULL);
+		(void)set_words(w, NULL, (int)s, "table", tmp, "destroy", NULL);
 	}
 	memcpy(ed->tables, nt, sizeof(*nt) * (size_t)n);
 	ed->ntables = n;

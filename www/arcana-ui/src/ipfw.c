@@ -137,6 +137,14 @@ static struct {
 	bool		 file_loading;
 	char		 file_error[300];
 	char		 file_note[160];
+	/* The sysctls Apply needs: asked for in the page when one is not
+	 * set, set by jobs, read again, and Apply then goes on. */
+	bool		 ask;
+	int		 setting;	/* their jobs not finished yet */
+	bool		 then_apply;
+	double		 set_at;	/* when the last of them finished */
+	double		 asked_at;	/* when the read on its way was asked */
+	char		 set_error[600];
 } fw = { .sect = FW_LAYOUT, .t_proto = "tcp", .t_dir = "in" };
 
 /*
@@ -205,6 +213,7 @@ static const char skeleton[] =
     "add 13999 return via any\n";
 
 static double	rate_of(long long, long long);
+static void	apply_ask(struct server *, bool);
 
 /* The rates since the look before, each appended to its rule's. */
 static void
@@ -287,7 +296,8 @@ hits_line(struct html *h, long long num)
 static void
 fw_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	char	*sid;
+	struct server	*s;
+	char		*sid;
 
 	sid = arg;
 	if (strcmp(sid, fw.sid) != 0) {
@@ -322,6 +332,14 @@ fw_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	fw.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
 	fw.fetched = arc_now();
 	hits_add();
+	/* Apply's sysctls set: a read asked after that says if they are. */
+	if (fw.then_apply && fw.setting == 0 && (s = cur_server()) != NULL &&
+	    strcmp(s->id, fw.sid) == 0) {
+		if (fw.asked_at < fw.set_at)
+			refresh_firewall(s, true);
+		else
+			apply_ask(s, true);
+	}
 }
 
 static void
@@ -409,6 +427,9 @@ refresh_firewall(struct server *s, bool again)
 		fw.file_open = false;
 		free(fw.text);
 		fw.text = NULL;
+		fw.ask = fw.then_apply = false;
+		fw.setting = 0;
+		fw.set_error[0] = '\0';
 		/* The kernel's trace was of that host. */
 		if (fw.k_data != NULL)
 			ucl_object_unref(fw.k_data);
@@ -418,6 +439,7 @@ refresh_firewall(struct server *s, bool again)
 		return;
 	snprintf(fw.sid, sizeof(fw.sid), "%s", s->id);
 	fw.loading = true;
+	fw.asked_at = arc_now();
 	snprintf(url, sizeof(url), "net/ipfw%s%s", fw.jail[0] != '\0' ?
 	    "?jail=" : "", fw.jail);
 	host_read(s, url, "read the firewall", true, fw_cb, strdup(s->id));
@@ -1289,6 +1311,182 @@ view_diff(struct html *h)
 		    "with other words. <button class=\"small\" data-act=\""
 		    "fw-apply\">Apply the kept rules</button></p>", add, del,
 		    differ);
+}
+
+/* Is a sysctl the read lists one Apply needs and the kernel has not? */
+static bool
+needs_it(const ucl_object_t *t)
+{
+
+	return (jbool(t, "needed") && (jget(t, "value") == NULL || jint(t,
+	    "value", 0) != jint(t, "want", 1)));
+}
+
+/* How many of the sysctls Apply needs are not set as it needs them. */
+static int
+needs_missing(void)
+{
+	const ucl_object_t	*t;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	n = 0;
+	it = NULL;
+	while ((t = ucl_object_iterate(jget(fw.data, "tunables"), &it, true)) !=
+	    NULL)
+		if (needs_it(t))
+			n++;
+	return (n);
+}
+
+/* What the sysctl does, as sysctl -d would say it at more length. */
+static const char *
+tunable_does(const char *name)
+{
+
+	if (strcmp(name, "net.inet.ip.fw.dyn_keep_states") == 0)
+		return ("It keeps the states a rule made when the rule is "
+		    "deleted, until they expire, instead of dropping them with "
+		    "it.");
+	if (strcmp(name, "net.inet.ip.fw.tables_sets") == 0)
+		return ("It gives each set its own table names, as NAT64 and "
+		    "NPTv6 instances have already, and a set swap then moves "
+		    "the tables with the rules.");
+	return ("");
+}
+
+/*
+ * Apply, asked for: the sysctls it needs asked about first, in the
+ * page, when one is not set; then what would change, confirmed.  set:
+ * "Set and apply" was pressed, and with no rule to be gone it applies.
+ */
+static void
+apply_ask(struct server *s, bool set)
+{
+	char	body[900], gone[200], lost[400];
+	int	add, del, chg;
+
+	fw.then_apply = false;
+	if (needs_missing() > 0) {
+		if (set)
+			snprintf(fw.set_error, sizeof(fw.set_error), "Set, and "
+			    "read again: still not as Apply needs them. Nothing "
+			    "was applied.");
+		fw.ask = true;
+		return;
+	}
+	fw.ask = false;
+	fw.set_error[0] = '\0';
+	/* What would go is said first: rules the kernel runs with that
+	 * are not kept. */
+	diff_rows(NULL, &add, &del, &chg, gone, sizeof(gone));
+	if (set && del == 0) {
+		fw_job(s, "{\"kind\":\"ipfw\",\"verb\":\"apply\",\"safe\":true}",
+		    "ipfw apply");
+		return;
+	}
+	lost[0] = '\0';
+	if (del > 0)
+		snprintf(lost, sizeof(lost), "%d rule%s the kernel has now "
+		    "%s not kept and would be gone: %s. Keep %s first "
+		    "(What Apply would change) if %s wanted. ", del, del ==
+		    1 ? "" : "s", del == 1 ? "is" : "are", gone, del == 1 ?
+		    "it" : "them", del == 1 ? "it is" : "they are");
+	snprintf(body, sizeof(body), "%sThe kept rules become the whole "
+	    "of set 0 on %s: %d added, %d removed, %d with other words. "
+	    "They are loaded into set 1 while it is off and swapped "
+	    "with set 0, so that no packet meets half a ruleset. The "
+	    "rules of now wait in set 1: if the console cannot reach "
+	    "the host afterwards, the host swaps them back by itself.",
+	    lost, s->name, add, del, chg);
+	confirm(del > 0 ? "Apply: rules would be gone" : "Apply the kept "
+	    "rules", body, "Apply", true, del > 0 ? "apply" : "",
+	    "do-fw-apply", "", "");
+}
+
+/*
+ * The sysctls Apply needs and the kernel has not, asked about in the
+ * page: what each does, why Apply needs it, and a button that sets
+ * them at once and for the next boot, then applies.
+ */
+static void
+view_ask(struct html *h)
+{
+	const ucl_object_t	*t;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	n = needs_missing();
+	h_fmt(h, "<div class=\"notice warn fw-ask\" role=\"group\" aria-label="
+	    "\"Apply needs sysctls\"><p><b>Apply needs %s set first.</b></p>"
+	    "<dl>", n == 1 ? "a sysctl" : "these sysctls");
+	it = NULL;
+	while ((t = ucl_object_iterate(jget(fw.data, "tunables"), &it, true)) !=
+	    NULL) {
+		if (!needs_it(t))
+			continue;
+		h_raw(h, "<dt><code>");
+		h_txt(h, jstr(t, "name") != NULL ? jstr(t, "name") : "");
+		if (jget(t, "value") != NULL)
+			h_fmt(h, "</code> is %lld; Apply needs %lld</dt><dd>",
+			    (long long)jint(t, "value", 0), (long long)jint(t,
+			    "want", 1));
+		else
+			h_fmt(h, "</code> is not in this kernel; Apply needs "
+			    "%lld</dt><dd>", (long long)jint(t, "want", 1));
+		h_txt(h, tunable_does(jstr(t, "name") != NULL ? jstr(t,
+		    "name") : ""));
+		h_raw(h, " Apply needs it as ");
+		h_txt(h, jstr(t, "why") != NULL ? jstr(t, "why") : "");
+		h_raw(h, "</dd>");
+	}
+	h_fmt(h, "</dl><p class=\"dim\">Set and apply sets %s now and in "
+	    "%s, so that the host starts with %s too, reads the firewall "
+	    "again, and applies only once %s set.</p>", n == 1 ? "it" :
+	    "them", fw.jail[0] != '\0' ? "the jail's /etc/sysctl.conf" :
+	    "/etc/sysctl.conf", n == 1 ? "it" : "them", n == 1 ? "it reads" :
+	    "they read");
+	if (fw.set_error[0] != '\0') {
+		h_raw(h, "<p class=\"fw-ask-error\">");
+		h_txt(h, fw.set_error);
+		h_raw(h, "</p>");
+	}
+	h_fmt(h, "<p><button class=\"small\" data-act=\"fw-set-apply\"%s>%s"
+	    "</button> <button class=\"ghost small\" data-act=\"fw-ask-no\">"
+	    "Not now</button></p></div>", fw.setting > 0 || fw.then_apply ?
+	    " disabled" : "", fw.setting > 0 || fw.then_apply ? "Setting…" :
+	    "Set and apply");
+}
+
+/*
+ * A job of the firewall's finished: one of Apply's sysctls among them,
+ * set, or refused by the kernel and why.
+ */
+void
+firewall_job_done(const char *title, bool ok, const char *err)
+{
+	const char	*name;
+	size_t		 l;
+
+	if (fw.setting == 0 || strncmp(title, "sysctl net.inet.ip.fw.", 22) !=
+	    0)
+		return;
+	if (--fw.setting == 0)
+		fw.set_at = arc_now();
+	if (ok)
+		return;
+	fw.then_apply = false;
+	name = title + 7;
+	l = strcspn(name, "=");
+	snprintf(fw.set_error + strlen(fw.set_error), sizeof(fw.set_error) -
+	    strlen(fw.set_error), "%sThe kernel refused %.*s=1: %s.%s Nothing "
+	    "was applied.", fw.set_error[0] != '\0' ? " " : "", (int)l, name,
+	    err != NULL ? err : "failed", strncmp(name,
+	    "net.inet.ip.fw.tables_sets", l) == 0 ? " The kernel changes it "
+	    "only while every rule that uses a table is in set 0: SD-WAN's "
+	    "rules in its own set, or another tool's, keep it as it is "
+	    "while they are loaded. Kept in /etc/sysctl.conf it is set at "
+	    "boot, before any rule." : "");
 }
 
 static int
@@ -3444,6 +3642,8 @@ view_firewall(struct html *h, struct server *s)
 		    "</div>");
 		return;
 	}
+	if (fw.ask)
+		view_ask(h);
 	/*
 	 * On a phone the side bar is a drawer: the chain is a strip above
 	 * the rules instead, scrolled sideways, the parts that have rules
@@ -4001,6 +4201,9 @@ firewall_action(const char *act, const char *arg, const char *value)
 		fw.nhits = 0;
 		fw.edit = fw.move = 0;
 		fw.loading = false;
+		fw.ask = fw.then_apply = false;
+		fw.setting = 0;
+		fw.set_error[0] = '\0';
 		free(fw.text);
 		fw.text = NULL;
 		fw.sect = FW_LAYOUT;
@@ -4021,29 +4224,43 @@ firewall_action(const char *act, const char *arg, const char *value)
 		snprintf(fw.file_note, sizeof(fw.file_note), "The layout, not "
 		    "kept yet: make it this host's own, then Keep.");
 	} else if (strcmp(act, "fw-apply") == 0) {
-		int	add, del, chg;
-		char	gone[200], lost[400];
+		fw.set_error[0] = '\0';
+		apply_ask(s, false);
+	} else if (strcmp(act, "fw-ask-no") == 0) {
+		fw.ask = fw.then_apply = false;
+		fw.setting = 0;
+		fw.set_error[0] = '\0';
+	} else if (strcmp(act, "fw-set-apply") == 0 && fw.setting == 0) {
+		const ucl_object_t	*t;
+		ucl_object_iter_t	 it;
+		char			*q, *qj, *j;
 
-		/* What would go is said first: rules the kernel runs with
-		 * that are not kept. */
-		diff_rows(NULL, &add, &del, &chg, gone, sizeof(gone));
-		lost[0] = '\0';
-		if (del > 0)
-			snprintf(lost, sizeof(lost), "%d rule%s the kernel has now "
-			    "%s not kept and would be gone: %s. Keep %s first "
-			    "(What Apply would change) if %s wanted. ", del, del ==
-			    1 ? "" : "s", del == 1 ? "is" : "are", gone, del == 1 ?
-			    "it" : "them", del == 1 ? "it is" : "they are");
-		snprintf(body, sizeof(body), "%sThe kept rules become the whole "
-		    "of set 0 on %s: %d added, %d removed, %d with other words. "
-		    "They are loaded into set 1 while it is off and swapped "
-		    "with set 0, so that no packet meets half a ruleset. The "
-		    "rules of now wait in set 1: if the console cannot reach "
-		    "the host afterwards, the host swaps them back by itself.",
-		    lost, s->name, add, del, chg);
-		confirm(del > 0 ? "Apply: rules would be gone" : "Apply the kept "
-		    "rules", body, "Apply", true, del > 0 ? "apply" : "",
-		    "do-fw-apply", "", "");
+		/* Each at once and in sysctl.conf, as the sysctl page sets
+		 * one; the firewall is read again once they are done. */
+		fw.set_error[0] = '\0';
+		fw.then_apply = true;
+		it = NULL;
+		while ((t = ucl_object_iterate(jget(fw.data, "tunables"), &it,
+		    true)) != NULL) {
+			if (!needs_it(t) || jstr(t, "name") == NULL)
+				continue;
+			q = json_quote(jstr(t, "name"));
+			qj = json_quote(fw.jail);
+			if (asprintf(&j, "{\"kind\":\"sysctl\",\"args\":[%s,\"%lld\"]"
+			    ",\"persist\":true%s%s}", q, (long long)jint(t, "want",
+			    1), fw.jail[0] != '\0' ? ",\"jail\":" : "",
+			    fw.jail[0] != '\0' ? qj : "") == -1)
+				abort();
+			free(q);
+			free(qj);
+			snprintf(title, sizeof(title), "sysctl %s=%lld%s%s",
+			    jstr(t, "name"), (long long)jint(t, "want", 1),
+			    fw.jail[0] != '\0' ? " in " : "", fw.jail);
+			fw.setting++;
+			job_send_host(s, j, title, JOB_FIREWALL, fw.jail);
+		}
+		if (fw.setting == 0)
+			apply_ask(s, true);
 	} else if (strcmp(act, "do-fw-apply") == 0) {
 		fw_job(s, "{\"kind\":\"ipfw\",\"verb\":\"apply\",\"safe\":true}",
 		    "ipfw apply");

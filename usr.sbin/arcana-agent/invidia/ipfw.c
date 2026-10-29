@@ -358,6 +358,150 @@ enabled(struct work *w)
 	return (sysctlbyname(name[0], &v, &len, NULL, 0) == 0 && v != 0);
 }
 
+/*
+ * A number of ipfw's sysctls in the network looked at: a jail's read
+ * inside it; the host's from the kernel, or from the sysctl(8) the
+ * tests give in its place.  -1 when there is none of that name.
+ */
+static long
+fw_sysctl(struct work *w, const char *name)
+{
+	const char *const words[] = { name };
+	struct execres	res;
+	char		*argv[4], *out, *end;
+	long		 v;
+	int		 iv;
+	size_t		 len;
+
+	if (w->jail == NULL && strcmp(opts.sysctl_bin, "/sbin/sysctl") == 0) {
+		len = sizeof(iv);
+		return (sysctlbyname(name, &iv, &len, NULL, 0) == 0 && iv >= 0 ?
+		    iv : -1);
+	}
+	argv[0] = (char *)(uintptr_t)opts.sysctl_bin;
+	argv[1] = (char *)(uintptr_t)"-n";
+	argv[2] = (char *)(uintptr_t)name;
+	argv[3] = NULL;
+	if (run_exec(w, w->jail != NULL ? helper_argv(w, "sysctl-int", 1,
+	    words) : argv, &res) != 0 || res.out == NULL)
+		return (-1);
+	out = wstrndup(w, res.out, res.outlen);
+	v = strtol(out, &end, 10);
+	return (end == out || v < 0 ? -1 : v);
+}
+
+/*
+ * What Apply needs of the kernel's sysctls, set to 1, and why; one of
+ * tables only when the kept rules have a table.
+ */
+static const struct {
+	const char	*name;
+	bool		 tables;
+	const char	*why;
+} apply_needs[] = {
+	{ "net.inet.ip.fw.dyn_keep_states", false, "the old rules are "
+	    "deleted once the new ones are in, and with 0 the kernel drops "
+	    "the states they made with them: connections they let through "
+	    "meet the new rules as new ones, and a stateful ruleset cuts "
+	    "them. With 1 the states stay until they expire." },
+	{ "net.inet.ip.fw.tables_sets", true, "the kept rules' tables are "
+	    "made in set 1, beside the running ones of the same names, and "
+	    "swapped in with the rules, as SD-WAN's are made in its own set. "
+	    "With 0 a table's name is one for every set: making it again "
+	    "fails as it exists, and a swap leaves the tables where they "
+	    "are." },
+};
+
+/*
+ * Has the kept text a table: one made, one a rule looks in, or a
+ * nat64stl's?  Comments, and what follows a rule's //, are not looked at.
+ */
+static bool
+uses_tables(struct work *w, const char *text)
+{
+	char	*copy, *p, *line, *c;
+
+	if (text == NULL)
+		return (false);
+	copy = wstrdup(w, text);
+	for (p = copy; (line = strsep(&p, "\n")) != NULL; ) {
+		line += strspn(line, " \t");
+		if (line[0] == '#')
+			continue;
+		if ((c = strstr(line, "//")) != NULL)
+			*c = '\0';
+		if (strncmp(line, "table ", 6) == 0 || strstr(line, " table ") !=
+		    NULL || strstr(line, "table(") != NULL || strstr(line,
+		    " lookup ") != NULL || strstr(line, " table4 ") != NULL ||
+		    strstr(line, " table6 ") != NULL)
+			return (true);
+	}
+	return (false);
+}
+
+/* What the read says of them: each with its value now, and if needed. */
+static ucl_object_t *
+needs_json(struct work *w, bool tables)
+{
+	ucl_object_t	*arr, *o;
+	size_t		 i;
+	long		 v;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < nitems(apply_needs); i++) {
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put(o, "name", apply_needs[i].name);
+		if ((v = fw_sysctl(w, apply_needs[i].name)) >= 0)
+			ucl_object_insert_key(o, ucl_object_fromint(v), "value",
+			    0, false);
+		ucl_object_insert_key(o, ucl_object_fromint(1), "want", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_frombool(
+		    !apply_needs[i].tables || tables), "needed", 0, false);
+		put(o, "why", apply_needs[i].why);
+		ucl_array_append(arr, o);
+	}
+	return (arr);
+}
+
+/* Why Apply cannot go on with the kernel's sysctls as they are; NULL. */
+static const char *
+needs_unmet(struct work *w, const char *text)
+{
+	struct ms	 m;
+	const char	*out;
+	size_t		 i;
+	long		 v;
+	int		 n;
+	bool		 tables;
+
+	tables = uses_tables(w, text);
+	if (!ms_open(&m))
+		return ("out of memory");
+	n = 0;
+	for (i = 0; i < nitems(apply_needs); i++) {
+		if (apply_needs[i].tables && !tables)
+			continue;
+		if ((v = fw_sysctl(w, apply_needs[i].name)) == 1)
+			continue;
+		if (v < 0)
+			fprintf(m.fp, "Apply needs %s=1, which this kernel "
+			    "does not have: %s ", apply_needs[i].name,
+			    apply_needs[i].why);
+		else
+			fprintf(m.fp, "Apply needs %s=1, and it is %ld: %s ",
+			    apply_needs[i].name, v, apply_needs[i].why);
+		n++;
+	}
+	if (n > 0)
+		fprintf(m.fp, "Set %s%s at once and in sysctl.conf, then apply "
+		    "again; nothing was written or loaded.", n > 1 ? "them" :
+		    "it", w->jail != NULL ? " in the jail" : "");
+	if ((out = ms_close(w, &m, NULL)) == NULL)
+		return ("out of memory");
+	return (n > 0 ? out : NULL);
+}
+
 /* Run ipfw with the words; 0, or -1 and why. */
 static int
 ipfw(struct work *w, const char **errp, int quiet, ...)
@@ -728,9 +872,15 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 		while ((line = strsep(&p, "\n")) != NULL) {
 			if (strncmp(line, "--- table(", 10) == 0) {
 				line += 10;
+				t = strstr(line, "), set(");
 				line[strcspn(line, ")")] = '\0';
 				o = ucl_object_typed_new(UCL_OBJECT);
 				put(o, "name", line);
+				/* Its set: with tables_sets=1, its own. */
+				if (t != NULL && strtol(t + 7, NULL, 10) > 0)
+					ucl_object_insert_key(o,
+					    ucl_object_fromint(strtol(t + 7,
+					    NULL, 10)), "set", 0, false);
 				ucl_array_append(arr, o);
 			} else if (o != NULL && strstr(line, "kindex") !=
 			    NULL && (t = strstr(line, " type: ")) != NULL) {
@@ -743,15 +893,26 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 		it = NULL;
 		while ((co = ucl_object_iterate(arr, &it, true)) != NULL) {
 			ucl_object_t	*ents, *e;
-			int		 cnt;
+			char		*lv[7];
+			int		 cnt, k;
 
 			o = (ucl_object_t *)(uintptr_t)co;
-			argv[2] = (char *)(uintptr_t)ucl_object_tostring(
+			k = 0;
+			lv[k++] = argv[0];
+			if (ucl_object_lookup(o, "set") != NULL) {
+				lv[k++] = (char *)(uintptr_t)"set";
+				lv[k++] = wfmt(w, "%jd", (intmax_t)
+				    ucl_object_toint(ucl_object_lookup(o,
+				    "set")));
+			}
+			lv[k++] = (char *)(uintptr_t)"table";
+			lv[k++] = (char *)(uintptr_t)ucl_object_tostring(
 			    ucl_object_lookup(o, "name"));
-			argv[3] = (char *)(uintptr_t)"list";
+			lv[k++] = (char *)(uintptr_t)"list";
+			lv[k] = NULL;
 			ents = ucl_object_typed_new(UCL_ARRAY);
 			cnt = 0;
-			if (run_exec(w, scope_argv(w, argv), &res) == 0 &&
+			if (run_exec(w, scope_argv(w, lv), &res) == 0 &&
 			    res.out != NULL) {
 				text = wstrndup(w, res.out, res.outlen);
 				p = text;
@@ -828,6 +989,25 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 	pthread_mutex_lock(&file_lock);
 	text = file_read(w, &len);
 	pthread_mutex_unlock(&file_lock);
+	/*
+	 * The sysctls Apply needs, each with its value now and whether
+	 * these kept rules need it; and the modules of ipfw's objects, as
+	 * a file, a module or built in.
+	 */
+	if (loaded) {
+		ucl_object_insert_key(top, needs_json(w, uses_tables(w, text)),
+		    "tunables", 0, false);
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_frombool(kmod_loaded(
+		    "ipfw_nat")), "ipfw_nat", 0, false);
+		ucl_object_insert_key(o, ucl_object_frombool(kmod_loaded(
+		    "ipfw_nat64")), "ipfw_nat64", 0, false);
+		ucl_object_insert_key(o, ucl_object_frombool(kmod_loaded(
+		    "ipfw_nptv6")), "ipfw_nptv6", 0, false);
+		ucl_object_insert_key(o, ucl_object_frombool(kmod_loaded(
+		    "dummynet")), "dummynet", 0, false);
+		ucl_object_insert_key(top, o, "modules", 0, false);
+	}
 	/* The aliases, an address list with its entries. */
 	{
 		struct alias	al[ALIAS_MAX];
@@ -2620,18 +2800,147 @@ text_expand(struct work *w, const char *text, const char **errp)
 }
 
 /*
+ * The named objects ipfw keeps a set each of, by kind: the NAT64 and
+ * NPTv6 instances when their module is in the kernel (or ipfw is a
+ * test's), the tables last, as a nat64stl holds tables of its own.
+ */
+static const struct {
+	const char	*kind, *mod;
+} set_objs[] = {
+	{ "nat64lsn", "ipfw_nat64" },
+	{ "nat64stl", "ipfw_nat64" },
+	{ "nat64clat", "ipfw_nat64" },
+	{ "nptv6", "ipfw_nptv6" },
+	{ "table", NULL },
+};
+
+/* One of set 1's that the kernel would not destroy, and why. */
+struct kept_obj {
+	const char	*what;		/* "nat64lsn NAT64" */
+	const char	*why;
+};
+
+/*
+ * Set 1's named objects destroyed, one by one by name.  A swap moves
+ * them with their set as it moves the rules, so the objects of the old
+ * rules stay in set 1 once those are deleted, and a load that makes
+ * one of the same name there again fails.  One the kernel refuses (a
+ * rule uses it still: EBUSY) stays; up to max of those are put in kept
+ * with why, and how many returned.  A step says what went and stayed.
+ */
+static size_t
+set1_clean(struct work *w, struct kept_obj *kept, size_t max)
+{
+	struct execres	 res;
+	struct ms	 gone, stay;
+	char		*argv[7], *text, *p, *line, *name, *g, *s;
+	const char	*kind, *e;
+	size_t		 k, kl, n, ngone;
+	int		 step;
+	bool		 fake;
+
+	fake = strcmp(opts.ipfw_bin, "/sbin/ipfw") != 0;
+	if (!ms_open(&gone))
+		return (0);
+	if (!ms_open(&stay)) {
+		(void)ms_close(w, &gone, NULL);
+		return (0);
+	}
+	n = ngone = 0;
+	for (k = 0; k < nitems(set_objs); k++) {
+		kind = set_objs[k].kind;
+		kl = strlen(kind);
+		if (set_objs[k].mod != NULL && !fake &&
+		    !kmod_loaded(set_objs[k].mod))
+			continue;
+		argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
+		argv[1] = (char *)(uintptr_t)"set";
+		argv[2] = (char *)(uintptr_t)"1";
+		argv[3] = (char *)(uintptr_t)kind;
+		argv[4] = (char *)(uintptr_t)"all";
+		argv[5] = (char *)(uintptr_t)(strcmp(kind, "table") == 0 ?
+		    "info" : "list");
+		argv[6] = NULL;
+		if (run_exec(w, scope_argv(w, argv), &res) != 0 ||
+		    res.out == NULL)
+			continue;
+		text = wstrndup(w, res.out, res.outlen);
+		for (p = text; (line = strsep(&p, "\n")) != NULL; ) {
+			/* "--- table(T), set(1) ---"; "set 1 nat64lsn N". */
+			if (strncmp(line, "--- table(", 10) == 0 && strcmp(kind,
+			    "table") == 0) {
+				name = line + 10;
+				name[strcspn(name, ")")] = '\0';
+			} else if (strncmp(line, "set 1 ", 6) == 0 &&
+			    strncmp(line + 6, kind, kl) == 0 && line[6 + kl] ==
+			    ' ') {
+				name = line + 7 + kl;
+				name[strcspn(name, " ")] = '\0';
+			} else
+				continue;
+			if (!word_ok(name))
+				continue;
+			e = NULL;
+			if (ipfw(w, &e, true, "set", "1", kind, name, "destroy",
+			    NULL) == 0) {
+				fprintf(gone.fp, "%s%s %s", ngone++ > 0 ? ", " :
+				    "", kind, name);
+				continue;
+			}
+			fprintf(stay.fp, "%s%s %s", n > 0 ? ", " : "", kind,
+			    name);
+			if (n < max) {
+				kept[n].what = wfmt(w, "%s %s", kind, name);
+				kept[n].why = e != NULL ? e : "ipfw refused it";
+			}
+			n++;
+		}
+	}
+	g = ms_close(w, &gone, NULL);
+	s = ms_close(w, &stay, NULL);
+	if (ngone > 0 || n > 0) {
+		step = step_begin(w, ARC_STEP_KIND_DAEMON, "set 1's objects",
+		    NULL);
+		step_end(w, step, true, "%s%s%s%s%s", ngone > 0 ? "destroyed " :
+		    "", ngone > 0 && g != NULL ? g : "", ngone > 0 && n > 0 ?
+		    "; " : "", n > 0 ? "kept, as a rule uses them still: " : "",
+		    n > 0 && s != NULL ? s : "");
+	}
+	return (MIN(n, max));
+}
+
+/* Does the load make one of that kind and name ("nat64lsn N") in set 1? */
+static bool
+load_makes(struct work *w, const char *load, const char *what)
+{
+	char	*copy, *p, *line;
+	size_t	 l;
+
+	l = strlen(what);
+	copy = wstrdup(w, load);
+	for (p = copy; (line = strsep(&p, "\n")) != NULL; )
+		if (strncmp(line, "set 1 ", 6) == 0 && strncmp(line + 6, what,
+		    l) == 0 && strncmp(line + 6 + l, " create", 7) == 0)
+			return (true);
+	return (false);
+}
+
+/*
  * The kept rules as the whole ruleset: into set 1, disabled, and then
  * in set 0's place.  With hold the rules that were there stay in set
- * 1 until ipfw_settle() says which of the two it is to be.
+ * 1 until ipfw_settle() says which of the two it is to be.  What Apply
+ * needs of the kernel's sysctls is asked first, and nothing is done
+ * without it; set 1's objects are destroyed before and after.
  */
 static int
 apply(struct work *w, bool hold, const char **errp)
 {
 	struct execres	 res;
 	struct ms	 m;
+	struct kept_obj	 kept[16];
 	char		*text, *p, *line, *load, *tmp, *argv[4];
 	const char	*rest;
-	size_t		 len, n;
+	size_t		 len, n, nk, i;
 	long		 num;
 	int		 fd, step;
 
@@ -2643,6 +2952,8 @@ apply(struct work *w, bool hold, const char **errp)
 		    opts.ipfw_rules, strerror(errno));
 		return (-1);
 	}
+	if ((*errp = needs_unmet(w, text)) != NULL)
+		return (-1);
 	/* What ipfw is to read: the file's lines, each in set 1. */
 	if (!ms_open(&m)) {
 		*errp = "out of memory";
@@ -2670,6 +2981,22 @@ apply(struct work *w, bool hold, const char **errp)
 		    "the firewall with its last rule alone";
 		return (-1);
 	}
+	/* Set 1 is emptied and filled while nothing looks at it. */
+	if (ipfw(w, errp, true, "set", "disable", "1", NULL) != 0)
+		return (-1);
+	(void)ipfw(w, NULL, true, "-f", "set", "1", "flush", NULL);
+	nk = set1_clean(w, kept, nitems(kept));
+	for (i = 0; i < nk; i++)
+		if (load_makes(w, load, kept[i].what)) {
+			*errp = wfmt(w, "set 1's %s could not be destroyed "
+			    "(%s), and the kept rules make one of that name in "
+			    "set 1, which the kernel refuses while it is there. "
+			    "Nothing was loaded: set 0, the running rules, is as "
+			    "it was. Delete the rule that still uses it (ipfw -S "
+			    "show lists them), or give the kept one another "
+			    "name.", kept[i].what, kept[i].why);
+			return (-1);
+		}
 	tmp = wfmt(w, "%s.arcana-load", opts.ipfw_rules);
 	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", tmp);
 	if (w->jail != NULL) {
@@ -2688,41 +3015,33 @@ apply(struct work *w, bool hold, const char **errp)
 	} else
 		close(fd);
 	step_end(w, step, true, NULL);
-	/* Set 1 is emptied and filled while nothing looks at it. */
-	if (ipfw(w, errp, true, "set", "disable", "1", NULL) != 0)
-		return (-1);
-	(void)ipfw(w, NULL, true, "-f", "set", "1", "flush", NULL);
-	(void)ipfw(w, NULL, true, "set", "1", "table", "all", "destroy", NULL);
-	if (kmod_loaded("ipfw_nat64")) {
-		(void)ipfw(w, NULL, true, "set", "1", "nat64lsn", "all",
-		    "destroy", NULL);
-		(void)ipfw(w, NULL, true, "set", "1", "nat64stl", "all",
-		    "destroy", NULL);
-		(void)ipfw(w, NULL, true, "set", "1", "nat64clat", "all",
-		    "destroy", NULL);
-	}
 	argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
 	argv[1] = (char *)(uintptr_t)"-q";
 	argv[2] = tmp;
 	argv[3] = NULL;
 	if (run_exec(w, scope_argv(w, argv), &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, "ipfw"));
-		/* Not half a ruleset left behind in set 1. */
+		/* Not half a ruleset left behind in set 1, nor its objects. */
 		(void)ipfw(w, NULL, true, "-f", "set", "1", "flush", NULL);
+		(void)set1_clean(w, NULL, 0);
 		(void)unlink(tmp);
 		return (-1);
 	}
 	(void)unlink(tmp);
 	if (ipfw(w, errp, true, "set", "swap", "0", "1", NULL) != 0)
 		return (-1);
-	if (!hold)
+	/* The old rules gone, the objects they used went to set 1. */
+	if (!hold) {
 		(void)ipfw(w, NULL, true, "-f", "delete", "set", "1", NULL);
+		(void)set1_clean(w, NULL, 0);
+	}
 	return (0);
 }
 
 /*
  * After an apply that held the old rules back in set 1: keep the new
- * ones and drop the old, or swap the old ones in again.
+ * ones and drop the old, or swap the old ones in again.  Either way the
+ * rules then in set 1 go, and the objects they used after them.
  */
 const char *
 ipfw_settle(struct work *w, bool keep)
@@ -2733,6 +3052,7 @@ ipfw_settle(struct work *w, bool keep)
 	if (!keep && ipfw(w, &e, true, "set", "swap", "0", "1", NULL) != 0)
 		return (e);
 	(void)ipfw(w, NULL, true, "-f", "delete", "set", "1", NULL);
+	(void)set1_clean(w, NULL, 0);
 	return (NULL);
 }
 

@@ -895,6 +895,7 @@ void		 firewall_tick(double);
 void		 view_firewall(struct html *, struct server *);
 bool		 firewall_form(const char *, const ucl_object_t *);
 bool		 firewall_action(const char *, const char *, const char *);
+void		 firewall_job_done(const char *, bool, const char *);
 bool		 firewall_qos_modal(struct html *);
 /* span.c: traffic mirrored, and taken. */
 void		 span_refresh(struct server *);

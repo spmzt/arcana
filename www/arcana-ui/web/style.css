@@ -1095,6 +1095,13 @@ form.hostkey pre.deploy-key {
 	color: var(--fg-2);
 }
 
+/* The sysctls Apply needs, asked about in the Firewall page. */
+.fw-ask p { margin: 0 0 .4rem; }
+.fw-ask dl { margin: .2rem 0 .5rem; }
+.fw-ask dt { margin-top: .45rem; }
+.fw-ask dd { margin: .15rem 0 0 1rem; color: var(--fg-2); }
+.fw-ask .fw-ask-error { color: #ffc2d1; }
+
 /* The interfaces of a host. */
 table.ifaces td { vertical-align: top; }
 table.ifaces td small { display: block; color: var(--dim); font-size: .68rem; }

@@ -681,6 +681,7 @@ job_finished(struct op *op, bool ok, const char *err)
 		refresh_sysctl(s, true);
 		break;
 	case JOB_FIREWALL:
+		firewall_job_done(op->title, ok, err);
 		refresh_firewall(s, true);
 		break;
 	case JOB_STORAGE:

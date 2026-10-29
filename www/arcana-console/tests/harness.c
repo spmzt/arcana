@@ -1061,6 +1061,16 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-sysctl", "#!/bin/sh\necho \"sysctl $*\" >> kld.log\n"
 	    "[ \"$1\" = kern.nosuch=1 ] && { echo \"sysctl: unknown oid "
 	    "'kern.nosuch'\" >&2; exit 1; }\n"
+	    /* ipfw's that Apply needs: 1 unless fw.sysctl says otherwise;
+	     * tables_sets refused while tables-busy is there. */
+	    "[ \"$1\" = net.inet.ip.fw.tables_sets=1 ] && [ -f tables-busy ] && "
+	    "{ echo \"sysctl: net.inet.ip.fw.tables_sets=1: Device busy\" >&2; "
+	    "exit 1; }\n"
+	    "case \"$1\" in net.inet.ip.fw.*=*) echo \"$1\" >> fw.sysctl ;; "
+	    "esac\n"
+	    "[ \"$1\" = -n ] && case \"$2\" in net.inet.ip.fw.*) v=$(sed -n "
+	    "\"s/^$2=//p\" fw.sysctl 2>/dev/null | tail -1); echo \"${v:-1}\"; "
+	    "exit 0 ;; esac\n"
 	    /* IGMP's and MLD's, as -e asks them: name=value. */
 	    "[ \"$1\" = -e ] && { shift; for n; do case $n in "
 	    "*default_version) echo \"$n=3\" ;; *legacysupp) echo \"$n=0\" ;; "

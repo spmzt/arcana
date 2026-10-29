@@ -83,15 +83,38 @@ kmod_name_ok(const char *s)
 	return (true);
 }
 
-/* Is the module in the kernel now: as a file, or as a module of one? */
+/*
+ * Is the module in the kernel now: as a file, or as a module of one?
+ * Built into a kernel, some register no module of their name (a kernel
+ * with IPFIREWALL_NAT64 lists no ipfw_nat64; SCTP's MOD_LOAD fails with
+ * EEXIST when it is built in, and the module goes): a sysctl that only
+ * the feature's own code creates says it is there.
+ */
 bool
 kmod_loaded(const char *name)
 {
+	static const struct {
+		const char	*mod, *oid;
+	} builtin[] = {
+		/* netpfil/ipfw/nat64/ip_fw_nat64.c */
+		{ "ipfw_nat64", "net.inet.ip.fw.nat64_direct_output" },
+		/* netinet/sctp_sysctl.c, FEATURE(sctp) */
+		{ "sctp", "kern.features.sctp" },
+	};
 	char	file[80];
+	size_t	i, len;
 
 	snprintf(file, sizeof(file), "%s%s", name, strstr(name, ".ko") ==
 	    NULL ? ".ko" : "");
-	return (kldfind(file) >= 0 || modfind(name) >= 0);
+	if (kldfind(file) >= 0 || modfind(name) >= 0)
+		return (true);
+	for (i = 0; i < nitems(builtin); i++)
+		if (strcmp(name, builtin[i].mod) == 0) {
+			len = 0;
+			return (sysctlbyname(builtin[i].oid, NULL, &len, NULL,
+			    0) == 0);
+		}
+	return (false);
 }
 
 /*

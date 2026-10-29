@@ -5416,11 +5416,62 @@ part_firewall(void)
 	    "document.querySelector('.fwbar button[data-act=fw-rail]')", 5);
 	run("document.querySelector('.fwbar button[data-act=fw-rail]').click()");
 	wait_js("document.querySelector('.fwrail .titem.fw')", 5);
+	/*
+	 * Apply needs net.inet.ip.fw.dyn_keep_states, and tables_sets for
+	 * a kept table: neither set, the page asks, saying what each does
+	 * and why; Set and apply sets them, and the kernel refusing one
+	 * is said with why, nothing applied.  Once they are set, Apply
+	 * goes on.
+	 */
+	ATF_REQUIRE(system("printf 'table T46 create type addr\\n' >> "
+	    "ipfw.rules && printf 'net.inet.ip.fw.dyn_keep_states=0\\n"
+	    "net.inet.ip.fw.tables_sets=0\\n' > fw.sysctl && touch "
+	    "tables-busy") == 0);
+	run("document.querySelector('.fwbar button[data-act=refresh]')"
+	    ".click()");
+	usleep(300000);
+	wait_js("!document.querySelector('.fwbar .fresh.reading')", 10);
 	run("document.querySelector('button[data-act=fw-apply]').click()");
-	/* Rules the kernel has and that are not kept would be gone: said
-	 * first, by number, and the word typed to go on. */
+	wait_js("document.querySelector('.fw-ask') && document.querySelector("
+	    "'.fw-ask').textContent.includes('net.inet.ip.fw.dyn_keep_states "
+	    "is 0') && document.querySelector('.fw-ask').textContent.includes("
+	    "'net.inet.ip.fw.tables_sets is 0')", 10);
+	ATF_CHECK(js_true("!document.querySelector('.modal') && document."
+	    "querySelector('.fw-ask').textContent.includes('connections they "
+	    "let through') && document.querySelector('.fw-ask').textContent."
+	    "includes('/etc/sysctl.conf')"));
+	shot("7o-firewall-apply-ask");
+	run("document.querySelector('button[data-act=fw-set-apply]').click()");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('.fw-ask') && document.querySelector("
+	    "'.fw-ask').textContent.includes('The kernel refused "
+	    "net.inet.ip.fw.tables_sets=1') && document.querySelector("
+	    "'.fw-ask').textContent.includes('Device busy') && !document."
+	    "querySelector('.fw-ask button[data-act=fw-set-apply][disabled]')",
+	    20);
+	ATF_CHECK(js_true("document.querySelector('.fw-ask').textContent."
+	    "includes('every rule that uses a table is in set 0')"));
+	ATF_CHECK(system("grep -q '^net.inet.ip.fw.dyn_keep_states=1$' "
+	    "fw.sysctl && ! grep -q 'set swap' ipfw.log") == 0);
+	run("document.querySelector('.dock.open > header') && "
+	    "document.querySelector('.dock.open > header').click()");
+	wait_js("!document.querySelector('.dock.open')", 5);
+	shot("7o-firewall-apply-refused");
+	ATF_REQUIRE(unlink("tables-busy") == 0);
+	run("document.querySelector('button[data-act=fw-set-apply]').click()");
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 200 && system("grep -q "
+	    "'^net.inet.ip.fw.tables_sets=1$' fw.sysctl") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^net.inet.ip.fw.tables_sets=1$' "
+	    "fw.sysctl") == 0);
+	run("document.querySelector('.dock.open > header') && "
+	    "document.querySelector('.dock.open > header').click()");
+	/* Set, and read again: Apply goes on.  Rules the kernel has and
+	 * that are not kept would be gone: said first, by number, and the
+	 * word typed to go on. */
 	wait_js("document.querySelector('form[data-form=confirm] "
-	    "input[name=typed]')", 5);
+	    "input[name=typed]')", 20);
 	{
 		ucl_object_t	*t = js("return document.querySelector('.modal')"
 		    ".textContent");

@@ -5089,7 +5089,7 @@ EOS
 	atf_check -o match:"^jexec 4 $d/fake-ipfw -q /var/run/arcana-sdwan-rules.load$" \
 	    -o match:"^jexec 4 [^ ]*sysctl net.inet.ipsec.filtertunnel=1$" \
 	    cat jexec.log
-	atf_check -o match:'^table sw1_p0 create type addr valtype ipv4$' \
+	atf_check -o match:'^set 30 table sw1_p0 create type addr valtype ipv4$' \
 	    -o match:'^add 500 set 30 fwd tablearg ip from any to table\(sw1_p0\)$' \
 	    cat jail-rules.log
 	test -e "$R/var/run/arcana-sdwan-rules.load" && \
@@ -5097,8 +5097,8 @@ EOS
 	# Its steering, by its own ipfw too.
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
 	    '{"jail":"gateway","entries":[{"table":"sw1_p0","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"}]}]}'
-	atf_check -o match:'^jexec 4 [^ ]*fake-ipfw -q table sw1_p0_alt atomic add 10.20.0.0/24 100.64.0.1$' \
-	    -o match:'^jexec 4 [^ ]*fake-ipfw -q table sw1_p0 swap sw1_p0_alt$' \
+	atf_check -o match:'^jexec 4 [^ ]*fake-ipfw -q set 30 table sw1_p0_alt atomic add 10.20.0.0/24 100.64.0.1$' \
+	    -o match:'^jexec 4 [^ ]*fake-ipfw -q set 30 table sw1_p0 swap sw1_p0_alt$' \
 	    cat jexec.log
 	# The host's own: none, and not the jail's.
 	atf_check -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],' \
@@ -5120,7 +5120,7 @@ EOS
 	: > jexec.log
 	start_daemon
 	atf_check -o match:"^jexec 4 $d/fake-ipfw -q /var/run/arcana-sdwan-rules.load$" \
-	    -o match:'^jexec 4 [^ ]*fake-ipfw -q table sw1_p0 swap sw1_p0_alt$' \
+	    -o match:'^jexec 4 [^ ]*fake-ipfw -q set 30 table sw1_p0 swap sw1_p0_alt$' \
 	    cat jexec.log
 	atf_check -o match:'"edges":\[\{"jail":"gateway","rules":\{"set":30,' \
 	    "$JGC" -c "$SOCK" sdwan
@@ -6817,9 +6817,9 @@ EOS
 	    '{"set":30,"tables":[{"name":"sw1_zone","valtype":"skipto","entries":[["10.1.0.0/16","12"],["0.0.0.0/0","13"]]},{"name":"sw1_z0p0_4","valtype":"ipv4"}],"rules":["10 skipto tablearg ip from table(sw1_zone) to any in recv lo1","12 fwd tablearg ip4 from any to table(sw1_z0p0_4)","12 deny ip from any to any","99 count ip from any to any"]}'
 	atf_check -o match:'^ipfw -q set disable 30$' \
 	    -o match:'^ipfw -q -f delete set 30$' \
-	    -o match:'^table sw1_zone create type addr valtype skipto$' \
-	    -o match:'^table sw1_zone atomic add 10.1.0.0/16 12 0.0.0.0/0 13$' \
-	    -o match:'^table sw1_z0p0_4 create type addr valtype ipv4$' \
+	    -o match:'^set 30 table sw1_zone create type addr valtype skipto$' \
+	    -o match:'^set 30 table sw1_zone atomic add 10.1.0.0/16 12 0.0.0.0/0 13$' \
+	    -o match:'^set 30 table sw1_z0p0_4 create type addr valtype ipv4$' \
 	    -o match:'^add 10 set 30 skipto tablearg ip from table\(sw1_zone\) to any in recv lo1$' \
 	    -o match:'^add 12 set 30 deny ip from any to any$' \
 	    -o match:'^ipfw -q set enable 30$' cat ipfw.log
@@ -6835,9 +6835,9 @@ EOS
 	: > ipfw.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
 	    '{"entries":[{"table":"sw1_z0p0_4","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"},{"id":"t2","via":"100.64.0.3"}]},{"table":"sw1_z0p0_4","prefix":"10.30.0.0/24","candidates":[{"id":"t2","via":"100.64.0.3"}]}]}'
-	atf_check -o match:'^ipfw -q table sw1_z0p0_4_alt create type addr valtype ipv4$' \
-	    -o match:'^ipfw -q table sw1_z0p0_4_alt atomic add 10.20.0.0/24 100.64.0.1 10.30.0.0/24 100.64.0.3$' \
-	    -o match:'^ipfw -q table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
+	atf_check -o match:'^ipfw -q set 30 table sw1_z0p0_4_alt create type addr valtype ipv4$' \
+	    -o match:'^ipfw -q set 30 table sw1_z0p0_4_alt atomic add 10.20.0.0/24 100.64.0.1 10.30.0.0/24 100.64.0.3$' \
+	    -o match:'^ipfw -q set 30 table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
 	atf_check -o match:'"steer":\[\{"table":"sw1_z0p0_4","prefix":"10.20.0.0/24","chosen":0,"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"not probed"\}' \
 	    -o match:'"steered":true' "$JGC" -c "$SOCK" sdwan
 	# Kept, both, and applied again at the next start.
@@ -6845,7 +6845,7 @@ EOS
 	stop_daemon
 	start_daemon
 	atf_check -o match:'^add 12 set 30 deny ip from any to any$' \
-	    -o match:'^ipfw -q table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
+	    -o match:'^ipfw -q set 30 table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
 	# Objects: dummynet pipes and queues, nat instances, made before
 	# the rules, their modules loaded, deleted with the rules, queues
 	# before their pipes; nothing a shell would read.
@@ -6859,15 +6859,15 @@ EOS
 	: > kldload.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
 	    '{"set":30,"tables":[],"objects":["nat64lsn sw1_64 create prefix4 192.0.2.64/26 prefix6 64:ff9b::/96 allow_private","nat64clat sw1_chq create clat_prefix 2001:db8:c::/96 plat_prefix 64:ff9b::/96"],"rules":["10 nat64lsn sw1_64 ip6 from any to 64:ff9b::/96 in","99 count ip from any to any"]}'
-	atf_check -o match:'^nat64lsn sw1_64 create prefix4 192.0.2.64/26 prefix6 64:ff9b::/96 allow_private$' \
-	    -o match:'^nat64clat sw1_chq create clat_prefix 2001:db8:c::/96 plat_prefix 64:ff9b::/96$' \
+	atf_check -o match:'^set 30 nat64lsn sw1_64 create prefix4 192.0.2.64/26 prefix6 64:ff9b::/96 allow_private$' \
+	    -o match:'^set 30 nat64clat sw1_chq create clat_prefix 2001:db8:c::/96 plat_prefix 64:ff9b::/96$' \
 	    -o match:'^add 10 set 30 nat64lsn sw1_64 ip6 from any to 64:ff9b::/96 in$' cat ipfw.log
 	atf_check -o match:'ipfw_nat64' cat kldload.log
 	atf_check -s exit:1 -e match:'an object is' -o ignore "$JGC" -c "$SOCK" sdwan rules \
 	    '{"set":30,"tables":[],"objects":["nat64lsn sw1_64 config prefix4 192.0.2.64/26"],"rules":["10 allow ip from any to any"]}'
 	: > ipfw.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'
-	atf_check -o match:'^ipfw -q nat64clat sw1_chq destroy$' -o match:'^ipfw -q nat64lsn sw1_64 destroy$' cat ipfw.log
+	atf_check -o match:'^ipfw -q set 30 nat64clat sw1_chq destroy$' -o match:'^ipfw -q set 30 nat64lsn sw1_64 destroy$' cat ipfw.log
 	: > ipfw.log
 	: > kldload.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
@@ -6875,7 +6875,7 @@ EOS
 	atf_check -o match:'^pipe 3000 config bw 5000000bit/s$' \
 	    -o match:'^queue 3001 config pipe 3000 weight 75$' \
 	    -o match:'^nat 3001 config ip 198.51.100.1$' \
-	    -o match:'^table sw1_known create type addr$' \
+	    -o match:'^set 30 table sw1_known create type addr$' \
 	    -o match:'^add 12 set 30 queue 3001 ip from any to any$' cat ipfw.log
 	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^pipe 3000' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^add 12' ipfw.log | cut -d: -f1 | head -1) && echo yes"
 	atf_check -o match:'dummynet' -o match:'ipfw_nat' cat kldload.log
@@ -6885,9 +6885,9 @@ EOS
 	: > ipfw.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
 	    '{"set":30,"tables":[{"name":"sw1_known","valtype":"legacy","entries":[["10.1.0.0/24","0"],["10.2.0.0/24","0"]]}],"objects":["pipe 3000 config bw 5000000bit/s","queue 3001 config pipe 3000 weight 75","nat 3001 config ip 198.51.100.1"],"rules":["11 nat 3001 ip4 from table(sw1_known) to not table(sw1_known) out xmit vtnet0","12 queue 3001 ip from any to any","99 count ip from any to any"]}'
-	atf_check -o match:'^ipfw -q table sw1_known_alt create type addr$' \
-	    -o match:'^ipfw -q table sw1_known_alt atomic add 10.1.0.0/24 0 10.2.0.0/24 0$' \
-	    -o match:'^ipfw -q table sw1_known swap sw1_known_alt$' \
+	atf_check -o match:'^ipfw -q set 30 table sw1_known_alt create type addr$' \
+	    -o match:'^ipfw -q set 30 table sw1_known_alt atomic add 10.1.0.0/24 0 10.2.0.0/24 0$' \
+	    -o match:'^ipfw -q set 30 table sw1_known swap sw1_known_alt$' \
 	    -o not-match:'set disable 30' -o not-match:'^add 12 ' cat ipfw.log
 	atf_check -o match:'"objects":3' "$JGC" -c "$SOCK" sdwan
 	# BIRD instances: a bad list refused; one started in its table by
@@ -7110,7 +7110,7 @@ EOS
 	# No rules: the set emptied, the tables gone, the objects deleted.
 	: > ipfw.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'
-	atf_check -o match:'^ipfw -q table sw1_known destroy$' \
+	atf_check -o match:'^ipfw -q set 30 table sw1_known destroy$' \
 	    -o match:'^ipfw -q nat 3001 delete$' \
 	    -o match:'^ipfw -q queue 3001 delete$' \
 	    -o match:'^ipfw -q pipe 3000 delete$' cat ipfw.log
@@ -9333,8 +9333,11 @@ EOS
 	done
 	atf_check -o match:'^kldload -n sctp$' cat kld.log
 	# The module in already (kldstat -m: compiled in is no module to
-	# unload, and the fake loads nothing), the agent leaves it.
-	if kldstat -q -m sctp 2>/dev/null; then
+	# unload, and the fake loads nothing), the agent leaves it.  SCTP
+	# built in registers no module (its MOD_LOAD fails, EEXIST): its
+	# kern.features.sctp says it is in.
+	if kldstat -q -m sctp 2>/dev/null ||
+	    [ "$(sysctl -n kern.features.sctp 2>/dev/null)" = 1 ]; then
 		atf_check -o not-match:'kldunload' cat kld.log
 	else
 		atf_check -o match:'^kldunload sctp$' cat kld.log
@@ -10114,6 +10117,192 @@ firewall_aliases_cleanup()
 	true
 }
 
+# sysctl(8) for the firewall cases: the sysctls Apply needs answered from
+# fw.sysctl, written with dyn_keep_states and tables_sets as given.
+fw_sysctl()
+{
+	printf 'net.inet.ip.fw.dyn_keep_states=%s\nnet.inet.ip.fw.tables_sets=%s\n' \
+	    "$1" "$2" > fw.sysctl
+	cat > fake-sysctl <<EOS
+#!/bin/sh
+echo "sysctl \$*" >> $(pwd)/sysctl.log
+case "\$1" in
+-n)	v=\$(sed -n "s/^\$2=//p" $(pwd)/fw.sysctl | tail -1)
+	[ -n "\$v" ] || { echo "sysctl: unknown oid '\$2'" >&2; exit 1; }
+	echo "\$v" ;;
+esac
+exit 0
+EOS
+	chmod +x fake-sysctl
+}
+
+atf_test_case firewall_apply cleanup
+firewall_apply_head()
+{
+	atf_set "descr" "ipfw apply: refused, nothing run or written, without the sysctls it needs; set 1's named objects destroyed before and after, an earlier apply's leftovers among them; one the kernel keeps refused clearly, set 0 untouched; NAT64 built into the kernel seen"
+}
+firewall_apply_body()
+{
+	# ipfw(8) with named objects a set each: setN.KIND holds their
+	# names.  Listed and destroyed by set; made by the load, which
+	# stops where the name is in the set already; swapped with the
+	# rules.  One in busy is used by a rule.
+	cat > fake-ipfw <<EOS
+#!/bin/sh
+d=$(pwd)
+echo "ipfw \$*" >> \$d/ipfw.log
+case "\$*" in
+# SD-WAN's table in its set, as tables_sets=1 has it.
+"table all info") printf -- '--- table(sw1_known), set(30) ---\n kindex: 1, type: addr\n' ;;
+"set 30 table sw1_known list") printf -- '--- table(sw1_known), set(30) ---\n10.1.0.0/24 0\n' ;;
+"set 1 table all info")
+	for n in \$(cat \$d/set1.table 2>/dev/null); do
+		printf -- '--- table(%s), set(1) ---\n kindex: 1, type: addr\n' "\$n"
+	done ;;
+"set 1 "*" all list")
+	for n in \$(cat \$d/set1.\$3 2>/dev/null); do echo "set 1 \$3 \$n"; done ;;
+"-q set 1 "*" destroy")
+	if grep -qx "\$4 \$5" \$d/busy 2>/dev/null; then
+		echo "ipfw: failed to destroy \$4 instance \$5: Device busy" >&2
+		exit 71
+	fi
+	grep -vx "\$5" \$d/set1.\$4 > \$d/t.tmp; mv \$d/t.tmp \$d/set1.\$4 ;;
+"-q "*.arcana-load)
+	cat "\$2" > \$d/loaded.rules
+	l=0
+	while read -r a b kind name verb rest; do
+		l=\$((l + 1))
+		[ "\$a \$b \$verb" = "set 1 create" ] || continue
+		if grep -qx "\$name" \$d/set1.\$kind 2>/dev/null; then
+			echo "ipfw: Line \$l: \$kind instance creation failed: File exists" >&2
+			exit 71
+		fi
+		echo "\$name" >> \$d/set1.\$kind
+	done < "\$2" ;;
+"-q set swap 0 1")
+	for k in nat64lsn nat64stl nat64clat nptv6 table; do
+		touch \$d/set0.\$k \$d/set1.\$k
+		mv \$d/set0.\$k \$d/t.tmp; mv \$d/set1.\$k \$d/set0.\$k
+		mv \$d/t.tmp \$d/set1.\$k
+	done ;;
+esac
+exit 0
+EOS
+	chmod +x fake-ipfw
+	fw_sysctl 0 0
+	mkdir fw
+	cat > fw/ipfw.rules <<'EOF'
+nat64lsn NAT64 create prefix4 192.0.2.64/27 prefix6 64:ff9b::/96
+nat64clat CLAT create clat_prefix 2001:db8:c::/96 plat_prefix 64:ff9b::/96
+add 00310 nat64lsn NAT64 ip4 from any to 192.0.2.64/27 in
+add 00320 nat64clat CLAT ip6 from 2001:db8:c::/96 to any out
+add 00999 allow ip from any to any
+EOF
+	# As an apply held back and then swapped back leaves a host: set
+	# 0's NAT64 used by its rules, another NAT64 and a CLAT in set 1.
+	echo NAT64 > set0.nat64lsn
+	echo NAT64 > set1.nat64lsn
+	echo CLAT > set1.nat64clat
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules -Q $(pwd)/fake-sysctl"
+	start_daemon
+
+	# What Apply needs, read: states kept, always; tables a set each
+	# only for kept rules with a table, as NAT64's instances are a set
+	# each whatever tables_sets says.
+	atf_check -o match:'"tunables":\[\{"name":"net.inet.ip.fw.dyn_keep_states","value":0,"want":1,"needed":true,"why":"the old rules are deleted once' \
+	    -o match:'\{"name":"net.inet.ip.fw.tables_sets","value":0,"want":1,"needed":false,' \
+	    "$JGC" -c "$SOCK" net ipfw
+	# Without dyn_keep_states: refused, saying why; ipfw is not run
+	# and nothing is written.
+	rm -f ipfw.log
+	atf_check -s exit:1 -o match:'Apply needs net.inet.ip.fw.dyn_keep_states=1, and it is 0: the old rules are deleted' \
+	    -o match:'Set it at once and in sysctl.conf, then apply again; nothing was written or loaded' \
+	    -o not-match:'tables_sets' "$JGC" -c "$SOCK" ipfw apply
+	atf_check test ! -e ipfw.log
+	atf_check test ! -e fw/ipfw.rules.arcana-load
+	# A table kept too: tables_sets is needed as well.
+	cp fw/ipfw.rules nat64.rules
+	printf 'table T1 create type addr\nadd 00020 allow ip from table(T1) to any\n' >> fw/ipfw.rules
+	atf_check -s exit:1 -o match:'dyn_keep_states=1, and it is 0' \
+	    -o match:'Apply needs net.inet.ip.fw.tables_sets=1, and it is 0: the kept rules. tables are made in set 1' \
+	    -o match:'Set them at once' "$JGC" -c "$SOCK" ipfw apply
+	atf_check -o match:'"name":"net.inet.ip.fw.tables_sets","value":0,"want":1,"needed":true' \
+	    "$JGC" -c "$SOCK" net ipfw
+	rm ipfw.log
+	fw_sysctl 1 0
+	atf_check -s exit:1 -o match:'tables_sets=1, and it is 0' \
+	    -o not-match:'dyn_keep_states=1' "$JGC" -c "$SOCK" ipfw apply
+	atf_check test ! -e ipfw.log
+	cp nat64.rules fw/ipfw.rules
+
+	# Set 1's NAT64 is used by a rule still, and the kept rules make
+	# one of its name there: refused, saying which; the CLAT nothing
+	# used is destroyed, nothing is loaded, set 0 is as it was.
+	echo 'nat64lsn NAT64' > busy
+	atf_check -s exit:1 -o match:"set 1's nat64lsn NAT64 could not be destroyed \(.*Device busy\)" \
+	    -o match:'Nothing was loaded: set 0, the running rules, is as it was' \
+	    "$JGC" -c "$SOCK" ipfw apply
+	atf_check -o not-match:'swap' -o not-match:'arcana-load' cat ipfw.log
+	atf_check test ! -e loaded.rules
+	atf_check -o inline:'NAT64\n' cat set0.nat64lsn
+	atf_check -o inline:'NAT64\n' cat set1.nat64lsn
+	atf_check -o empty cat set1.nat64clat
+
+	# Nothing uses them: set 1's are destroyed, the load makes the kept
+	# ones anew there, and once swapped in the old ones are destroyed
+	# after the old rules.  Set 1 has no object left; the job says
+	# what went.
+	rm busy
+	echo CLAT > set1.nat64clat
+	echo T9 > set1.table
+	: > ipfw.log
+	atf_check -o match:'done +ipfw apply' \
+	    -o match:"destroyed nat64lsn NAT64, nat64clat CLAT, table T9" \
+	    "$JGC" -t -c "$SOCK" ipfw apply
+	atf_check -o match:'^set 1 nat64lsn NAT64 create prefix4' \
+	    -o match:'^set 1 nat64clat CLAT create' \
+	    -o match:'^add 00310 set 1 nat64lsn NAT64' cat loaded.rules
+	atf_check -o inline:'2\n' grep -c '^ipfw -q set 1 nat64lsn NAT64 destroy$' ipfw.log
+	# The CLAT, which set 0 had none of, before the load alone.
+	atf_check -o inline:'1\n' grep -c '^ipfw -q set 1 nat64clat CLAT destroy$' ipfw.log
+	atf_check -o match:'^ipfw -q -f delete set 1$' cat ipfw.log
+	atf_check -o inline:'NAT64\n' cat set0.nat64lsn
+	atf_check -o inline:'CLAT\n' cat set0.nat64clat
+	atf_check -o empty cat set1.nat64lsn set1.nat64clat set1.table
+
+	# In safe mode and not confirmed: the old rules swapped in again
+	# with their objects, the new ones destroyed after their rules.
+	: > ipfw.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipfw apply
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'not confirmed' "$JGC" -c "$SOCK" jobs
+	atf_check -o inline:'2\n' grep -c 'set swap 0 1' ipfw.log
+	atf_check -o inline:'NAT64\n' cat set0.nat64lsn
+	atf_check -o empty cat set1.nat64lsn set1.nat64clat
+
+	# A table of another set (SD-WAN's) read in its own set.
+	atf_check -o match:'"tables":\[\{"name":"sw1_known","set":30,"type":"addr","entries":\[\{"key":"10.1.0.0/24","value":"0"\}\],"count":1\}\]' \
+	    "$JGC" -c "$SOCK" net ipfw
+
+	# NAT64 built into the kernel registers no module ipfw_nat64: its
+	# own sysctl says it is there.
+	if sysctl -n net.inet.ip.fw.nat64_direct_output >/dev/null 2>&1; then
+		atf_check -o match:'"modules":\{[^}]*"ipfw_nat64":true' \
+		    "$JGC" -c "$SOCK" net ipfw
+	elif ! kldstat -q -m ipfw_nat64; then
+		atf_check -o match:'"modules":\{[^}]*"ipfw_nat64":false' \
+		    "$JGC" -c "$SOCK" net ipfw
+	fi
+}
+firewall_apply_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case firewall cleanup
 firewall_head()
 {
@@ -10167,7 +10356,8 @@ esac
 exit 0
 EOS
 	chmod +x fake-ipfw
-	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules"
+	fw_sysctl 1 1
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules -Q $(pwd)/fake-sysctl"
 	start_daemon
 
 	# What the firewall has: each rule with its set and counters, one
@@ -10298,7 +10488,7 @@ add 01001 allow tcp from any to me6 22 in
 	atf_check -o match:'done +ipfw apply' "$JGC" -c "$SOCK" ipfw apply
 	atf_check -o inline:'ipfw -q set disable 1
 ipfw -q -f set 1 flush
-ipfw -q set 1 table all destroy
+ipfw set 1 nat64lsn all list
 ' sh -c 'head -3 ipfw.log'
 	atf_check -o match:'^ipfw -q .*/ipfw.rules.arcana-load$' \
 	    -o match:'^ipfw -q set swap 0 1$' \
@@ -12627,8 +12817,9 @@ EOS
 	atf_check -o match:'^# Kept.$' -o match:'^kern.ipc.somaxconn=4096$' \
 	    -o match:'^kern.corefile=/var/cores/%N core$' \
 	    -o not-match:'forwarding' -o not-match:'1024' cat root/etc/sysctl.conf
+	# (The firewall's read asks the sysctls Apply needs: read, not set.)
 	atf_check -o inline:'sysctl kern.ipc.somaxconn=4096\nsysctl kern.corefile=/var/cores/%N core\n' \
-	    cat kld.log
+	    sed '/^sysctl -n net.inet.ip.fw./d' kld.log
 	atf_check -o match:'"name":"kern.corefile","value":"/var/cores/%N core"' \
 	    -o not-match:'forwarding' "$JGC" -c "$SOCK" get -d running sysctl
 	# The kernel refuses one: the file as it was.
@@ -12652,7 +12843,7 @@ EOS
 	    '{"kept":[{"name":"kern.ipc.somaxconn","value":"4096"},{"name":"kern.corefile","value":"/var/cores/%N core"}]}'
 	atf_check "$JGC" -c "$SOCK" commit
 	atf_check cmp before root/etc/sysctl.conf
-	atf_check -o empty cat kld.log
+	atf_check -o empty sed '/^sysctl -n net.inet.ip.fw./d' kld.log
 }
 datastores_sysctl_cleanup()
 {
@@ -13155,6 +13346,7 @@ atf_init_test_cases()
 	atf_add_test_case l2
 	atf_add_test_case fw_trace
 	atf_add_test_case firewall
+	atf_add_test_case firewall_apply
 	atf_add_test_case observe
 	atf_add_test_case storage
 	atf_add_test_case notify
