@@ -938,7 +938,14 @@ after it
 A service's variables are moved under Arcana deliberately by
 arcana-services' convert action
 .Pq Nm arcanactl Cm services convert ,
-which says what it takes, or with dry-run would, by file and line.
+which says what it takes, or with dry-run would, by file and line,
+and given back by its release action
+.Pq Nm arcanactl Cm services release :
+the service's variables taken out of Arcana's file and each line of
+yours marked
+.Dq # taken by Arcana
+for one put back as it was, all or nothing; a variable with no such
+line is only dropped, and said so.
 Every file is put back where the kernel refuses the change; a route the
 table changed meanwhile is tried once more first.
 .Pp

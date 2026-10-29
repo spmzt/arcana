@@ -2453,6 +2453,8 @@ paths:
                         type: object
                         additionalProperties: { type: string }
                       unset: { type: array, items: { type: string } }
+                      accept: { type: array, maxItems: 8, items: { type: string },
+                        description: "For service-action's enable and disable and service-config, written to Arcana's rc.conf file as a commit is: the warnings accepted, rc-conf-files and rc-conf-conflict; another kind refuses it." }
                       packages: { type: array, items: { type: string },
                         description: For pkg-upgrade and pkg-install. }
                       verb: { type: string, description: "For ipsec, init, start, conn, unconn, up or down." }

@@ -5270,6 +5270,9 @@ spec_free(struct arc_job_spec *sp)
 	for (i = 0; i < sp->names.n; i++)
 		free((char *)(uintptr_t)sp->names.v[i]);
 	free((void *)(uintptr_t)sp->names.v);
+	for (i = 0; i < sp->accept.n; i++)
+		free((char *)(uintptr_t)sp->accept.v[i]);
+	free((void *)(uintptr_t)sp->accept.v);
 	memset(sp, 0, sizeof(*sp));
 }
 
@@ -5322,6 +5325,21 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		case JM_BOOL:
 			*(bool *)at = ucl_flag(o, m->field);
 			break;
+		}
+	}
+	/* The warnings a service's rc.conf change accepts, as a commit's:
+	 * words, as many as there are. */
+	if ((names = ucl_object_lookup(o, "accept")) != NULL) {
+		if (ucl_object_type(names) != UCL_ARRAY ||
+		    ucl_array_size(names) > 8)
+			return ("accept is a list of warnings, 8 at most");
+		nv = xcalloc(ucl_array_size(names) + 1, sizeof(*nv));
+		sp->accept.v = nv;
+		for (i = 0; i < ucl_array_size(names); i++) {
+			if ((a = ucl_object_tostring(ucl_array_find_index(names,
+			    (unsigned int)i))) == NULL)
+				return ("accept is a list of warnings");
+			nv[sp->accept.n++] = xstrdup(a);
 		}
 	}
 	/* pkg -4 or -6, for a pkg-upgrade: one of the two. */

@@ -131,6 +131,100 @@ module arcana-services {
         }
       }
     }
+    action release {
+      nacm:default-deny-all;
+      description
+        "convert's inverse: the named services' rc.conf configuration
+         given back to your files.  Each <name>_* variable is removed
+         from Arcana's file (/usr/local/etc/rc.conf.d/arcana), and every
+         line of yours convert commented out for one ('#var=\"value\"
+         # taken by Arcana') put back as it was, in the files rc(8)
+         reads for the service; one convert took off a shared line
+         comes back on a line of its own.  A variable with no line of
+         yours to put back is only dropped: its value falls back to
+         what your files or the defaults say.  All or nothing: a marked
+         line that would not read back as it was refuses the request,
+         and failing, every file is put back.";
+      input {
+        leaf-list service {
+          type string {
+            pattern '[A-Za-z0-9_][A-Za-z0-9_.-]*';
+          }
+          min-elements 1;
+          description
+            "The services to give back.";
+        }
+        leaf dry-run {
+          type boolean;
+          default false;
+          description
+            "Say what would be given back, writing nothing.";
+        }
+      }
+      output {
+        list service {
+          key "name";
+          description
+            "A service named, each variable of it Arcana's file set or
+             your files had commented out for it; none, nothing to give
+             back.";
+          leaf name {
+            type string;
+            description
+              "The service's name.";
+          }
+          list variable {
+            key "name";
+            description
+              "A variable given back, or to be.";
+            leaf name {
+              type string;
+              description
+                "The variable.";
+            }
+            leaf arcana-value {
+              type string;
+              description
+                "Its value in Arcana's file, removed; absent when
+                 Arcana's file did not set it.";
+            }
+            list restored {
+              key "file line";
+              description
+                "A line of yours put back.";
+              leaf file {
+                type string;
+                description
+                  "The file.";
+              }
+              leaf line {
+                type uint32;
+                description
+                  "Its line there.";
+              }
+              leaf value {
+                type string;
+                description
+                  "Its value, as rc(8) reads it; absent when not a
+                   literal.";
+              }
+            }
+            leaf dropped {
+              type string;
+              description
+                "Present when no line of yours was put back: what its
+                 value falls back to.";
+            }
+            leaf differs {
+              type string;
+              description
+                "Present when the value rc(8) reads now is not
+                 Arcana's: both values.";
+            }
+          }
+        }
+      }
+    }
     list service {
       key "name";
       description

@@ -1987,6 +1987,16 @@ attribute-sets:
           none.
         checks:
           max-len: 16
+      - name: accept
+        type: text
+        multi-attr: true
+        doc: |
+          For service-action's enable and disable and service-config,
+          written to Arcana's rc.conf file as a commit is: the warnings
+          accepted (rc-conf-files, rc-conf-conflict), a commit's
+          accept.
+        checks:
+          max-len: 32
   - name: job
     doc: |
       A job, as the agent's queue keeps it; arcana-jobs has it now:

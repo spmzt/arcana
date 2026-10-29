@@ -1568,6 +1568,16 @@ module arcana {
          of the FreeBSD-base repository, the jail's own release when
          none.";
     }
+    leaf-list accept {
+      type string {
+        length "0..32";
+      }
+      description
+        "For service-action's enable and disable and service-config,
+         written to Arcana's rc.conf file as a commit is: the warnings
+         accepted (rc-conf-files, rc-conf-conflict), a commit's
+         accept.";
+    }
   }
 
   grouping set-job {

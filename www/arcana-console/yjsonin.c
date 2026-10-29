@@ -443,3 +443,158 @@ yjson_edit_tree(cbl_conn *conn, const cbl_dtree *t,
 	cbl_msg_free(rep);
 	return (error);
 }
+
+/*
+ * Subtree filters (RFC 6241 section 6) in RFC 7951's JSON, as the
+ * YANG-CBOR of cblink's WIRE-FORMAT.md section 7.6.1 has them: null a
+ * selection node, of any node; an object a containment node (empty, a
+ * selection node); a list an array of them; a leaf's value a content
+ * match node; a leaf-list's array of values one each.
+ */
+static int	fmembers(cbl_dfnode *, const struct cbl_ynode *,
+		    const ucl_object_t *, cbl_yarena *, int, char *, size_t);
+
+static int
+fnode(cbl_dfnode *parent, const struct cbl_ynode *sn, const ucl_object_t *v,
+    cbl_yarena *a, int depth, char *why, size_t len)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	cbl_dfnode		*made;
+	void			*val;
+	int			 error;
+
+	if (depth > DEPTH_MAX)
+		return (fail(why, len, "%s: nested too deep", sn->name));
+	if (ucl_object_type(v) == UCL_NULL || (sn->kind == CBL_YN_LEAF &&
+	    sn->type->kind == CBL_YT_EMPTY && ucl_object_type(v) ==
+	    UCL_ARRAY)) {
+		if ((error = cbl_dfilter_add(parent, sn, NULL, NULL)) != 0)
+			return (fail(why, len, "%s: %s", sn->name,
+			    strerror(error)));
+		return (0);
+	}
+	switch (sn->kind) {
+	case CBL_YN_CONTAINER:
+	case CBL_YN_NOTIF:
+		if (ucl_object_type(v) != UCL_OBJECT)
+			return (fail(why, len, "%s: not an object", sn->name));
+		if ((error = cbl_dfilter_add(parent, sn, NULL, &made)) != 0)
+			return (fail(why, len, "%s: %s", sn->name,
+			    strerror(error)));
+		return (fmembers(made, sn, v, a, depth, why, len));
+	case CBL_YN_LIST:
+		if (ucl_object_type(v) != UCL_ARRAY)
+			return (fail(why, len, "%s: not an array", sn->name));
+		it = NULL;
+		while ((e = ucl_object_iterate(v, &it, true)) != NULL) {
+			if (ucl_object_type(e) != UCL_OBJECT)
+				return (fail(why, len, "%s: an entry not an "
+				    "object", sn->name));
+			if ((error = cbl_dfilter_add(parent, sn, NULL,
+			    &made)) != 0)
+				return (fail(why, len, "%s: %s", sn->name,
+				    strerror(error)));
+			if ((error = fmembers(made, sn, e, a, depth, why,
+			    len)) != 0)
+				return (error);
+		}
+		return (0);
+	case CBL_YN_LEAF:
+		if ((error = value_of(sn, v, a, &val, why, len)) != 0)
+			return (error);
+		if ((error = cbl_dfilter_add(parent, sn, val, NULL)) != 0)
+			return (fail(why, len, "%s: %s", sn->name,
+			    strerror(error)));
+		return (0);
+	case CBL_YN_LEAFLIST:
+		if (ucl_object_type(v) != UCL_ARRAY)
+			return (fail(why, len, "%s: not an array", sn->name));
+		it = NULL;
+		while ((e = ucl_object_iterate(v, &it, true)) != NULL) {
+			if ((error = value_of(sn, e, a, &val, why, len)) != 0)
+				return (error);
+			if ((error = cbl_dfilter_add(parent, sn, val,
+			    NULL)) != 0)
+				return (fail(why, len, "%s: %s", sn->name,
+				    strerror(error)));
+		}
+		return (0);
+	default:
+		return (fail(why, len, "%s: null alone selects it", sn->name));
+	}
+}
+
+static int
+fmembers(cbl_dfnode *made, const struct cbl_ynode *sn, const ucl_object_t *v,
+    cbl_yarena *a, int depth, char *why, size_t len)
+{
+	const struct cbl_ynode	*c;
+	const ucl_object_t	*m;
+	ucl_object_iter_t	 it;
+	int			 error;
+
+	it = NULL;
+	while ((m = ucl_object_iterate(v, &it, true)) != NULL) {
+		if ((c = child_named(sn, ucl_object_key(m))) == NULL)
+			return (fail(why, len, "%s: no member %s", sn->name,
+			    ucl_object_key(m)));
+		if ((error = fnode(made, c, m, a, depth + 1, why, len)) != 0)
+			return (error);
+	}
+	return (0);
+}
+
+int
+yjson_subtree(const struct cbl_yschema *s, const ucl_object_t *v,
+    cbl_dfilter **out, char *why, size_t len)
+{
+	const struct cbl_ynode	*top;
+	const ucl_object_t	*m;
+	ucl_object_iter_t	 it;
+	const char		*key, *colon;
+	cbl_yarena		*a;
+	cbl_dfilter		*f;
+	int			 error = 0;
+
+	if (why != NULL && len > 0)
+		why[0] = '\0';
+	*out = NULL;
+	if (ucl_object_type(v) != UCL_OBJECT)
+		return (fail(why, len, "a subtree filter is an object"));
+	if ((f = cbl_dfilter_new(s)) == NULL || (a = cbl_yarena_new()) ==
+	    NULL) {
+		cbl_dfilter_free(f);
+		return (ENOMEM);
+	}
+	it = NULL;
+	while (error == 0 && (m = ucl_object_iterate(v, &it, true)) != NULL) {
+		key = ucl_object_key(m);
+		top = NULL;
+		if ((colon = strchr(key, ':')) != NULL)
+			for (uint32_t i = 0; top == NULL && i < s->nmod; i++)
+				if (strlen(s->mod[i]->name) == (size_t)(colon -
+				    key) && strncmp(s->mod[i]->name, key,
+				    (size_t)(colon - key)) == 0)
+					for (uint32_t k = 0; top == NULL &&
+					    k < s->mod[i]->ntop; k++)
+						if (strcmp(s->mod[i]->top[k]->name,
+						    colon + 1) == 0)
+							top = s->mod[i]->top[k];
+		if (top == NULL || (top->kind != CBL_YN_CONTAINER &&
+		    top->kind != CBL_YN_LIST && top->kind != CBL_YN_LEAF &&
+		    top->kind != CBL_YN_LEAFLIST && top->kind != CBL_YN_NOTIF))
+			error = fail(why, len, "%s: no node of the models "
+			    "(module:name)", key);
+		else
+			error = fnode(cbl_dfilter_root(f), top, m, a, 0, why,
+			    len);
+	}
+	cbl_yarena_free(a);
+	if (error != 0) {
+		cbl_dfilter_free(f);
+		return (error);
+	}
+	*out = f;
+	return (0);
+}

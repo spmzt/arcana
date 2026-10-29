@@ -3229,8 +3229,12 @@ ATF_TC_BODY(workflows, tc)
 		    "needs action" },
 		{ "{\"kind\":\"service-action\",\"service\":\"sshd\","
 		    "\"action\":\"explode\"}", "one of start|stop" },
+		/* A commit's warnings are a service's rc.conf change's. */
+		{ "{\"kind\":\"jail-action\",\"jail\":\"web\","
+		    "\"action\":\"start\",\"accept\":[\"rc-conf-files\"]}",
+		    "has no accept" },
 	};
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < (int)nitems(bad); i++) {
 		snprintf(body, sizeof(body), "{\"name\":\"bad\",\"hosts\":[\"%s\"],"
 		    "\"steps\":[{\"id\":\"a\",\"job\":%s}]}", sid, bad[i][0]);
 		http("POST", "/api/workflows", body, &r);

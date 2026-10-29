@@ -51,8 +51,10 @@ struct qjob {
 	struct addr_state	 undo_addr;	/* if-set addressing: as it was */
 	const char		*undo_addr_rec;	/* its record for was, or NULL */
 	const char		*made;		/* if-create: the name it got */
-	struct arc_variable	*undo_vars;	/* service-config: as they were */
+	struct arc_variable	*undo_vars;	/* jail-allow: as they were */
 	size_t			 undo_nvars;
+	struct rca		*undo_rca;	/* a service's rc.conf: the files
+						 * as they were (rcarcana.c) */
 	const char		*undo_value;	/* sysctl: the kernel's before */
 	const char		*undo_conf;	/* sysctl: sysctl.conf's, or NULL */
 	const char		*undo_gateway;	/* route deleted: as listed */
@@ -463,6 +465,14 @@ spec_copy(struct arc_job_spec *d, const struct arc_job_spec *s)
 			names[i] = xdup(s->names.v[i]);
 		d->names.v = names;
 	}
+	d->accept.v = NULL;
+	if (s->accept.n > 0) {
+		if ((names = calloc(s->accept.n, sizeof(*names))) == NULL)
+			err(1, "calloc");
+		for (i = 0; i < s->accept.n; i++)
+			names[i] = xdup(s->accept.v[i]);
+		d->accept.v = names;
+	}
 }
 
 static void
@@ -478,6 +488,9 @@ job_free(struct qjob *j)
 	for (i = 0; i < j->spec.names.n; i++)
 		free((char *)(uintptr_t)j->spec.names.v[i]);
 	free((void *)(uintptr_t)j->spec.names.v);
+	for (i = 0; i < j->spec.accept.n; i++)
+		free((char *)(uintptr_t)j->spec.accept.v[i]);
+	free((void *)(uintptr_t)j->spec.accept.v);
 	free((char *)(uintptr_t)j->spec.jail);
 	free((char *)(uintptr_t)j->spec.address);
 	free((char *)(uintptr_t)j->spec.interface);
@@ -724,6 +737,10 @@ undo_forget(struct qjob *j)
 		}
 	j->undo_nfiles = 0;
 	j->undo_nrc = 0;
+	if (j->undo_rca != NULL) {
+		service_job_forget(j->undo_rca);
+		j->undo_rca = NULL;
+	}
 	if (j->undo_if != NULL) {
 		ucl_object_unref(j->undo_if);
 		j->undo_if = NULL;
@@ -766,7 +783,7 @@ static const char *
 undo_prepare(struct qjob *j)
 {
 	const struct arc_job_spec	*sp;
-	const char			*v, *e;
+	const char			*e;
 	char				 descr[256];
 	size_t				 i;
 	bool				 running, enabled, up;
@@ -992,13 +1009,15 @@ undo_prepare(struct qjob *j)
 			    sp->address);
 		break;
 	case ARC_JOB_KIND_SERVICE_ACTION:
+		/* Enabled or disabled: the files the change keeps
+		 * (service_job_rc()) are what is put back. */
+		if (sp->service_action == ARC_SERVICE_ACTION_ENABLE ||
+		    sp->service_action == ARC_SERVICE_ACTION_DISABLE)
+			break;
 		service_state(&j->w, sp->service, &running, &enabled);
 		if ((sp->service_action == ARC_SERVICE_ACTION_START &&
 		    running) || (sp->service_action ==
-		    ARC_SERVICE_ACTION_STOP && !running) ||
-		    (sp->service_action == ARC_SERVICE_ACTION_ENABLE &&
-		    enabled) || (sp->service_action ==
-		    ARC_SERVICE_ACTION_DISABLE && !enabled))
+		    ARC_SERVICE_ACTION_STOP && !running))
 			j->undo_none = true;
 		break;
 	case ARC_JOB_KIND_IF_SET:
@@ -1010,17 +1029,6 @@ undo_prepare(struct qjob *j)
 			j->undo_addr_rec = if_addr_record_get(&j->w,
 			    sp->interface);
 		}
-		break;
-	case ARC_JOB_KIND_SERVICE_CONFIG:
-		j->undo_vars = wcalloc(&j->w, sp->variables.n + 1,
-		    sizeof(*j->undo_vars));
-		for (i = 0; i < sp->variables.n; i++) {
-			v = rc_get(&j->w, sp->variables.v[i].key);
-			j->undo_vars[i].key = sp->variables.v[i].key;
-			j->undo_vars[i].value = v;
-			j->undo_vars[i].remove = v == NULL;
-		}
-		j->undo_nvars = sp->variables.n;
 		break;
 	case ARC_JOB_KIND_SPEEDER:
 		/* The host's relay alone (a jail's is refused as safe):
@@ -1168,8 +1176,6 @@ undo(struct qjob *j)
 	struct arc_address_req		 dq;
 	struct arc_address_rsp		 dr;
 	struct service_action_rsp	 sar;
-	struct service_config_req	 scq;
-	struct service_config_rsp	 scr;
 	struct route_more		 rm;
 	const struct arc_job_spec	*sp;
 	const char			*e;
@@ -1374,6 +1380,10 @@ undo(struct qjob *j)
 		e = dr.error;
 		break;
 	case ARC_JOB_KIND_SERVICE_ACTION:
+		if (j->undo_rca != NULL) {
+			rc = service_job_undo(&j->w, j->undo_rca, &e);
+			break;
+		}
 		memset(&sar, 0, sizeof(sar));
 		do_service_action(&j->w, sp->service,
 		    svc_reverse[sp->service_action], &sar);
@@ -1381,14 +1391,8 @@ undo(struct qjob *j)
 		e = sar.error;
 		break;
 	case ARC_JOB_KIND_SERVICE_CONFIG:
-		memset(&scq, 0, sizeof(scq));
-		memset(&scr, 0, sizeof(scr));
-		scq.service = sp->service;
-		scq.variables.v = j->undo_vars;
-		scq.variables.n = j->undo_nvars;
-		do_service_config(&j->w, &scq, &scr);
-		rc = scr.ok ? 0 : -1;
-		e = scr.error;
+		rc = j->undo_rca != NULL ? service_job_undo(&j->w, j->undo_rca,
+		    &e) : 0;
 		break;
 	case ARC_JOB_KIND_ROUTE:
 		if (j->undo_gateway != NULL) {
@@ -1463,8 +1467,6 @@ run(struct qjob *j, bool lane)
 	struct arc_address_req		 dq;
 	struct arc_address_rsp		 dr;
 	struct service_action_rsp	 sar;
-	struct service_config_req	 scq;
-	struct service_config_rsp	 scr;
 	struct route_more		 rm;
 	struct pkg_upgrade		 uq;
 	struct pkg_upgraded		 ur;
@@ -1522,6 +1524,15 @@ run(struct qjob *j, bool lane)
 		error = dr.error;
 		break;
 	case ARC_JOB_KIND_SERVICE_ACTION:
+		/* Enabled or disabled: Arcana's rc.conf file, as a commit
+		 * writes it. */
+		if (sp->service_action == ARC_SERVICE_ACTION_ENABLE ||
+		    sp->service_action == ARC_SERVICE_ACTION_DISABLE) {
+			error = NULL;
+			ok = service_job_rc(&j->w, sp, sp->safe ? &j->undo_rca :
+			    NULL, &error) == 0;
+			break;
+		}
 		memset(&sar, 0, sizeof(sar));
 		do_service_action(&j->w, sp->service, sp->service_action, &sar);
 		ok = sar.ok;
@@ -1739,14 +1750,9 @@ run(struct qjob *j, bool lane)
 		    sp->has_fib ? sp->fib : 0, &rm, sp->persist, &error) == 0;
 		break;
 	case ARC_JOB_KIND_SERVICE_CONFIG:
-		memset(&scq, 0, sizeof(scq));
-		memset(&scr, 0, sizeof(scr));
-		scq.service = sp->service;
-		scq.variables.v = sp->variables.v;
-		scq.variables.n = sp->variables.n;
-		do_service_config(&j->w, &scq, &scr);
-		ok = scr.ok;
-		error = scr.error;
+		error = NULL;
+		ok = service_job_rc(&j->w, sp, sp->safe ? &j->undo_rca : NULL,
+		    &error) == 0;
 		break;
 	default:
 		memset(&uq, 0, sizeof(uq));

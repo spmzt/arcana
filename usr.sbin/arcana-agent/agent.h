@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.236.0"
+#define	ARCANA_AGENT_VERSION	"0.237.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -515,7 +515,8 @@ int		 do_address(struct work *, const struct arc_address_req *,
  * not and running or not (do_services()); one changed (an action,
  * ARC_SERVICE_ACTION_*) and as it is after; one's variables set or
  * unset through sysrc(8) and read back, with what the script says of
- * itself; one read as it is now (service_read()).
+ * itself; one read as it is now (service_read()).  The jobs' enable,
+ * disable and variables are service_job_rc()'s, not sysrc(8)'s.
  */
 struct services_rsp {
 	bool		 has_ok;
@@ -566,6 +567,18 @@ int		 do_service_config(struct work *,
 int		 service_read(struct work *, const char *,
 		    struct service_config_rsp *);
 void		 service_state(struct work *, const char *, bool *, bool *);
+/*
+ * ira/ysvcedit.c: a job's service-action enable or disable, or its
+ * service-config, written as a commit writes it, to Arcana's rc.conf
+ * file (rcarcana.c), the spec's accept the warnings accepted; for a
+ * safe job the files as they were kept in *xp, put back by
+ * service_job_undo(), let go by service_job_forget().
+ */
+struct rca;
+int		 service_job_rc(struct work *, const struct arc_job_spec *,
+		    struct rca **, const char **);
+int		 service_job_undo(struct work *, struct rca *, const char **);
+void		 service_job_forget(struct rca *);
 
 /* invidia/network.c */
 int		 do_network(struct work *, uint8_t, uint8_t, const char *,

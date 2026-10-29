@@ -87,7 +87,7 @@ ARC_YFEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-yang-library: -F ietf-datastores: \
 		-F ietf-alarms:alarm-summary,alarm-history -F arcana-alarms: \
 		-F iana-hardware: -F ietf-hardware:hardware-sensor \
-		-F ietf-subscribed-notifications:configured,xpath,replay \
+		-F ietf-subscribed-notifications:configured,xpath,replay,subtree \
 		-F ietf-yang-push:on-change \
 		-F ietf-netconf-acm: -F ietf-netconf:candidate,confirmed-commit \
 		-F ietf-origin: -F ietf-defaults: -F ietf-yang-schema-mount: \
@@ -109,7 +109,8 @@ SRCS+=		ymodel.h ymodel_schema.c
 CLEANFILES+=	ymodel.h ymodel_schema.c
 ymodel_schema.c: ymodel.h
 ymodel.h: ${ARC_YMODS:@m@${ARC_YANG_DIR}/${m}.yang ${ARC_YANG_DIR}/${m}.sid@} \
-    ${ARC_YIMPORTS:@m@${ARC_YANG_DIR}/${m}.sid@} ${CBLINK_GEN}
+    ${ARC_YIMPORTS:@m@${ARC_YANG_DIR}/${m}.sid@} ${CBLINK_GEN} \
+    ${.PARSEDIR}/arcana.yang.mk
 	cd ${ARC_YANG_DIR} && ${CBLINK_GEN} -m ${_arc_yparts} -b ymodel \
 	    -o ${.OBJDIR} ${ARC_YFEATS} \
 	    ${ARC_YMODS:@m@-s ${m}.sid@} ${ARC_YIMPORTS:@m@-s ${m}.sid@} \

@@ -2756,6 +2756,160 @@ yang_subscribe_cleanup()
 	stop_daemon
 }
 
+# Subtree filters (RFC 6241 section 6) on a subscription, YANG-CBOR
+# anydata on the wire (cblink's WIRE-FORMAT.md 7.6.1): one interface's
+# counters, the others' nothing.
+atf_test_case yang_subscribe_subtree cleanup
+yang_subscribe_subtree_head()
+{
+	atf_set "descr" "A subscription's subtree filter: one interface's" \
+	    "counters alone; the stream's events of one kind; the filter" \
+	    "listed; a bad one refused"
+}
+yang_subscribe_subtree_body()
+{
+	local n
+
+	n=$(ifconfig -l | wc -w | tr -d ' ')
+	[ "$n" -ge 2 ] || atf_skip "one interface alone here"
+	start_daemon
+	atf_check -o save:push "$JGC" -c "$SOCK" subscribe -n 2 -p 0.2 \
+	    -f '{"ietf-interfaces:interfaces":{"interface":[{"name":"lo0","statistics":null}]}}'
+	atf_check -o match:'^2$' sh -c 'wc -l < push | tr -d " "'
+	atf_check -o match:'"datastore-contents":\{"ietf-interfaces:interfaces":\{"interface":\[\{"name":"lo0","statistics":\{"discontinuity-time":"[^"]+",.*"in-octets":"[0-9]+",[^{}]*\}\}\]\}\},"id":[0-9]+\}' \
+	    head -1 push
+	# lo0's alone: one name in each, nothing but the counters.
+	atf_check -o match:'^1$' sh -c 'head -1 push | grep -o "\"name\":" | wc -l | tr -d " "'
+	atf_check -o match:'^1$' sh -c 'tail -1 push | grep -o "\"name\":" | wc -l | tr -d " "'
+	atf_check -o not-match:'oper-status|"type"|"enabled"' cat push
+	# Listed with its filter, as RFC 7951 has the anydata.
+	"$JGC" -c "$SOCK" subscribe -p 30 \
+	    -f '{"ietf-interfaces:interfaces":{"interface":[{"name":"lo0","statistics":null}]}}' \
+	    > /dev/null 2>&1 &
+	echo $! > sub.pid
+	sleep 0.5
+	atf_check -o match:'"ietf-yang-push:datastore-subtree-filter":\{"ietf-interfaces:interfaces":\{"interface":\[\{"name":"lo0","statistics":null\}\]\}\}' \
+	    "$JGC" -c "$SOCK" get subscriptions
+	# The NETCONF stream: the events of a job alone, whole.
+	"$JGC" -c "$SOCK" subscribe -n 1 -f '{"arcana-events:event":{"job":{}}}' \
+	    > stream.out 2>&1 &
+	echo $! > sub2.pid
+	sleep 0.5
+	atf_check -o ignore "$(atf_get_srcdir)/ysubmit" "$SOCK" arcw0
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		kill -0 "$(cat sub2.pid)" 2>/dev/null || break
+		sleep 0.5
+	done
+	atf_check -o match:'^1$' sh -c 'wc -l < stream.out | tr -d " "'
+	atf_check -o match:'"arcana-events:event":\{.*"job":\{' cat stream.out
+	# What is no node, or no value of its leaf: refused.
+	atf_check -s exit:1 -e match:'no member nosuch' -o empty \
+	    "$JGC" -c "$SOCK" subscribe -p 0.2 \
+	    -f '{"ietf-interfaces:interfaces":{"nosuch":null}}'
+	atf_check -s exit:1 -e match:"'x' is not a value" -o empty \
+	    "$JGC" -c "$SOCK" subscribe -p 0.2 \
+	    -f '{"ietf-interfaces:interfaces":{"interface":[{"enabled":"x"}]}}'
+	atf_check -s exit:2 -e match:usage -o empty \
+	    "$JGC" -c "$SOCK" subscribe -p 0.2 -x /ietf-interfaces:interfaces \
+	    -f '{"ietf-interfaces:interfaces":null}'
+}
+yang_subscribe_subtree_cleanup()
+{
+	for f in sub.pid sub2.pid; do
+		[ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null
+	done
+	stop_daemon
+}
+
+# arcanactl set (PLAN-SDN-YANG 3.6.1): a node by its api-path, an EDIT
+# of the candidate, then a confirmed commit, confirmed.
+atf_test_case yang_set cleanup
+yang_set_head()
+{
+	atf_set "descr" "arcanactl set: a leaf, a list entry and a delete" \
+	    "by an EDIT of the candidate and a confirmed commit; -n; libxo"
+}
+yang_set_body()
+{
+	start_daemon
+	# A leaf.
+	atf_check -o inline:'/ietf-netconf-acm:nacm/enable-external-groups: set in candidate, committed and confirmed\n' \
+	    "$JGC" -c "$SOCK" set /ietf-netconf-acm:nacm/enable-external-groups false
+	atf_check -o match:'"enable-external-groups":false' \
+	    "$JGC" -c "$SOCK" get -d running nacm
+	# A list entry, its key the path's; then a leaf of it.
+	atf_check -o match:'committed and confirmed' "$JGC" -c "$SOCK" set \
+	    /ietf-netconf-acm:nacm/groups/group=ops '{"user-name":["alice"]}'
+	atf_check -o match:'"name":"ops","user-name":\["alice"\]' \
+	    "$JGC" -c "$SOCK" get -d running nacm
+	atf_check -o match:'committed and confirmed' "$JGC" -c "$SOCK" set \
+	    /ietf-netconf-acm:nacm/groups/group=ops/user-name bob
+	atf_check -o match:'"name":"ops","user-name":\["alice","bob"\]' \
+	    "$JGC" -c "$SOCK" get -d running nacm
+	# -n: left in the candidate; a commit then puts it in use.
+	atf_check -o inline:'/ietf-netconf-acm:nacm/groups/group=ops/user-name=alice: delete in candidate\n' \
+	    "$JGC" -c "$SOCK" set -n -x /ietf-netconf-acm:nacm/groups/group=ops/user-name=alice
+	atf_check -o match:'"user-name":\["bob"\]' \
+	    "$JGC" -c "$SOCK" get -d candidate nacm
+	atf_check -o match:'"user-name":\["alice","bob"\]' \
+	    "$JGC" -c "$SOCK" get -d running nacm
+	# A candidate of changes of its own is not committed by set.
+	atf_check -s exit:1 -e match:'the candidate has changes of its own' \
+	    "$JGC" -c "$SOCK" set /ietf-netconf-acm:nacm/enable-external-groups true
+	atf_check -o ignore "$JGC" -c "$SOCK" commit
+	# A delete, and the libxo JSON.
+	atf_check -o match:'^\{"arcana": \{"set": \{"path":"/ietf-netconf-acm:nacm/groups/group=ops","operation":"delete","datastore":"candidate","committed":true,"confirmed":true\}\}\}$' \
+	    "$JGC" --libxo json -c "$SOCK" set -x /ietf-netconf-acm:nacm/groups/group=ops
+	atf_check -o not-match:'"name":"ops"' "$JGC" -c "$SOCK" get -d running nacm
+	atf_check -s exit:1 -e match:'group: not there' \
+	    "$JGC" -c "$SOCK" set -x /ietf-netconf-acm:nacm/groups/group=ops
+	# With -s, committed and left for you to confirm.
+	atf_check -o match:'committed$' -o match:'confirm within 600 seconds: arcanactl commit -i [0-9a-f]{32}' \
+	    "$JGC" -s -c "$SOCK" set /ietf-netconf-acm:nacm/enable-external-groups true
+}
+yang_set_cleanup()
+{
+	stop_daemon
+}
+
+# What set is refused: NACM's write rules, a must, running itself, a
+# path or value that is none.
+atf_test_case yang_set_refused cleanup
+yang_set_refused_head()
+{
+	atf_set "descr" "arcanactl set refused: NACM, a must, running, a" \
+	    "path and a value that are none; the candidate left as running"
+}
+yang_set_refused_body()
+{
+	start_daemon
+	"$JGC" -c "$SOCK" get -d running nacm > before.json
+	# NACM's default: another user writes nothing.
+	atf_check -s exit:1 -e match:'access denied' \
+	    "$JGC" -c "$SOCK" -u bob set /ietf-netconf-acm:nacm/enable-external-groups false
+	# A must: a FIB cannot be disabled.
+	atf_check -s exit:1 -e match:'a FIB cannot be disabled' \
+	    "$JGC" -c "$SOCK" set -n /ietf-network-instance:network-instances/network-instance=fib9 \
+	    '{"enabled":false,"vrf-root":{}}'
+	# Running is changed by a confirmed commit of the candidate alone.
+	atf_check -s exit:1 -e match:'confirmed commit of the candidate' \
+	    "$JGC" -c "$SOCK" set -d running /ietf-netconf-acm:nacm/enable-external-groups false
+	atf_check -s exit:1 -e match:'nosuch: no configuration node there' \
+	    "$JGC" -c "$SOCK" set /ietf-netconf-acm:nacm/nosuch 1
+	atf_check -s exit:1 -e match:"'maybe' is not a value" \
+	    "$JGC" -c "$SOCK" set /ietf-netconf-acm:nacm/enable-external-groups maybe
+	atf_check -s exit:1 -e match:'a key is the entry.s name' \
+	    "$JGC" -c "$SOCK" set /ietf-netconf-acm:nacm/groups/group=ops/name x
+	atf_check -s exit:2 -e match:'2 keys|1 keys' \
+	    "$JGC" -c "$SOCK" set /ietf-netconf-acm:nacm/groups/group=a,b '{}'
+	atf_check -o file:before.json "$JGC" -c "$SOCK" get -d running nacm
+	atf_check -o file:before.json "$JGC" -c "$SOCK" get -d candidate nacm
+}
+yang_set_refused_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case yang_actions cleanup
 yang_actions_head()
 {
@@ -3595,6 +3749,11 @@ jobs_head()
 }
 jobs_body()
 {
+	# A service enabled: Arcana's rc.conf file under the root.
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'ntpd_enable="NO"\n' > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
 	start_daemon
 	# A slow job, then two behind it; every client leaves at once.
 	touch slow
@@ -3621,7 +3780,7 @@ jobs_body()
 	atf_check -o match:'^ +1 done ' -o match:'^ +2 done ' \
 	    -o match:'^ +3 cancelled ' "$JGC" -c "$SOCK" jobs
 	atf_check test -f running.sshd
-	atf_check -o match:'^ntpd_enable="NO"' cat rc.conf
+	atf_check -s exit:1 test -e root/usr/local/etc/rc.conf.d/arcana
 	# A job that fails says why, and the next still runs.
 	rm slow
 	touch fail
@@ -3629,8 +3788,21 @@ jobs_body()
 	atf_check -o ignore "$JGC" -q -c "$SOCK" service ntpd enable
 	atf_check -s exit:1 -o match:'^ +4 failed +start db: jail exited' \
 	    "$JGC" -c "$SOCK" job -w 4
-	atf_check -o match:'^ +5 done ' "$JGC" -c "$SOCK" job -w 5
-	atf_check -o match:'^ntpd_enable="YES"' cat rc.conf
+	# Enabled as a commit writes it: refused until its warnings are
+	# accepted, -a as a commit's; then Arcana's file has it, the
+	# user's line commented out.
+	atf_check -s exit:1 -o match:'^ +5 failed .*accept rc-conf-files' \
+	    "$JGC" -c "$SOCK" job -w 5
+	atf_check -o inline:'ntpd_enable="NO"\n' cat root/etc/rc.conf
+	atf_check -o ignore "$JGC" -q -c "$SOCK" service -a rc-conf-files \
+	    -a rc-conf-conflict ntpd enable
+	atf_check -o match:'^ +6 done ' "$JGC" -c "$SOCK" job -w 6
+	atf_check -o match:'^ntpd_enable="YES"$' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^#ntpd_enable="NO"  # taken by Arcana$' \
+	    -o match:'^rc_conf_files=".*/usr/local/etc/rc.conf.d/arcana"$' \
+	    cat root/etc/rc.conf
+	atf_check -o not-match:'ntpd' cat sysrc.log
 	# What a job may be is checked when it is queued.
 	atf_check -s exit:1 -e match:'invalid jail name' \
 	    "$JGC" -q -c "$SOCK" start ../x
@@ -6176,6 +6348,14 @@ safe_mode_body()
 {
 	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
 	chmod +x fake-ifconfig
+	# A service's rc.conf is Arcana's file under the root, as a
+	# commit writes it; the rest sysrc(8)'s ./rc.conf.
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'rc_conf_files="/etc/rc.conf /etc/rc.conf.local /usr/local/etc/rc.conf.d/arcana"\nsshd_flags="-4"\n' \
+	    > root/etc/rc.conf
+	cp root/etc/rc.conf rc.conf.root
+	DAEMON_ARGS="--root $(pwd)/root"
 	start_daemon
 
 	# A client that waits for the job is heard from again: it stays.
@@ -6255,8 +6435,8 @@ safe_mode_body()
 	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" interface gif4 \
 	    create tunnel 192.0.2.1 192.0.2.2
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" service sshd stop
-	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" service sshd \
-	    config sshd_flags=-6 sshd_extra=yes
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" service \
+	    -a rc-conf-conflict sshd config sshd_flags=-6 sshd_extra=yes
 	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" interface lo0 \
 	    add 10.9.0.30/24
 	for i in $(seq 1 200); do
@@ -6267,7 +6447,11 @@ safe_mode_body()
 	atf_check -o match:'^gif4 create$' -o match:'^gif4 destroy$' \
 	    cat ifconfig.log
 	atf_check -o not-match:'gif4' -o not-match:'sshd_extra' \
-	    -o not-match:'10.9.0.30' -o match:'^sshd_flags="-4"$' cat rc.conf
+	    -o not-match:'10.9.0.30' cat rc.conf
+	# The service's variables: Arcana's file and the user's as they
+	# were, the line taken from theirs back.
+	atf_check cmp rc.conf.root root/etc/rc.conf
+	atf_check -s exit:1 test -e root/usr/local/etc/rc.conf.d/arcana
 	atf_check test -f running.sshd
 	# What was so already is left so: an interface that was up is not
 	# brought down for having been told to come up, a service that
@@ -6300,10 +6484,17 @@ safe_mode_body()
 	atf_check -o match:'^ifconfig_lo0_ipv6="inet6 accept_rtadv"$' \
 	    -o not-match:'DHCP' cat rc.conf
 	atf_check -o match:'^lo0 inet6 accept_rtadv -ifdisabled$' cat ifconfig.log
-	# And stays when confirmed.
-	atf_check -o match:'confirmed: it stays' \
+	# A warning not accepted refuses the job, as it does a commit.
+	atf_check -s exit:1 -o match:'accept rc-conf-conflict' \
 	    "$JGC" -s -c "$SOCK" service sshd config sshd_flags=-6
-	atf_check -o match:'^sshd_flags="-6"$' cat rc.conf
+	atf_check cmp rc.conf.root root/etc/rc.conf
+	# And stays when confirmed.
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" \
+	    service -a rc-conf-conflict sshd config sshd_flags=-6
+	atf_check -o match:'^sshd_flags="-6"$' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^#sshd_flags="-4"  # taken by Arcana$' \
+	    cat root/etc/rc.conf
 	# What cannot be taken back is not taken in safe mode.
 	atf_check -s exit:1 -e match:'cannot be undone' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" service sshd restart
@@ -6324,6 +6515,7 @@ safe_mode_body()
 	atf_check -s exit:1 -e match:'rc.conf would read it as more' -o ignore \
 	    "$JGC" -q -c "$SOCK" service sshd config 'sshd_flags=a"; id; "'
 	atf_check -o not-match:'id' cat rc.conf
+	atf_check -o not-match:'id' cat root/usr/local/etc/rc.conf.d/arcana
 	atf_check -o not-match:'id' -o not-match:'x:' cat sysrc.log
 
 	# The queue has an end: jobs that wait hold memory.  The first holds
@@ -12580,6 +12772,56 @@ datastores_services_body()
 	# As the action, its output RFC 7951's JSON.
 	atf_check -o match:'"service":\[\{"name":"ntpd","variable":\[\{"file":"/etc/rc.conf","left":"its value is not a literal[^"]*","line":5,"name":"ntpd_sync_on_start"\}\]\}\]' \
 	    "$JGC" -c "$SOCK" action services convert dry-run=true
+	# The release action, convert's inverse: a dry run first, the files
+	# as they are.
+	cp root/etc/rc.conf rc.conf.taken
+	cp root/usr/local/etc/rc.conf.d/arcana arcana.taken
+	atf_check -o match:'^ntpd +ntpd_enable +NO +/etc/rc.conf:4$' \
+	    -o match:'^ +ntpd_flags +-g +/etc/rc.conf.d/ntpd:1$' \
+	    -o not-match:'dropped|differs|sshd' \
+	    "$JGC" -c "$SOCK" services release -n ntpd
+	atf_check cmp rc.conf.taken root/etc/rc.conf
+	atf_check cmp arcana.taken root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o inline:'#ntpd_flags="-g"  # taken by Arcana\n' cat root/etc/rc.conf.d/ntpd
+	# Refused: a name no variable's stem, one named twice, none.
+	atf_check -s exit:1 -e match:"ftp-proxy: not a service's name" \
+	    "$JGC" -c "$SOCK" services release ftp-proxy
+	atf_check -s exit:1 -e match:'ntpd: named twice' \
+	    "$JGC" -c "$SOCK" services release ntpd ntpd
+	atf_check -s exit:2 -e match:'usage' "$JGC" -c "$SOCK" services release
+	atf_check -s exit:1 -e not-empty "$JGC" -c "$SOCK" action services \
+	    release dry-run=true
+	atf_check cmp rc.conf.taken root/etc/rc.conf
+	# Real: the user's files as before convert, Arcana's file without
+	# it; sshd, the other service, still Arcana's.
+	atf_check -o match:'^ntpd +ntpd_enable +NO +/etc/rc.conf:4$' \
+	    -o match:'^ +ntpd_flags +-g +/etc/rc.conf.d/ntpd:1$' \
+	    "$JGC" -c "$SOCK" services release ntpd
+	atf_check cmp rc.conf.before root/etc/rc.conf
+	atf_check -o inline:'ntpd_flags="-g"\n' cat root/etc/rc.conf.d/ntpd
+	atf_check -o match:'^sshd_enable="NO"$' -o match:'^sshd_flags="-6"$' \
+	    -o not-match:'ntpd_' cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^#sshd_enable="YES"  # taken by Arcana$' \
+	    -o match:'^#sshd_flags="-4"  # taken by Arcana$' cat root/etc/rc.conf
+	atf_check -o match:'\{"enabled":false,"name":"ntpd","variable":\[\{"name":"ntpd_flags","value":"-g"\}\]\}' \
+	    -o match:'\{"enabled":false,"name":"sshd","variable":\[\{"name":"sshd_flags","value":"-6"\}\]\}' \
+	    "$JGC" -c "$SOCK" get -d running services
+	# Nothing left to give back.
+	cp root/etc/rc.conf rc.conf.given
+	atf_check -o match:'^ntpd +nothing to give back$' \
+	    "$JGC" -c "$SOCK" services release ntpd
+	atf_check cmp rc.conf.given root/etc/rc.conf
+	# Restored as the user's line had it, Arcana's value said; one with
+	# no line of the user's only dropped, its value the defaults'.
+	printf 'sshd_oomprotect="YES"\n' >> root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^sshd +sshd_enable +YES +/etc/rc.conf:2$' \
+	    -o match:'differs: "YES" now \(/etc/rc.conf line 2\), not Arcana.s "NO"' \
+	    -o match:'^ +sshd_flags +-4 +/etc/rc.conf:3$' \
+	    -o match:'^ +sshd_oomprotect +YES +dropped: no line of yours to put back; it falls back to the defaults' \
+	    "$JGC" -c "$SOCK" services release sshd
+	atf_check -o not-match:'taken by Arcana' -o match:'^sshd_enable="YES"$' \
+	    -o match:'^sshd_flags="-4"$' cat root/etc/rc.conf
+	atf_check -o not-match:'sshd_|ntpd_' cat root/usr/local/etc/rc.conf.d/arcana
 }
 datastores_services_cleanup()
 {
@@ -12934,6 +13176,9 @@ atf_init_test_cases()
 	atf_add_test_case yang_get
 	atf_add_test_case yang_actions
 	atf_add_test_case yang_subscribe
+	atf_add_test_case yang_subscribe_subtree
+	atf_add_test_case yang_set
+	atf_add_test_case yang_set_refused
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_origins

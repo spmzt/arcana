@@ -44,15 +44,31 @@ module: arcana-services
      |        +--ro description?   string
      |        +--ro command*       string
      +---x convert
+     |  +---w input
+     |  |  +---w service*   string
+     |  |  +---w dry-run?   boolean
+     |  +--ro output
+     |     +--ro service* [name]
+     |        +--ro name    string
+     |        +--ro variable* [name file line]
+     |           +--ro name     string
+     |           +--ro file     string
+     |           +--ro line     uint32
+     |           +--ro value?   string
+     |           +--ro left?    string
+     +---x release
         +---w input
         |  +---w service*   string
         |  +---w dry-run?   boolean
         +--ro output
            +--ro service* [name]
               +--ro name    string
-              +--ro variable* [name file line]
-                 +--ro name     string
-                 +--ro file     string
-                 +--ro line     uint32
-                 +--ro value?   string
-                 +--ro left?    string
+              +--ro variable* [name]
+                 +--ro name            string
+                 +--ro arcana-value?   string
+                 +--ro restored* [file line]
+                 |  +--ro file     string
+                 |  +--ro line     uint32
+                 |  +--ro value?   string
+                 +--ro dropped?        string
+                 +--ro differs?        string

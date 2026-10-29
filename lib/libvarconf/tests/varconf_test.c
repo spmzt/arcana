@@ -561,6 +561,120 @@ ATF_TC_BODY(comments, tc)
 	vc_free(&f);
 }
 
+/* Whether every assignment of name is alone on one line, plainly. */
+static bool
+alone(const struct vc_file *f, const char *name)
+{
+	const struct vc_assign *a;
+
+	for (size_t i = 0; i < f->na; i++) {
+		a = &f->a[i];
+		if (strcmp(a->name, name) == 0 && (a->nstmt != 1 ||
+		    (a->flags & (VC_COND | VC_OPAQUE)) != 0 ||
+		    memchr(f->text + a->soff, '\n', a->send - a->soff - 1) !=
+		    NULL))
+			return (false);
+	}
+	return (true);
+}
+
+static void
+uncomment_is(const char *text, const char *name, int n, const char *want)
+{
+	struct vc_file f;
+	char err[256];
+
+	parse(&f, text, strlen(text));
+	ATF_CHECK_EQ_MSG(n, vc_uncomment(&f, name, "mark", err, sizeof(err)),
+	    "%s: %s", text, err);
+	ATF_CHECK_STREQ_MSG(want, f.text, "%s", text);
+	vc_free(&f);
+}
+
+/* vc_comment()'s inverse: the file back byte for byte; one taken off a
+ * shared line on its own line before the rest; a comment without the
+ * mark, or another name's, left alone; what would not read back as it
+ * was refused, the file as it was. */
+ATF_TC_WITHOUT_HEAD(uncomments);
+ATF_TC_BODY(uncomments, tc)
+{
+	static const char *const refused[] = {
+		"#a=1 b=2  # mark\n",
+		"#a=1 cmd  # mark\n",
+		"if true; then\n#a=1  # mark\nfi\n",
+		"cat <<EOF\n#a=1  # mark\nEOF\n",
+	};
+	const struct fixture *x;
+	struct vc_file f, o;
+	char err[256];
+	size_t n = 0;
+
+	/* Every name of every sh(1) fixture alone on its lines: commented,
+	 * then back, the file as it was. */
+	for (const struct fixture *y = fixtures; y->name != NULL; y++) {
+		if (dialect(y->name) != VC_SH || strncmp(y->name, "rtadvd-",
+		    7) == 0)
+			continue;
+		parse(&o, y->text, y->len);
+		parse(&f, y->text, y->len);
+		for (size_t i = 0; i < o.na; i++)
+			if (alone(&o, o.a[i].name))
+				ATF_REQUIRE_MSG(vc_comment(&f, o.a[i].name,
+				    "taken by Arcana", err, sizeof(err)) == 0,
+				    "%s: %s", y->name, err);
+		for (size_t i = 0; i < o.na; i++)
+			if (alone(&o, o.a[i].name) && vc_get(&f,
+			    o.a[i].name) == NULL) {
+				ATF_REQUIRE_MSG(vc_uncomment(&f, o.a[i].name,
+				    "taken by Arcana", err, sizeof(err)) > 0,
+				    "%s: %s: %s", y->name, o.a[i].name, err);
+				n++;
+			}
+		ATF_CHECK_MSG(f.len == y->len && memcmp(f.text, y->text,
+		    y->len) == 0, "%s: not as it was", y->name);
+		vc_free(&f);
+		vc_free(&o);
+	}
+	ATF_CHECK(n > 20);
+
+	/* Shared lines as vc_comment() splits them: each on its own. */
+	x = fixture("edge.conf");
+	parse(&f, x->text, x->len);
+	ATF_REQUIRE_EQ(0, vc_comment(&f, "three", "mark", err, sizeof(err)));
+	ATF_REQUIRE_EQ(0, vc_comment(&f, "semi", "mark", err, sizeof(err)));
+	ATF_REQUIRE_EQ(1, vc_uncomment(&f, "three", "mark", err,
+	    sizeof(err)));
+	ATF_REQUIRE_EQ(1, vc_uncomment(&f, "semi", "mark", err, sizeof(err)));
+	ATF_CHECK(strstr(f.text, "\nthree=2\ntwo=1 \n") != NULL);
+	ATF_CHECK(strstr(f.text, "\nsemi=1\nsemi2=2\n") != NULL);
+	check_value(&f, "three", "2");
+	check_value(&f, "semi", "1");
+	check_sh(&f);
+	vc_free(&f);
+
+	/* Without the mark, another mark, another name's: left. */
+	uncomment_is("#a=1\n#a=2  # other\n#a=3  # mark\n#b=4  # mark\n", "a",
+	    1, "#a=1\n#a=2  # other\na=3\n#b=4  # mark\n");
+	uncomment_is("#ab=1  # mark\n", "a", 0, "#ab=1  # mark\n");
+	/* A comment of the line's own kept; every one; no newline last. */
+	uncomment_is("#a=\"x y\"\t# why  # mark\nb=1\n#a=2  # mark", "a", 2,
+	    "a=\"x y\"\t# why\nb=1\na=2");
+	/* Refused, the file as it was. */
+	for (size_t i = 0; i < nitems(refused); i++) {
+		parse(&f, refused[i], strlen(refused[i]));
+		ATF_CHECK_EQ_MSG(-1, vc_uncomment(&f, "a", "mark", err,
+		    sizeof(err)), "%s", refused[i]);
+		ATF_CHECK_EQ(EINVAL, errno);
+		ATF_CHECK_MSG(strstr(err, "by hand") != NULL, "%s", err);
+		ATF_CHECK_STREQ(refused[i], f.text);
+		vc_free(&f);
+	}
+	parse(&f, "#a=1  # mark\n", 13);
+	ATF_CHECK_EQ(-1, vc_uncomment(&f, "a", NULL, err, sizeof(err)));
+	ATF_CHECK_EQ(-1, vc_uncomment(&f, "1a", "mark", err, sizeof(err)));
+	vc_free(&f);
+}
+
 /* What sh(1) could not read: refused, the line said. */
 ATF_TC_WITHOUT_HEAD(errors);
 ATF_TC_BODY(errors, tc)
@@ -1204,6 +1318,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, edits);
 	ATF_TP_ADD_TC(tp, edits_edge);
 	ATF_TP_ADD_TC(tp, comments);
+	ATF_TP_ADD_TC(tp, uncomments);
 	ATF_TP_ADD_TC(tp, errors);
 	ATF_TP_ADD_TC(tp, rcd);
 	ATF_TP_ADD_TC(tp, conflicts);

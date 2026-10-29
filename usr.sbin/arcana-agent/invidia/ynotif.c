@@ -54,6 +54,7 @@
 #include <unistd.h>
 
 #include <cblink.h>
+#include <cbl_data.h>
 #include <cbl_schema.h>
 
 #include "agent.h"
@@ -746,6 +747,41 @@ ystr(cbl_yarena *a, const char *s)
 	return (p);
 }
 
+/*
+ * A subtree filter, as the subscriptions list's anydata name holds it
+ * (its keys are deltas from that node's SID), into *out in a.
+ */
+static int
+ysubtree(cbl_yarena *a, const struct cbl_dfilter *f, const char *name,
+    struct cbl_bytes *out)
+{
+	const struct cbl_ynode	*e = NULL, *n = NULL;
+	struct cbl_ybuf		 b = { NULL, 0, 0 };
+	void			*p;
+	int			 error;
+
+	for (uint32_t i = 0; subs_node() != NULL && i < subs_node()->nchild;
+	    i++)
+		if (strcmp(subs_node()->child[i]->name, "subscription") == 0)
+			e = subs_node()->child[i];
+	for (uint32_t i = 0; e != NULL && i < e->nchild; i++)
+		if (strcmp(e->child[i]->name, name) == 0)
+			n = e->child[i];
+	if (n == NULL)
+		return (0);
+	if ((error = cbl_dfilter_encode(f, n->sid, &b)) == 0) {
+		if ((p = cbl_yarena_alloc(a, b.len)) == NULL)
+			error = ENOMEM;
+		else {
+			memcpy(p, b.p, b.len);
+			out->p = p;
+			out->len = b.len;
+		}
+	}
+	cbl_ybuf_free(&b);
+	return (error);
+}
+
 struct ylist {
 	cbl_yarena	*a;
 	const ysubs	*cfg;		/* what is kept, or NULL */
@@ -771,6 +807,7 @@ ysub_one(const struct cbl_ysub_info *in, void *arg)
 	yreceivers		*rs;
 	yreceiver		*r;
 	size_t			 nr;
+	int			 error;
 
 	if (ys->n == ys->cap) {
 		if ((v = cbl_yarena_alloc(ys->a, (ys->cap + 8) *
@@ -839,6 +876,15 @@ ysub_one(const struct cbl_ysub_info *in, void *arg)
 			    YSUB(STREAM_FILTER_WITHIN_SUBSCRIPTION);
 			s->filter_spec = YSUB(FILTER_SPEC_STREAM_XPATH_FILTER);
 			s->stream_xpath_filter = ystr(ys->a, in->xpath);
+		} else if (in->subtree != NULL) {
+			s->stream_filter =
+			    YSUB(STREAM_FILTER_WITHIN_SUBSCRIPTION);
+			s->filter_spec =
+			    YSUB(FILTER_SPEC_STREAM_SUBTREE_FILTER);
+			if ((error = ysubtree(ys->a, in->subtree,
+			    "stream-subtree-filter",
+			    &s->stream_subtree_filter)) != 0)
+				return (error);
 		}
 	} else {
 		s->target = YSUB(TARGET_DATASTORE);
@@ -850,6 +896,15 @@ ysub_one(const struct cbl_ysub_info *in, void *arg)
 			s->yp_filter_spec =
 			    YSUB(YP_FILTER_SPEC_DATASTORE_XPATH_FILTER);
 			s->yp_datastore_xpath_filter = ystr(ys->a, in->xpath);
+		} else if (in->subtree != NULL) {
+			s->yp_selection_filter =
+			    YSUB(YP_SELECTION_FILTER_WITHIN_SUBSCRIPTION);
+			s->yp_filter_spec =
+			    YSUB(YP_FILTER_SPEC_DATASTORE_SUBTREE_FILTER);
+			if ((error = ysubtree(ys->a, in->subtree,
+			    "datastore-subtree-filter",
+			    &s->yp_datastore_subtree_filter)) != 0)
+				return (error);
 		}
 		if (in->on_change) {
 			if ((oc = cbl_yarena_alloc(ys->a, sizeof(*oc))) ==

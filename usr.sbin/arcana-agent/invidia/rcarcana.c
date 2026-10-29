@@ -22,6 +22,8 @@
  * Unaccepted, the request is refused with that error-app-tag and says
  * what it would do.  Every file is kept as it was until the change is
  * through: rca_undo() puts them back, the commented line as it was.
+ * The release action gives a service back by rca_unset() and rca_put(),
+ * the user's commented lines put back by vc_uncomment().
  */
 
 #include <sys/param.h>
@@ -178,6 +180,28 @@ rca_drop(struct rca *x, const char *name)
 	return (0);
 }
 
+int
+rca_unset(struct rca *x, const char *name, char *err, size_t errlen)
+{
+
+	if (vc_unset(x->f, name, err, errlen) == -1)
+		return (errno != 0 ? errno : EINVAL);
+	return (0);
+}
+
+int
+rca_put(struct rca *x, const struct vc_file *f, const char *path, char *err,
+    size_t errlen)
+{
+	int	error;
+
+	if ((error = keep(x, path)) != 0)
+		return (error);
+	if (vc_write(f, path, 0644, err, errlen) == -1)
+		return (errno != 0 ? errno : EIO);
+	return (0);
+}
+
 void
 rca_close(struct rca *x)
 {
@@ -237,11 +261,29 @@ names(const char *list, const char *path)
 	return (false);
 }
 
-/* A refusal with its app-tag, err its words, for req. */
-static int
-refuse(cbl_req *req, const char *tag, const char *text)
+/* Whether warning tag is accepted: by req, or without one by x's list. */
+static bool
+accepted(const struct rca *x, cbl_req *req, const char *tag)
 {
 
+	if (req != NULL)
+		return (cbl_req_yaccepts(req, tag));
+	for (size_t i = 0; i < x->naccept; i++)
+		if (x->accept[i] != NULL && strcmp(x->accept[i], tag) == 0)
+			return (true);
+	return (false);
+}
+
+/* A refusal with its app-tag and words, for req; without one, in err. */
+static int
+refuse(cbl_req *req, const char *tag, const char *text, char *err,
+    size_t errlen)
+{
+
+	if (req == NULL) {
+		(void)snprintf(err, errlen, "%s", text);
+		return (EEXIST);
+	}
 	(void)cbl_req_set_yapptag(req, tag);
 	(void)cbl_req_set_yerr(req, text, 0);
 	return (EEXIST);
@@ -275,14 +317,15 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 		return (ENOMEM);
 	}
 	if (!names(list, RC_ARCANA)) {
-		if (!cbl_req_yaccepts(req, "rc-conf-files")) {
+		if (!accepted(x, req, "rc-conf-files")) {
 			(void)snprintf(said, sizeof(said), "Arcana keeps what it "
 			    "writes of rc.conf in %s, which rc(8) reads where "
 			    "rc_conf_files names it: accept rc-conf-files to "
 			    "add it to %s, once", RC_ARCANA, RC_CONF);
 			free(list);
 			vc_free(&rc);
-			return (refuse(req, "rc-conf-files", said));
+			return (refuse(req, "rc-conf-files", said, err,
+			    errlen));
 		}
 		rcf = true;
 	}
@@ -308,14 +351,14 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 				    off == 0 ? "" : ", ", name, x->user[i],
 				    u->line);
 		}
-	if (error == 0 && conflict && !cbl_req_yaccepts(req,
+	if (error == 0 && conflict && !accepted(x, req,
 	    "rc-conf-conflict")) {
 		char	text[1200];
 
 		(void)snprintf(text, sizeof(text), "your files set what "
 		    "Arcana would change: %s; accept rc-conf-conflict to have "
 		    "them in Arcana's file alone, commented out in yours", said);
-		error = refuse(req, "rc-conf-conflict", text);
+		error = refuse(req, "rc-conf-conflict", text, err, errlen);
 	}
 	/* Accepted: theirs commented out where they are, every file kept
 	 * as it was first. */

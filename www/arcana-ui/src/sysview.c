@@ -963,7 +963,7 @@ sysview_form(const char *form, const ucl_object_t *f)
 	}
 	if (strcmp(form, "sv-svcj") == 0) {
 		const char	*svc = jstr(f, "service");
-		char		 opts[200], k[32], *json, *qs;
+		char		 opts[200], k[32], yes[300], how[500], *json;
 
 		if (!safe_word(svc, "_")) {
 			toast(true, "A service is named by letters, digits and _");
@@ -978,20 +978,35 @@ sysview_form(const char *form, const ucl_object_t *f)
 				strlcat(opts, svcj_opts[i], sizeof(opts));
 			}
 		}
-		/* Its variables in its configuration, committed; off,
-		 * NAME_svcj NO, as rc.subr reads it. */
-		qs = json_quote(svc);
+		/*
+		 * Its variables in its configuration, a YANG Patch committed:
+		 * on, NAME_svcj YES and its options (none: taken out); off,
+		 * both taken out, never NO written, rc.subr's default.
+		 * "remove" takes one that is not there as done.
+		 */
 		if (jbool(f, "on")) {
-			if (asprintf(&json, "{\"arcana-services:service\":[{"
-			    "\"name\":%s,\"variable\":[{\"name\":\"%s_svcj\","
-			    "\"value\":\"YES\"},{\"name\":\"%s_svcj_options\","
-			    "\"value\":\"%s\"}]}]}", qs, svc, svc, opts) == -1)
-				abort();
-		} else if (asprintf(&json, "{\"arcana-services:service\":[{"
-		    "\"name\":%s,\"variable\":[{\"name\":\"%s_svcj\","
-		    "\"value\":\"NO\"}]}]}", qs, svc) == -1)
+			snprintf(yes, sizeof(yes), "{\"edit-id\":\"on\","
+			    "\"operation\":\"merge\",\"target\":\"/variable="
+			    "%s_svcj\",\"value\":{\"arcana-services:variable\":"
+			    "[{\"name\":\"%s_svcj\",\"value\":\"YES\"}]}}", svc,
+			    svc);
+		} else
+			snprintf(yes, sizeof(yes), "{\"edit-id\":\"off\","
+			    "\"operation\":\"remove\",\"target\":\"/variable="
+			    "%s_svcj\"}", svc);
+		if (jbool(f, "on") && opts[0] != '\0')
+			snprintf(how, sizeof(how), "{\"edit-id\":\"options\","
+			    "\"operation\":\"merge\",\"target\":\"/variable="
+			    "%s_svcj_options\",\"value\":{\"arcana-services:"
+			    "variable\":[{\"name\":\"%s_svcj_options\",\"value\":"
+			    "\"%s\"}]}}", svc, svc, opts);
+		else
+			snprintf(how, sizeof(how), "{\"edit-id\":\"options\","
+			    "\"operation\":\"remove\",\"target\":\"/variable="
+			    "%s_svcj_options\"}", svc);
+		if (asprintf(&json, "{\"ietf-yang-patch:yang-patch\":{"
+		    "\"patch-id\":\"svcj\",\"edit\":[%s,%s]}}", yes, how) == -1)
 			abort();
-		free(qs);
 		svc_commit(s, "svcj", svc, json, false);
 		free(json);
 		return (true);

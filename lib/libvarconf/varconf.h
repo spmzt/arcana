@@ -102,6 +102,8 @@ int		 vc_set(struct vc_file *, const char *, const char *, char *,
 int		 vc_unset(struct vc_file *, const char *, char *, size_t);
 int		 vc_comment(struct vc_file *, const char *, const char *,
 		    char *, size_t);
+int		 vc_uncomment(struct vc_file *, const char *, const char *,
+		    char *, size_t);
 int		 vc_write(const struct vc_file *, const char *, mode_t, char *,
 		    size_t);
 int		 vc_rcd_path(const char *, const char *, const char *, char *,

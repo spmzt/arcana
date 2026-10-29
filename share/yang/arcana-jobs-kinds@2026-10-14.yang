@@ -279,6 +279,12 @@ submodule arcana-jobs-kinds {
             description
               "Action";
           }
+          leaf-list accept {
+            type string;
+            ordered-by user;
+            description
+              "Warnings accepted";
+          }
         }
       }
       case service-config {
@@ -313,6 +319,12 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Variables to unset";
+          }
+          leaf-list accept {
+            type string;
+            ordered-by user;
+            description
+              "Warnings accepted";
           }
         }
       }

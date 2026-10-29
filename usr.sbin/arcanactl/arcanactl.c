@@ -14,6 +14,7 @@
 
 #include <capsicum_helpers.h>
 #include <casper/cap_fileargs.h>
+#include <ctype.h>
 #include <err.h>
 #include <fcntl.h>
 #include <libcasper.h>
@@ -154,6 +155,7 @@ usage(void)
 	    "    hello\n"
 	    "    get [-d datastore] [-w mode] [-o] [-x xpath] [node ...]\n"
 	    "    edit [-r] [-a warning]... node value | @file\n"
+	    "    set [-nx] [-d datastore] [-a warning]... path [value | @file]\n"
 	    "    commit [-c seconds [-p persist]] [-i persist-id] "
 	    "[-a warning]...\n"
 	    "    cancel-commit [-i persist-id]\n"
@@ -161,13 +163,14 @@ usage(void)
 	    "    action path [key ...] action [leaf=value ...]\n"
 	    "    notifications\n"
 	    "    subscribe [-n count] [-o seconds | -p seconds | -r time]\n"
-	    "              [-s stop-time] [-x xpath]\n"
+	    "              [-s stop-time] [-x xpath | -f filter]\n"
 	    "    list [-c]\n"
 	    "    start | stop | restart | kill jail\n"
 	    "    enable | disable [-a warning]... jail\n"
 	    "    address add | remove [-lnp] [-i interface] jail address\n"
 	    "    services\n"
 	    "    services convert [-n] [-a warning]... [name ...]\n"
+	    "    services release [-n] name ...\n"
 	    "    service [-a warning]... name start | stop | restart | reload |\n"
 	    "        enable | disable\n"
 	    "    service [-a warning]... name config [-x key ...] "
@@ -1266,16 +1269,55 @@ static const struct cbl_stream_cbs ysub_cbs = {
 
 /*
  * subscribe [-n count] [-o seconds | -p seconds] [-s stop-time]
- * [-x xpath]: RFC 8639's dynamic subscription on a SUBSCRIBE stream
- * (cblink's family 1): the NETCONF stream, every event the agent tells;
- * with -p, the operational datastore pushed every that many seconds
- * (RFC 8641's periodic YANG-Push, a tenth of a second at least); with
- * -o, its changes as they are seen, -o's seconds the dampening period
- * (read every second at least), the first push the whole of it.  -x is the
- * stream's or the datastore's XPath filter, -s a stop-time (RFC 3339),
- * -n how many records before it ends.  A record a line, RFC 8040's
- * notification JSON.
+ * [-x xpath | -f filter]: RFC 8639's dynamic subscription on a SUBSCRIBE
+ * stream (cblink's family 1): the NETCONF stream, every event the agent
+ * tells; with -p, the operational datastore pushed every that many
+ * seconds (RFC 8641's periodic YANG-Push, a tenth of a second at least);
+ * with -o, its changes as they are seen, -o's seconds the dampening
+ * period (read every second at least), the first push the whole of it.
+ * -x is the stream's or the datastore's XPath filter, -f its subtree
+ * filter (RFC 6241 section 6) as JSON, or @file: null a selection node,
+ * an object a containment node, a leaf's value a content match node; -s
+ * a stop-time (RFC 3339), -n how many records before it ends.  A record
+ * a line, RFC 8040's notification JSON.
  */
+
+/* The subtree filter text says, as anydata name of in carries it. */
+static void
+subtree_arg(const struct cbl_ynode *in, const char *name, const char *arg,
+    struct cbl_ybuf *b)
+{
+	const struct cbl_ynode	*n = NULL;
+	struct ucl_parser	*p;
+	ucl_object_t		*top;
+	cbl_dfilter		*f;
+	char			*text, why[256];
+	int			 error;
+
+	for (uint32_t i = 0; i < in->nchild; i++)
+		if (strcmp(in->child[i]->name, name) == 0)
+			n = in->child[i];
+	if (n == NULL)
+		xo_errx(1, "subscribe: no %s in the tables", name);
+	if ((text = arg[0] == '@' ? slurp(arg + 1) : strdup(arg)) == NULL)
+		xo_err(1, "subscribe");
+	if ((p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS)) == NULL)
+		xo_err(1, "subscribe");
+	if (!ucl_parser_add_string(p, text, 0))
+		xo_errx(1, "subscribe: -f: not JSON: %s",
+		    ucl_parser_get_error(p));
+	top = ucl_parser_get_object(p);
+	ucl_parser_free(p);
+	if ((error = yjson_subtree(&ymodel_schema, top, &f, why,
+	    sizeof(why))) != 0)
+		xo_errx(1, "subscribe: -f: %s", why[0] != '\0' ? why :
+		    strerror(error));
+	if ((error = cbl_dfilter_encode(f, n->sid, b)) != 0)
+		xo_errx(1, "subscribe: -f: %s", strerror(error));
+	cbl_dfilter_free(f);
+	ucl_object_unref(top);
+	free(text);
+}
 static int
 cmd_subscribe(struct arc_client *cl, int argc, char **argv)
 {
@@ -1292,6 +1334,8 @@ cmd_subscribe(struct arc_client *cl, int argc, char **argv)
 	est_per			 per;
 	est_in			 ein;
 	const char		*xpath = NULL, *stop = NULL, *replay = NULL;
+	const char		*subtree = NULL;
+	struct cbl_ybuf		 fb = { NULL, 0, 0 };
 	double			 secs = 0, damp = 0;
 	bool			 onchange = false;
 	struct ietf_subscribed_notifications_establish_subscription_input_yp_on_change
@@ -1320,11 +1364,13 @@ cmd_subscribe(struct arc_client *cl, int argc, char **argv)
 			replay = argv[k + 1];
 		else if (strcmp(argv[k], "-x") == 0)
 			xpath = argv[k + 1];
+		else if (strcmp(argv[k], "-f") == 0)
+			subtree = argv[k + 1];
 		else
 			break;
 	}
 	if (k != argc || (onchange && secs != 0) || (replay != NULL &&
-	    (secs != 0 || onchange)))
+	    (secs != 0 || onchange)) || (xpath != NULL && subtree != NULL))
 		usage();
 	rpc = in = NULL;
 	for (i = 0; i < ymodel_schema.nmod && rpc == NULL; i++)
@@ -1349,6 +1395,12 @@ cmd_subscribe(struct arc_client *cl, int argc, char **argv)
 			ein.stream_filter = SN(STREAM_FILTER_WITHIN_SUBSCRIPTION);
 			ein.filter_spec = SN(FILTER_SPEC_STREAM_XPATH_FILTER);
 			ein.stream_xpath_filter = xpath;
+		} else if (subtree != NULL) {
+			subtree_arg(in, "stream-subtree-filter", subtree, &fb);
+			ein.stream_filter = SN(STREAM_FILTER_WITHIN_SUBSCRIPTION);
+			ein.filter_spec = SN(FILTER_SPEC_STREAM_SUBTREE_FILTER);
+			ein.stream_subtree_filter.p = fb.p;
+			ein.stream_subtree_filter.len = fb.len;
 		}
 	} else {
 		ein.target = SN(TARGET_DATASTORE);
@@ -1366,6 +1418,15 @@ cmd_subscribe(struct arc_client *cl, int argc, char **argv)
 			ein.yp_filter_spec =
 			    SN(YP_FILTER_SPEC_DATASTORE_XPATH_FILTER);
 			ein.yp_datastore_xpath_filter = xpath;
+		} else if (subtree != NULL) {
+			subtree_arg(in, "datastore-subtree-filter", subtree,
+			    &fb);
+			ein.yp_selection_filter =
+			    SN(YP_SELECTION_FILTER_WITHIN_SUBSCRIPTION);
+			ein.yp_filter_spec =
+			    SN(YP_FILTER_SPEC_DATASTORE_SUBTREE_FILTER);
+			ein.yp_datastore_subtree_filter.p = fb.p;
+			ein.yp_datastore_subtree_filter.len = fb.len;
 		}
 		memset(&per, 0, sizeof(per));
 		memset(&oc, 0, sizeof(oc));
@@ -1390,6 +1451,7 @@ cmd_subscribe(struct arc_client *cl, int argc, char **argv)
 	    (error = cbl_stream_open(cl->conn, m, CBL_SF_PUSH, &ysub_cbs, &ys,
 	    &s)) != 0)
 		xo_errx(1, "subscribe: %s", strerror(error));
+	cbl_ybuf_free(&fb);
 	while (!ys.closed && (!ys.opened || ys.error == 0)) {
 		ev = 0;
 		ms = -1;
@@ -1614,6 +1676,455 @@ ytold_end(bool print)
 		ystep_free(&ysteps[i]);
 	if (print)
 		nysteps = 0;
+}
+
+/*
+ * set [-nx] [-d datastore] [-a warning]... path [value]: the node RFC
+ * 8040's api-path names (/module:node/list=key,key/leaf) given value,
+ * or with -x taken away, in the candidate (-d running: running itself),
+ * then the candidate committed, confirmed (-n: left in the candidate).
+ * The datastore's top-level node is read, changed here and sent back
+ * whole in one EDIT, as RESTCONF's changes are (restconf.c); a commit
+ * would take others' changes too, so a candidate that is not running is
+ * refused unless -n.  A leaf's value is text, as its type reads it; a
+ * container's or a list entry's RFC 7951 JSON (or @file), the node it
+ * becomes, an entry's keys those of the path; a leaf-list without a
+ * value in the path is given one more.
+ */
+#define	SEG_MAX		32
+#define	SKEY_MAX	8
+
+struct yseg {
+	const struct cbl_ynode	*n;
+	char			*key[SKEY_MAX];
+	size_t			 nkey;
+};
+
+/* %XX in s decoded in place; false where one is not. */
+static bool
+pct_decoded(char *s)
+{
+	char	*o = s;
+	int	 hi, lo;
+
+	for (; *s != '\0'; s++) {
+		if (*s != '%') {
+			*o++ = *s;
+			continue;
+		}
+		if (!isxdigit((unsigned char)s[1]) ||
+		    !isxdigit((unsigned char)s[2]))
+			return (false);
+		hi = digittoint(s[1]);
+		lo = digittoint(s[2]);
+		*o++ = (char)(hi << 4 | lo);
+		s += 2;
+	}
+	*o = '\0';
+	return (true);
+}
+
+/* The child of n a segment names: "name", or "module:name". */
+static const struct cbl_ynode *
+yseg_child(const struct cbl_ynode *n, const char *seg)
+{
+	const char	*colon = strchr(seg, ':');
+	const char	*name = colon != NULL ? colon + 1 : seg;
+	size_t		 mlen = colon != NULL ? (size_t)(colon - seg) : 0;
+
+	for (uint32_t i = 0; i < n->nchild; i++) {
+		const struct cbl_ynode *c = n->child[i];
+
+		if (strcmp(c->name, name) != 0 || (c->kind != CBL_YN_CONTAINER &&
+		    c->kind != CBL_YN_LIST && c->kind != CBL_YN_LEAF &&
+		    c->kind != CBL_YN_LEAFLIST))
+			continue;
+		if (colon != NULL ? strlen(c->module->name) != mlen ||
+		    strncmp(c->module->name, seg, mlen) != 0 :
+		    c->module != n->module)
+			continue;
+		return (c);
+	}
+	return (NULL);
+}
+
+/* path, an api-path, into its segments (in path's own memory). */
+static size_t
+ypath_parse(char *path, struct yseg *seg)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n = NULL;
+	char				*p, *s, *eq, *colon, *k;
+	size_t				 ns = 0;
+
+	if (path[0] != '/')
+		xo_errx(2, "set: %s: an api-path begins with /", path);
+	for (p = path + 1; p != NULL && *p != '\0'; ) {
+		s = p;
+		if ((p = strchr(p, '/')) != NULL)
+			*p++ = '\0';
+		if (ns == SEG_MAX)
+			xo_errx(1, "set: deeper than %d nodes", SEG_MAX);
+		memset(&seg[ns], 0, sizeof(seg[ns]));
+		if ((eq = strchr(s, '=')) != NULL)
+			*eq++ = '\0';
+		if (ns == 0) {
+			if ((colon = strchr(s, ':')) == NULL)
+				xo_errx(2, "set: %s: the top node is "
+				    "module:name", s);
+			*colon = '\0';
+			for (uint32_t i = 0; n == NULL && i < ymodel_schema.nmod;
+			    i++) {
+				m = ymodel_schema.mod[i];
+				for (uint32_t j = 0; strcmp(m->name, s) == 0 &&
+				    j < m->ntop; j++)
+					if (strcmp(m->top[j]->name, colon + 1) ==
+					    0 && (m->top[j]->flags &
+					    CBL_YNF_CONFIG) != 0)
+						n = m->top[j];
+			}
+			*colon = ':';
+		} else
+			n = yseg_child(seg[ns - 1].n, s);
+		if (n == NULL || (n->flags & CBL_YNF_CONFIG) == 0)
+			xo_errx(1, "set: %s: no configuration node there", s);
+		seg[ns].n = n;
+		if (eq != NULL) {
+			if (n->kind != CBL_YN_LIST && n->kind != CBL_YN_LEAFLIST)
+				xo_errx(2, "set: %s: keys are a list's", s);
+			for (k = eq; k != NULL; ) {
+				if (seg[ns].nkey == SKEY_MAX)
+					xo_errx(1, "set: %s: too many keys", s);
+				seg[ns].key[seg[ns].nkey++] = k;
+				if ((k = strchr(k, ',')) != NULL)
+					*k++ = '\0';
+			}
+			for (size_t i = 0; i < seg[ns].nkey; i++)
+				if (!pct_decoded(seg[ns].key[i]))
+					xo_errx(2, "set: %s: a key's %% escape",
+					    s);
+			if (seg[ns].nkey != (n->kind == CBL_YN_LIST ? n->nkeys :
+			    1u))
+				xo_errx(2, "set: %s: %u keys", s, n->kind ==
+				    CBL_YN_LIST ? n->nkeys : 1u);
+		} else if (n->kind == CBL_YN_LIST && p != NULL && *p != '\0')
+			xo_errx(2, "set: %s: an entry is named by its keys", s);
+		ns++;
+		if (n->kind == CBL_YN_LEAF || n->kind == CBL_YN_LEAFLIST) {
+			if (p != NULL && *p != '\0')
+				xo_errx(2, "set: %s: nothing is below a leaf",
+				    s);
+			break;
+		}
+	}
+	if (ns == 0)
+		xo_errx(2, "set: no node in the path");
+	return (ns);
+}
+
+/* Datastore ds's top-level node top, read into a tree of its own. */
+static cbl_dtree *
+yds_read(struct arc_client *cl, enum cbl_yds_name ds,
+    const uint64_t *sids, size_t n)
+{
+	cbl_msg		*req, *rep = NULL;
+	cbl_dtree	*t;
+	char		 why[256];
+	int		 error;
+
+	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_GET, 0, &req)) != 0 || (error = cbl_msg_put_yget_opts(req,
+	    sids, n, NULL, CBL_YWD_EXPLICIT, false)) != 0 ||
+	    (error = cbl_msg_set_datastore(req, ds)) != 0)
+		xo_errx(1, "set: %s", strerror(error));
+	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+		xo_errx(1, "set: %s", rep != NULL && cbl_msg_err_str(rep) !=
+		    NULL ? cbl_msg_err_str(rep) : strerror(error));
+	if ((t = cbl_dtree_new(&ymodel_schema)) == NULL)
+		xo_err(1, "set");
+	if ((error = cbl_msg_ydtree(rep, t, 0, why, sizeof(why))) != 0)
+		xo_errx(1, "set: %s", why[0] != '\0' ? why : strerror(error));
+	cbl_msg_free(rep);
+	return (t);
+}
+
+/* Whether the candidate is running: every node alike. */
+static bool
+candidate_clean(struct arc_client *cl)
+{
+	struct cbl_ybuf	 a = { NULL, 0, 0 }, b = { NULL, 0, 0 };
+	cbl_dtree	*r, *c;
+	bool		 same;
+
+	r = yds_read(cl, CBL_YDS_RUNNING, NULL, 0);
+	c = yds_read(cl, CBL_YDS_CANDIDATE, NULL, 0);
+	if (cbl_dtree_encode(r, &a) != 0 || cbl_dtree_encode(c, &b) != 0)
+		xo_err(1, "set");
+	same = a.len == b.len && memcmp(a.p, b.p, a.len) == 0;
+	cbl_ybuf_free(&a);
+	cbl_ybuf_free(&b);
+	cbl_dtree_free(r);
+	cbl_dtree_free(c);
+	return (same);
+}
+
+/* Segment s's keys as the list's (or leaf-list's) values, in a. */
+static const void **
+yseg_keys(const struct yseg *s, cbl_yarena *a)
+{
+	const void	**v;
+	void		 *val;
+	char		  why[256];
+
+	if ((v = cbl_yarena_alloc(a, (s->nkey + 1) * sizeof(*v))) == NULL)
+		xo_err(1, "set");
+	for (size_t i = 0; i < s->nkey; i++) {
+		if (yjson_text(s->n->kind == CBL_YN_LIST ?
+		    s->n->child[s->n->keys[i]] : s->n, s->key[i], a, &val, why,
+		    sizeof(why)) != 0)
+			xo_errx(1, "set: %s", why);
+		v[i] = val;
+	}
+	return (v);
+}
+
+static int
+cmd_set(struct arc_client *cl, int argc, char **argv)
+{
+	struct ietf_netconf_commit_input		 cin;
+	struct ietf_netconf_discard_changes_input	 din;
+	struct yseg					 seg[SEG_MAX];
+	const struct cbl_ynode				*n, *top;
+	struct ucl_parser				*p;
+	ucl_object_t					*v, *arr;
+	cbl_dnode					*d, *c, *made;
+	cbl_dtree					*t;
+	cbl_yarena					*a;
+	enum cbl_yds_name				 ds;
+	const char					*value, *op, *dsname;
+	char						*path, *text;
+	char						 err[512], tag[80], why[256];
+	char						 token[33];
+	void						*val;
+	uint64_t					 errsid;
+	size_t						 ns;
+	bool						 del, stop, committed,
+							 confirmed;
+	int						 ch, error;
+
+	ds = CBL_YDS_CANDIDATE;
+	del = stop = false;
+	optreset = optind = 1;
+	while ((ch = getopt(argc, argv, "a:d:nx")) != -1) {
+		switch (ch) {
+		case 'a':
+			if (naccepts < nitems(accepts))
+				accepts[naccepts++] = optarg;
+			break;
+		case 'd':
+			ds = ds_named(optarg);
+			if (ds != CBL_YDS_CANDIDATE && ds != CBL_YDS_RUNNING)
+				xo_errx(2, "set: -d candidate or running");
+			break;
+		case 'n':
+			stop = true;
+			break;
+		case 'x':
+			del = true;
+			break;
+		default:
+			usage();
+		}
+	}
+	argc -= optind;
+	argv += optind;
+	if (argc < 1 || argc > 2 || (del && argc != 1) ||
+	    (stop && ds == CBL_YDS_RUNNING))
+		usage();
+	if ((path = strdup(argv[0])) == NULL || (a = cbl_yarena_new()) ==
+	    NULL)
+		xo_err(1, "set");
+	value = argc == 2 ? argv[1] : NULL;
+	ns = ypath_parse(path, seg);
+	top = seg[0].n;
+	n = seg[ns - 1].n;
+	if ((n->flags & CBL_YNF_KEY) != 0 && ns > 1 &&
+	    seg[ns - 2].n->kind == CBL_YN_LIST)
+		xo_errx(1, "set: %s: a key is the entry's name: set the entry",
+		    n->name);
+	if (!del && value == NULL && n->kind == CBL_YN_LEAF &&
+	    n->type->kind == CBL_YT_EMPTY)
+		value = "";
+	else if (!del && value == NULL && (n->kind == CBL_YN_CONTAINER ||
+	    (n->kind == CBL_YN_LIST && seg[ns - 1].nkey > 0) ||
+	    (n->kind == CBL_YN_LEAFLIST && seg[ns - 1].nkey > 0)))
+		value = n->kind == CBL_YN_LEAFLIST ? seg[ns - 1].key[0] : "{}";
+	if (!del && value == NULL)
+		xo_errx(2, "set: %s: a value is needed", n->name);
+	if (n->kind == CBL_YN_LIST && seg[ns - 1].nkey == 0)
+		xo_errx(2, "set: %s: an entry is named by its keys", n->name);
+	if (ds == CBL_YDS_CANDIDATE && !stop && !candidate_clean(cl))
+		xo_errx(1, "set: the candidate has changes of its own: commit "
+		    "or discard them first, or set -n");
+
+	/* The datastore's node, changed in place. */
+	t = yds_read(cl, ds, &top->sid, 1);
+	d = cbl_dtree_root(t);
+	for (size_t i = 0; i < ns - 1; i++) {
+		const struct cbl_ynode *sn = seg[i].n;
+
+		c = sn->kind == CBL_YN_LIST ? cbl_dnode_entry(d, sn,
+		    yseg_keys(&seg[i], a)) : cbl_dnode_child(d, sn);
+		if (c == NULL && del)
+			xo_errx(1, "set: %s: not there", sn->name);
+		if (c == NULL && (error = sn->kind == CBL_YN_LIST ?
+		    cbl_dnode_add_entry(d, sn, yseg_keys(&seg[i], a), &c) :
+		    cbl_dnode_add(d, sn, NULL, &c)) != 0)
+			xo_errx(1, "set: %s: %s", sn->name, strerror(error));
+		d = c;
+	}
+	/* The node itself: there now, or not. */
+	if (n->kind == CBL_YN_LIST)
+		c = cbl_dnode_entry(d, n, yseg_keys(&seg[ns - 1], a));
+	else if (n->kind == CBL_YN_LEAFLIST && (del || seg[ns - 1].nkey > 0))
+		c = cbl_dnode_llentry(d, n, yseg_keys(&seg[ns - 1], a)[0]);
+	else if (n->kind == CBL_YN_LEAFLIST)
+		c = NULL;
+	else
+		c = cbl_dnode_child(d, n);
+	if (del) {
+		if (n->kind == CBL_YN_LEAFLIST && seg[ns - 1].nkey == 0) {
+			/* All its values. */
+			while ((c = cbl_dnode_child(d, n)) != NULL)
+				(void)cbl_dnode_remove(c);
+		} else if (c == NULL)
+			xo_errx(1, "set: %s: not there", n->name);
+		else if ((error = cbl_dnode_remove(c)) != 0)
+			xo_errx(1, "set: %s: %s", n->name, strerror(error));
+	} else if (n->kind == CBL_YN_LEAF || n->kind == CBL_YN_LEAFLIST) {
+		if (yjson_text(n, value, a, &val, why, sizeof(why)) != 0)
+			xo_errx(1, "set: %s", why);
+		if (n->kind == CBL_YN_LEAF && c != NULL)
+			error = cbl_dnode_set(c, val);
+		else if (n->kind == CBL_YN_LEAFLIST &&
+		    cbl_dnode_llentry(d, n, val) != NULL)
+			error = 0;
+		else
+			error = cbl_dnode_add(d, n, val, NULL);
+		if (error != 0)
+			xo_errx(1, "set: %s: %s", n->name, strerror(error));
+	} else {
+		/* A container or an entry: what value says, in its place. */
+		if ((text = value[0] == '@' ? slurp(value + 1) :
+		    strdup(value)) == NULL)
+			xo_err(1, "set");
+		if ((p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS)) == NULL)
+			xo_err(1, "set");
+		if (!ucl_parser_add_string(p, text, 0))
+			xo_errx(1, "set: not JSON: %s", ucl_parser_get_error(p));
+		v = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+		if (ucl_object_type(v) != UCL_OBJECT)
+			xo_errx(1, "set: %s: its value is an object", n->name);
+		if (c != NULL)
+			(void)cbl_dnode_remove(c);
+		arr = NULL;
+		if (n->kind == CBL_YN_LIST) {
+			/* Its keys, the path's; one of the value's that
+			 * says otherwise refused. */
+			for (uint16_t i = 0; i < n->nkeys; i++) {
+				const struct cbl_ynode *kn =
+				    n->child[n->keys[i]];
+				const ucl_object_t *kv = ucl_object_lookup(v,
+				    kn->name);
+
+				if (kv != NULL && (ucl_object_tostring_forced(
+				    kv) == NULL || strcmp(
+				    ucl_object_tostring_forced(kv),
+				    seg[ns - 1].key[i]) != 0))
+					xo_errx(1, "set: %s: its %s is the "
+					    "path's", n->name, kn->name);
+				if (kv == NULL)
+					ucl_object_insert_key(v,
+					    ucl_object_fromstring(
+					    seg[ns - 1].key[i]), kn->name, 0,
+					    true);
+			}
+			arr = ucl_object_typed_new(UCL_ARRAY);
+			ucl_array_append(arr, ucl_object_ref(v));
+		}
+		if ((error = yjson_node(d, n, arr != NULL ? arr : v, a, &made,
+		    why, sizeof(why))) != 0)
+			xo_errx(1, "set: %s", why[0] != '\0' ? why :
+			    strerror(error));
+		ucl_object_unref(arr);
+		ucl_object_unref(v);
+		free(text);
+	}
+
+	/* Sent back whole; then committed, confirmed. */
+	ytold_begin(cl);
+	if (yjson_edit_tree(cl->conn, t, &top, 1, ds, accepts, naccepts, err,
+	    sizeof(err), &errsid, tag, sizeof(tag)) != 0) {
+		ytold_end(true);
+		refused("set", err, tag);
+	}
+	committed = confirmed = false;
+	if (ds == CBL_YDS_CANDIDATE && !stop) {
+		(void)snprintf(token, sizeof(token), "%08x%08x%08x%08x",
+		    arc4random(), arc4random(), arc4random(), arc4random());
+		memset(&cin, 0, sizeof(cin));
+		cin.confirmed = true;
+		cin.persist = token;
+		if (safe_wait > 0) {
+			cin.has_confirm_timeout = true;
+			cin.confirm_timeout = safe_wait;
+		}
+		if (netconf_try(cl, "commit", &cin, err, sizeof(err), tag,
+		    sizeof(tag)) != 0) {
+			memset(&din, 0, sizeof(din));
+			(void)netconf_try(cl, "discard-changes", &din, NULL, 0,
+			    NULL, 0);
+			ytold_end(true);
+			refused("set", err, tag);
+		}
+		committed = true;
+		/* Confirmed at once, the host still answering; with -s,
+		 * left for you to. */
+		if (!safe) {
+			memset(&cin, 0, sizeof(cin));
+			cin.persist_id = token;
+			if (netconf_try(cl, "commit", &cin, err, sizeof(err),
+			    tag, sizeof(tag)) != 0) {
+				ytold_end(true);
+				xo_errx(1, "set: committed, not confirmed: %s "
+				    "(undone at its timeout)", err);
+			}
+			confirmed = true;
+		}
+	}
+	ytold_end(true);
+	op = del ? "delete" : "set";
+	dsname = ds == CBL_YDS_RUNNING ? "running" : "candidate";
+	xo_open_container("set");
+	xo_emit("{:path/%s}: {:operation/%s}{L: in }{:datastore/%s}", argv[0],
+	    op, dsname);
+	xo_emit("{en:committed/%s}{en:confirmed/%s}", committed ? "true" :
+	    "false", confirmed ? "true" : "false");
+	if (confirmed)
+		xo_emit("{L:, committed and confirmed}\n");
+	else if (committed) {
+		xo_emit("{L:, committed}\n");
+		xo_emit("{Lw:confirm within}{:seconds/%u}{L: seconds: "
+		    "arcanactl commit -i }{:persist-id/%s}\n", safe_wait > 0 ?
+		    safe_wait : 600, token);
+	} else
+		xo_emit("\n");
+	xo_close_container("set");
+	cbl_dtree_free(t);
+	cbl_yarena_free(a);
+	free(path);
+	return (0);
 }
 
 /*
@@ -2351,6 +2862,123 @@ cmd_services_convert(struct arc_client *cl, int argc, char **argv)
 			if (v->left != NULL)
 				xo_emit("  left: {:left/%s}", v->left);
 			xo_emit("\n");
+			xo_close_instance("variable");
+		}
+		xo_close_list("variable");
+		xo_close_instance("service");
+	}
+	xo_close_list("service");
+	cbl_ybuf_free(&t);
+	cbl_yarena_free(a);
+	cbl_msg_free(rep);
+	return (0);
+}
+
+/*
+ * services release [-n] name...: convert's inverse, the services'
+ * rc.conf configuration given back to your files by arcana-services'
+ * release action; what it gave back (or with -n would) a row each: the
+ * variable, the value put back and the file and line it is on, or what
+ * was only dropped from Arcana's file and why.
+ */
+static int
+cmd_services_release(struct arc_client *cl, int argc, char **argv)
+{
+	const struct cbl_ynode				*n, *act, *in, *out;
+	struct arcana_services_services_release_input	 i;
+	struct arcana_services_services_release_output	 o;
+	struct cbl_ybuf					 t = { NULL, 0, 0 };
+	cbl_msg						*req, *rep = NULL;
+	cbl_yarena					*a;
+	char						 why[256];
+	int						 ch, error;
+
+	memset(&i, 0, sizeof(i));
+	optind = 1;
+	optreset = 1;
+	while ((ch = getopt(argc, argv, "n")) != -1) {
+		switch (ch) {
+		case 'n':
+			i.has_dry_run = true;
+			i.dry_run = true;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (optind == argc)
+		usage();
+	i.service.v = (const char *const *)argv + optind;
+	i.service.n = (size_t)(argc - optind);
+	if ((n = ytop_named("services")) == NULL || (act = ychild(n,
+	    "release")) == NULL || (in = ychild(act, "input")) == NULL ||
+	    (out = ychild(act, "output")) == NULL)
+		xo_errx(1, "services: arcana-services is not in the tables");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "services");
+	if ((error = cbl_yiid_write(n, NULL, 0, &t)) != 0 ||
+	    (error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_RPC, 0, &req)) != 0 ||
+	    (error = cbl_msg_put_ynode(req, in, &i)) != 0 ||
+	    (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0)
+		xo_errx(1, "services: %s", strerror(error));
+	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+		refused("services release", rep != NULL && cbl_msg_err_str(rep)
+		    != NULL ? cbl_msg_err_str(rep) : strerror(error), rep !=
+		    NULL ? cbl_msg_err_apptag(rep) : NULL);
+	memset(&o, 0, sizeof(o));
+	if ((error = cbl_msg_ydecode(rep, out, &o, a, 0, why, sizeof(why))) !=
+	    0 && error != ENOENT)
+		xo_errx(1, "services: %s", why);
+	warnings_of(rep);
+	xo_emit("{T:/%-16s} {T:/%-24s} {T:/%-24s} {T:/%s}\n", "SERVICE",
+	    "VARIABLE", "VALUE", "WHERE");
+	xo_open_list("service");
+	for (size_t k = 0; k < o.service.n; k++) {
+		const struct arcana_services_services_release_output_service *s =
+		    &o.service.v[k];
+		bool first = true;
+
+		xo_open_instance("service");
+		xo_emit("{e:name/%s}", s->name);
+		if (s->variable.n == 0)
+			xo_emit("{d:service/%-16s} {d:/nothing to give back}\n",
+			    s->name);
+		xo_open_list("variable");
+		for (size_t j = 0; j < s->variable.n; j++) {
+			const struct
+			    arcana_services_services_release_output_service_variable
+			    *v = &s->variable.v[j];
+
+			xo_open_instance("variable");
+			xo_emit("{e:name/%s}", v->name);
+			if (v->arcana_value != NULL)
+				xo_emit("{e:arcana-value/%s}", v->arcana_value);
+			xo_open_list("restored");
+			for (size_t r = 0; r < v->restored.n; r++) {
+				xo_open_instance("restored");
+				xo_emit("{d:service/%-16s} {d:variable/%-24s} "
+				    "{:value/%-24s} {:file}:{:line/%u}\n",
+				    first ? s->name : "", r == 0 ? v->name : "",
+				    v->restored.v[r].value != NULL ?
+				    v->restored.v[r].value : "",
+				    v->restored.v[r].file,
+				    v->restored.v[r].line);
+				xo_close_instance("restored");
+				first = false;
+			}
+			xo_close_list("restored");
+			if (v->dropped != NULL) {
+				xo_emit("{d:service/%-16s} {d:variable/%-24s} "
+				    "{d:value/%-24s} dropped: {:dropped/%s}\n",
+				    first ? s->name : "", v->name,
+				    v->arcana_value != NULL ? v->arcana_value :
+				    "", v->dropped);
+				first = false;
+			}
+			if (v->differs != NULL)
+				xo_emit("{d:/%-16s} {d:/%-24s} differs: "
+				    "{:differs/%s}\n", "", "", v->differs);
 			xo_close_instance("variable");
 		}
 		xo_close_list("variable");
@@ -6466,6 +7094,15 @@ submit(struct arc_client *cl, struct arc_job_spec *sp)
 	sp->safe = safe;
 	sp->has_safe_wait = safe && safe_wait > 0;
 	sp->safe_wait = safe_wait;
+	/* -a: the warnings a service's rc.conf change accepts, as a
+	 * commit's. */
+	if (naccepts > 0 && (sp->kind == ARC_JOB_KIND_SERVICE_CONFIG ||
+	    (sp->kind == ARC_JOB_KIND_SERVICE_ACTION &&
+	    (sp->service_action == ARC_SERVICE_ACTION_ENABLE ||
+	    sp->service_action == ARC_SERVICE_ACTION_DISABLE)))) {
+		sp->accept.v = accepts;
+		sp->accept.n = naccepts;
+	}
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "queue");
 	if (yq_submit(cl->conn, sp, 1, a, &v, &n, err, sizeof(err)) != 0 ||
@@ -6752,6 +7389,8 @@ main(int argc, char *argv[])
 		rc = cmd_get(&cl, argc, argv);
 	else if (strcmp(argv[0], "edit") == 0)
 		rc = cmd_edit(&cl, argc, argv);
+	else if (strcmp(argv[0], "set") == 0)
+		rc = cmd_set(&cl, argc, argv);
 	else if (strcmp(argv[0], "commit") == 0)
 		rc = cmd_commit(&cl, argc, argv);
 	else if (strcmp(argv[0], "cancel-commit") == 0)
@@ -6785,6 +7424,9 @@ main(int argc, char *argv[])
 	else if (strcmp(argv[0], "services") == 0 && strcmp(argv[1],
 	    "convert") == 0)
 		rc = cmd_services_convert(&cl, argc - 1, argv + 1);
+	else if (strcmp(argv[0], "services") == 0 && strcmp(argv[1],
+	    "release") == 0)
+		rc = cmd_services_release(&cl, argc - 1, argv + 1);
 	else if (strcmp(argv[0], "service") == 0)
 		rc = cmd_service(&cl, argc, argv);
 	else if (strcmp(argv[0], "interface") == 0 ||

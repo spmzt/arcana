@@ -3994,6 +3994,44 @@ part_system(void)
 	    "\"$' root/etc/periodic.conf") != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "periodic.conf is not written");
+	/*
+	 * A service jail, committed to Arcana's rc.conf file: off when
+	 * neither variable is there is done, nothing to take out; on,
+	 * NAME_svcj YES and its options; off, both taken out, never NO.
+	 */
+	run("const f = document.querySelector('form[data-form=sv-svcj]'); "
+	    "f.service.value = 'ntpd'; f.on.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=sv-svcj] + p.note') && "
+	    "document.querySelector('form[data-form=sv-svcj] + p.note')"
+	    ".textContent.includes('Saved')", 20);
+	ATF_CHECK(system("test ! -e root/usr/local/etc/rc.conf.d/arcana || "
+	    "! grep -q ntpd_svcj root/usr/local/etc/rc.conf.d/arcana") == 0);
+	run("const f = document.querySelector('form[data-form=sv-svcj]'); "
+	    "f.service.value = 'ntpd'; f.on.checked = true; "
+	    "f.requestSubmit();");
+	/* Arcana's file not named in rc_conf_files yet: the warning
+	 * accepted under the form. */
+	click_when("form[data-form=sv-svcj] + p.note button[data-act="
+	    "sv-yc-accept]", 20);
+	for (i = 0; i < 300 && system("grep -q '^ntpd_svcj=\"YES\"$' "
+	    "root/usr/local/etc/rc.conf.d/arcana && grep -q "
+	    "'^ntpd_svcj_options=\"net_basic\"$' root/usr/local/etc/rc.conf.d/"
+	    "arcana") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the service jail is not written");
+	wait_js("document.querySelector('form[data-form=sv-svcj] + p.note') && "
+	    "document.querySelector('form[data-form=sv-svcj] + p.note')"
+	    ".textContent.includes('Saved')", 20);
+	run("const f = document.querySelector('form[data-form=sv-svcj]'); "
+	    "f.service.value = 'ntpd'; f.on.checked = false; "
+	    "f.requestSubmit();");
+	for (i = 0; i < 300 && system("! grep -q ntpd_svcj root/usr/local/etc/"
+	    "rc.conf.d/arcana") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the service jail is not taken out");
+	ATF_CHECK(system("! grep -q 'svcj=\"NO\"' root/usr/local/etc/rc.conf.d/"
+	    "arcana") == 0);
 	dock_closed();
 	shot("7p-system");
 	/* Security: securelevel at boot; a MAC module, kept in kld_list. */

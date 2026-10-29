@@ -1428,6 +1428,136 @@ vc_comment(struct vc_file *f, const char *name, const char *mark, char *err,
 }
 
 /*
+ * vc_comment()'s inverse: every line that is "#", an assignment of name
+ * and "  # mark" put back as the assignment, the rest of the line as it
+ * was; a comment without the mark left alone.  One vc_comment() took
+ * off a shared line comes back on its own line, before the rest, which
+ * sh(1) reads the same.  Refused, the file as it was (EINVAL): a marked
+ * line of name's that would not read back as that assignment alone,
+ * plainly and with its value (another on it, an "if" or a here-document
+ * around it now).  The lines put back, or -1.
+ */
+int
+vc_uncomment(struct vc_file *f, const char *name, const char *mark,
+    char *err, size_t errlen)
+{
+	struct vc_file	 nf, lf;
+	struct buf	 b = { 0 };
+	struct back {
+		int	 line;
+		char	*value;
+	}		*bk = NULL;
+	size_t		 mlen, nbk = 0, s, eol, e;
+	int		 line = 1, rc = -1;
+
+	if (!vc_name_ok(f->dialect, name) || mark == NULL || *mark == '\0') {
+		fail(err, errlen, "%s: not a variable's name, or no mark",
+		    name);
+		errno = EINVAL;
+		return (-1);
+	}
+	mlen = strlen(mark);
+	for (s = 0; s < f->len; s = e, line++) {
+		const char *t = f->text + s;
+		size_t blen;
+		bool ours = false;
+
+		for (eol = s; eol < f->len && f->text[eol] != '\n'; eol++)
+			;
+		e = eol < f->len ? eol + 1 : eol;
+		/* "#" body "  # " mark */
+		if (eol - s >= 1 + 4 + mlen && t[0] == '#' &&
+		    memcmp(f->text + eol - mlen - 4, "  # ", 4) == 0 &&
+		    memcmp(f->text + eol - mlen, mark, mlen) == 0) {
+			blen = eol - s - 1 - 4 - mlen;
+			if (vc_parse(&lf, f->dialect, t + 1, blen, NULL, 0) ==
+			    0) {
+				for (size_t i = 0; i < lf.na; i++)
+					if (strcmp(lf.a[i].name, name) == 0)
+						ours = true;
+				if (ours && (lf.na != 1 || (lf.a[0].flags &
+				    (VC_COND | VC_OPAQUE)) != 0)) {
+					fail(err, errlen, "%s: line %d: not one "
+					    "assignment of it alone: restore it "
+					    "by hand", name, line);
+					vc_free(&lf);
+					goto out;
+				}
+				if (ours) {
+					struct back *nb;
+
+					if ((nb = reallocarray(bk, nbk + 1,
+					    sizeof(*bk))) == NULL) {
+						vc_free(&lf);
+						goto fail;
+					}
+					bk = nb;
+					bk[nbk].line = line;
+					bk[nbk].value = NULL;
+					if (lf.a[0].value != NULL &&
+					    (bk[nbk].value = strdup(
+					    lf.a[0].value)) == NULL) {
+						vc_free(&lf);
+						goto fail;
+					}
+					nbk++;
+				}
+				vc_free(&lf);
+			}
+			if (ours) {
+				if (b_puts(&b, t + 1, blen) == -1 ||
+				    b_puts(&b, f->text + eol, e - eol) == -1)
+					goto fail;
+				continue;
+			}
+		}
+		if (b_puts(&b, t, e - s) == -1)
+			goto fail;
+	}
+	if (nbk == 0) {
+		rc = 0;
+		goto done;
+	}
+	if (vc_parse(&nf, f->dialect, b.s, b.len, err, errlen) == -1)
+		goto done;
+	/* Each where it was, as it was, as plainly. */
+	for (size_t k = 0; k < nbk; k++) {
+		const struct vc_assign *a = NULL;
+
+		for (size_t i = 0; i < nf.na && a == NULL; i++)
+			if (nf.a[i].line == bk[k].line &&
+			    strcmp(nf.a[i].name, name) == 0)
+				a = &nf.a[i];
+		if (a == NULL || a->nstmt != 1 ||
+		    (a->flags & (VC_COND | VC_OPAQUE)) != 0 ||
+		    (a->value == NULL) != (bk[k].value == NULL) ||
+		    (a->value != NULL && strcmp(a->value, bk[k].value) != 0)) {
+			fail(err, errlen, "%s: line %d would not read back as "
+			    "it was (an \"if\", a here-document around it?): "
+			    "restore it by hand", name, bk[k].line);
+			vc_free(&nf);
+			goto out;
+		}
+	}
+	vc_free(f);
+	*f = nf;
+	rc = (int)nbk;
+	goto done;
+fail:
+	fail(err, errlen, "%s: %s", name, strerror(ENOMEM));
+	errno = ENOMEM;
+	goto done;
+out:
+	errno = EINVAL;
+done:
+	for (size_t k = 0; k < nbk; k++)
+		free(bk[k].value);
+	free(bk);
+	free(b.s);
+	return (rc);
+}
+
+/*
  * The file written to path atomically: a temporary file next to it,
  * the old one's mode and owner (mode for a new one), fsync, rename.
  */

@@ -68,6 +68,7 @@ module: arcana-jobs
        |     |  |  +---w service-action!
        |     |  |     +---w service    string
        |     |  |     +---w action     enumeration
+       |     |  |     +---w accept*    string
        |     |  +--:(service-config)
        |     |  |  +---w service-config!
        |     |  |     +---w service    string
@@ -75,6 +76,7 @@ module: arcana-jobs
        |     |  |     |  +---w name     string
        |     |  |     |  +---w value?   string
        |     |  |     +---w unset*     string
+       |     |  |     +---w accept*    string
        |     |  +--:(pkg-upgrade)
        |     |  |  +---w pkg-upgrade!
        |     |  |     +---w jail?       string

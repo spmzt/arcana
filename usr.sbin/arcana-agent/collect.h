@@ -96,6 +96,10 @@ struct rca {
 	struct vc_file	*uf;		/* the user's, read by rca_get() */
 	char		**drop;		/* out of Arcana's, commented in theirs */
 	size_t		 ndrop;
+	/* What rca_write() takes as accepted without a req (a job's), its
+	 * refusal then in err alone. */
+	const char	*const *accept;
+	size_t		 naccept;
 };
 
 int	rca_open(struct rca *x, const char *svc, char *err, size_t errlen);
@@ -112,6 +116,12 @@ int	rca_set(struct rca *x, const char *name, const char *value,
 int	rca_drop(struct rca *x, const char *name);
 /* Another file a commit changes, kept as it is for rca_undo(). */
 int	rca_keep(struct rca *x, const char *path);
+/* name out of Arcana's file, the user's files as they are (the release
+ * action).  rca_put(): f, Arcana's file or one of the user's, written
+ * to path, kept as it was first for rca_undo(). */
+int	rca_unset(struct rca *x, const char *name, char *err, size_t errlen);
+int	rca_put(struct rca *x, const struct vc_file *f, const char *path,
+	    char *err, size_t errlen);
 void	rca_close(struct rca *x);
 
 /*
@@ -250,6 +260,11 @@ int	yservices_diff(const struct arcana_services_services_service *have,
 int	yservices_convert(cbl_req *req, const char *const *names, size_t n,
 	    bool dry, cbl_yarena *a,
 	    struct arcana_services_services_convert_output *out);
+/* The release action's, convert's inverse: the n services named given
+ * back to the user's files, out of Arcana's; dry says what would be. */
+int	yservices_release(cbl_req *req, const char *const *names, size_t n,
+	    bool dry, cbl_yarena *a,
+	    struct arcana_services_services_release_output *out);
 
 /*
  * arcana-packages (ira/ypackages.c, ira/packages.c), the host's or a

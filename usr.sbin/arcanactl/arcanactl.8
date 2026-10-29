@@ -231,6 +231,74 @@ until a
 .Fl r
 edits running itself, which the agent refuses: its changes go through
 a confirmed commit of the candidate.
+.It Xo
+.Cm set
+.Op Fl nx
+.Op Fl d Ar datastore
+.Op Fl a Ar warning
+.No ... Ar path
+.Op Ar value | @ Ns Ar file
+.Xc
+Give the node RFC 8040's api-path
+.Ar path
+names
+.Pq Li /module:node/list=key,key/leaf
+.Ar value ,
+or with
+.Fl x
+take it away, in the candidate, then commit the candidate confirmed
+and confirm it at once, the agent still answering: one command for an
+.Cm edit
+and a
+.Cm commit Fl c .
+A leaf's
+.Ar value
+is text, as its type reads it
+.Pq Li true , Li 1500 , Li iana-if-type:ethernetCsmacd ;
+a container's or a list entry's is RFC 7951's JSON, given or from
+.Ar file ,
+the node it becomes, an entry's keys those of the path (a key the JSON
+gives otherwise is refused); a leaf-list's value is added to it, and
+.Li leaf-list=value
+names one value, to take away.
+A key's characters that would end it are percent-encoded, as RFC 8040
+has them.
+The datastore's top-level node is read, changed and sent back whole in
+one EDIT; since a commit puts in use whatever the candidate has, a
+candidate with changes of its own is refused: commit or discard them
+first.
+.Fl n
+stops at the candidate, left for a
+.Cm commit .
+With
+.Fl s ,
+the confirmed commit is left for you to confirm: it is undone at
+.Fl W Ns 's
+seconds (the agent's own, 600, without) unless confirmed,
+.Dl confirm within 600 seconds: arcanactl commit -i 3f9a0c2e8b71d465
+.Fl d Cm running
+edits running itself, which the agent refuses for its modules, as
+.Cm edit Fl r .
+Refused as an
+.Cm edit
+is: NACM's write rules, a must, a type, a mandatory node; a refusal a
+warning can be accepted for says its error-app-tag, for
+.Fl a .
+With
+.Fl -libxo ,
+.Ar path ,
+the operation
+.Pq Cm set No or Cm delete ,
+the datastore, and whether it was committed and confirmed:
+.Bd -literal -offset indent
+$ arcanactl set /ietf-interfaces:interfaces/interface=lo1/description lab
+/ietf-interfaces:interfaces/interface=lo1/description: set in candidate,
+committed and confirmed
+$ arcanactl --libxo json set -x /ietf-netconf-acm:nacm/groups/group=ops
+{"arcana": {"set": {"path":"/ietf-netconf-acm:nacm/groups/group=ops",
+"operation":"delete","datastore":"candidate","committed":true,
+"confirmed":true}}}
+.Ed
 .It Cm commit Oo Fl c Ar seconds Oo Fl p Ar persist Oc Oc Oo Fl i Ar persist-id Oc Oo Fl a Ar warning Oc ...
 Put the candidate in use (RFC 6241's commit).
 With
@@ -292,7 +360,7 @@ as arcana-events' event, its kind and its data.
 .Op Fl n Ar count
 .Op Fl o Ar seconds | Fl p Ar seconds | Fl r Ar time
 .Op Fl s Ar stop-time
-.Op Fl x Ar xpath
+.Op Fl x Ar xpath | Fl f Ar filter
 .Xc
 An RFC 8639 dynamic subscription, on a stream of its own: the NETCONF
 stream, every event the agent tells; with
@@ -308,6 +376,22 @@ replays the events the agent keeps since an RFC 3339 time first, then
 replay-completed, then the live ones.
 .Fl x
 is the XPath filter of the stream's events or of the datastore,
+.Fl f
+its subtree filter (RFC 6241 section 6), RFC 7951's JSON of the nodes
+it names, given or from a file after an
+.Sq @ :
+.Dq null
+a selection node (the node and all below it), an object a containment
+node, a list an array of them, a leaf's value a content match node.
+One interface's counters:
+.Bd -literal -offset indent
+arcanactl subscribe -p 10 -f '{"ietf-interfaces:interfaces":
+    {"interface":[{"name":"lo0","statistics":null}]}}'
+.Ed
+.Pp
+The agent is sent it as YANG-CBOR anydata, as cblink's
+.Pa WIRE-FORMAT.md
+section 7.6.1 says;
 .Fl s
 an RFC 3339 time the subscription ends at,
 .Fl n
@@ -409,6 +493,35 @@ It is a change like a commit's: what you have not accepted with
 .Fl a
 .Pq Cm rc-conf-files , rc-conf-conflict ; see Sx Warnings
 is refused, and failing, every file is put back.
+.It Cm services release Oo Fl n Oc Ar name ...
+The inverse of
+.Cm services convert
+(arcana-services' release action): the named services' configuration
+given back to your files.
+Each
+.Va name_*
+variable is removed from Arcana's file, and every line of yours
+commented out for one
+.Pq Dq # taken by Arcana
+in the files
+.Xr rc 8
+reads for the service is put back as it was; one convert took off a
+line it shared comes back on a line of its own.
+A row each is printed: the variable, the value put back and the file
+and line it is on; where
+.Xr rc 8
+now reads another value than Arcana's file had,
+.Dq differs:
+gives both; a variable with no line of yours to put back is only
+dropped
+.Pq Dq dropped: ,
+its value then what your files or the defaults say.
+A service with nothing to give back says so.
+With
+.Fl n
+nothing is written.
+All or nothing: a marked line that would not read back as it was
+refuses the request, and failing, every file is put back.
 .It Cm service Oo Fl a Ar warning Oc ... Ar name Cm start | stop | restart | reload | enable | disable
 Change a service:
 .Cm start ,
@@ -436,8 +549,10 @@ With
 .Fl q
 or
 .Fl s ,
-the service-action job instead, its rcvar by
-.Xr sysrc 8 .
+the service-action job instead, its rcvar written to Arcana's rc.conf
+file as a commit writes it, the warnings
+.Fl a
+accepts carried in the job.
 The service as it is after follows, by its
 .Ic read
 action.
@@ -460,8 +575,11 @@ With
 .Fl q
 or
 .Fl s ,
-the service-config job instead, by
-.Xr sysrc 8 .
+the service-config job instead, written to Arcana's rc.conf file as a
+commit writes it, the warnings
+.Fl a
+accepts carried in the job; in safe mode the files are put back unless
+confirmed.
 .It Cm net routes | nexthops | connections | sockets | interfaces | netgraph | wireguard | bird | ipsec | multicast Op Fl 4 | Fl 6
 The host's routing table
 .Pq Nm netstat Fl rnW ,

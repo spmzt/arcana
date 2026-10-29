@@ -3124,6 +3124,29 @@ arcana_services_services_convert_action(cbl_req *req,
 	return (error);
 }
 
+/* convert's inverse: the services given back to the admin's files, as
+ * a change of the agent's own too. */
+int
+arcana_services_services_release_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_services_services_release_input *in,
+    struct arcana_services_services_release_output *out, cbl_yarena *a)
+{
+	bool	dry = in->has_dry_run && in->dry_run;
+	int	error;
+
+	(void)target;
+	if (dry)
+		return (yservices_release(req, in->service.v, in->service.n,
+		    true, a, out));
+	if (!change_begin("services release"))
+		return (said(req, "not done: arcana-agent is stopping"));
+	error = yservices_release(req, in->service.v, in->service.n, false, a,
+	    out);
+	change_end();
+	return (error);
+}
+
 int
 arcana_sshd_sshd_get(cbl_req *req, struct arcana_sshd *data, cbl_yarena *a)
 {

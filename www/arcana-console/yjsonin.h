@@ -44,5 +44,15 @@ int	yjson_node(struct cbl_dnode *parent, const struct cbl_ynode *n,
 	    char *why, size_t len);
 int	yjson_text(const struct cbl_ynode *n, const char *text, cbl_yarena *a,
 	    void **out, char *why, size_t len);
+/*
+ * A subtree filter (RFC 6241 section 6) of schema s from its JSON v, an
+ * object of the top-level nodes it names: null a selection node, an
+ * object a containment node, a list an array of them, a leaf's value a
+ * content match node (cblink's WIRE-FORMAT.md section 7.6.1, in JSON).
+ * *out the filter, cbl_dfilter_free()'d by the caller.
+ */
+struct cbl_dfilter;
+int	yjson_subtree(const struct cbl_yschema *s, const ucl_object_t *v,
+	    struct cbl_dfilter **out, char *why, size_t len);
 
 #endif	/* !_ARCANA_YJSONIN_H_ */

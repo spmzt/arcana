@@ -173,7 +173,8 @@ steps need of it:
   §5.3).
 - **Targets.** A list entry (`[SID, keys...]`) as a GET's target, for
   RESTCONF's api-paths (4.1.3).
-- **Subscriptions.** Subtree filters, filters by reference, `modify`,
+- **Subscriptions.** Subtree filters (done, 3.2.4), filters by
+  reference, `modify`,
   suspension on credit exhaustion as `subscription-suspended
   {unsupportable-volume}` and its return `subscription-resumed`,
   replay, configured subscriptions (3.2.4 to 3.2.8).
@@ -740,7 +741,9 @@ whose first part is served.
     put back when the commit fails. The user moves a service's
     variables under Arcana deliberately with arcana-services' `convert`
     action (`arcanactl services convert [-n] [name ...]`), which lists
-    each variable taken with its file and line.
+    each variable taken with its file and line, and gives them back
+    with its `release` action (`arcanactl services release [-n] name
+    ...`, 3.1.2).
   - Changes through `candidate` and a confirmed commit, undone unless
     confirmed.
   - A boot-time tunable written to its file with a "takes effect after
@@ -901,12 +904,31 @@ whose first part is served.
   disable and variables, a jail's boot on its card, the System tab's
   service jails, Linux and auditd (on: enabled, then started; off:
   stopped, then disabled, rc.subr acting on an enabled service alone).
+  A service jail is a YANG Patch: on, `NAME_svcj="YES"` and its
+  options merged (none: removed); off, both removed ("remove", which
+  takes one not there as done), never `NO` written.
   start, stop, restart and reload stay the service-action job, as the
-  jobs' service-action and service-config kinds stay (sysrc(8), safe
-  mode).  Check: `services`, `service_actions`, `service_config`,
+  jobs' service-action and service-config kinds stay; since 2026-10-29
+  their enable, disable and variables are written as a commit writes
+  them, to Arcana's rc.conf file (rcarcana.c, no sysrc(8)), the job's
+  `accept` (jobs.yaml's field, arcana.yaml's job-spec attribute, a
+  leaf-list of the two kinds in arcana-jobs-kinds; arcanactl's -a) the
+  warnings accepted, a safe job's undo the files as they were.
+  Check: `services`, `service_actions`, `service_config`,
   `yang_services`, `datastores_services`, `jail_boot`, `jobs`,
   `safe_mode`; the console's `services`, `jails`; `pwa_hosts`,
-  `pwa_ra`.
+  `pwa_ra`.  convert's inverse is the `release` action (`arcanactl
+  services release [-n] name ...`): each named service's `<name>_*`
+  variables out of Arcana's file, and every line of the user's convert
+  (or a commit) commented out for one put back as it was
+  (libvarconf's vc_uncomment(), refusing a marked line that would not
+  read back so; one taken off a shared line comes back on its own),
+  in the files rc(8) reads for it; all or nothing, every file put back
+  on a failure, under the change lock.  It lists each variable with
+  the file and line put back, Arcana's value where rc(8) now reads
+  another, and what was only dropped (no line of the user's: the
+  defaults' value, or another file's).  Check: libvarconf's
+  `uncomments`, `datastores_services`.
 - 3.1.3 A (done): `arcana-packages`: the packages and pkg-upgrade
   operations retired; check: the packages tests.  Done (ira/ypackages.c,
   yarcana.c): the host's packages and a jail's (arcana-jails' jail)
@@ -1246,9 +1268,39 @@ whose first part is served.
   capabilities, or a vlan's, lagg's or bridge's settings: those are
   told by the agent's own jobs that change them, or polled; check: an
   address added arrives as a patch within the dampening period.
-- 3.2.4 A (the rest): subtree filters on subscriptions, once their
-  YANG-CBOR has an encoding (RFC 6241's are XML); the XPath filter
-  meanwhile; check: one interface's counters only.
+- 3.2.4 A (done): subtree filters on subscriptions; check: one
+  interface's counters only.  Done (2026-10-29): RFC 6241's subtree
+  filters are XML and RFC 9254 gives them no CBOR, so cblink defines
+  one (its WIRE-FORMAT.md 7.6.1): the filter is a YANG-CBOR instance of
+  the nodes it names, the content of the anydata
+  (`stream-subtree-filter`, `datastore-subtree-filter`), keys SID
+  deltas from the anydata's as a container's; `null` a selection node of
+  any node, a container's map a containment node (empty, a selection
+  node), a list an array of maps, a filter node each, a leaf's value a
+  content match node, a leaf-list's array of values one each.  Judged
+  sound: every RFC 6241 filter node of YANG data has a form, a value is
+  read by its leaf's type as data is; what XML has and this has not is a
+  namespace without a name (a wildcard across modules) and attribute
+  matches, neither meaningful for SIDs and YANG data.  The one cost:
+  the keys are deltas, so a filter moved to another anydata
+  (`subscription-modified`, the `subscriptions` list) is written again
+  from the schema, not copied.  cblink (`cbl_dfilter_decode()`,
+  `cbl_dfilter_encode()`, `cbl_dfilter_top()`; cbl_ysub.c) applies it
+  where the XPath filter was: the periodic and on-change reads (their
+  top-level nodes the filter's), the stream's events, replay, modify
+  (one kind of filter in the other's place), configured subscriptions,
+  the state notifications; a filter of no node, or a value not of its
+  leaf's type, is refused at the open (`invalid-value`).  A JSON
+  rendering of anydata that does not decode as data walks the tables,
+  its nulls kept, so `get subscriptions` shows the filter.  The feature
+  `subtree` is on in arcana.yang.mk; the agent lists the filter
+  (ynotif.c); arcanactl's `subscribe -f` takes it as RFC 7951 JSON
+  (`yjson_subtree()`, shared with the console).  Checked: cblink's
+  ysub_test (`subtree`, `modify`), agent_test `yang_subscribe_subtree`
+  (lo0's statistics alone, one name in each push, the filter listed, a
+  job's events alone, bad filters refused).  Left: the console's RESTCONF
+  takes no subtree filter in JSON for a configured subscription yet
+  (yjsonin.c takes no anydata), nor do the pages offer one.
 - 3.2.7 A (done): configured subscriptions: the agent calling the console
   as receiver; check: the console restarted, records resume.  Done
   (2026-10-28): RFC 8639's `configured` feature, the transport
@@ -1291,7 +1343,8 @@ whose first part is served.
   the token alone refused with certificate), agent_tls_test
   (configured: the header sent).  Left: no UI form yet (the API gives
   the document to PUT); a receiver's `reset` action and `suspended`
-  are there but untested; subtree filters as 3.2.4.
+  are there but untested; subtree filters by 3.2.4, through the
+  candidate as YANG-CBOR (the console's JSON for them is left).
 - 3.3.1 A (done): NACM groups from the certificate's subject or the socket's
   uid, rule-lists in `running`; check: RFC 8341's examples. RFC 8341
   followed strictly (decided 2026-10-28): its groups, rule-lists and
@@ -1320,7 +1373,27 @@ whose first part is served.
   under a bulk dump.
 - 3.6.1 C (the rest): `arcanactl set <path>` (an `EDIT`) with libxo
   output; the old verbs removed with the interim module; check: the
-  arcanactl tests rewritten.
+  arcanactl tests rewritten.  `set` done (2026-10-29): `set [-nx] [-d
+  candidate|running] [-a warning]... path [value | @file]`, the path
+  RFC 8040's api-path, a leaf's value text as its type reads it, a
+  container's or an entry's RFC 7951 JSON (the entry's keys the
+  path's), a leaf-list's added to it, `-x` taking the node away.  As the
+  console's RESTCONF does (the agents take a top-level node whole), the
+  datastore's top-level node is read, changed in arcanactl's own tree
+  and sent back in one EDIT of the candidate; then a confirmed commit
+  with a persist token, confirmed at once (with `-s` left for the
+  admin, `-W` its timeout), discarded where the commit is refused; `-n`
+  stops at the candidate; `-d running` is an EDIT of running, which the
+  agent refuses for its modules.  A candidate with changes of its own
+  is refused unless `-n`, so a set never commits another's edits
+  (running and the candidate read whole and compared).  libxo: `set`
+  {path, operation, datastore, committed, confirmed}.  Checked:
+  agent_test `yang_set` (a leaf, a list entry and a leaf-list value
+  under it, `-n -x` of one value, the candidate guard, a delete in
+  libxo JSON, `-s`), `yang_set_refused` (NACM: another user denied; a
+  must: a FIB disabled; running; a path, a value and a key that are
+  none; running and the candidate as they were).  The old verbs stay
+  until 3.8 takes the interim module away.
 - 3.7.1 A, C: every former operation's test against its module; the
   root suite on real jails; check: `make check` green as root.
 - 3.8.1 A, C: the interim module, `share/arcana/wire.awk` and

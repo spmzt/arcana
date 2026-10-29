@@ -1954,8 +1954,12 @@ secpage_action(const char *act, const char *arg, const char *value)
 			title[n++] = "freshclam.conf written, its mirrors the "
 			    "defaults";
 		}
+		/* Enabled as a commit writes it, in Arcana's rc.conf file:
+		 * the admin's button accepts naming that file and taking a
+		 * line of theirs for it. */
 		if (asprintf(&json[n], "{\"kind\":\"service-action\",\"service"
-		    "\":\"clamav_freshclam\",\"action\":\"enable\"}") == -1)
+		    "\":\"clamav_freshclam\",\"action\":\"enable\",\"accept\":"
+		    "[\"rc-conf-files\",\"rc-conf-conflict\"]}") == -1)
 			abort();
 		title[n++] = "clamav_freshclam enabled at boot";
 		if (asprintf(&json[n], "{\"kind\":\"service-action\",\"service"

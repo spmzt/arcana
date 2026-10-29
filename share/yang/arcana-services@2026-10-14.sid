@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-services",
     "module-revision": "2026-10-14",
-    "sid-file-version": 3,
+    "sid-file-version": 4,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 200, 100.",
     "dependency-revision": [
       {
@@ -331,6 +331,86 @@
         "namespace": "data",
         "identifier": "/arcana-services:services/service/read/output/status",
         "sid": "62262"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release",
+        "sid": "62263"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/input",
+        "sid": "62264"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/input/dry-run",
+        "sid": "62265"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/input/service",
+        "sid": "62266"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output",
+        "sid": "62267"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output/service",
+        "sid": "62268"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output/service/name",
+        "sid": "62269"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output/service/variable",
+        "sid": "62270"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output/service/variable/arcana-value",
+        "sid": "62271"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output/service/variable/differs",
+        "sid": "62272"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output/service/variable/dropped",
+        "sid": "62273"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output/service/variable/name",
+        "sid": "62274"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output/service/variable/restored",
+        "sid": "62275"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output/service/variable/restored/file",
+        "sid": "62276"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output/service/variable/restored/line",
+        "sid": "62277"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/release/output/service/variable/restored/value",
+        "sid": "62278"
       }
     ]
   }

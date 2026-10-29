@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana",
     "module-revision": "2026-10-22",
-    "sid-file-version": 8,
+    "sid-file-version": 9,
     "description": "Arcana's SIDs for arcana (RFC 9595's experimental range; share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -6091,440 +6091,440 @@
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan",
-        "sid": "74072",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74072"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird",
-        "sid": "74073",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74073"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/input",
-        "sid": "74074",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74074"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/input/json",
-        "sid": "74075",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74075"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output",
-        "sid": "74076",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74076"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/error",
-        "sid": "74077",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74077"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/ok",
-        "sid": "74078",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74078"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace",
-        "sid": "74079",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74079"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace/argv",
-        "sid": "74080",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74080"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace/detail",
-        "sid": "74081",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74081"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace/duration-us",
-        "sid": "74082",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74082"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace/error-output",
-        "sid": "74083",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74083"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace/exit",
-        "sid": "74084",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74084"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace/id",
-        "sid": "74085",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74085"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace/kind",
-        "sid": "74086",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74086"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace/label",
-        "sid": "74087",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74087"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace/output",
-        "sid": "74088",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74088"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace/parent",
-        "sid": "74089",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74089"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-bird/output/trace/status",
-        "sid": "74090",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74090"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp",
-        "sid": "74091",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74091"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/input",
-        "sid": "74092",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74092"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/input/json",
-        "sid": "74093",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74093"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output",
-        "sid": "74094",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74094"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/error",
-        "sid": "74095",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74095"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/ok",
-        "sid": "74096",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74096"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace",
-        "sid": "74097",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74097"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace/argv",
-        "sid": "74098",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74098"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace/detail",
-        "sid": "74099",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74099"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace/duration-us",
-        "sid": "74100",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74100"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace/error-output",
-        "sid": "74101",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74101"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace/exit",
-        "sid": "74102",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74102"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace/id",
-        "sid": "74103",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74103"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace/kind",
-        "sid": "74104",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74104"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace/label",
-        "sid": "74105",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74105"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace/output",
-        "sid": "74106",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74106"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace/parent",
-        "sid": "74107",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74107"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dhcp/output/trace/status",
-        "sid": "74108",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74108"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns",
-        "sid": "74109",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74109"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/input",
-        "sid": "74110",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74110"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/input/json",
-        "sid": "74111",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74111"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output",
-        "sid": "74112",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74112"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/error",
-        "sid": "74113",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74113"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/ok",
-        "sid": "74114",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74114"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace",
-        "sid": "74115",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74115"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace/argv",
-        "sid": "74116",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74116"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace/detail",
-        "sid": "74117",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74117"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace/duration-us",
-        "sid": "74118",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74118"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace/error-output",
-        "sid": "74119",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74119"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace/exit",
-        "sid": "74120",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74120"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace/id",
-        "sid": "74121",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74121"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace/kind",
-        "sid": "74122",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74122"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace/label",
-        "sid": "74123",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74123"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace/output",
-        "sid": "74124",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74124"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace/parent",
-        "sid": "74125",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74125"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-dns/output/trace/status",
-        "sid": "74126",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74126"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids",
-        "sid": "74127",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74127"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/input",
-        "sid": "74128",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74128"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/input/json",
-        "sid": "74129",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74129"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output",
-        "sid": "74130",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74130"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/error",
-        "sid": "74131",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74131"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/ok",
-        "sid": "74132",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74132"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace",
-        "sid": "74133",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74133"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace/argv",
-        "sid": "74134",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74134"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace/detail",
-        "sid": "74135",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74135"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace/duration-us",
-        "sid": "74136",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74136"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace/error-output",
-        "sid": "74137",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74137"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace/exit",
-        "sid": "74138",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74138"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace/id",
-        "sid": "74139",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74139"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace/kind",
-        "sid": "74140",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74140"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace/label",
-        "sid": "74141",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74141"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace/output",
-        "sid": "74142",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74142"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace/parent",
-        "sid": "74143",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74143"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-ids/output/trace/status",
-        "sid": "74144",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74144"
       },
       {
         "namespace": "data",
@@ -6637,434 +6637,434 @@
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy",
-        "sid": "74163",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74163"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/input",
-        "sid": "74164",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74164"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/input/json",
-        "sid": "74165",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74165"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output",
-        "sid": "74166",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74166"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/error",
-        "sid": "74167",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74167"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/ok",
-        "sid": "74168",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74168"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace",
-        "sid": "74169",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74169"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace/argv",
-        "sid": "74170",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74170"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace/detail",
-        "sid": "74171",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74171"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace/duration-us",
-        "sid": "74172",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74172"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace/error-output",
-        "sid": "74173",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74173"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace/exit",
-        "sid": "74174",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74174"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace/id",
-        "sid": "74175",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74175"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace/kind",
-        "sid": "74176",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74176"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace/label",
-        "sid": "74177",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74177"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace/output",
-        "sid": "74178",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74178"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace/parent",
-        "sid": "74179",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74179"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-proxy/output/trace/status",
-        "sid": "74180",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74180"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules",
-        "sid": "74181",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74181"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/input",
-        "sid": "74182",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74182"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/input/json",
-        "sid": "74183",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74183"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output",
-        "sid": "74184",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74184"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/error",
-        "sid": "74185",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74185"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/ok",
-        "sid": "74186",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74186"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace",
-        "sid": "74187",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74187"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace/argv",
-        "sid": "74188",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74188"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace/detail",
-        "sid": "74189",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74189"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace/duration-us",
-        "sid": "74190",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74190"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace/error-output",
-        "sid": "74191",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74191"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace/exit",
-        "sid": "74192",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74192"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace/id",
-        "sid": "74193",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74193"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace/kind",
-        "sid": "74194",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74194"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace/label",
-        "sid": "74195",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74195"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace/output",
-        "sid": "74196",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74196"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace/parent",
-        "sid": "74197",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74197"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-rules/output/trace/status",
-        "sid": "74198",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74198"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer",
-        "sid": "74199",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74199"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/input",
-        "sid": "74200",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74200"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/input/json",
-        "sid": "74201",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74201"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output",
-        "sid": "74202",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74202"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/error",
-        "sid": "74203",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74203"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/ok",
-        "sid": "74204",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74204"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace",
-        "sid": "74205",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74205"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace/argv",
-        "sid": "74206",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74206"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace/detail",
-        "sid": "74207",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74207"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace/duration-us",
-        "sid": "74208",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74208"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace/error-output",
-        "sid": "74209",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74209"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace/exit",
-        "sid": "74210",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74210"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace/id",
-        "sid": "74211",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74211"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace/kind",
-        "sid": "74212",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74212"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace/label",
-        "sid": "74213",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74213"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace/output",
-        "sid": "74214",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74214"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace/parent",
-        "sid": "74215",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74215"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan-steer/output/trace/status",
-        "sid": "74216",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74216"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/input",
-        "sid": "74217",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74217"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/input/after",
-        "sid": "74218",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74218"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output",
-        "sid": "74219",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74219"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/error",
-        "sid": "74220",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74220"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/json",
-        "sid": "74221",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74221"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/ok",
-        "sid": "74222",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74222"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace",
-        "sid": "74223",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74223"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace/argv",
-        "sid": "74224",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74224"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace/detail",
-        "sid": "74225",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74225"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace/duration-us",
-        "sid": "74226",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74226"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace/error-output",
-        "sid": "74227",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74227"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace/exit",
-        "sid": "74228",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74228"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace/id",
-        "sid": "74229",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74229"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace/kind",
-        "sid": "74230",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74230"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace/label",
-        "sid": "74231",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74231"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace/output",
-        "sid": "74232",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74232"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace/parent",
-        "sid": "74233",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74233"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sdwan/output/trace/status",
-        "sid": "74234",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "74234"
       },
       {
         "namespace": "data",
@@ -10240,6 +10240,11 @@
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/features",
         "sid": "74810"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:job-spec/accept",
+        "sid": "74811"
       }
     ]
   }

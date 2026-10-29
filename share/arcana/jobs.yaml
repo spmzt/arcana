@@ -245,6 +245,10 @@ fields:
     type: text
     label: User
     help: A user of the host who signs in.
+  - field: accept
+    type: list
+    label: Warnings accepted
+    help: rc-conf-files to name Arcana's rc.conf file in rc_conf_files once, rc-conf-conflict to comment out a line of yours it takes; a space between them.
 
 kinds:
   - kind: jail-action
@@ -258,12 +262,12 @@ kinds:
   - kind: service-action
     title: A service started, stopped, reloaded, enabled or disabled
     needs: service action
-    uses: safe
+    uses: safe accept
     values: action=start|stop|restart|reload|enable|disable
   - kind: service-config
     title: A service's variables in rc.conf
     needs: service
-    uses: set unset safe
+    uses: set unset safe accept
   - kind: pkg-upgrade
     title: Packages upgraded
     uses: jail packages force pkg_ip pkg_repo
