@@ -566,7 +566,7 @@ out:
 void
 do_tls(struct work *w, const char *verb, const char *certpem,
     const char *capem, const char *peerpem, const uint8_t *peerfp,
-    struct arc_tls_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	ucl_object_t	*o;
 	const char	*e;

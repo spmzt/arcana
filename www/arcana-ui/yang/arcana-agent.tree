@@ -6,21 +6,44 @@ module: arcana-agent
      |  |  +--ro transport?   enumeration
      |  |  +--ro up?          boolean
      |  |  +--ro why?         string
-     |  +--ro sctp?      boolean
+     |  |  +--ro address*     string
+     |  |  +--ro also-why?    string
+     |  +--ro sctp?        boolean
+     |  +--ro sctp-also?   string
+     |  +--ro seen?        uint64
+     |  +--ro time?        yang:date-and-time
      |  +--ro session*
      |  |  +--ro transport?   string
      |  |  +--ro address?     string
      |  |  +--ro name?        string
      |  |  +--ro since?       yang:date-and-time
+     |  |  +--ro local*       string
+     |  |  +--ro path* [address]
+     |  |     +--ro address    string
+     |  |     +--ro state?     enumeration
+     |  |     +--ro srtt?      uint32
+     |  |     +--ro rto?       uint32
+     |  |     +--ro primary?   boolean
      |  +---x retry
+     |  +---x listen
+     |     +---w input
+     |        +---w listen?      string
+     |        +---w unlisten?    string
+     |        +---w keep?        boolean
+     |        +---w sctp-also?   string
      +--ro tls
      |  +--ro certificate
-     |  |  +--ro subject?      string
-     |  |  +--ro issuer?       string
-     |  |  +--ro not-before?   yang:date-and-time
-     |  |  +--ro not-after?    yang:date-and-time
-     |  |  +--ro sha256?       string
-     |  |  +--ro chain*        string
+     |  |  +--ro subject?        string
+     |  |  +--ro issuer?         string
+     |  |  +--ro not-before?     yang:date-and-time
+     |  |  +--ro not-after?      yang:date-and-time
+     |  |  +--ro sha256?         string
+     |  |  +--ro intermediate*
+     |  |     +--ro subject?      string
+     |  |     +--ro issuer?       string
+     |  |     +--ro not-before?   yang:date-and-time
+     |  |     +--ro not-after?    yang:date-and-time
+     |  |     +--ro sha256?       string
      |  +--ro ca*
      |  |  +--ro subject?      string
      |  |  +--ro issuer?       string
@@ -97,6 +120,7 @@ module: arcana-agent
      |     +--ro tag* [name]
      |     |  +--ro name       string
      |     |  +--ro message?   string
+     |     |  +--ro time?      yang:date-and-time
      |     +--ro host-keys?     string
      |     +--ro fingerprint*   string
      |     +--ro deploy-key?    string
@@ -174,3 +198,4 @@ module: arcana-agent
            +--ro backup?     string
            +--ro applied?    boolean
            +--ro reboot?     boolean
+           +--ro refused?    string

@@ -7405,8 +7405,9 @@ job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 	/* An edge that is a vnet jail: what its agent does, done there. */
 	if (jail[0] != '\0' && !jail_kind_ok(str(j, "kind"), why, wlen))
 		return (false);
-	/* The probes, rules and steering are the console's own asks, not
-	 * jobs of the host. */
+	/* The probes, the rules, the steering and the services' instances
+	 * are the console's own asks, not jobs of the host: arcana-probe's
+	 * and arcana-sdwan's, each committed (hosts_sdwan_set()). */
 	if (strncmp(str(j, "kind"), "sdwan-", 6) == 0) {
 		ucl_object_t	*body;
 		char		*text;

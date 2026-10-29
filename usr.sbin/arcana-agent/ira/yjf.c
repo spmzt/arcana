@@ -24,11 +24,11 @@
 
 int
 yjf_from_json(const char *json, cbl_yarena *a,
-    struct arcana_jails_jails_arcjf_files *out)
+    struct arcana_jails_jails_arcjf_read_files_output *out)
 {
-	struct arcana_jails_jails_arcjf_files_defaults	*d;
-	struct arcana_jails_jails_arcjf_files_template	*t;
-	struct arcana_jails_jails_arcjf_files_jail	*j;
+	struct arcana_jails_jails_arcjf_read_files_output_defaults	*d;
+	struct arcana_jails_jails_arcjf_read_files_output_template	*t;
+	struct arcana_jails_jails_arcjf_read_files_output_jail	*j;
 	const ucl_object_t				*e, *o;
 	ucl_object_iter_t				 it;
 	ucl_object_t					*top;

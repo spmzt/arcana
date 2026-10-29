@@ -2,9 +2,13 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-sdwan",
     "module-revision": "2026-10-15",
-    "sid-file-version": 2,
-    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "sid-file-version": 6,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 72 100, 200, and 81 000, 200.",
     "dependency-revision": [
+      {
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
+      },
       {
         "module-name": "ietf-inet-types",
         "module-revision": "2025-12-22"
@@ -21,6 +25,10 @@
     "assignment-range": [
       {
         "entry-point": "72100",
+        "size": "200"
+      },
+      {
+        "entry-point": "81000",
         "size": "200"
       }
     ],
@@ -138,6 +146,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-sdwan:sdwan/proxy-instance/deny",
+        "status": "obsolete",
         "sid": "72122"
       },
       {
@@ -768,6 +777,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-sdwan:sdwan/rules/jail",
+        "status": "obsolete",
         "sid": "72248"
       },
       {
@@ -888,7 +898,753 @@
       {
         "namespace": "data",
         "identifier": "/arcana-sdwan:sdwan/steer/jail",
+        "status": "obsolete",
         "sid": "72272"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/bird-instance/host",
+        "sid": "72273"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/bird-instance/spec",
+        "sid": "72274"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/dhcp-instance/host",
+        "sid": "72275"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/dhcp-instance/spec",
+        "sid": "72276"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/dns-instance/host",
+        "sid": "72277"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/dns-instance/spec",
+        "sid": "72278"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/ids-instance/capture",
+        "sid": "72279"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/ids-instance/host",
+        "sid": "72280"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/ids-instance/lua",
+        "sid": "72281"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/ids-instance/lua/name",
+        "sid": "72282"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/ids-instance/lua/text",
+        "sid": "72283"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/ids-instance/offload",
+        "sid": "72284"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/ids-instance/plugin",
+        "sid": "72285"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/ids-instance/spec",
+        "sid": "72286"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/ids-instance/stopped",
+        "sid": "72287"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/ids-instance/thresholds",
+        "sid": "72288"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail",
+        "sid": "72289"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/bird-instance",
+        "sid": "72290"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/bird-instance/conf",
+        "sid": "72291"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/bird-instance/fib",
+        "sid": "72292"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/bird-instance/host",
+        "sid": "72293"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/bird-instance/name",
+        "sid": "72294"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/bird-instance/spec",
+        "sid": "72295"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/name",
+        "sid": "72296"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules",
+        "sid": "72297"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/object",
+        "sid": "72298"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/rule",
+        "sid": "72299"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/rule/number",
+        "sid": "81000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/rule/text",
+        "sid": "81001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/set",
+        "sid": "81002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/table",
+        "sid": "81003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/table/entry",
+        "sid": "81004"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/table/entry/prefix",
+        "sid": "81005"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/table/entry/value",
+        "sid": "81006"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/table/name",
+        "sid": "81007"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/table/valtype",
+        "sid": "81008"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer",
+        "sid": "81009"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/entry",
+        "sid": "81010"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/entry/candidate",
+        "sid": "81011"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/entry/candidate/id",
+        "sid": "81012"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/entry/candidate/via",
+        "sid": "81013"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/entry/prefix",
+        "sid": "81014"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/entry/table",
+        "sid": "81015"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/proxy-instance/host",
+        "sid": "81016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/proxy-instance/named-list",
+        "sid": "81017"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/proxy-instance/named-list/name",
+        "sid": "81018"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/proxy-instance/named-list/text",
+        "sid": "81019"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/proxy-instance/spec",
+        "sid": "81020"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/bird/jail",
+        "sid": "81021"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/clamav",
+        "sid": "81022"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/clamav/conf",
+        "sid": "81023"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/clamav/database",
+        "sid": "81024"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/clamav/database/built",
+        "sid": "81025"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/clamav/database/file",
+        "sid": "81026"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/clamav/database/name",
+        "sid": "81027"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/clamav/database/signatures",
+        "sid": "81028"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/clamav/database/version",
+        "sid": "81029"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/clamav/freshclam",
+        "sid": "81030"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/clamav/log",
+        "sid": "81031"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/clamav/mirror",
+        "sid": "81032"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/dns/tls-cert",
+        "sid": "81033"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/error",
+        "sid": "81034"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/route",
+        "sid": "81035"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/route/candidate",
+        "sid": "81036"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/route/candidate/id",
+        "sid": "81037"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/route/candidate/state",
+        "sid": "81038"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/route/candidate/via",
+        "sid": "81039"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/route/chosen",
+        "sid": "81040"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/route/destination",
+        "sid": "81041"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/route/fib",
+        "sid": "81042"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/steer/candidate/bfd",
+        "sid": "81043"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/fault/compressed",
+        "sid": "81044"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-build",
+        "sid": "81045"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-build/hyperscan",
+        "sid": "81046"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-build/ipfw",
+        "sid": "81047"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-build/lua",
+        "sid": "81048"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-build/netmap",
+        "sid": "81049"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-build/plugins",
+        "sid": "81050"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-build/profiling",
+        "sid": "81051"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-build/profiling-locks",
+        "sid": "81052"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-build/profiling-rules",
+        "sid": "81053"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-build/version",
+        "sid": "81054"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-host",
+        "sid": "81055"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-host/irq",
+        "sid": "81056"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-host/irq/cpus",
+        "sid": "81057"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-host/irq/irq",
+        "sid": "81058"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-host/irq/name",
+        "sid": "81059"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-host/ncpu",
+        "sid": "81060"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-host/ndomains",
+        "sid": "81061"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-ruleset",
+        "sid": "81062"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-ruleset/at",
+        "sid": "81063"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-ruleset/path",
+        "sid": "81064"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids-ruleset/size",
+        "sid": "81065"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/alert/action",
+        "sid": "81066"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/alert/category",
+        "sid": "81067"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/alert/interface",
+        "sid": "81068"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/alert/rev",
+        "sid": "81069"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/alert/severity",
+        "sid": "81070"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/alert/signature-id",
+        "sid": "81071"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/capture",
+        "sid": "81072"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/offload",
+        "sid": "81073"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/offload/capability",
+        "sid": "81074"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/offload/interface",
+        "sid": "81075"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/pcap",
+        "sid": "81076"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/pcap/at",
+        "sid": "81077"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/pcap/from",
+        "sid": "81078"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/pcap/path",
+        "sid": "81079"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/pcap/size",
+        "sid": "81080"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/replay",
+        "sid": "81081"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/replay-capture",
+        "sid": "81082"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/replay-capture/at",
+        "sid": "81083"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/replay-capture/path",
+        "sid": "81084"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/replay-capture/size",
+        "sid": "81085"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/stats",
+        "sid": "81086"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/stats/field",
+        "sid": "81087"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/stats/flows",
+        "sid": "81088"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/stats/series",
+        "sid": "81089"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/stats/series/value",
+        "sid": "81090"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/ids/stopped",
+        "sid": "81091"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/record/untold",
+        "sid": "81092"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/route",
+        "sid": "81093"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/route/candidate",
+        "sid": "81094"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/route/candidate/id",
+        "sid": "81095"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/route/candidate/state",
+        "sid": "81096"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/route/candidate/via",
+        "sid": "81097"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/route/chosen",
+        "sid": "81098"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/route/destination",
+        "sid": "81099"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/route/fib",
+        "sid": "81100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/steer/candidate/bfd",
+        "sid": "81101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/rules/rule/index",
+        "sid": "81102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/rules/rule/index",
+        "sid": "81103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/route",
+        "sid": "81104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/route/candidate",
+        "sid": "81105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/route/candidate/id",
+        "sid": "81106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/route/candidate/via",
+        "sid": "81107"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/route/destination",
+        "sid": "81108"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/jail/steer/route/fib",
+        "sid": "81109"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/steer/route",
+        "sid": "81110"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/steer/route/candidate",
+        "sid": "81111"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/steer/route/candidate/id",
+        "sid": "81112"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/steer/route/candidate/via",
+        "sid": "81113"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/steer/route/destination",
+        "sid": "81114"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/steer/route/fib",
+        "sid": "81115"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/apply",
+        "sid": "81116"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/apply/input",
+        "sid": "81117"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/apply/input/jail",
+        "sid": "81118"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/apply/input/part",
+        "sid": "81119"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/apply/input/security",
+        "sid": "81120"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/apply/output",
+        "sid": "81121"
       }
     ]
   }

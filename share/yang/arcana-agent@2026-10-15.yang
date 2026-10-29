@@ -303,11 +303,38 @@ module arcana-agent {
           description
             "Why not, when it does not.";
         }
+        leaf-list address {
+          type string;
+          description
+            "An SCTP listener's: every address it is bound to.";
+        }
+        leaf also-why {
+          type string;
+          description
+            "Why the other addresses (sctp-also) are not all bound to
+             it, where they are not (sctp_bindx(3)).";
+        }
       }
       leaf sctp {
         type boolean;
         description
           "The kernel has SCTP: the agent listens on it beside TCP.";
+      }
+      leaf sctp-also {
+        type string;
+        description
+          "The other addresses every SCTP listener is bound to,
+           separated by spaces (arcana_agent_sctp_also); empty: none.";
+      }
+      leaf seen {
+        type uint64;
+        description
+          "The connections there have been since the agent started.";
+      }
+      leaf time {
+        type yang:date-and-time;
+        description
+          "When this was read: what since is judged against.";
       }
       list session {
         description
@@ -332,11 +359,102 @@ module arcana-agent {
           description
             "Since when.";
         }
+        leaf-list local {
+          type string;
+          description
+            "An association's addresses at this end.";
+        }
+        list path {
+          key "address";
+          description
+            "An association's paths, to each address of the other end,
+             as the kernel has them now (SCTP_GET_PEER_ADDR_INFO).";
+          leaf address {
+            type string;
+            description
+              "The other end's address.";
+          }
+          leaf state {
+            type enumeration {
+              enum active {
+                description
+                  "In use.";
+              }
+              enum inactive {
+                description
+                  "Not reached.";
+              }
+              enum unconfirmed {
+                description
+                  "Not yet confirmed by a heartbeat.";
+              }
+              enum other {
+                description
+                  "Another state.";
+              }
+            }
+            description
+              "Its state.";
+          }
+          leaf srtt {
+            type uint32;
+            units "milliseconds";
+            description
+              "The smoothed round-trip time.";
+          }
+          leaf rto {
+            type uint32;
+            units "milliseconds";
+            description
+              "The retransmission timeout.";
+          }
+          leaf primary {
+            type boolean;
+            description
+              "The primary path.";
+          }
+        }
       }
       action retry {
         nacm:default-deny-all;
         description
           "Try SCTP again now.";
+      }
+      action listen {
+        nacm:default-deny-all;
+        description
+          "The listeners changed: listen there too, then close that one
+           (with the SCTP one beside it; not the last the console
+           reaches the agent by), the change kept in rc.conf for the
+           next start; the other addresses of every SCTP listener set
+           anew.";
+        input {
+          leaf listen {
+            type string;
+            description
+              "A listener to have too, tcp:// or sctp:// and an address
+               and port.";
+          }
+          leaf unlisten {
+            type string;
+            description
+              "A listener to close; the local socket is not one.";
+          }
+          leaf keep {
+            type boolean;
+            default "false";
+            description
+              "With listen and unlisten: kept for the next start too,
+               listen in unlisten's place in rc.conf.";
+          }
+          leaf sctp-also {
+            type string;
+            description
+              "The other addresses every SCTP listener is bound to,
+               separated by spaces, in place of those before (empty for
+               none), and kept in rc.conf.";
+          }
+        }
       }
     }
     container tls {
@@ -347,10 +465,10 @@ module arcana-agent {
         description
           "The host's certificate.";
         uses cert;
-        leaf-list chain {
-          type string;
+        list intermediate {
           description
-            "The CAs sent after it, each its subject.";
+            "The CAs sent after it, its chain, in that order.";
+          uses cert;
         }
       }
       list ca {
@@ -380,10 +498,10 @@ module arcana-agent {
         nacm:default-deny-all;
         description
           "A certificate for the waiting key, the CAs to trust, or
-           both; the files before kept beside; read again for the
-           connections made from now on.  The asking console's own
-           certificate must still be trusted after: nothing locks it
-           out.";
+           both (one at least); the files before kept beside; read
+           again for the connections made from now on.  The asking
+           console's own certificate must still be trusted after:
+           nothing locks it out.";
         input {
           leaf certificate {
             type string;
@@ -567,6 +685,11 @@ module arcana-agent {
             description
               "Its message.";
           }
+          leaf time {
+            type yang:date-and-time;
+            description
+              "When it was made.";
+          }
         }
         uses fetched;
       }
@@ -681,6 +804,12 @@ module arcana-agent {
           type boolean;
           description
             "What the files say takes hold at boot.";
+        }
+        leaf refused {
+          type string;
+          description
+            "Why nothing was done, the report given still: the
+             hardware differs, a file could not be kept or written.";
         }
       }
     }

@@ -748,9 +748,9 @@ do_jail_conf(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	    errp));
 }
 
-/* The jails' defaults, templates and files, as JSON (jail-files). */
+/* The jails' defaults, templates and files, as JSON (read-files). */
 void
-do_jail_files(struct work *w, struct arc_jail_files_rsp *rsp)
+do_jail_files(struct work *w, struct json_rsp *rsp)
 {
 	struct dirent	*d;
 	DIR		*dir;
@@ -812,5 +812,6 @@ do_jail_files(struct work *w, struct arc_jail_files_rsp *rsp)
 	free(json);
 	ucl_object_unref(top);
 	rsp->has_ok = true;
-	rsp->ok = true;
+	if (!(rsp->ok = rsp->json != NULL))
+		rsp->error = "the files were not read";
 }

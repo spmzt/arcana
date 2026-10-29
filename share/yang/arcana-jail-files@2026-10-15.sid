@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-jail-files",
     "module-revision": "2026-10-15",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -25,57 +25,133 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/arcana-jail-files:files",
+        "status": "obsolete",
         "sid": "71901"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/arcana-jail-files:files/defaults",
+        "status": "obsolete",
         "sid": "71902"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/arcana-jail-files:files/defaults/path",
+        "status": "obsolete",
         "sid": "71903"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/arcana-jail-files:files/defaults/text",
+        "status": "obsolete",
         "sid": "71904"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/arcana-jail-files:files/directory",
+        "status": "obsolete",
         "sid": "71905"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/arcana-jail-files:files/jail",
+        "status": "obsolete",
         "sid": "71906"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/arcana-jail-files:files/jail/name",
+        "status": "obsolete",
         "sid": "71907"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/arcana-jail-files:files/jail/text",
+        "status": "obsolete",
         "sid": "71908"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/arcana-jail-files:files/template",
+        "status": "obsolete",
         "sid": "71909"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/arcana-jail-files:files/template/name",
+        "status": "obsolete",
         "sid": "71910"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/arcana-jail-files:files/template/text",
+        "status": "obsolete",
         "sid": "71911"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files",
+        "sid": "71912"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/input",
+        "sid": "71913"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/output",
+        "sid": "71914"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/output/defaults",
+        "sid": "71915"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/output/defaults/path",
+        "sid": "71916"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/output/defaults/text",
+        "sid": "71917"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/output/directory",
+        "sid": "71918"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/output/jail",
+        "sid": "71919"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/output/jail/name",
+        "sid": "71920"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/output/jail/text",
+        "sid": "71921"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/output/template",
+        "sid": "71922"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/output/template/name",
+        "sid": "71923"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/arcana-jail-files:read-files/output/template/text",
+        "sid": "71924"
       }
     ]
   }

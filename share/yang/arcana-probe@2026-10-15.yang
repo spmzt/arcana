@@ -318,6 +318,172 @@ module arcana-probe {
     }
   }
 
+  grouping target-state {
+    description
+      "A target as it is.";
+    leaf id {
+      type string;
+      description
+        "The tunnel.";
+    }
+    leaf address {
+      type inet:ip-address-no-zone;
+      description
+        "Its far end.";
+    }
+    leaf family {
+      type enumeration {
+        enum ipv4 {
+          description
+            "IPv4.";
+        }
+        enum ipv6 {
+          description
+            "IPv6.";
+        }
+      }
+      description
+        "Its address family.";
+    }
+    leaf fib {
+      type uint16;
+      description
+        "The table it is reached by.";
+    }
+    leaf state {
+      type enumeration {
+        enum unknown {
+          description
+            "Not yet known.";
+        }
+        enum up {
+          description
+            "Answers.";
+        }
+        enum down {
+          description
+            "Does not.";
+        }
+        enum ended {
+          description
+            "The count ran out.";
+        }
+        enum error {
+          description
+            "Could not be probed.";
+        }
+      }
+      description
+        "As the probes see it.";
+    }
+    leaf error {
+      type string;
+      description
+        "Why it could not be probed.";
+    }
+    leaf since {
+      type yang:date-and-time;
+      description
+        "When the state began.";
+    }
+    leaf interval {
+      type uint32;
+      units "milliseconds";
+      description
+        "Between two probes.";
+    }
+    leaf size {
+      type uint16;
+      units "bytes";
+      description
+        "A probe's size.";
+    }
+    leaf eval {
+      type uint32;
+      units "milliseconds";
+      description
+        "One sample's interval.";
+    }
+    leaf dscp {
+      type uint8;
+      description
+        "The probes' DSCP.";
+    }
+    leaf sent {
+      type uint64;
+      description
+        "Probes sent in all.";
+    }
+    leaf received {
+      type uint64;
+      description
+        "Answered in all.";
+    }
+    leaf misses {
+      type uint32;
+      description
+        "Misses in a row now.";
+    }
+    leaf last-rtt {
+      type ms;
+      description
+        "The last round trip.";
+    }
+    container now {
+      description
+        "The sample in progress.";
+      leaf sent {
+        type uint32;
+        description
+          "Sent.";
+      }
+      leaf received {
+        type uint32;
+        description
+          "Answered.";
+      }
+      leaf delay {
+        type ms;
+        description
+          "The one-way delay so far.";
+      }
+      leaf ipdv {
+        type ms;
+        description
+          "The delay variation so far.";
+      }
+      leaf loss {
+        type decimal64 {
+          fraction-digits 6;
+        }
+        description
+          "The loss ratio so far.";
+      }
+      leaf age {
+        type ms;
+        description
+          "How far into the interval.";
+      }
+    }
+    leaf kept {
+      type uint32;
+      description
+        "Samples kept.";
+    }
+    list sample {
+      cg:struct "sample";
+      key "time";
+      description
+        "The samples kept, oldest first.";
+      uses sample;
+    }
+    leaf jail {
+      type string;
+      description
+        "The jail whose edge probes it; none, the host.";
+    }
+  }
+
   container probes {
     description
       "The targets, links and monitors of the host and of each vnet
@@ -350,176 +516,18 @@ module arcana-probe {
           "When read.";
       }
       list target {
+        cg:struct "target-state";
         description
           "Each target as it is: the host's, and each jail's edge's,
            whose ids may be the same (both ends of a tunnel).";
-        leaf id {
-          type string;
-          description
-            "The tunnel.";
-        }
-        leaf address {
-          type inet:ip-address-no-zone;
-          description
-            "Its far end.";
-        }
-        leaf family {
-          type enumeration {
-            enum ipv4 {
-              description
-                "IPv4.";
-            }
-            enum ipv6 {
-              description
-                "IPv6.";
-            }
-          }
-          description
-            "Its address family.";
-        }
-        leaf fib {
-          type uint16;
-          description
-            "The table it is reached by.";
-        }
-        leaf state {
-          type enumeration {
-            enum unknown {
-              description
-                "Not yet known.";
-            }
-            enum up {
-              description
-                "Answers.";
-            }
-            enum down {
-              description
-                "Does not.";
-            }
-            enum ended {
-              description
-                "The count ran out.";
-            }
-            enum error {
-              description
-                "Could not be probed.";
-            }
-          }
-          description
-            "As the probes see it.";
-        }
-        leaf error {
-          type string;
-          description
-            "Why it could not be probed.";
-        }
-        leaf since {
-          type yang:date-and-time;
-          description
-            "When the state began.";
-        }
-        leaf interval {
-          type uint32;
-          units "milliseconds";
-          description
-            "Between two probes.";
-        }
-        leaf size {
-          type uint16;
-          units "bytes";
-          description
-            "A probe's size.";
-        }
-        leaf eval {
-          type uint32;
-          units "milliseconds";
-          description
-            "One sample's interval.";
-        }
-        leaf dscp {
-          type uint8;
-          description
-            "The probes' DSCP.";
-        }
-        leaf sent {
-          type uint64;
-          description
-            "Probes sent in all.";
-        }
-        leaf received {
-          type uint64;
-          description
-            "Answered in all.";
-        }
-        leaf misses {
-          type uint32;
-          description
-            "Misses in a row now.";
-        }
-        leaf last-rtt {
-          type ms;
-          description
-            "The last round trip.";
-        }
-        container now {
-          description
-            "The sample in progress.";
-          leaf sent {
-            type uint32;
-            description
-              "Sent.";
-          }
-          leaf received {
-            type uint32;
-            description
-              "Answered.";
-          }
-          leaf delay {
-            type ms;
-            description
-              "The one-way delay so far.";
-          }
-          leaf ipdv {
-            type ms;
-            description
-              "The delay variation so far.";
-          }
-          leaf loss {
-            type decimal64 {
-              fraction-digits 6;
-            }
-            description
-              "The loss ratio so far.";
-          }
-          leaf age {
-            type ms;
-            description
-              "How far into the interval.";
-          }
-        }
-        leaf kept {
-          type uint32;
-          description
-            "Samples kept.";
-        }
-        list sample {
-          cg:struct "sample";
-          key "time";
-          description
-            "The samples kept, oldest first.";
-          uses sample;
-        }
-        leaf jail {
-          type string;
-          description
-            "The jail whose edge probes it; none, the host.";
-        }
+        uses target-state;
       }
     }
     action read {
       description
-        "What the probes have seen after a time: the samples a page
-         that has the ones before asks for.";
+        "What the probes have seen after a time: each target as it
+         is, with the samples after the time, a page that has the ones
+         before asks for; when, and whether they run.";
       input {
         leaf after {
           type yang:date-and-time;
@@ -528,27 +536,22 @@ module arcana-probe {
         }
       }
       output {
-        list target {
+        leaf probing {
+          type boolean;
           description
-            "Each target's samples after the time; a jail's edge's may
-             have the same id as the host's.";
-          leaf id {
-            type string;
-            description
-              "The tunnel.";
-          }
-          list sample {
-            cg:struct "sample";
-            key "time";
-            description
-              "The samples, oldest first.";
-            uses sample;
-          }
-          leaf jail {
-            type string;
-            description
-              "The jail whose edge probes it; none, the host.";
-          }
+            "The probe thread runs.";
+        }
+        leaf time {
+          type yang:date-and-time;
+          description
+            "When read.";
+        }
+        list target {
+          cg:struct "target-state";
+          description
+            "Each target as it is, its samples after the time; a jail's
+             edge's may have the same id as the host's.";
+          uses target-state;
         }
       }
     }

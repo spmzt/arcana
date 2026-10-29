@@ -15,8 +15,8 @@ module arcana-jail-files {
     "The files FreeBSD's jails are made with, as the jail-conf job
      writes them: jail.conf.d, the file every jail includes, the
      templates, and each jail's own file; files of 64 KiB and less.
-     An augment of arcana-jails; the jail-files operation of
-     arcana.yaml converted (Y-3).";
+     An augment of arcana-jails, an action of its jails; the jail-files
+     operation of arcana.yaml converted (Y-3).";
 
   revision 2026-10-15 {
     description
@@ -26,57 +26,59 @@ module arcana-jail-files {
   augment "/arcj:jails" {
     description
       "The files the jails are made with.";
-    container files {
-      config false;
+    action read-files {
       description
-        "jail.conf(5)'s files.";
-      leaf directory {
-        type string;
-        description
-          "Where the jails' files are (/etc/jail.conf.d).";
-      }
-      container defaults {
-        description
-          "The file every jail includes.";
-        leaf path {
+        "jail.conf(5)'s files, read when asked: no read of the jails
+         waits for their texts.";
+      output {
+        leaf directory {
           type string;
           description
-            "Where it is.";
+            "Where the jails' files are (/etc/jail.conf.d).";
         }
-        leaf text {
-          type string;
+        container defaults {
           description
-            "Its text; none when there is no such file.";
+            "The file every jail includes.";
+          leaf path {
+            type string;
+            description
+              "Where it is.";
+          }
+          leaf text {
+            type string;
+            description
+              "Its text; none when there is no such file.";
+          }
         }
-      }
-      list template {
-        key "name";
-        description
-          "The templates a jail is made from.";
-        leaf name {
-          type string;
+        list template {
+          key "name";
           description
-            "Its name.";
+            "The templates a jail is made from.";
+          leaf name {
+            type string;
+            description
+              "Its name.";
+          }
+          leaf text {
+            type string;
+            description
+              "Its text.";
+          }
         }
-        leaf text {
-          type string;
+        list jail {
+          key "name";
           description
-            "Its text.";
-        }
-      }
-      list jail {
-        key "name";
-        description
-          "Each jail's file there.";
-        leaf name {
-          type string;
-          description
-            "The jail.";
-        }
-        leaf text {
-          type string;
-          description
-            "Its text.";
+            "Each jail's file there.";
+          leaf name {
+            type string;
+            description
+              "The jail.";
+          }
+          leaf text {
+            type string;
+            description
+              "Its text.";
+          }
         }
       }
     }

@@ -47,8 +47,9 @@ yagent_transport_from_json(const char *json, cbl_yarena *a,
 {
 	struct arcana_agent_agent_transport_listener	*l;
 	struct arcana_agent_agent_transport_session	*s;
-	const ucl_object_t				*e;
-	ucl_object_iter_t				 it;
+	struct arcana_agent_agent_transport_session_path *p;
+	const ucl_object_t				*e, *pe;
+	ucl_object_iter_t				 it, pit;
 	ucl_object_t					*top;
 	const char					*v;
 	int64_t						 n;
@@ -79,11 +80,20 @@ yagent_transport_from_json(const char *json, cbl_yarena *a,
 		}
 		l[k].up = yj_yes(e, "up", &l[k].has_up);
 		l[k].why = yj_str(a, e, "error");
+		if (yj_strs(a, ucl_object_lookup(e, "addresses"),
+		    &l[k].address.n, &l[k].address.v) != 0)
+			goto nomem;
+		l[k].also_why = yj_str(a, e, "also_error");
 		k++;
 	}
 	out->listener.n = k;
 	out->listener.v = l;
 	out->sctp = yj_yes(top, "sctp", &out->has_sctp);
+	out->sctp_also = yj_str(a, top, "sctp_also");
+	if ((out->has_seen = yj_num(top, "seen", &n)))
+		out->seen = (uint64_t)n;
+	if (yj_num(top, "time", &n))
+		out->time = datetime(a, n);
 	k = 0;
 	YJ_EACH(ucl_object_lookup(top, "sessions"), it, e) {
 		memset(&s[k], 0, sizeof(s[k]));
@@ -92,12 +102,43 @@ yagent_transport_from_json(const char *json, cbl_yarena *a,
 		s[k].name = yj_str(a, e, "subject");
 		if (yj_num(e, "since", &n))
 			s[k].since = datetime(a, n);
+		if (yj_strs(a, ucl_object_lookup(e, "local"), &s[k].local.n,
+		    &s[k].local.v) != 0 || (p = cbl_yarena_alloc(a, (yj_count(
+		    ucl_object_lookup(e, "paths")) + 1) * sizeof(*p))) == NULL)
+			goto nomem;
+		YJ_EACH(ucl_object_lookup(e, "paths"), pit, pe) {
+			memset(&p[s[k].path.n], 0, sizeof(*p));
+			if ((p[s[k].path.n].address = yj_str(a, pe, "address")) ==
+			    NULL)
+				continue;
+			if ((v = yj_str(a, pe, "state")) != NULL) {
+				p[s[k].path.n].has_state = true;
+				p[s[k].path.n].state = strcmp(v, "active") == 0 ?
+				    ARCANA_AGENT_AGENT_TRANSPORT_SESSION_PATH_STATE_ACTIVE :
+				    strcmp(v, "inactive") == 0 ?
+				    ARCANA_AGENT_AGENT_TRANSPORT_SESSION_PATH_STATE_INACTIVE :
+				    strcmp(v, "unconfirmed") == 0 ?
+				    ARCANA_AGENT_AGENT_TRANSPORT_SESSION_PATH_STATE_UNCONFIRMED :
+				    ARCANA_AGENT_AGENT_TRANSPORT_SESSION_PATH_STATE_OTHER;
+			}
+			if ((p[s[k].path.n].has_srtt = yj_num(pe, "srtt_ms", &n)))
+				p[s[k].path.n].srtt = (uint32_t)n;
+			if ((p[s[k].path.n].has_rto = yj_num(pe, "rto_ms", &n)))
+				p[s[k].path.n].rto = (uint32_t)n;
+			p[s[k].path.n].primary = yj_yes(pe, "primary",
+			    &p[s[k].path.n].has_primary);
+			s[k].path.n++;
+		}
+		s[k].path.v = p;
 		k++;
 	}
 	out->session.n = k;
 	out->session.v = s;
 	ucl_object_unref(top);
 	return (0);
+nomem:
+	ucl_object_unref(top);
+	return (ENOMEM);
 }
 
 /* A certificate of the agent's own: the two have one layout. */
@@ -106,11 +147,15 @@ own_cert(cbl_yarena *a, const ucl_object_t *o,
     struct arcana_agent_agent_tls_ca *c)
 {
 
+	int64_t	t;
+
 	memset(c, 0, sizeof(*c));
 	c->subject = yj_str(a, o, "subject");
 	c->issuer = yj_str(a, o, "issuer");
-	c->not_before = yj_str(a, o, "not_before");
-	c->not_after = yj_str(a, o, "not_after");
+	if (yj_num(o, "not_before", &t))
+		c->not_before = datetime(a, t);
+	if (yj_num(o, "not_after", &t))
+		c->not_after = datetime(a, t);
 	c->sha256 = yj_str(a, o, "sha256");
 }
 
@@ -121,6 +166,7 @@ yagent_tls_from_json(const char *json, cbl_yarena *a,
 	struct arcana_agent_agent_tls_certificate	*c;
 	struct arcana_agent_agent_tls_ca		*ca;
 	const ucl_object_t				*e, *o;
+	struct arcana_agent_agent_tls_certificate_intermediate *ch;
 	ucl_object_iter_t				 it;
 	ucl_object_t					*top;
 	size_t						 k = 0;
@@ -135,11 +181,15 @@ yagent_tls_from_json(const char *json, cbl_yarena *a,
 		}
 		memset(c, 0, sizeof(*c));
 		own_cert(a, o, (void *)c);
-		if (yj_strs(a, ucl_object_lookup(o, "chain"), &c->chain.n,
-		    &c->chain.v) != 0) {
+		/* The chain's certificates, each as the leaf is. */
+		if ((ch = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(o,
+		    "chain")) + 1) * sizeof(*ch))) == NULL) {
 			ucl_object_unref(top);
 			return (ENOMEM);
 		}
+		YJ_EACH(ucl_object_lookup(o, "chain"), it, e)
+			own_cert(a, e, (void *)&ch[c->intermediate.n++]);
+		c->intermediate.v = ch;
 		out->certificate = c;
 	}
 	if ((ca = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top, "ca"))
@@ -271,6 +321,8 @@ yagent_bundle_json(const struct arcana_agent_agent_config_apply_input_bundle *b)
 	size_t		 i;
 
 	top = ucl_object_typed_new(UCL_OBJECT);
+	put_str(top, "arcana", "host");
+	ucl_object_insert_key(top, ucl_object_fromint(1), "format", 0, false);
 	put_str(top, "host", b->host);
 	put_str(top, "agent", b->agent);
 	put_str(top, "taken", b->taken);
@@ -343,20 +395,25 @@ yagent_apply_from_json(const char *json, cbl_yarena *a,
 	const ucl_object_t					*e;
 	ucl_object_iter_t					 it;
 	ucl_object_t						*top;
-	const char						*v;
+	const char						*v, **pk;
 	size_t							 k = 0;
 
 	memset(out, 0, sizeof(*out));
 	if ((top = yj_parse(json)) == NULL)
 		return (EINVAL);
 	if (yj_strs(a, ucl_object_lookup(top, "mismatches"), &out->mismatch.n,
-	    &out->mismatch.v) != 0 || yj_strs(a, ucl_object_lookup(top,
-	    "packages"), &out->package.n, &out->package.v) != 0 || (f =
-	    cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top, "files")) +
-	    1) * sizeof(*f))) == NULL) {
+	    &out->mismatch.v) != 0 || (pk = cbl_yarena_alloc(a, (yj_count(
+	    ucl_object_lookup(top, "packages")) + 1) * sizeof(*pk))) == NULL ||
+	    (f = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top,
+	    "files")) + 1) * sizeof(*f))) == NULL) {
 		ucl_object_unref(top);
 		return (ENOMEM);
 	}
+	/* The packages missing, each the bundle's entry: its name. */
+	YJ_EACH(ucl_object_lookup(top, "packages"), it, e)
+		if ((pk[out->package.n] = yj_str(a, e, "name")) != NULL)
+			out->package.n++;
+	out->package.v = pk;
 	YJ_EACH(ucl_object_lookup(top, "files"), it, e) {
 		memset(&f[k], 0, sizeof(f[k]));
 		if ((f[k].path = yj_str(a, e, "path")) == NULL)
@@ -426,6 +483,8 @@ yagent_log_from_json(const char *commit, const char *log, const char *tags,
 		if ((t[k].name = yj_str(a, e, "name")) == NULL)
 			continue;
 		t[k].message = yj_str(a, e, "message");
+		if (yj_num(e, "time", &n))
+			t[k].time = datetime(a, n);
 		k++;
 	}
 	out->tag.n = k;

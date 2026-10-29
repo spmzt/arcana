@@ -354,7 +354,7 @@ mark_local(ucl_object_t *arr, const ucl_object_t *local)
 }
 
 void
-do_certs(struct work *w, struct arc_certs_rsp *rsp)
+do_certs(struct work *w, struct json_rsp *rsp)
 {
 	ucl_object_t	*top, *tr, *un, *lt, *lu;
 	const char	*dd;
@@ -392,6 +392,7 @@ do_certs(struct work *w, struct arc_certs_rsp *rsp)
 	rsp->json = json != NULL ? wtext(w, wstrdup(w, json)) : NULL;
 	free(json);
 	ucl_object_unref(top);
+	rsp->has_ok = true;
 	rsp->ok = rsp->json != NULL;
 	if (!rsp->ok)
 		rsp->error = "the certificates were not read";

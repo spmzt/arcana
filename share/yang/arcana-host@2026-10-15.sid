@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-host",
     "module-revision": "2026-10-15",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -17,6 +17,10 @@
     "assignment-range": [
       {
         "entry-point": "71600",
+        "size": "100"
+      },
+      {
+        "entry-point": "82000",
         "size": "100"
       }
     ],
@@ -94,171 +98,205 @@
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates",
+        "status": "obsolete",
         "sid": "71614"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/added-dir",
+        "status": "obsolete",
         "sid": "71615"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/certctl",
+        "status": "obsolete",
         "sid": "71616"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/distrusted-dir",
+        "status": "obsolete",
         "sid": "71617"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/localbase",
+        "status": "obsolete",
         "sid": "71618"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/now",
+        "status": "obsolete",
         "sid": "71619"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted",
+        "status": "obsolete",
         "sid": "71620"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/ca",
+        "status": "obsolete",
         "sid": "71621"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/common-name",
+        "status": "obsolete",
         "sid": "71622"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/country",
+        "status": "obsolete",
         "sid": "71623"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/file",
+        "status": "obsolete",
         "sid": "71624"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/issuer",
+        "status": "obsolete",
         "sid": "71625"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/key",
+        "status": "obsolete",
         "sid": "71626"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/local",
+        "status": "obsolete",
         "sid": "71627"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/not-after",
+        "status": "obsolete",
         "sid": "71628"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/not-before",
+        "status": "obsolete",
         "sid": "71629"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/organization",
+        "status": "obsolete",
         "sid": "71630"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/self-signed",
+        "status": "obsolete",
         "sid": "71631"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/sha256",
+        "status": "obsolete",
         "sid": "71632"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/trusted/subject",
+        "status": "obsolete",
         "sid": "71633"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted",
+        "status": "obsolete",
         "sid": "71634"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/ca",
+        "status": "obsolete",
         "sid": "71635"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/common-name",
+        "status": "obsolete",
         "sid": "71636"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/country",
+        "status": "obsolete",
         "sid": "71637"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/file",
+        "status": "obsolete",
         "sid": "71638"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/issuer",
+        "status": "obsolete",
         "sid": "71639"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/key",
+        "status": "obsolete",
         "sid": "71640"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/local",
+        "status": "obsolete",
         "sid": "71641"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/not-after",
+        "status": "obsolete",
         "sid": "71642"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/not-before",
+        "status": "obsolete",
         "sid": "71643"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/organization",
+        "status": "obsolete",
         "sid": "71644"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/self-signed",
+        "status": "obsolete",
         "sid": "71645"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/sha256",
+        "status": "obsolete",
         "sid": "71646"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-host:host/certificates/untrusted/subject",
+        "status": "obsolete",
         "sid": "71647"
       },
       {
@@ -405,6 +443,191 @@
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-host:plugin",
         "sid": "71676"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates",
+        "sid": "71677"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/input",
+        "sid": "71678"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/input/jail",
+        "sid": "71679"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output",
+        "sid": "71680"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/added-dir",
+        "sid": "71681"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/certctl",
+        "sid": "71682"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/distrusted-dir",
+        "sid": "71683"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/localbase",
+        "sid": "71684"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/now",
+        "sid": "71685"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted",
+        "sid": "71686"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/ca",
+        "sid": "71687"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/common-name",
+        "sid": "71688"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/country",
+        "sid": "71689"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/file",
+        "sid": "71690"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/issuer",
+        "sid": "71691"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/key",
+        "sid": "71692"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/local",
+        "sid": "71693"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/not-after",
+        "sid": "71694"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/not-before",
+        "sid": "71695"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/organization",
+        "sid": "71696"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/self-signed",
+        "sid": "71697"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/sha256",
+        "sid": "71698"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/trusted/subject",
+        "sid": "71699"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted",
+        "sid": "82000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/ca",
+        "sid": "82001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/common-name",
+        "sid": "82002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/country",
+        "sid": "82003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/file",
+        "sid": "82004"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/issuer",
+        "sid": "82005"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/key",
+        "sid": "82006"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/local",
+        "sid": "82007"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/not-after",
+        "sid": "82008"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/not-before",
+        "sid": "82009"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/organization",
+        "sid": "82010"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/self-signed",
+        "sid": "82011"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/sha256",
+        "sid": "82012"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/read-certificates/output/untrusted/subject",
+        "sid": "82013"
       }
     ]
   }

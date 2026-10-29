@@ -34,9 +34,16 @@ history	arcana-history@2026-10-15
 events	arcana-events@2026-10-15
 event	arcana-events@2026-10-15
 bird-config	arcana-bird@2026-10-15
+# hello stays an operation (how a console reaches an agent of an
+# earlier release); its host and the stats are arcana-host's host, the
+# certs its read-certificates action.
 hello	arcana-host@2026-10-15
 stats	arcana-host@2026-10-15
 certs	arcana-host@2026-10-15
+# agent-update, agent-build, console-update and source-head stay
+# operations (the fleet's update); source-log, config-export and
+# config-apply are arcana-agent's actions, transport and tls its state
+# with their actions.
 agent-update	arcana-agent@2026-10-15
 agent-build	arcana-agent@2026-10-15
 console-update	arcana-agent@2026-10-15
@@ -46,8 +53,12 @@ transport	arcana-agent@2026-10-15
 tls	arcana-agent@2026-10-15
 config-export	arcana-agent@2026-10-15
 config-apply	arcana-agent@2026-10-15
+# jail-files: the read-files action on arcana-jails' jails.
 jail-files	arcana-jail-files@2026-10-15
 sdwan-probes	arcana-probe@2026-10-15
+# sdwan's read arcana-sdwan's state with arcana-probe's targets; the
+# parts (rules, steer, bird, dhcp, dns, proxy, ids) an edge's in
+# arcana-sdwan by EDIT and a commit, the same sent again its apply.
 sdwan	arcana-sdwan@2026-10-15
 sdwan-rules	arcana-sdwan@2026-10-15
 sdwan-steer	arcana-sdwan@2026-10-15

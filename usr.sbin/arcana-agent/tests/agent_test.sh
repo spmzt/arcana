@@ -1857,7 +1857,8 @@ yang_host_agent_head()
 {
 	atf_set "descr" "the host, the agent and the jails' files as" \
 	    "arcana-host, arcana-agent and arcana-jail-files have them: the" \
-	    "host's facts, plugins as identities, stats and trust store;" \
+	    "host's facts, plugins as identities and stats, its trust store" \
+	    "as read-certificates gives it;" \
 	    "the agent's listeners and sessions, its TLS files, a" \
 	    "configuration bundle and an apply's report, a repository's" \
 	    "log; jail.conf.d's files; sshd's settings, host keys and" \
@@ -1880,29 +1881,34 @@ pool zroot size=107374182400 allocated=10737418240 free=96636764160 ONLINE
 certificates localbase=/usr/local added=/usr/local/etc/ssl/certs distrusted=/usr/local/etc/ssl/untrusted certctl=yes now=2026-10-14T16:25:10Z
 trusted /etc/ssl/certs/abc123.0 cn=Example Root CA org=Example country=US issuer=CN=Example Root CA,O=Example,C=US from=2020-09-13T12:26:40Z until=2030-03-17T17:46:40Z sha256=aa11 key=RSA 4096 ca=yes self=yes local=/usr/local/etc/ssl/certs/example.pem
 untrusted /etc/ssl/untrusted/bad.0 cn=Bad CA org=- country=- issuer=CN=Bad CA from=2020-09-13T12:26:40Z until=2023-11-14T22:13:20Z sha256=bb22 key=RSA 2048 ca=yes self=yes local=-
-yang-cbor 781 bytes, the same back
+yang-cbor 328 bytes, the same back
+yang-cbor 454 bytes, the same back
 EOT
 	atf_check -o file:want "$y" host certs.json
 	cat > transport.json <<'EOT'
-{"listeners":[{"uri":"tcp://[::]:4434","transport":"tcp","up":true},{"uri":"sctp://[::]:4434","transport":"sctp","up":false,"error":"the kernel has no SCTP"},{"uri":"unix:/var/run/arcana-agent.sock","transport":"unix","up":true}],"sctp":false,"sessions":[{"transport":"tcp","address":"[2001:db8::7]:51234","subject":"CN=console","since":1791995000}],"seen":3}
+{"listeners":[{"uri":"tcp://[::]:4434","transport":"tcp","up":true},{"uri":"sctp://[::]:4434","transport":"sctp","up":false,"error":"the kernel has no SCTP"},{"uri":"sctp://[::]:4435","transport":"sctp","up":true,"addresses":["2001:db8::1","192.0.2.1"],"also_error":"192.0.2.9: not here"},{"uri":"unix:/var/run/arcana-agent.sock","transport":"unix","up":true}],"sctp_also":"192.0.2.1","sctp":true,"sessions":[{"transport":"tcp","address":"[2001:db8::7]:51234","subject":"CN=console","since":1791995000},{"transport":"sctp","address":"[2001:db8::8]:51235","subject":"CN=console","since":1791995001,"local":["2001:db8::1","192.0.2.1"],"paths":[{"address":"2001:db8::8","state":"active","srtt_ms":3,"rto_ms":1000,"primary":true},{"address":"192.0.2.8","state":"unconfirmed","srtt_ms":0,"rto_ms":3000,"primary":false}]}],"seen":3,"time":1791995110}
 EOT
 	cat > want <<'EOT'
-transport sctp=no
-listener tcp://[::]:4434 tcp up=yes why=-
-listener sctp://[::]:4434 sctp up=no why=the kernel has no SCTP
-listener unix:/var/run/arcana-agent.sock unix up=yes why=-
+transport sctp=yes also=192.0.2.1 seen=3 time=2026-10-14T16:25:10Z
+listener tcp://[::]:4434 tcp up=yes why=- also-why=-
+listener sctp://[::]:4434 sctp up=no why=the kernel has no SCTP also-why=-
+listener sctp://[::]:4435 sctp up=yes why=- also-why=192.0.2.9: not here 2001:db8::1 192.0.2.1
+listener unix:/var/run/arcana-agent.sock unix up=yes why=- also-why=-
 session tcp [2001:db8::7]:51234 CN=console since=2026-10-14T16:23:20Z
-yang-cbor 176 bytes, the same back
+session sctp [2001:db8::8]:51235 CN=console since=2026-10-14T16:23:21Z local=2001:db8::1 local=192.0.2.1
+path 2001:db8::8 active srtt=3 rto=1000 primary=yes
+path 192.0.2.8 unconfirmed srtt=0 rto=3000 primary=no
+yang-cbor 421 bytes, the same back
 EOT
 	atf_check -o file:want "$y" transport transport.json
 	cat > tls.json <<'EOT'
-{"cert":{"subject":"CN=labvm","issuer":"CN=Arcana CA","not_before":"2026-10-01T00:00:00Z","not_after":"2027-10-01T00:00:00Z","sha256":"cc33","chain":["CN=Arcana CA"]},"ca":[{"subject":"CN=Arcana CA","issuer":"CN=Arcana CA","not_before":"2026-01-01T00:00:00Z","not_after":"2036-01-01T00:00:00Z","sha256":"dd44"}],"pending":false}
+{"cert":{"subject":"CN=labvm","issuer":"CN=Arcana CA","not_before":1790812800,"not_after":1822348800,"sha256":"cc33","chain":[{"subject":"CN=Arcana CA","issuer":"CN=Arcana CA","not_before":1767225600,"not_after":2082758400,"sha256":"dd44"}]},"ca":[{"subject":"CN=Arcana CA","issuer":"CN=Arcana CA","not_before":1767225600,"not_after":2082758400,"sha256":"dd44"}],"pending":false}
 EOT
 	cat > want <<'EOT'
 certificate CN=labvm issuer=CN=Arcana CA from=2026-10-01T00:00:00Z until=2027-10-01T00:00:00Z sha256=cc33 chain=CN=Arcana CA
 ca CN=Arcana CA issuer=CN=Arcana CA sha256=dd44
 pending=no
-yang-cbor 176 bytes, the same back
+yang-cbor 244 bytes, the same back
 EOT
 	atf_check -o file:want "$y" tls tls.json
 	cat > bundle.json <<'EOT'
@@ -1920,7 +1926,7 @@ yang-cbor 285 bytes, the same back
 EOT
 	atf_check -o file:want "$y" bundle bundle.json
 	cat > apply.json <<'EOT'
-{"mismatches":["interface em0 is not here"],"files":[{"path":"/etc/rc.conf","state":"changed","diff":"--- a\n+++ b\n"},{"path":"/etc/sysctl.conf","state":"same"},{"path":"/usr/local/etc/wireguard/wg0.conf","state":"withheld"}],"packages":["bird3"],"backup":"/var/backups/arcana/config-20261015T200000","applied":true,"reboot":true}
+{"mismatches":["interface em0 is not here"],"files":[{"path":"/etc/rc.conf","state":"changed","diff":"--- a\n+++ b\n"},{"path":"/etc/sysctl.conf","state":"same"},{"path":"/usr/local/etc/wireguard/wg0.conf","state":"withheld"}],"packages":[{"name":"bird3","origin":"net/bird3","version":"3.1.2"}],"backup":"/var/backups/arcana/config-20261015T200000","applied":true,"reboot":true}
 EOT
 	cat > want <<'EOT'
 mismatch interface em0 is not here
@@ -1942,8 +1948,8 @@ EOT
 head 0785917d572e9cededae598fba95ed8f84992dd5
 commit 0785917d572e9cededae598fba95ed8f84992dd5 2026-10-14T16:25:10Z agent 0.122.0, console 0.183.2: BIRD, WireGuard and netgraph as YANG body=19
 commit e71cf597a0bf46e0514d5f8ed904e19f8a77e4b7 2026-10-14T15:00:00Z agent 0.121.0 body=0
-tag v0.1 The first
-yang-cbor 307 bytes, the same back
+tag v0.1 The first 2023-11-14T22:13:20Z
+yang-cbor 330 bytes, the same back
 EOT
 	atf_check -o file:want "$y" log \
 	    0785917d572e9cededae598fba95ed8f84992dd5 log.json tags.json
@@ -1983,9 +1989,10 @@ yang_sdwan_head()
 	atf_set "descr" "the probes and the SD-WAN edge as arcana-probe and" \
 	    "arcana-sdwan have them: the targets with their thresholds, what" \
 	    "the probes have seen with each sample taken apart; the rules," \
-	    "the steer, the instances the console writes; the edge's state:" \
-	    "rules, steer, BIRD, DHCP, DNS, proxy, IDS, the record, keys" \
-	    "and faults; through YANG-CBOR and back"
+	    "the steer, the instances the setters keep, and back as the JSON" \
+	    "they take; the edge's state: rules, steer, BIRD, DHCP, DNS," \
+	    "proxy, ClamAV, IDS, the record, keys and faults; through" \
+	    "YANG-CBOR and back"
 }
 yang_sdwan_body()
 {
@@ -2024,8 +2031,10 @@ target tvc-2 fd00:5a::2 ipv6 fib=0 error error=no route since=2026-10-14T16:23:2
 yang-cbor 356 bytes, the same back
 EOT
 	atf_check -o file:want "$y" probes probes.json
+	# The rules as sdwan.c keeps them, each in its place (ipfw lets
+	# rules share a number), and back as its setter takes them.
 	cat > rules.json <<'EOT'
-{"set":30,"tables":[{"name":"sw1_zone","valtype":"legacy","entries":[["10.1.0.0/24","1"],["10.2.0.0/24","2"]]},{"name":"sw1_p1","valtype":"ipv4","entries":[{"prefix":"10.3.0.0/24","value":"10.202.0.2"}]}],"objects":["pipe 1 config bw 10Mbit/s","queue 2 config pipe 1 weight 30"],"rules":["00100 skipto 999 ip from any to any not recv vtnet1","00110 setfib 1 ip from table(sw1_zone) to any",{"number":120,"text":"fwd tablearg ip from any to table(sw1_p1)"}]}
+{"set":30,"tables":[{"name":"sw1_zone","valtype":"legacy","entries":[["10.1.0.0/24","1"],["10.2.0.0/24","2"]]},{"name":"sw1_p1","valtype":"ipv4","entries":[{"prefix":"10.3.0.0/24","value":"10.202.0.2"}]}],"objects":["pipe 1 config bw 10Mbit/s","queue 2 config pipe 1 weight 30"],"rules":["00100 skipto 999 ip from any to any not recv vtnet1","00110 setfib 1 ip from table(sw1_zone) to any",{"number":120,"text":"fwd tablearg ip from any to table(sw1_p1)"},"00110 count ip from any to any"]}
 EOT
 	cat > want <<'EOT'
 rules set=30
@@ -2033,66 +2042,109 @@ table sw1_zone legacy 10.1.0.0/24=1 10.2.0.0/24=2
 table sw1_p1 ipv4 10.3.0.0/24=10.202.0.2
 object pipe 1 config bw 10Mbit/s
 object queue 2 config pipe 1 weight 30
-rule 100 skipto 999 ip from any to any not recv vtnet1
-rule 110 setfib 1 ip from table(sw1_zone) to any
-rule 120 fwd tablearg ip from any to table(sw1_p1)
-yang-cbor 304 bytes, the same back
+rule 0: 100 skipto 999 ip from any to any not recv vtnet1
+rule 1: 110 setfib 1 ip from table(sw1_zone) to any
+rule 2: 120 fwd tablearg ip from any to table(sw1_p1)
+rule 3: 110 count ip from any to any
+set {"set":30,"tables":[{"name":"sw1_zone","valtype":"legacy","entries":[["10.1.0.0/24","1"],["10.2.0.0/24","2"]]},{"name":"sw1_p1","valtype":"ipv4","entries":[["10.3.0.0/24","10.202.0.2"]]}],"objects":["pipe 1 config bw 10Mbit/s","queue 2 config pipe 1 weight 30"],"rules":["100 skipto 999 ip from any to any not recv vtnet1","110 setfib 1 ip from table(sw1_zone) to any","120 fwd tablearg ip from any to table(sw1_p1)","110 count ip from any to any"]}
+emptied {"set":30,"tables":[],"objects":[],"rules":[]}
+yang-cbor 351 bytes, the same back
 EOT
 	atf_check -o file:want "$y" rules rules.json
+	# The steering, with the breakout's routes.
 	cat > steer.json <<'EOT'
-{"entries":[{"table":"sw1_p1","prefix":"10.3.0.0/24","candidates":[{"id":"tvc-1","via":"10.202.0.2"},{"id":"tvc-2","via":"10.203.0.2"}]}]}
+{"entries":[{"table":"sw1_p1","prefix":"10.3.0.0/24","candidates":[{"id":"tvc-1","via":"10.202.0.2"},{"id":"tvc-2","via":"10.203.0.2"}]}],"routes":[{"fib":2,"destination":"0.0.0.0/0","candidates":[{"id":"bo:a-inet","via":"192.0.2.254"}]}]}
 EOT
-	atf_check -o inline:'entry sw1_p1 10.3.0.0/24: tvc-1 via 10.202.0.2 tvc-2 via 10.203.0.2\nyang-cbor 67 bytes, the same back\n' \
-	    "$y" steer steer.json
-	# An edge that is a vnet jail: its jail in each, the state's edges.
+	cat > want <<'EOT'
+entry sw1_p1 10.3.0.0/24: tvc-1 via 10.202.0.2 tvc-2 via 10.203.0.2
+set {"entries":[{"table":"sw1_p1","prefix":"10.3.0.0/24","candidates":[{"id":"tvc-1","via":"10.202.0.2"},{"id":"tvc-2","via":"10.203.0.2"}]}],"routes":[{"fib":2,"destination":"0.0.0.0/0","candidates":[{"id":"bo:a-inet","via":"192.0.2.254"}]}]}
+yang-cbor 112 bytes, the same back
+EOT
+	atf_check -o file:want "$y" steer steer.json
+	# An edge that is a vnet jail: its entry's, back with its jail;
+	# the state's edges, one whose ipfw could not be read.
 	printf '%s\n' '{"jail":"gateway","set":30,"tables":[],"rules":["00500 count ip from any to any"]}' > jr.json
-	atf_check -o match:'^rules set=30 jail=gateway$' -o match:'the same back' \
-	    "$y" rules jr.json
+	atf_check -o match:'^rule 0: 500 count ip from any to any$' \
+	    -o match:'^set \{"jail":"gateway","set":30,"tables":\[\],"objects":\[\],"rules":\["500 count ip from any to any"\]\}$' \
+	    -o match:'^emptied \{"jail":"gateway","set":30,"tables":\[\],"objects":\[\],"rules":\[\]\}$' \
+	    -o match:'the same back' "$y" rules jr.json gateway
 	printf '%s\n' '{"jail":"gateway","entries":[{"table":"sw1_p1","prefix":"10.3.0.0/24","candidates":[{"id":"tvc-1","via":"10.202.0.2"}]}]}' > js.json
-	atf_check -o match:'^jail gateway$' -o match:'the same back' "$y" steer js.json
+	atf_check -o match:'^set \{"jail":"gateway","entries":' -o match:'the same back' \
+	    "$y" steer js.json gateway
 	printf '%s\n' '{"targets":[{"id":"tvc-1","address":"10.202.0.2","family":"inet","jail":"gateway","fib":0,"state":"up","since":1791995000,"samples":[],"kept":0}],"time":1791995110,"probing":true}' > jp.json
 	atf_check -o match:'^  jail gateway$' -o match:'the same back' "$y" probes jp.json
-	printf '%s\n' '{"rules":{"set":0,"rules":0,"tables":[],"objects":0,"counters":[]},"steer":[],"steered":false,"edges":[{"jail":"gateway","rules":{"set":30,"rules":1,"tables":["sw1_p1"],"objects":0,"counters":[]},"steer":[{"table":"sw1_p1","prefix":"10.3.0.0/24","chosen":0,"candidates":[{"id":"tvc-1","via":"10.202.0.2","state":"up"}]}],"steered":true}]}' > je.json
+	printf '%s\n' '{"rules":{"set":0,"rules":0,"tables":[],"objects":0,"counters":[]},"steer":[],"steered":false,"edges":[{"jail":"gateway","rules":{"set":30,"rules":1,"tables":["sw1_p1"],"objects":0,"counters":[]},"steer":[{"table":"sw1_p1","prefix":"10.3.0.0/24","chosen":0,"candidates":[{"id":"tvc-1","via":"10.202.0.2","state":"up"}]}],"steered":true},{"jail":"down","error":"jail down is not running"}]}' > je.json
 	atf_check -o match:'^edge gateway set=30 rules=1 tables=1 steered=yes sw1_p1/10.3.0.0/24:1$' \
+	    -o match:'^edge down steered=no error=jail down is not running$' \
 	    -o match:'the same back' "$y" state je.json
+	# The instances: the form, JSON text in the module, an object again
+	# for the setter.
 	cat > inst.json <<'EOT'
-{"instances":[{"name":"svc1","fib":1,"conf":"router id 10.0.0.1;\n"}]}
+{"jail":"gateway","instances":[{"name":"svc1","fib":1,"host":"edge-a","spec":{"router_id":"10.0.0.1","bfd":true}}]}
 EOT
-	atf_check -o inline:'instance svc1 fib=1 conf=20\nyang-cbor 34 bytes, the same back\n' \
-	    "$y" bird inst.json
+	cat > want <<'EOT'
+instance svc1 fib=1 host=edge-a spec={"router_id":"10.0.0.1","bfd":true}
+set {"jail":"gateway","instances":[{"name":"svc1","fib":1,"host":"edge-a","spec":{"router_id":"10.0.0.1","bfd":true}}]}
+yang-cbor 60 bytes, the same back
+EOT
+	atf_check -o file:want "$y" bird inst.json gateway
+	# The proxies and the IDS: SD-WAN's and the Security section's
+	# (sec-) in one list, each group's set apart.
 	cat > proxy.json <<'EOT'
-{"instances":[{"name":"svc1","fib":1,"mode":"inspect","conf":"http_port 3128\n","deny":"bad.example\n"}]}
+{"instances":[{"name":"svc1","fib":1,"mode":"inspect","host":"edge-a","spec":{"flavor":"sdwan","zones":[]},"lists":{"zone-block":"bad.example\n"}},{"name":"sec-web","fib":0,"mode":"sni","spec":{"listen":["10.1.0.1"]}}]}
 EOT
-	atf_check -o inline:'proxy svc1 fib=1 mode=inspect conf=15 deny=bad.example\n\nyang-cbor 45 bytes, the same back\n' \
-	    "$y" proxy proxy.json
+	cat > want <<'EOT'
+proxy svc1 fib=1 mode=inspect host=edge-a spec={"flavor":"sdwan","zones":[]} list zone-block=12
+proxy sec-web fib=0 mode=sni host=- spec={"listen":["10.1.0.1"]}
+set {"instances":[{"name":"svc1","fib":1,"mode":"inspect","host":"edge-a","lists":{"zone-block":"bad.example\n"},"spec":{"flavor":"sdwan","zones":[]}}]}
+set {"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","lists":{},"spec":{"listen":["10.1.0.1"]}}]}
+yang-cbor 130 bytes, the same back
+EOT
+	atf_check -o file:want "$y" proxy proxy.json
 	cat > ids.json <<'EOT'
-{"instances":[{"name":"svc1","interfaces":["vtnet1","vtnet2"],"conf":"%YAML 1.1\n","rules":"alert tcp any any -> any 23 (msg:\"telnet\"; sid:1;)\n","divert":8000}]}
+{"instances":[{"name":"svc1","interfaces":["vtnet1","vtnet2"],"conf":"%YAML 1.1\n","rules":"alert tcp any any -> any 23 (msg:\"telnet\"; sid:1;)\n","divert":8000},{"name":"sec-lan","host":"edge-a","interfaces":["em0"],"capture":"netmap","offload":false,"lua":{"a.lua":"return 1\n"},"plugins":["/usr/local/lib/x.so"],"stopped":true,"thresholds":"suppress gen_id 1, sig_id 1\n","spec":{"home":["any"]}}]}
 EOT
-	atf_check -o inline:'ids svc1 divert=8000 conf=10 rules=51 interfaces=vtnet1,vtnet2\nyang-cbor 96 bytes, the same back\n' \
-	    "$y" ids ids.json
+	cat > want <<'EOT'
+ids svc1 divert=8000 conf=10 rules=51 interfaces=vtnet1,vtnet2 host=- capture=- offload=- stopped=- thresholds=0 lua=0 plugins=0 spec=-
+ids sec-lan divert=0 conf=0 rules=0 interfaces=em0 host=edge-a capture=netmap offload=no stopped=yes thresholds=28 lua=1 plugins=1 spec={"home":["any"]}
+set {"instances":[{"name":"svc1","interfaces":["vtnet1","vtnet2"],"divert":8000,"rules":"alert tcp any any -> any 23 (msg:\"telnet\"; sid:1;)\n","conf":"%YAML 1.1\n"}]}
+set {"group":"security","instances":[{"name":"sec-lan","host":"edge-a","interfaces":["em0"],"capture":"netmap","offload":false,"lua":{"a.lua":"return 1\n"},"plugins":["/usr/local/lib/x.so"],"stopped":true,"thresholds":"suppress gen_id 1, sig_id 1\n","spec":{"home":["any"]}}]}
+yang-cbor 226 bytes, the same back
+EOT
+	atf_check -o file:want "$y" ids ids.json
+	# The state, all of it.
 	cat > state.json <<'EOT'
-{"targets":[],"probing":false,"time":1791995110,"rules":{"set":30,"rules":3,"tables":[{"name":"sw1_zone","count":2}],"objects":2,"counters":[{"rule":100,"pkts":12,"bytes":900,"text":"skipto 999 ip from any to any not recv vtnet1"}]},"steer":[{"table":"sw1_p1","prefix":"10.3.0.0/24","chosen":0,"candidates":[{"id":"tvc-1","via":"10.202.0.2","state":"up"},{"id":"tvc-2","via":"10.203.0.2","state":"down"}]}],"steered":true,"bird":[{"name":"svc1","fib":1,"running":true,"protocols":[{"name":"peer1","proto":"BGP","state":"up","info":"Established"}],"bfd":[{"address":"10.202.0.2","interface":"wg0","state":"up","since":"2026-10-15 19:00:06"}]}],"dhcp":[{"name":"svc1","fib":1,"running":true,"leases":[{"expires":1792081510,"id":"02:00:00:00:00:09","address":"10.1.0.50","name":"laptop"}]}],"dns":[{"name":"svc1","fib":1,"running":false}],"proxy":[{"name":"svc1","fib":1,"mode":"inspect","running":true,"icap":true,"ca":"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"}],"ids":[{"name":"svc1","interfaces":["vtnet1"],"mode":"prevent","divert":8000,"running":true,"alerts_seen":4,"alerts":[{"time":"2026-10-15T19:30:00.123456+0000","name":"telnet","src":"10.1.0.50","sport":4000,"dst":"10.3.0.2","dport":23,"proto":"TCP"}]}],"record":{"count":7,"seq":7,"last":[{"t":1791995119,"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"vtnet1","comment":"deny-ssh"}]},"keys":[{"interface":"ipsec0","public":"AAAA","next":"BBBB","keyed_at":1791990000,"lifetime":86400,"spi_in":1001,"spi_out":1002,"next_spi_in":1003,"pending":true}],"faults":[{"t":1791995118,"type":"tunnel","severity":"Major","object":"tvc-2","by":"probe","description":"no reply","cleared":false}]}
+{"targets":[],"probing":false,"time":1791995110,"rules":{"set":30,"rules":3,"tables":[{"name":"sw1_zone","count":2}],"objects":2,"counters":[{"rule":100,"pkts":12,"bytes":900,"text":"skipto 999 ip from any to any not recv vtnet1"}]},"steer":[{"table":"sw1_p1","prefix":"10.3.0.0/24","chosen":0,"candidates":[{"id":"tvc-1","via":"10.202.0.2","state":"up","bfd":"up"},{"id":"tvc-2","via":"10.203.0.2","state":"not probed"}]}],"steered":true,"routes":[{"fib":2,"destination":"0.0.0.0/0","chosen":0,"candidates":[{"id":"bo:a-inet","via":"192.0.2.254","state":"down"}]}],"bird":[{"name":"svc1","fib":1,"jail":"gateway","running":true,"protocols":[{"name":"peer1","proto":"BGP","state":"up","info":"Established"}],"bfd":[{"address":"10.202.0.2","interface":"wg0","state":"up","since":"2026-10-15 19:00:06"}]}],"dhcp":[{"name":"svc1","fib":1,"running":true,"leases":[{"expires":1792081510,"id":"02:00:00:00:00:09","address":"10.1.0.50","name":"laptop"}]}],"dns":[{"name":"svc1","fib":1,"running":false,"tls_cert":"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"}],"proxy":[{"name":"svc1","fib":1,"mode":"inspect","running":true,"icap":true,"ca":"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"}],"clamav":{"databases":[{"name":"main","file":"/var/db/clamav/main.cvd","built":"16 Sep 2021","version":62,"signatures":6647427}],"freshclam":true,"conf":true,"mirrors":["database.clamav.net"],"log":["ClamAV update process started"]},"ids":[{"name":"svc1","interfaces":["vtnet1"],"mode":"prevent","divert":8000,"running":true,"alerts_seen":4,"alerts":[{"name":"svc1","time":"2026-10-15T19:30:00.123456+0000","src":"10.1.0.50","sport":4000,"dst":"10.3.0.2","dport":23,"proto":"TCP","iface":"vtnet1","sid":1,"rev":2,"signature":"telnet","category":"","severity":2,"action":"blocked"}],"stats":{"fields":["t","pkts"],"series":[[1791995100,10],[1791995110,20]],"flows":{"http":7}},"capture":"divert","pcaps":[{"path":"/x/log.pcap.1791995000","size":24,"at":1791995000,"from":1791995000}],"captures":[],"replay":{"file":"a.pcap","alerts":1},"offload":{"vtnet1":["rxcsum","tso4"]}}],"ids_build":{"version":"8.0.7","lua":true,"ipfw":true},"ids_host":{"ncpu":4,"ndomains":1,"irqs":[{"irq":20,"name":"vtnet1:rxq0","cpus":"0-3"}]},"ids_ruleset":{"path":"/var/lib/suricata/rules/suricata.rules","at":1791990000,"size":1024},"record":{"count":7,"seq":7,"untold":1,"last":[{"t":1791995119,"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"vtnet1","comment":"deny-ssh"}]},"keys":[{"interface":"ipsec0","public":"AAAA","next":"BBBB","keyed_at":1791990000,"lifetime":86400,"spi_in":1001,"spi_out":1002,"pending":true}],"faults":[{"t":1791995118,"type":"tunnel","severity":"Major","object":"tvc-2","by":"probe","description":"no reply","cleared":false,"compressed":true}]}
 EOT
 	cat > want <<'EOT'
 rules set=30 rules=3 objects=2
   table sw1_zone count=2
   counter 100 packets=12 octets=900 skipto 999 ip from any to any not recv vtnet1
 steered=yes
-steer sw1_p1 10.3.0.0/24 chosen=0: tvc-1 via 10.202.0.2 up tvc-2 via 10.203.0.2 down
-bird svc1 fib=1 running=yes
+steer sw1_p1 10.3.0.0/24 chosen=0: tvc-1 via 10.202.0.2 up bfd=up tvc-2 via 10.203.0.2 not-probed bfd=-
+route fib=2 0.0.0.0/0 chosen=0: bo:a-inet down
+bird svc1 fib=1 running=yes jail=gateway
   protocol peer1 BGP up Established
   bfd 10.202.0.2 wg0 up since=2026-10-15 19:00:06
 dhcp svc1 fib=1 running=yes
   lease 2026-10-15T16:25:10Z 02:00:00:00:00:09 10.1.0.50 laptop
-dns svc1 fib=1 running=no
+dns svc1 fib=1 running=no tls-cert=59
 proxy svc1 fib=1 running=yes mode=inspect icap=yes ca=59
 ids svc1 prevent divert=8000 running=yes seen=4
   alert 2026-10-15T19:30:00.123456+0000 telnet 10.1.0.50:4000 -> 10.3.0.2:23 TCP
+  stats fields=2 series=2 flows={"http":7}
+  pcap /x/log.pcap.1791995000 size=24 at=2026-10-14T16:23:20Z
+  offload vtnet1 2
+  replay {"file":"a.pcap","alerts":1}
+ids-build 8.0.7 lua=yes ipfw=yes
+ids-host ncpu=4 ndomains=1 irqs=1
+ids-ruleset /var/lib/suricata/rules/suricata.rules size=1024 at=2026-10-14T15:00:00Z
+clamav databases=1 freshclam=yes mirrors=1 log=1
 record count=7 seq=7
   2026-10-14T16:25:19Z 7 rule=30010 Deny 10.1.0.2:4000 -> 10.3.0.2:22 vtnet1 (deny-ssh)
-key ipsec0 public=AAAA next=BBBB at=2026-10-14T15:00:00Z lifetime=86400 spi=1001/1002 next-spi=1003 pending=yes
+key ipsec0 public=AAAA next=BBBB at=2026-10-14T15:00:00Z lifetime=86400 spi=1001/1002 next-spi=0 pending=yes
 fault 2026-10-14T16:25:18Z tunnel Major was=- tvc-2 by=probe cleared=no at=-: no reply
-yang-cbor 756 bytes, the same back
+yang-cbor 1330 bytes, the same back
 EOT
 	atf_check -o file:want "$y" state state.json
 }
@@ -4866,7 +4918,7 @@ EOS
 	    -o match:"^jexec 4 [^ ]*sysctl net.inet.ipsec.filtertunnel=1$" \
 	    cat jexec.log
 	atf_check -o match:'^table sw1_p0 create type addr valtype ipv4$' \
-	    -o match:'^add 00500 set 30 fwd tablearg ip from any to table\(sw1_p0\)$' \
+	    -o match:'^add 500 set 30 fwd tablearg ip from any to table\(sw1_p0\)$' \
 	    cat jail-rules.log
 	test -e "$R/var/run/arcana-sdwan-rules.load" && \
 	    atf_fail "the file of rules stayed in the jail"
@@ -6560,7 +6612,7 @@ EOS
 
 	# The rules: what is not a ruleset; one applied, its set emptied
 	# and filled while disabled, the tables made, the file loaded.
-	atf_check -s exit:1 -e match:'2 to 31' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	atf_check -s exit:1 -e match:'set: 1 out of range' -o ignore "$JGC" -c "$SOCK" sdwan rules \
 	    '{"set":1,"tables":[],"rules":["10 allow ip from any to any"]}'
 	atf_check -s exit:1 -e match:'no set of its own' -o ignore "$JGC" -c "$SOCK" sdwan rules \
 	    '{"set":30,"tables":[],"rules":["10 allow ip from any to any set 0"]}'
@@ -6579,8 +6631,9 @@ EOS
 	    -o match:'^add 10 set 30 skipto tablearg ip from table\(sw1_zone\) to any in recv lo1$' \
 	    -o match:'^add 12 set 30 deny ip from any to any$' \
 	    -o match:'^ipfw -q set enable 30$' cat ipfw.log
-	# Disabled, loaded, enabled: in that order.
-	atf_check -o inline:'1\n' sh -c "grep -n 'set disable 30' ipfw.log | cut -d: -f1 | head -1"
+	# Disabled, loaded, enabled: in that order (a commit reads the
+	# firewall before).
+	atf_check -o match:'set disable 30$' sh -c "grep 'set 30\\|set disable 30\\|set enable 30' ipfw.log | head -1"
 	atf_check -o match:'"rules":\{"set":30,"rules":4,"tables":\["sw1_zone","sw1_z0p0_4"\],"objects":0,"counters":' \
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -s exit:1 -e match:'not one of the rules' -o ignore "$JGC" -c "$SOCK" sdwan steer \
@@ -6756,7 +6809,7 @@ EOS
 	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"../x","fib":1,"spec":{"router_id":"1.1.1.1"}}]}'
-	atf_check -s exit:1 -e match:'named twice' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	atf_check -s exit:1 -e match:'twice' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"sw1","fib":1,"spec":{"router_id":"1.1.1.1"}},{"name":"sw1","fib":2,"spec":{"router_id":"1.1.1.1"}}]}'
 	# What the form is not: refused before any file is written; what
 	# bird -p refuses is not run.
@@ -6816,7 +6869,7 @@ EOS
 	atf_check -o match:'^0 route-del 0.0.0.0/0 - - 2 0$' -o match:'^0 route-add 0.0.0.0/0 192.0.2.254 - 2 0 0 -$' cat route.log
 	atf_check -o match:'"routes":\[\{"fib":2,"destination":"0.0.0.0/0","chosen":0,"candidates":\[\{"id":"bo:a-inet","via":"192.0.2.254","state":"not probed"\},\{"id":"bo:a-wg","via":"192.0.2.253","state":"not probed"\}\]\}\]' \
 	    "$JGC" -c "$SOCK" sdwan
-	atf_check -s exit:1 -e match:'a route is a fib, a destination' -o ignore "$JGC" -c "$SOCK" sdwan steer \
+	atf_check -s exit:1 -e match:"fib: 'x' is not a value" -o ignore "$JGC" -c "$SOCK" sdwan steer \
 	    '{"entries":[],"routes":[{"fib":"x"}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"sw1","fib":1,"host":"edge-a","spec":{"service":"acme","fib":1,"table":1,"router_id":"100.64.0.0","direct":["lo1"]}}]}'
@@ -7058,12 +7111,14 @@ EOS
 	atf_check -o match:'"kind":"sdwan-ids","data":\{"name":"sw1",.*"src":"10.30.0.2","sport":40000,"dst":"10.20.0.1","dport":80,"proto":"TCP","iface":"wg5","sid":1000001' \
 	    "$JGC" -c "$SOCK" events
 	spid=$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")
+	# The same again: nothing to commit, arcana-sdwan's apply sets it
+	# again, as it was.
 	atf_check -o match:'suricata sw1 on 1 interface, detects: as it was' "$JGC" -t -c "$SOCK" sdwan ids "$ids"
 	atf_check -o inline:"$spid\n" cat "$(dirname "$f")/sdwan-ids-sw1.pid"
 	# One that prevents: run on its divert port; not running, a
 	# Critical fault (what it guards passes nothing), cleared once it
 	# runs again.
-	atf_check -s exit:1 -e match:'its divert is a port' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	atf_check -s exit:1 -e match:"divert: '70000' is not a value" -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    '{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"x","divert":70000}]}'
 	ipsd=$(echo "$ids" | sed 's/"name":"sw1",/"name":"sw1","divert":8001,/')
 	atf_check -o match:'suricata sw1 on 1 interface, prevents by divert 8001: started' \
@@ -7271,7 +7326,7 @@ EOS
 	done
 	[ "$(grep -c '^usr2$' suricata.log)" -gt "$n0" ] || atf_fail "no USR2"
 	atf_check -o match:'ip 10.0.0.8' cat "$(dirname "$f")/sdwan-ids-sw1.threshold"
-	atf_check -s exit:1 -e match:'an instance is a name' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	atf_check -s exit:1 -e match:'thresholds is a text' -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    "$(echo "$rs4" | sed 's|"rules":|"thresholds":5,"rules":|')"
 	# By netmap(4), not pcap(3); its interfaces' offloading turned off
 	# as it starts, em0^ (a host stack, netmap's alone) being em0's.
@@ -7289,11 +7344,11 @@ EOS
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -s exit:1 -e match:"netmap's alone" -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    "$(echo "$rs4" | sed 's/"interfaces":\["any"\]/"interfaces":["wg5^"]/')"
-	atf_check -s exit:1 -e match:'capture is pcap or netmap' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	atf_check -s exit:1 -e match:"capture: 'bpf' is not a value" -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    "$(echo "$rs4" | sed 's/"interfaces":/"capture":"bpf","interfaces":/')"
 	# What its Suricata is built with; and Suricata's own answers, by
 	# the instance's command socket, those that read alone.
-	atf_check -o match:'"ids_build":\{"version":"8.0.7","lua":true,"ipfw":true,"netmap":true,"hyperscan":false,"profiling":false,"profiling_rules":false,"plugins":true\}' \
+	atf_check -o match:'"ids_build":\{"version":"8.0.7","lua":true,"profiling":false,"profiling_rules":false,"hyperscan":false,"netmap":true,"ipfw":true,"plugins":true\}' \
 	    "$JGC" -c "$SOCK" sdwan
 	if [ -x /usr/local/bin/python3 ]; then
 		rs9=$(echo "$rs4" | sed 's|rule-files:|unix-command:\\n  enabled: yes\\n  filename: @SOCKET@\\nrule-files:|; s/sid:1000004;/sid:1000009;/')

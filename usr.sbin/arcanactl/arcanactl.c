@@ -39,8 +39,10 @@
 #include "yjsonin.h"
 #include "yqueue.h"
 #include "ygula.h"
+#include "yhostjson.h"
 #include "ystore.h"
 #include "yprobes.h"
+#include "ysdwan.h"
 #include "ytshoot.h"
 #include "zprog.h"
 
@@ -2727,21 +2729,23 @@ again:
 static int
 cmd_source_log(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_source_log_req	 req;
-	struct arc_source_log_rsp	*rsp;
-	const char			*errstr;
-	int				 ch, error;
+	unsigned char	*lj;
+	ucl_object_t	*data;
+	const char	*errstr, *key;
+	char		 err[512];
+	uint32_t	 count;
+	int		 ch, error;
 
-	memset(&req, 0, sizeof(req));
+	key = NULL;
+	count = 0;
 	optreset = optind = 1;
 	while ((ch = getopt(argc, argv, "i:n:")) != -1) {
 		switch (ch) {
 		case 'i':
-			req.ssh_key = optarg;
+			key = optarg;
 			break;
 		case 'n':
-			req.has_count = true;
-			req.count = (uint32_t)strtonum(optarg, 1, 10000, &errstr);
+			count = (uint32_t)strtonum(optarg, 1, 10000, &errstr);
 			if (errstr != NULL)
 				xo_errx(2, "count %s: %s", optarg, errstr);
 			break;
@@ -2751,26 +2755,30 @@ cmd_source_log(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc - optind < 1 || argc - optind > 2)
 		usage();
-	req.source = argv[optind];
-	req.ref = argv[optind + 1];
-	if ((error = arc_source_log(cl, &req, &rsp)) != 0)
-		fail(cl, error, "source-log");
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	if (!rsp->ok) {
-		if (rsp->deploy_key != NULL)
-			xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n",
-			    rsp->deploy_key);
-		xo_warnx("source-log: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-		arc_source_log_rsp_free(rsp);
+	/* arcana-agent's source-log. */
+	ytold_begin(cl);
+	error = yh_source_log(cl->conn, argv[optind], argv[optind + 1], NULL,
+	    key, count, &data, err, sizeof(err));
+	ytold_end(true);
+	if (error != 0) {
+		xo_warnx("source-log: %s", err[0] != '\0' ? err :
+		    strerror(error));
 		return (1);
 	}
-	xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
+	xo_emit("{Lwc:Commit}{:commit/%s}\n", ucl_object_tostring(
+	    ucl_object_lookup(data, "commit")) != NULL ? ucl_object_tostring(
+	    ucl_object_lookup(data, "commit")) : "");
 	/* The commits and the tags as the agent lists them, JSON each. */
-	xo_emit("{Lwc:Commits}{:commits/%s}\n", rsp->log != NULL ? rsp->log :
+	lj = ucl_object_emit(ucl_object_lookup(data, "log"),
+	    UCL_EMIT_JSON_COMPACT);
+	xo_emit("{Lwc:Commits}{:commits/%s}\n", lj != NULL ? (char *)lj :
 	    "[]");
-	xo_emit("{Lwc:Tags}{:tags/%s}\n", rsp->tags != NULL ? rsp->tags : "[]");
-	arc_source_log_rsp_free(rsp);
+	free(lj);
+	lj = ucl_object_emit(ucl_object_lookup(data, "tags"),
+	    UCL_EMIT_JSON_COMPACT);
+	xo_emit("{Lwc:Tags}{:tags/%s}\n", lj != NULL ? (char *)lj : "[]");
+	free(lj);
+	ucl_object_unref(data);
 	return (0);
 }
 
@@ -3150,8 +3158,6 @@ cmd_route_get(struct arc_client *cl, int argc, char **argv)
 static int	json_out(const char *, bool, const char *, const char *,
 		    const struct arc_step *, size_t);
 
-/* traceroute address: one round, a probe a hop, as JSON. */
-/* sdwan: what the probes have seen; sdwan probes json: the targets. */
 /* A JSON argument: as given, or the contents of a file after @. */
 static const char *
 json_arg(const char *arg)
@@ -3174,139 +3180,75 @@ json_arg(const char *arg)
 	return (text);
 }
 
+
+/*
+ * sdwan: what the edge is doing and what the probes have seen,
+ * arcana-sdwan's and arcana-probe's state as the sdwan operation had
+ * them; sdwan probes json: an edge's targets and links, arcana-probe's;
+ * sdwan rules|steer|bird|dhcp|dns|proxy|ids json: that part of an
+ * edge, arcana-sdwan's, as its operation took it.  Each committed.
+ */
 static int
 cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_sdwan_req		 req;
-	struct arc_sdwan_rsp		*rsp;
-	int				 error;
+	static const char *const parts[] = { "rules", "steer", "bird", "dhcp",
+	    "dns", "proxy", "ids" };
+	struct ietf_netconf_commit_input		 cin;
+	struct ietf_netconf_discard_changes_input	 din;
+	ucl_object_t					*data;
+	uint64_t					 esid;
+	char						 err[512], tag[80];
+	char						 what[32];
+	size_t						 k;
+	int						 error;
+	bool						 same;
 
-	/* The targets and links of an edge, arcana-probe's, committed. */
-	if (argc == 3 && strcmp(argv[1], "probes") == 0) {
-		struct ietf_netconf_commit_input		 cin;
-		struct ietf_netconf_discard_changes_input	 din;
-		uint64_t					 esid;
-		char						 err[512], tag[80];
-
+	if (argc == 1) {
 		ytold_begin(cl);
-		if (yprobes_edit(cl->conn, json_arg(argv[2]), err, sizeof(err),
-		    &esid, tag, sizeof(tag)) != 0) {
-			ytold_end(true);
-			refused("sdwan probes", err, tag);
-		}
-		memset(&cin, 0, sizeof(cin));
-		if (netconf_try(cl, "commit", &cin, err, sizeof(err), tag,
-		    sizeof(tag)) != 0) {
-			memset(&din, 0, sizeof(din));
-			(void)netconf_try(cl, "discard-changes", &din, NULL, 0,
-			    NULL, 0);
-			ytold_end(true);
-			refused("sdwan probes", err, tag);
-		}
-		ytold_end(true);
-		return (json_out("sdwan-probes", true, NULL, NULL, NULL, 0));
+		error = ysdwan_read(cl->conn, false, 0, &data, err,
+		    sizeof(err));
+		return (ydata_out("sdwan", error, data, err));
 	}
-	if (argc == 3 && strcmp(argv[1], "rules") == 0) {
-		struct arc_sdwan_rules_req	 rq;
-		struct arc_sdwan_rules_rsp	*rs;
-
-		memset(&rq, 0, sizeof(rq));
-		rq.json = json_arg(argv[2]);
-		if ((error = arc_sdwan_rules(cl, &rq, &rs)) != 0)
-			fail(cl, error, "sdwan rules");
-		error = json_out("sdwan-rules", rs->ok, rs->error, NULL,
-		    rs->trace.v, rs->trace.n);
-		arc_sdwan_rules_rsp_free(rs);
-		return (error);
-	}
-	if (argc == 3 && strcmp(argv[1], "steer") == 0) {
-		struct arc_sdwan_steer_req	 rq;
-		struct arc_sdwan_steer_rsp	*rs;
-
-		memset(&rq, 0, sizeof(rq));
-		rq.json = json_arg(argv[2]);
-		if ((error = arc_sdwan_steer(cl, &rq, &rs)) != 0)
-			fail(cl, error, "sdwan steer");
-		error = json_out("sdwan-steer", rs->ok, rs->error, NULL,
-		    rs->trace.v, rs->trace.n);
-		arc_sdwan_steer_rsp_free(rs);
-		return (error);
-	}
-	if (argc == 3 && strcmp(argv[1], "bird") == 0) {
-		struct arc_sdwan_bird_req	 rq;
-		struct arc_sdwan_bird_rsp	*rs;
-
-		memset(&rq, 0, sizeof(rq));
-		rq.json = json_arg(argv[2]);
-		if ((error = arc_sdwan_bird(cl, &rq, &rs)) != 0)
-			fail(cl, error, "sdwan bird");
-		error = json_out("sdwan-bird", rs->ok, rs->error, NULL,
-		    rs->trace.v, rs->trace.n);
-		arc_sdwan_bird_rsp_free(rs);
-		return (error);
-	}
-	if (argc == 3 && strcmp(argv[1], "dhcp") == 0) {
-		struct arc_sdwan_dhcp_req	 rq;
-		struct arc_sdwan_dhcp_rsp	*rs;
-
-		memset(&rq, 0, sizeof(rq));
-		rq.json = json_arg(argv[2]);
-		if ((error = arc_sdwan_dhcp(cl, &rq, &rs)) != 0)
-			fail(cl, error, "sdwan dhcp");
-		error = json_out("sdwan-dhcp", rs->ok, rs->error, NULL,
-		    rs->trace.v, rs->trace.n);
-		arc_sdwan_dhcp_rsp_free(rs);
-		return (error);
-	}
-	if (argc == 3 && strcmp(argv[1], "ids") == 0) {
-		struct arc_sdwan_ids_req	 rq;
-		struct arc_sdwan_ids_rsp	*rs;
-
-		memset(&rq, 0, sizeof(rq));
-		rq.json = json_arg(argv[2]);
-		if ((error = arc_sdwan_ids(cl, &rq, &rs)) != 0)
-			fail(cl, error, "sdwan ids");
-		error = json_out("sdwan-ids", rs->ok, rs->error, NULL,
-		    rs->trace.v, rs->trace.n);
-		arc_sdwan_ids_rsp_free(rs);
-		return (error);
-	}
-	if (argc == 3 && strcmp(argv[1], "proxy") == 0) {
-		struct arc_sdwan_proxy_req	 rq;
-		struct arc_sdwan_proxy_rsp	*rs;
-
-		memset(&rq, 0, sizeof(rq));
-		rq.json = json_arg(argv[2]);
-		if ((error = arc_sdwan_proxy(cl, &rq, &rs)) != 0)
-			fail(cl, error, "sdwan proxy");
-		error = json_out("sdwan-proxy", rs->ok, rs->error, NULL,
-		    rs->trace.v, rs->trace.n);
-		arc_sdwan_proxy_rsp_free(rs);
-		return (error);
-	}
-	if (argc == 3 && strcmp(argv[1], "dns") == 0) {
-		struct arc_sdwan_dns_req	 rq;
-		struct arc_sdwan_dns_rsp	*rs;
-
-		memset(&rq, 0, sizeof(rq));
-		rq.json = json_arg(argv[2]);
-		if ((error = arc_sdwan_dns(cl, &rq, &rs)) != 0)
-			fail(cl, error, "sdwan dns");
-		error = json_out("sdwan-dns", rs->ok, rs->error, NULL,
-		    rs->trace.v, rs->trace.n);
-		arc_sdwan_dns_rsp_free(rs);
-		return (error);
-	}
-	if (argc != 1)
+	if (argc != 3)
 		usage();
-	memset(&req, 0, sizeof(req));
-	if ((error = arc_sdwan(cl, &req, &rsp)) != 0)
-		fail(cl, error, "sdwan");
-	error = json_out("sdwan", rsp->ok, rsp->error, rsp->json, rsp->trace.v,
-	    rsp->trace.n);
-	arc_sdwan_rsp_free(rsp);
-	return (error);
+	for (k = 0; k < nitems(parts) && strcmp(parts[k], argv[1]) != 0; k++)
+		;
+	if (k == nitems(parts) && strcmp(argv[1], "probes") != 0)
+		usage();
+	snprintf(what, sizeof(what), "sdwan %s", argv[1]);
+	ytold_begin(cl);
+	same = false;
+	if ((k == nitems(parts) ? yprobes_edit(cl->conn, json_arg(argv[2]),
+	    err, sizeof(err), &esid, tag, sizeof(tag)) : ysdwan_edit(cl->conn,
+	    argv[1], json_arg(argv[2]), &same, err, sizeof(err), &esid, tag,
+	    sizeof(tag))) != 0) {
+		ytold_end(true);
+		refused(what, err, tag);
+	}
+	/* The same as running has: set again, what is not running
+	 * started. */
+	if (same) {
+		error = ysdwan_apply(cl->conn, argv[1], json_arg(argv[2]), err,
+		    sizeof(err));
+		ytold_end(true);
+		if (error != 0)
+			refused(what, err, "");
+		snprintf(what, sizeof(what), "sdwan-%s", argv[1]);
+		return (json_out(what, true, NULL, NULL, NULL, 0));
+	}
+	memset(&cin, 0, sizeof(cin));
+	if (netconf_try(cl, "commit", &cin, err, sizeof(err), tag,
+	    sizeof(tag)) != 0) {
+		memset(&din, 0, sizeof(din));
+		(void)netconf_try(cl, "discard-changes", &din, NULL, 0, NULL, 0);
+		ytold_end(true);
+		refused(what, err, tag);
+	}
+	ytold_end(true);
+	snprintf(what, sizeof(what), "sdwan-%s", argv[1]);
+	return (json_out(what, true, NULL, NULL, NULL, 0));
 }
+
 
 /* traceroute address: arcana-troubleshoot's traceroute. */
 static int
@@ -4078,32 +4020,28 @@ cmd_zfskey(struct arc_client *cl, int argc, char **argv)
 static int
 cmd_tls(struct arc_client *cl, int argc, char **argv, const char *mine)
 {
-	struct arc_tls_req	 rq;
-	struct arc_tls_rsp	*rs;
-	int			 error;
+	ucl_object_t	*data;
+	const char	*verb, *cert, *ca, *peer;
+	char		 err[512];
+	int		 error;
 
-	memset(&rq, 0, sizeof(rq));
+	cert = ca = peer = NULL;
 	if (argc == 1 || (argc == 2 && strcmp(argv[1], "status") == 0))
-		rq.tls_verb = "status";
+		verb = "status";
 	else if (argc == 2 && strcmp(argv[1], "csr") == 0)
-		rq.tls_verb = "csr";
+		verb = "csr";
 	else if ((argc == 3 || argc == 4) && strcmp(argv[1], "install") == 0) {
-		rq.tls_verb = "install";
-		rq.tls_cert = strcmp(argv[2], "-") == 0 ? NULL : slurp(argv[2]);
-		rq.tls_ca = argc == 4 ? slurp(argv[3]) : NULL;
-		rq.tls_peer = mine != NULL ? slurp(mine) : NULL;
+		verb = "install";
+		cert = strcmp(argv[2], "-") == 0 ? NULL : slurp(argv[2]);
+		ca = argc == 4 ? slurp(argv[3]) : NULL;
+		peer = mine != NULL ? slurp(mine) : NULL;
 	} else
 		usage();
-	if ((error = arc_tls(cl, &rq, &rs)) != 0)
-		fail(cl, error, "tls");
-	if (rs->json != NULL)
-		xo_emit("{:json/%s}\n", rs->json);
-	else if (rs->error != NULL)
-		warnx("%s", rs->error);
-	emit_trace(rs->trace.v, rs->trace.n);
-	error = rs->ok ? 0 : 1;
-	arc_tls_rsp_free(rs);
-	return (error);
+	/* arcana-agent's tls: its state, csr or install. */
+	ytold_begin(cl);
+	error = yh_tls(cl->conn, verb, cert, ca, peer, &data, err,
+	    sizeof(err));
+	return (ydata_out("tls", error, data, err));
 }
 
 /*
@@ -4916,23 +4854,15 @@ static int
 cmd_cert(struct arc_client *cl, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
-	struct arc_certs_req	 rq;
-	struct arc_certs_rsp	*rs;
+	ucl_object_t		*data;
+	char			 err[256];
 	int			 error;
 
 	if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
-		memset(&rq, 0, sizeof(rq));
-		rq.jail = netjail;
-		if ((error = arc_certs(cl, &rq, &rs)) != 0)
-			fail(cl, error, "certs");
-		if (rs->json != NULL)
-			xo_emit("{:json/%s}\n", rs->json);
-		else if (rs->error != NULL)
-			warnx("%s", rs->error);
-		emit_trace(rs->trace.v, rs->trace.n);
-		error = rs->ok ? 0 : 1;
-		arc_certs_rsp_free(rs);
-		return (error);
+		/* arcana-host's read-certificates. */
+		ytold_begin(cl);
+		error = yh_certs(cl->conn, netjail, &data, err, sizeof(err));
+		return (ydata_out("certs", error, data, err));
 	}
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
@@ -4965,19 +4895,16 @@ static int
 cmd_jailconf(struct arc_client *cl, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
-	struct arc_jail_files_rsp *rs;
+	ucl_object_t		*data;
 	const char		*name;
+	char			 err[256];
 	int			 error;
 
 	if (argc == 2 && strcmp(argv[1], "files") == 0) {
-		if ((error = arc_jail_files(cl, &rs)) != 0)
-			fail(cl, error, "jail files");
-		if (rs->json != NULL)
-			xo_emit("{:json/%s}\n", rs->json);
-		emit_trace(rs->trace.v, rs->trace.n);
-		error = rs->ok ? 0 : 1;
-		arc_jail_files_rsp_free(rs);
-		return (error);
+		/* arcana-jail-files' read-files. */
+		ytold_begin(cl);
+		error = yh_jail_files(cl->conn, &data, err, sizeof(err));
+		return (ydata_out("jail files", error, data, err));
 	}
 	if (argc < 3)
 		usage();
@@ -5404,25 +5331,16 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 static int
 cmd_config_export(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_config_export_req	 req;
-	struct arc_config_export_rsp	*rsp;
-	int				 error;
+	ucl_object_t	*data;
+	char		 err[512];
+	int		 error;
 
 	if (argc > 2 || (argc == 2 && strcmp(argv[1], "-s") != 0))
 		usage();
-	memset(&req, 0, sizeof(req));
-	req.secrets = argc == 2;
-	if ((error = arc_config_export(cl, &req, &rsp)) != 0)
-		fail(cl, error, "config-export");
-	if (rsp->json != NULL)
-		xo_emit("{:json/%s}\n", rsp->json);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("config-export: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_config_export_rsp_free(rsp);
-	return (error);
+	/* arcana-agent's config-export. */
+	ytold_begin(cl);
+	error = yh_config_export(cl->conn, argc == 2, &data, err, sizeof(err));
+	return (ydata_out("config-export", error, data, err));
 }
 
 /*
@@ -5433,24 +5351,26 @@ cmd_config_export(struct arc_client *cl, int argc, char **argv)
 static int
 cmd_config_apply(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_config_apply_req	 req;
-	struct arc_config_apply_rsp	*rsp;
-	char				*text;
-	int				 ch, error;
+	ucl_object_t	*data;
+	const char	*hostname;
+	char		*text, err[512];
+	bool		 anyway, dry;
+	int		 ch, error;
 
-	memset(&req, 0, sizeof(req));
+	anyway = dry = false;
+	hostname = NULL;
 	optind = 1;
 	optreset = 1;
 	while ((ch = getopt(argc, argv, "anH:")) != -1) {
 		switch (ch) {
 		case 'a':
-			req.anyway = true;
+			anyway = true;
 			break;
 		case 'n':
-			req.dry_run = true;
+			dry = true;
 			break;
 		case 'H':
-			req.new_hostname = optarg;
+			hostname = optarg;
 			break;
 		default:
 			usage();
@@ -5459,19 +5379,12 @@ cmd_config_apply(struct arc_client *cl, int argc, char **argv)
 	if (argc != optind + 1)
 		usage();
 	text = slurp(argv[optind]);
-	req.bundle = text;
-	if ((error = arc_config_apply(cl, &req, &rsp)) != 0)
-		fail(cl, error, "config-apply");
-	if (rsp->json != NULL)
-		xo_emit("{:json/%s}\n", rsp->json);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("config-apply: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_config_apply_rsp_free(rsp);
+	/* arcana-agent's config-apply. */
+	ytold_begin(cl);
+	error = yh_config_apply(cl->conn, text, dry, anyway, hostname, &data,
+	    err, sizeof(err));
 	free(text);
-	return (error);
+	return (ydata_out("config-apply", error, data, err));
 }
 
 /*
@@ -5569,33 +5482,31 @@ cmd_notify(struct arc_client *cl, int argc, char **argv)
 static int
 cmd_transport(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_transport_req	 req;
-	struct arc_transport_rsp	*rsp;
-	int				 error;
+	ucl_object_t	*data;
+	const char	*listen, *unlisten;
+	char		 err[512];
+	bool		 keep, retry;
+	int		 error;
 
-	memset(&req, 0, sizeof(req));
+	listen = unlisten = NULL;
+	keep = retry = false;
 	if (argc == 3 && strcmp(argv[1], "listen") == 0)
-		req.listen = argv[2];
+		listen = argv[2];
 	else if ((argc == 3 || argc == 5 || argc == 6) && strcmp(argv[1],
 	    "unlisten") == 0 && (argc == 3 || strcmp(argv[3], "for") == 0) &&
 	    (argc != 6 || strcmp(argv[5], "keep") == 0)) {
-		req.unlisten = argv[2];
-		req.listen = argc >= 5 ? argv[4] : NULL;
-		req.listen_keep = argc == 6;
+		unlisten = argv[2];
+		listen = argc >= 5 ? argv[4] : NULL;
+		keep = argc == 6;
 	} else if (argc > 2 || (argc == 2 && strcmp(argv[1], "retry") != 0))
 		usage();
-	req.retry = argc == 2;
-	if ((error = arc_transport(cl, &req, &rsp)) != 0)
-		fail(cl, error, "transport");
-	if (rsp->json != NULL)
-		xo_emit("{:json/%s}\n", rsp->json);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("transport: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_transport_rsp_free(rsp);
-	return (error);
+	else
+		retry = argc == 2;
+	/* arcana-agent's transport, its retry or listen action first. */
+	ytold_begin(cl);
+	error = yh_transport(cl->conn, retry, listen, unlisten, keep, NULL,
+	    &data, err, sizeof(err));
+	return (ydata_out("transport", error, data, err));
 }
 
 /*
@@ -5934,46 +5845,51 @@ cmd_fstab(struct arc_client *cl, int argc, char **argv)
 static int
 cmd_stats(struct arc_client *cl)
 {
-	struct arc_stats_rsp	*rsp;
-	const struct arc_stats	*st;
-	size_t			 i;
-	int			 error;
+	const struct arcana_host_host_stats	*st;
+	struct arcana_host			 d;
+	const struct cbl_ynode			*n;
+	cbl_yarena				*a;
+	size_t					 i;
 
-	if ((error = arc_stats(cl, &rsp)) != 0)
-		fail(cl, error, "stats");
-	if ((st = rsp->stats) != NULL) {
+	/* arcana-host's host, its stats. */
+	if ((n = yq_top("arcana-host", "host")) == NULL)
+		xo_errx(1, "stats: arcana-host has no host");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "stats");
+	memset(&d, 0, sizeof(d));
+	ytold_begin(cl);
+	yget_data(cl, n, -1, &d, a);
+	if (d.host != NULL && (st = d.host->stats) != NULL) {
 		xo_open_container("stats");
-		xo_emit("{Lwc:CPU}{:cpu-pct/%.1f}%\n", st->cpu_pct / 100.0);
+		xo_emit("{Lwc:CPU}{:cpu-pct/%.1f}%\n", st->cpu / 10.0);
 		xo_emit("{Lwc:Load}{:load1/%.2f} {:load5/%.2f} {:load15/%.2f}\n",
 		    st->load1 / 100.0, st->load5 / 100.0, st->load15 / 100.0);
 		xo_emit("{Lwc:Memory}{:mem-used/%ju} used, {:mem-inactive/%ju} "
 		    "inactive, {:mem-free/%ju} free of {:mem-total/%ju} MiB\n",
-		    (uintmax_t)(st->mem_used >> 20),
-		    (uintmax_t)(st->mem_inactive >> 20),
-		    (uintmax_t)(st->mem_free >> 20),
-		    (uintmax_t)(st->mem_total >> 20));
+		    (uintmax_t)(st->memory_used >> 20),
+		    (uintmax_t)(st->memory_inactive >> 20),
+		    (uintmax_t)(st->memory_free >> 20),
+		    (uintmax_t)(st->memory_total >> 20));
 		xo_emit("{Lwc:Swap}{:swap-used/%ju} of {:swap-total/%ju} MiB\n",
 		    (uintmax_t)(st->swap_used >> 20),
 		    (uintmax_t)(st->swap_total >> 20));
 		xo_open_list("pool");
-		for (i = 0; i < st->pools.n; i++) {
+		for (i = 0; i < st->pool.n; i++) {
 			xo_open_instance("pool");
 			xo_emit("{Lwc:Pool}{:name/%s} {:alloc/%ju} of {:size/%ju} "
-			    "GiB, {:health/%s}\n", st->pools.v[i].name,
-			    (uintmax_t)(st->pools.v[i].alloc >> 30),
-			    (uintmax_t)(st->pools.v[i].size >> 30),
-			    st->pools.v[i].health);
+			    "GiB, {:health/%s}\n", st->pool.v[i].name,
+			    (uintmax_t)(st->pool.v[i].allocated >> 30),
+			    (uintmax_t)(st->pool.v[i].size >> 30),
+			    st->pool.v[i].health != NULL ?
+			    st->pool.v[i].health : "");
 			xo_close_instance("pool");
 		}
 		xo_close_list("pool");
 		xo_close_container("stats");
 	}
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("stats: %s", rsp->error != NULL ? rsp->error : "failed");
-	arc_stats_rsp_free(rsp);
-	return (error);
+	ytold_end(true);
+	cbl_yarena_free(a);
+	return (0);
 }
 
 typedef struct arcana_packages_package ypkg;

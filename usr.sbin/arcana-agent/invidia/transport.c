@@ -813,7 +813,7 @@ also_set(struct work *w, const char *now)
 int
 do_transport(struct work *w, bool retry, const char *listen,
     const char *unlisten, bool keep, const char *sctp_also,
-    struct arc_transport_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	ucl_object_t	*top, *arr, *o;
 	unsigned char	*json;

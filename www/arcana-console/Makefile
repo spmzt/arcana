@@ -76,10 +76,11 @@ hosts.o: jobs_spec.h
 # runs and was written down (ygula.c); packets and paths followed
 # (ytshoot.c); the plugins' programs through their modules, the network
 # operation's kinds as the pages read them (yplug.c); an SD-WAN edge's
-# probes in arcana-probe's candidate (yprobes.c).  arcanactl builds the
-# same.
+# probes in arcana-probe's candidate (yprobes.c), its other parts in
+# arcana-sdwan's and the sdwan read made of both (ysdwan.c); the host and
+# its agent through arcana-host (yhostjson.c).  arcanactl builds the same.
 SRCS+=		yqueue.c ychange.c ystore.c ygula.c yevjson.c ytshoot.c \
-		ytsjson.c yplug.c yprobes.c
+		ytsjson.c yplug.c yprobes.c yhostjson.c ysdwan.c
 CFLAGS.ychange.c+= -I${.CURDIR}
 CLEANFILES+=	ychange.c ychange.c.tmp
 ychange.c: ${ARC_TOP}/share/arcana/jobs.awk ${ARC_TOP}/share/arcana/jobs.yaml \

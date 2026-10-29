@@ -32,7 +32,7 @@ static bool		cpu_have;
 static int	cp_time(long *);
 static uint64_t	vmstat(const char *);
 static double	cpu_pct(struct work *);
-static void	swap(struct work *, struct arc_stats *);
+static void	swap(struct work *, struct host_stats *);
 
 static int
 cp_time(long *v)
@@ -91,7 +91,7 @@ cpu_pct(struct work *w)
 
 /* "swapinfo -k": the Total line, or the one device. */
 static void
-swap(struct work *w, struct arc_stats *st)
+swap(struct work *w, struct host_stats *st)
 {
 	struct execres	 res;
 	char		*argv[3], *copy, *line, *it, *dev, *size, *used;
@@ -130,7 +130,7 @@ swap(struct work *w, struct arc_stats *st)
 }
 
 void
-resources_measure(struct work *w, struct arc_stats *st)
+resources_measure(struct work *w, struct host_stats *st)
 {
 	struct loadavg	 la;
 	uint64_t	 page;

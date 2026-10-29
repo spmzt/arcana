@@ -1095,7 +1095,42 @@ whose first part is served.
   Check: `vpn`, `vnet`, `yang_plugins`, `safe_bird`, `bird_watch`;
   agent_root_test's `bird_live`; the console's `services`, `users`.
 - 3.1.9 A: the hello, list, stats, certs, agent and jail-files
-  operations retired; check: `hello`'s tests.
+  operations retired; check: `hello`'s tests.  Done (2026-10-29), less
+  what a console needs to reach and update an agent of an earlier
+  release: hello, agent-update and agent-build stay operations, and
+  with them console-update and source-head, the fleet's update
+  workflow's steps (`check` and `console`, workflows.c) on the
+  console's own host, whose agent may be the earlier one.  list was
+  retired before (arcana-jails).  The stats operation retired: a read
+  of arcana-host's `host` is the facts and the stats alone (stats.c,
+  agent.h's host_stats in place of the wire's struct), what the
+  console's pages poll; the trust store left the read (each
+  certificate parsed with OpenSSL: a read of the host took 17 ms where
+  stats took 4) for the `read-certificates` action, the host's or a
+  jail's by its input, the certs operation retired (the host's
+  certificates container obsolete).  jail-files retired the same way:
+  arcana-jail-files' `read-files` action on the jails, its state
+  container obsolete, so no read of the jails (polled) carries every
+  jail's file.  Of arcana-agent: source-log (a tag's time added: the
+  release notes are dated by it), config-export, config-apply (its
+  bundle the JSON config-export writes, which bundle.c checks;
+  `refused` added: a refused apply still gives its report, the
+  hardware's differences), transport (the SCTP listeners' addresses,
+  sctp-also and why it was not bound, each association's local
+  addresses and paths, the connections seen and the time read, added;
+  its `listen` action for listen, unlisten, keep and sctp-also) and tls
+  (the chain as certificates, `intermediate`; install takes the CAs
+  alone, as the CA's rotation sends them; the dates as the files have
+  them, which the read lost) retired.  The console and arcanactl make
+  each operation's JSON of the model (yhostjson.c), the reply shapes
+  kept; the stats poll is a GET alone, no step heard.  Second SID
+  ranges 82 000 (arcana-host) and 82 100 (arcana-agent).  Check:
+  agent_test's `yang_host_agent`, `certs`, `jail_conf`,
+  `config_bundle`, `agent_build`; agent_tls_test's `mtls`, `renew`,
+  `tls_files`, `configured`; the console's `services`, `load`,
+  `config_bundle`, `templates`, `mtls`, `enrol`, `users`,
+  `update_notes`, `workflows`, `agent_update`; `pwa_storage`,
+  `pwa_hosts`, `pwa_firewall`.
 - 3.1.10 A: the ipfw-rules, fw-trace, path-check, traceroute and
   capture operations retired; check: the firewall tests.  The fw-trace
   operation retired (2026-10-29): arcana-firewall's `trace`, of the
@@ -1150,7 +1185,54 @@ whose first part is served.
 - 3.1.12 A: `arcana-sdwan` written through `EDIT` in place of the
   console's JSON; the sdwan, sdwan-rules, sdwan-steer, sdwan-bird,
   sdwan-dhcp, sdwan-dns, sdwan-proxy and sdwan-ids operations retired;
-  check: the SD-WAN tests and the two-jail lab.
+  check: the SD-WAN tests and the two-jail lab.  Done (invidia/ysd.c,
+  yarcana.c, probe.c; the console's ysdwan.c, shared with arcanactl):
+  the configuration is each edge's parts as their setters keep them,
+  the host's at the top and each vnet jail's under `jail` (the rules'
+  and the steer's `jail` leaves obsolete): the rules (a rule keyed by
+  its place, ipfw letting rules share a number), the steering with the
+  breakout's routes, and the BIRD instances; the host's dnsmasq,
+  unbound, Squid and Suricata instances, SD-WAN's and the Security
+  section's (sec-) in one list each, set apart as their setters keep
+  them.  An instance's form stays the console's JSON, a `spec` text leaf
+  (with `host`), until the module says the forms (4.5.5); the rendered
+  file is the `conf` state leaf, as decided before; the IDS' other
+  settings (capture, offload, lua, plugins, stopped, thresholds) and
+  the proxies' lists are leaves of their own.  An edit sets each part
+  that changed, as its operation did, its JSON made from the model
+  (ysd_*_json()); one that fails puts back those set before it in the
+  same edit.  A GET of running reads the kept files alone; the state
+  (the sdwan read less the probes': do_sdwan_state()) only the
+  operational datastore's, so a commit of any module no longer runs
+  birdc and ipfw.  The state gained what the read had and the model
+  not: a candidate's bfd and not-probed, the breakout's routes, a jail
+  edge's error, a BIRD instance's jail, a resolver's TLS certificate,
+  ClamAV, the IDS' build, host, ruleset, statistics, captures, replay
+  and offloading, the record's untold, a fault's compressed.  The
+  console's SD-WAN apply keeps its jobs, its order and its rollback
+  (each step's unmake, the whole apply undone on a failure, the rules
+  and the steering swapped whole, never unmade first): a sdwan-* step
+  puts the edge's part in the candidate and commits confirmed,
+  confirmed at once, as the probes; the same as running has commits
+  nothing, and the new `apply` action sets the part again, which starts
+  what of it is not running (the Security page's Start, which applies
+  the list again).  The sdwan read the pages and the apply take is
+  made of arcana-sdwan's operational state, arcana-probe's running
+  (a target's thresholds, history, down and up) and its `read` action
+  in the operation's shape (ysdwan_read()): the action now gives each
+  target whole (the state's grouping, `target-state`, the samples after
+  the time alone) with `probing` and `time`, so a page that polls is
+  sent the new samples, not every one kept; arcanactl's `sdwan` the
+  same, its `sdwan rules`,
+  `steer`, `bird`, `dhcp`, `dns`, `proxy`, `ids` a commit, or the
+  apply.  Found on the way: cblink's value parser takes an integer out
+  of its type's range modulo the type's size (70000 a uint16's 4464),
+  which the console checks for the forms' numbers.  The second SID
+  range is 81 000 (arcana-probe's read took 24 of its own second range,
+  80 300).  Check: `yang_sdwan`, `sdwan`, `sdwan_jail`,
+  `sdwan_forms`, `monitors`, `ipsec`, `ipsec_sa`, `safe_ipsec_sa`;
+  agent_root_test's `sdwan_probe`, `sdwan_jail_edge`, `sdwan_links`,
+  `sdwan_record`; the console's sdwan cases and `monitors`.
 - 3.2.3 A (done): on-change from the event sources in place of a
   read every dampening period: interfaces, routing, network instances
   and logical network elements are told by netlink(4)'s and the jails'

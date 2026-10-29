@@ -1,9 +1,11 @@
 PROG=		arcanactl
 SRCS=		arcanactl.c yjsonin.c yqueue.c ychange.c ystore.c ygula.c \
-		yevjson.c ytshoot.c ytsjson.c yprobes.c zprog.c
+		yevjson.c ytshoot.c ytsjson.c yprobes.c yhostjson.c ysdwan.c \
+		zprog.c
 # RFC 7951's JSON in, arcana-jobs, arcana-storage, what runs and was
-# written down, packets and paths followed, arcana-probe: the console's;
-# a program compressed for agent-update: the agent's.
+# written down, packets and paths followed, arcana-probe, the host and
+# its agent, arcana-sdwan: the console's; a program compressed for
+# agent-update: the agent's.
 .PATH:		${.CURDIR}/../../www/arcana-console \
 		${.CURDIR}/../arcana-agent/ira
 MAN=		arcanactl.8

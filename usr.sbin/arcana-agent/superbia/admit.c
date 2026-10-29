@@ -45,10 +45,7 @@ static struct cbl_family_def	 def;
  * whole configuration or a dataset. */
 static const char *const changes[] = {
 	"address", "agent-update", "agent-build", "console-update",
-	"ipfw-rules", "zfs-receive", "sdwan-rules",
-	"sdwan-steer", "sdwan-bird", "sdwan-dhcp", "sdwan-dns", "sdwan-proxy",
-	"sdwan-ids", "tls", "config-apply", "notify",
-	"builder-options", "config-export", "zfs-send",
+	"ipfw-rules", "zfs-receive", "notify", "builder-options", "zfs-send",
 	"suricata-pcap-put", "suricata-pcap-get",
 };
 

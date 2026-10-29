@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.235.0"
+#define	ARCANA_AGENT_VERSION	"0.236.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -412,10 +412,12 @@ int		 jail_allow_undo_prepare(struct work *, const struct arc_job_spec *,
 		    const char **, struct arc_variable **, size_t *, const char **);
 int		 jail_allow_undo(struct work *, const struct arc_job_spec *,
 		    const struct arc_variable *, size_t, const char **);
-void		 do_jail_files(struct work *, struct arc_jail_files_rsp *);
+struct json_rsp;
+void		 do_jail_files(struct work *, struct json_rsp *);
 
-/* superbia/certs.c: the certificates OpenSSL trusts */
-void		 do_certs(struct work *, struct arc_certs_rsp *);
+/* superbia/certs.c: the certificates OpenSSL trusts, as JSON */
+struct json_rsp;
+void		 do_certs(struct work *, struct json_rsp *);
 const char	*cert_check(const struct arc_job_spec *);
 int		 do_cert(struct work *, const struct arc_job_spec *,
 		    const char **);
@@ -754,7 +756,8 @@ enum { PROBE_NONE = -1, PROBE_UNKNOWN, PROBE_UP, PROBE_DOWN, PROBE_ENDED,
     PROBE_ERROR };
 void		 probe_start(void);
 int		 do_probes_set(struct work *, const char *, const char **);
-int		 do_sdwan(struct work *, uint64_t, struct arc_sdwan_rsp *);
+int		 do_probes_read(struct work *, uint64_t, struct json_rsp *);
+int		 do_sdwan_state(struct work *, struct json_rsp *);
 /* ... and the admin's own monitors on any tunnel, by the same prober. */
 struct arc_monitors_rsp;
 int		 do_monitors(struct work *, uint64_t, struct arc_monitors_rsp *);
@@ -1027,18 +1030,19 @@ bool		 tls_cert_dates(struct work *, time_t *, time_t *);
 const char	*tls_files_key(void);
 void		 tls_files_init(cbl_tls *, const char *, const char *,
 		    const char *);
+struct json_rsp;
 void		 do_tls(struct work *, const char *, const char *,
 		    const char *, const char *, const uint8_t *,
-		    struct arc_tls_rsp *);
+		    struct json_rsp *);
 void		 transport_fini(void);
 int		 do_transport(struct work *, bool, const char *, const char *,
-		    bool, const char *, struct arc_transport_rsp *);
+		    bool, const char *, struct json_rsp *);
 bool		 tls_file_is(const char *);
 /* superbia/bundle.c: the host as a bundle, a bundle made the host. */
-int		 do_config_export(struct work *, bool,
-		    struct arc_config_export_rsp *);
+struct json_rsp;
+int		 do_config_export(struct work *, bool, struct json_rsp *);
 int		 do_config_apply(struct work *, const char *, bool, bool,
-		    const char *, struct arc_config_apply_rsp *);
+		    const char *, struct json_rsp *);
 /* invidia/pathcheck.c: what this host does with a packet and its reply. */
 int		 do_path_check(struct work *, const char *, const char *,
 		    const char *, uint32_t, const char *, bool, uint32_t, bool,
@@ -1184,8 +1188,48 @@ const char	*ng_check(const char *, const char *const *, size_t);
 int		 do_ng(struct work *, const char *, const char *const *, size_t,
 		    const char **);
 
-/* gula/stats.c */
-int		 do_stats(struct work *, struct arc_stats_rsp *);
+/*
+ * gula/stats.c: how busy the host is, arcana-host's stats: the CPU in
+ * hundredths of a percent, the loads in hundredths; the pools from
+ * zpool list.
+ */
+struct host_pool {
+	const char	*name;
+	bool		 has_size;
+	uint64_t	 size;
+	bool		 has_alloc;
+	uint64_t	 alloc;
+	bool		 has_free;
+	uint64_t	 free;
+	const char	*health;
+};
+struct host_stats {
+	bool		 has_cpu_pct;
+	int64_t		 cpu_pct;
+	bool		 has_load1;
+	int64_t		 load1;
+	bool		 has_load5;
+	int64_t		 load5;
+	bool		 has_load15;
+	int64_t		 load15;
+	bool		 has_mem_total;
+	uint64_t	 mem_total;
+	bool		 has_mem_used;
+	uint64_t	 mem_used;
+	bool		 has_mem_inactive;
+	uint64_t	 mem_inactive;
+	bool		 has_mem_free;
+	uint64_t	 mem_free;
+	bool		 has_swap_total;
+	uint64_t	 swap_total;
+	bool		 has_swap_used;
+	uint64_t	 swap_used;
+	struct {
+		size_t			 n;
+		const struct host_pool	*v;
+	}		 pools;
+};
+void		 do_stats(struct work *, struct host_stats *);
 
 /* ira/packages.c: a package as pkg(8) says of it; a read of pkg's
  * (those installed, or what the repository has newer); an upgrade
@@ -1279,8 +1323,8 @@ bool		 verify_jail8(struct work *, const char *, const char *,
 		    const char *, const char *, bool);
 
 /* avaritia/resources.c, acedia/pools.c */
-void		 resources_measure(struct work *, struct arc_stats *);
-void		 pools_measure(struct work *, struct arc_stats *);
+void		 resources_measure(struct work *, struct host_stats *);
+void		 pools_measure(struct work *, struct host_stats *);
 
 /* ira/build.c */
 int		 do_agent_build(struct work *, const char *, const char *,
@@ -1288,9 +1332,28 @@ int		 do_agent_build(struct work *, const char *, const char *,
 		    struct arc_agent_build_rsp *);
 int		 do_source_head(struct work *, const char *, const char *,
 		    const char *, const char *, struct arc_source_head_rsp *);
+/*
+ * source-log's: the head, the commits and the tags, each a JSON list,
+ * and as a fetch tells them, the host keys to confirm and the deploy
+ * key.
+ */
+struct source_log_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+	const char	*commit;
+	const char	*log;
+	const char	*tags;
+	const char	*host_keys;
+	struct {
+		size_t		 n;
+		const char	*const *v;
+	}		 fingerprints;
+	const char	*deploy_key;
+};
 int		 do_source_log(struct work *, const char *, const char *,
 		    const char *, const char *, uint32_t,
-		    struct arc_source_log_rsp *);
+		    struct source_log_rsp *);
 
 int		 do_console_update(struct work *, const char *, const char *,
 		    const char *, const char *, struct arc_console_update_rsp *);

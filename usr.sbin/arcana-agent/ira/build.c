@@ -939,7 +939,7 @@ records_json(struct work *w, const char *out, size_t len, bool commits)
 static int
 source_log(struct work *w, const char *source, const char *ref,
     const char *accepted, const char *sshkey, uint32_t count,
-    struct arc_source_log_rsp *rsp)
+    struct source_log_rsp *rsp)
 {
 	struct fetched	 f;
 	struct gitssh	 g;
@@ -1100,7 +1100,7 @@ do_source_head(struct work *w, const char *source, const char *ref,
 int
 do_source_log(struct work *w, const char *source, const char *ref,
     const char *accepted, const char *sshkey, uint32_t count,
-    struct arc_source_log_rsp *rsp)
+    struct source_log_rsp *rsp)
 {
 	int	rc;
 

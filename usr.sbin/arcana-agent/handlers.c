@@ -58,19 +58,11 @@ struct job {
 	bool			 compress;
 	char			*host_keys;
 	char			*ssh_key;
-	uint32_t		 log_count;	/* source-log: commits at most */
 	char			*peer;
-	char			*bundle;	/* config-apply */
-	bool			 anyway;
-	char			*new_host;
 	char			*psrc, *pdst, *pproto, *piface;	/* path-check */
 	uint32_t		 pport;
 	bool			 has_fib;
 	bool			 preply;
-	char			*listen;	/* transport */
-	char			*unlisten;
-	bool			 listen_keep;
-	char			*sctp_also;	/* transport: "" none */
 	char			*token;		/* notify: zeroed when used */
 };
 
@@ -311,16 +303,6 @@ worker(void *arg)
 	struct arc_address_rsp	 dr;
 	struct arc_network_rsp	 nr;
 	struct arc_route_lookup_rsp rlr;
-	struct arc_sdwan_rsp	sdr;
-	struct arc_sdwan_rules_rsp srr;
-	struct arc_sdwan_steer_rsp sstr;
-	struct arc_sdwan_bird_rsp sbr;
-	struct arc_sdwan_dhcp_rsp sdhr;
-	struct arc_sdwan_dns_rsp sdnr;
-	struct arc_sdwan_proxy_rsp sdpr;
-	struct arc_sdwan_ids_rsp sdir;
-	struct arc_stats_rsp	 str;
-	struct arc_jail_files_rsp jfr;
 	struct arc_builder_rsp	 bur;
 	struct arc_builder_options_rsp bor;
 	struct arc_crashes_rsp	 crr;
@@ -331,19 +313,13 @@ worker(void *arg)
 	struct arc_monitors_rsp	 monr;
 	struct arc_system_rsp	 syr;
 	struct arc_job_spec	 bsp;
-	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
-	struct arc_tls_rsp	 tlr;
-	struct arc_transport_rsp tpr;
-	struct arc_config_export_rsp cxr;
-	struct arc_config_apply_rsp car;
 	struct arc_notify_rsp	 ntr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
 	struct arc_agent_update_rsp aur;
 	struct arc_agent_build_rsp abr;
 	struct arc_source_head_rsp shr;
-	struct arc_source_log_rsp slr;
 	struct arc_console_update_rsp cur;
 	const char		*what, *error;
 	bool			 console;
@@ -359,12 +335,6 @@ worker(void *arg)
 	 * its own priority, as jobs do. */
 	switch (j->cmd) {
 	case ARC_CMD_NOTIFY:
-	case ARC_CMD_CONFIG_APPLY:
-	case ARC_CMD_TRANSPORT:
-	case ARC_CMD_TLS:
-	case ARC_CMD_SDWAN_RULES:
-	case ARC_CMD_SDWAN_STEER:
-	case ARC_CMD_SDWAN_IDS:
 	case ARC_CMD_CONSOLE_UPDATE:
 	case ARC_CMD_AGENT_BUILD:
 	case ARC_CMD_AGENT_UPDATE:
@@ -374,17 +344,6 @@ worker(void *arg)
 		break;
 	}
 	switch (j->cmd) {
-	case ARC_CMD_STATS:
-		what = "stats";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "stats");
-		memset(&str, 0, sizeof(str));
-		do_stats(&w, &str);
-		ok = str.ok;
-		error = str.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &str.trace.v, &str.trace.n);
-		rc = arc_stats_reply(j->req, &str);
-		break;
 	case ARC_CMD_IPFW_RULES:
 		/* The text rides in ref, its checksum in sha256. */
 		what = wfmt(&w, "ipfw rules %s", j->from_rc ? "from rc.conf" :
@@ -434,97 +393,6 @@ worker(void *arg)
 		trace_steps(&w, &ntr.trace.v, &ntr.trace.n);
 		rc = arc_notify_reply(j->req, &ntr);
 		break;
-	case ARC_CMD_CONFIG_EXPORT:
-		what = j->refresh ? "config-export, secrets too" :
-		    "config-export";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "%s", what);
-		memset(&cxr, 0, sizeof(cxr));
-		do_config_export(&w, j->refresh, &cxr);
-		ok = cxr.ok;
-		error = cxr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &cxr.trace.v, &cxr.trace.n);
-		rc = arc_config_export_reply(j->req, &cxr);
-		break;
-	case ARC_CMD_CONFIG_APPLY:
-		what = j->refresh ? "config-apply, a dry run" : "config-apply";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "%s", what);
-		memset(&car, 0, sizeof(car));
-		do_config_apply(&w, j->bundle, j->refresh, j->anyway,
-		    j->new_host, &car);
-		ok = car.ok;
-		error = car.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &car.trace.v, &car.trace.n);
-		rc = arc_config_apply_reply(j->req, &car);
-		break;
-	case ARC_CMD_TRANSPORT:
-		what = j->refresh ? "transport retry" : j->listen != NULL ||
-		    j->unlisten != NULL || j->sctp_also != NULL ?
-		    "transport listeners" : "transport";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "%s", what);
-		memset(&tpr, 0, sizeof(tpr));
-		do_transport(&w, j->refresh, j->listen, j->unlisten,
-		    j->listen_keep, j->sctp_also, &tpr);
-		ok = tpr.ok;
-		error = tpr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &tpr.trace.v, &tpr.trace.n);
-		rc = arc_transport_reply(j->req, &tpr);
-		break;
-	case ARC_CMD_CERTS:
-		what = j->jail != NULL ? wfmt(&w, "certificates of %s", j->jail) :
-		    "certificates";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "%s", what);
-		memset(&cer, 0, sizeof(cer));
-		cer.has_ok = true;
-		if (scope_enter_jail(&w, j->jail, &cer.error, false) == 0)
-			do_certs(&w, &cer);
-		ok = cer.ok;
-		error = cer.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &cer.trace.v, &cer.trace.n);
-		rc = arc_certs_reply(j->req, &cer);
-		break;
-	case ARC_CMD_TLS:
-		/* The verb in sha256, the PEMs in source, ref and host_keys. */
-		what = wfmt(&w, "tls %s", j->sha256);
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "%s", what);
-		memset(&tlr, 0, sizeof(tlr));
-		{
-			const cbl_peer	*pe;
-			uint8_t		 fp[64];
-			size_t		 fplen;
-			bool		 have;
-
-			fplen = sizeof(fp);
-			pe = cbl_req_peer(j->req);
-			have = pe != NULL && (cbl_peer_flags(pe) &
-			    CBL_PEER_AUTHENTICATED) != 0 &&
-			    cbl_peer_fingerprint(pe, "sha256", fp, &fplen) == 0 &&
-			    fplen == 32;
-			pthread_mutex_lock(&change_lock);
-			if (strcmp(j->sha256, "status") == 0 || change_note("%s",
-			    what))
-				do_tls(&w, j->sha256, j->source, j->ref, j->host_keys,
-				    have ? fp : NULL, &tlr);
-			else
-				tlr.error = STOPPING;
-			if (strcmp(j->sha256, "status") != 0)
-				change_note(NULL);
-			pthread_mutex_unlock(&change_lock);
-		}
-		ok = tlr.ok;
-		error = tlr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &tlr.trace.v, &tlr.trace.n);
-		rc = arc_tls_reply(j->req, &tlr);
-		break;
 	case ARC_CMD_SSH:
 		what = j->jail != NULL ? wfmt(&w, "sshd of %s", j->jail) : "sshd";
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
@@ -538,18 +406,6 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &sshr.trace.v, &sshr.trace.n);
 		rc = arc_ssh_reply(j->req, &sshr);
-		break;
-	case ARC_CMD_JAIL_FILES:
-		what = "jail files";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "jail files");
-		memset(&jfr, 0, sizeof(jfr));
-		do_jail_files(&w, &jfr);
-		ok = jfr.ok;
-		error = jfr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &jfr.trace.v, &jfr.trace.n);
-		rc = arc_jail_files_reply(j->req, &jfr);
 		break;
 	case ARC_CMD_BUILDER:
 		what = "poudriere";
@@ -691,104 +547,6 @@ worker(void *arg)
 		trace_steps(&w, &rlr.trace.v, &rlr.trace.n);
 		rc = arc_route_lookup_reply(j->req, &rlr);
 		break;
-	case ARC_CMD_SDWAN_RULES:
-		what = "sdwan rules";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&srr, 0, sizeof(srr));
-		error = NULL;
-		ok = do_sdwan_rules(&w, j->ref, &error) == 0;
-		srr.has_ok = true;
-		srr.ok = ok;
-		srr.error = error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &srr.trace.v, &srr.trace.n);
-		rc = arc_sdwan_rules_reply(j->req, &srr);
-		break;
-	case ARC_CMD_SDWAN_STEER:
-		what = "sdwan steer";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&sstr, 0, sizeof(sstr));
-		error = NULL;
-		ok = do_sdwan_steer(&w, j->ref, &error) == 0;
-		sstr.has_ok = true;
-		sstr.ok = ok;
-		sstr.error = error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &sstr.trace.v, &sstr.trace.n);
-		rc = arc_sdwan_steer_reply(j->req, &sstr);
-		break;
-	case ARC_CMD_SDWAN_BIRD:
-		what = "sdwan bird";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&sbr, 0, sizeof(sbr));
-		error = NULL;
-		ok = do_sdwan_bird(&w, j->ref, &error) == 0;
-		sbr.has_ok = true;
-		sbr.ok = ok;
-		sbr.error = error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &sbr.trace.v, &sbr.trace.n);
-		rc = arc_sdwan_bird_reply(j->req, &sbr);
-		break;
-	case ARC_CMD_SDWAN_DHCP:
-		what = "sdwan dhcp";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&sdhr, 0, sizeof(sdhr));
-		error = NULL;
-		ok = do_sdwan_dhcp(&w, j->ref, &error) == 0;
-		sdhr.has_ok = true;
-		sdhr.ok = ok;
-		sdhr.error = error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &sdhr.trace.v, &sdhr.trace.n);
-		rc = arc_sdwan_dhcp_reply(j->req, &sdhr);
-		break;
-	case ARC_CMD_SDWAN_DNS:
-		what = "sdwan dns";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&sdnr, 0, sizeof(sdnr));
-		error = NULL;
-		ok = do_sdwan_dns(&w, j->ref, &error) == 0;
-		sdnr.has_ok = true;
-		sdnr.ok = ok;
-		sdnr.error = error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &sdnr.trace.v, &sdnr.trace.n);
-		rc = arc_sdwan_dns_reply(j->req, &sdnr);
-		break;
-	case ARC_CMD_SDWAN_PROXY:
-		what = "sdwan proxy";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&sdpr, 0, sizeof(sdpr));
-		error = NULL;
-		ok = do_sdwan_proxy(&w, j->ref, &error) == 0;
-		sdpr.has_ok = true;
-		sdpr.ok = ok;
-		sdpr.error = error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &sdpr.trace.v, &sdpr.trace.n);
-		rc = arc_sdwan_proxy_reply(j->req, &sdpr);
-		break;
-	case ARC_CMD_SDWAN_IDS:
-		what = "sdwan ids";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&sdir, 0, sizeof(sdir));
-		error = NULL;
-		ok = do_sdwan_ids(&w, j->ref, &error) == 0;
-		sdir.has_ok = true;
-		sdir.ok = ok;
-		sdir.error = error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &sdir.trace.v, &sdir.trace.n);
-		rc = arc_sdwan_ids_reply(j->req, &sdir);
-		break;
 	case ARC_CMD_MONITORS:
 		what = "monitors";
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
@@ -800,18 +558,6 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &monr.trace.v, &monr.trace.n);
 		rc = arc_monitors_reply(j->req, &monr);
-		break;
-	case ARC_CMD_SDWAN:
-		what = "sdwan";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&sdr, 0, sizeof(sdr));
-		do_sdwan(&w, j->pos, &sdr);
-		ok = sdr.ok;
-		error = sdr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &sdr.trace.v, &sdr.trace.n);
-		rc = arc_sdwan_reply(j->req, &sdr);
 		break;
 	case ARC_CMD_CONSOLE_UPDATE:
 		what = wfmt(&w, "console update from %s%s%s", j->source,
@@ -870,22 +616,6 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &shr.trace.v, &shr.trace.n);
 		rc = arc_source_head_reply(j->req, &shr);
-		break;
-	case ARC_CMD_SOURCE_LOG:
-		what = wfmt(&w, "source log of %s%s%s", j->source,
-		    j->ref != NULL ? " at " : "", j->ref != NULL ? j->ref : "");
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&slr, 0, sizeof(slr));
-		pthread_mutex_lock(&build_lock);
-		do_source_log(&w, j->source, j->ref, j->host_keys, j->ssh_key,
-		    j->log_count, &slr);
-		pthread_mutex_unlock(&build_lock);
-		ok = slr.ok;
-		error = slr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &slr.trace.v, &slr.trace.n);
-		rc = arc_source_log_reply(j->req, &slr);
 		break;
 	case ARC_CMD_AGENT_UPDATE:
 		what = wfmt(&w, "agent update%s", j->restart ?
@@ -1000,9 +730,6 @@ job_free(struct job *j)
 	free(j->sig);
 	free(j->sha256);
 	free(j->source);
-	free(j->listen);
-	free(j->unlisten);
-	free(j->sctp_also);
 	free(j->ref);
 	free(j->host_keys);
 	free(j->ssh_key);
@@ -1013,8 +740,6 @@ job_free(struct job *j)
 	if (j->token != NULL)
 		explicit_bzero(j->token, strlen(j->token));
 	free(j->token);
-	free(j->bundle);
-	free(j->new_host);
 	free(j->psrc);
 	free(j->pdst);
 	free(j->pproto);
@@ -1124,25 +849,6 @@ arc_source_head_doit(cbl_req *req, const struct arc_source_head_req *rq,
 	    NULL;
 	j->host_keys = rq->host_keys != NULL ? xstrdup(rq->host_keys) : NULL;
 	j->ssh_key = rq->ssh_key != NULL ? xstrdup(rq->ssh_key) : NULL;
-	return (start(j));
-}
-
-int
-arc_source_log_doit(cbl_req *req, const struct arc_source_log_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SOURCE_LOG;
-	j->source = xstrdup(rq->source);
-	j->ref = rq->ref != NULL && rq->ref[0] != '\0' ? xstrdup(rq->ref) :
-	    NULL;
-	j->host_keys = rq->host_keys != NULL ? xstrdup(rq->host_keys) : NULL;
-	j->ssh_key = rq->ssh_key != NULL ? xstrdup(rq->ssh_key) : NULL;
-	j->log_count = rq->has_count ? rq->count : 0;
 	return (start(j));
 }
 
@@ -1266,132 +972,6 @@ arc_route_lookup_doit(cbl_req *req, const struct arc_route_lookup_req *rq,
 }
 
 int
-arc_sdwan_rules_doit(cbl_req *req, const struct arc_sdwan_rules_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->json == NULL || rq->json[0] != '{')
-		return (reject(req, "the rules are a JSON object"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SDWAN_RULES;
-	j->ref = xstrdup(rq->json);
-	return (start(j));
-}
-
-int
-arc_sdwan_steer_doit(cbl_req *req, const struct arc_sdwan_steer_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->json == NULL || rq->json[0] != '{')
-		return (reject(req, "the steering is a JSON object"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SDWAN_STEER;
-	j->ref = xstrdup(rq->json);
-	return (start(j));
-}
-
-int
-arc_sdwan_bird_doit(cbl_req *req, const struct arc_sdwan_bird_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->json == NULL || rq->json[0] != '{')
-		return (reject(req, "the instances are a JSON object"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SDWAN_BIRD;
-	j->ref = xstrdup(rq->json);
-	return (start(j));
-}
-
-int
-arc_sdwan_dhcp_doit(cbl_req *req, const struct arc_sdwan_dhcp_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->json == NULL || rq->json[0] != '{')
-		return (reject(req, "the instances are a JSON object"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SDWAN_DHCP;
-	j->ref = xstrdup(rq->json);
-	return (start(j));
-}
-
-int
-arc_sdwan_ids_doit(cbl_req *req, const struct arc_sdwan_ids_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->json == NULL || rq->json[0] != '{')
-		return (reject(req, "the instances are a JSON object"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SDWAN_IDS;
-	j->ref = xstrdup(rq->json);
-	return (start(j));
-}
-
-int
-arc_sdwan_proxy_doit(cbl_req *req, const struct arc_sdwan_proxy_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->json == NULL || rq->json[0] != '{')
-		return (reject(req, "the instances are a JSON object"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SDWAN_PROXY;
-	j->ref = xstrdup(rq->json);
-	return (start(j));
-}
-
-int
-arc_sdwan_dns_doit(cbl_req *req, const struct arc_sdwan_dns_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->json == NULL || rq->json[0] != '{')
-		return (reject(req, "the instances are a JSON object"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SDWAN_DNS;
-	j->ref = xstrdup(rq->json);
-	return (start(j));
-}
-
-int
-arc_sdwan_doit(cbl_req *req, const struct arc_sdwan_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SDWAN;
-	j->pos = rq->has_after ? rq->after : 0;
-	return (start(j));
-}
-
-int
 arc_monitors_doit(cbl_req *req, const struct arc_monitors_req *rq,
     void *arg __unused)
 {
@@ -1441,58 +1021,6 @@ arc_notify_doit(cbl_req *req, const struct arc_notify_req *rq,
 	j->token = xstrdup(rq->notify_token);
 	j->psrc = xstrdup(rq->notify_chat);
 	j->pdst = xstrdup(rq->notify_text);
-	return (start(j));
-}
-
-int
-arc_config_export_doit(cbl_req *req, const struct arc_config_export_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_CONFIG_EXPORT;
-	j->refresh = rq->secrets;
-	return (start(j));
-}
-
-int
-arc_config_apply_doit(cbl_req *req, const struct arc_config_apply_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_CONFIG_APPLY;
-	j->bundle = xstrdup(rq->bundle);
-	j->refresh = rq->dry_run;
-	j->anyway = rq->anyway;
-	j->new_host = rq->new_hostname != NULL ? xstrdup(rq->new_hostname) :
-	    NULL;
-	return (start(j));
-}
-
-int
-arc_transport_doit(cbl_req *req, const struct arc_transport_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_TRANSPORT;
-	j->refresh = rq->retry;
-	j->listen = rq->listen != NULL && rq->listen[0] != '\0' ?
-	    xstrdup(rq->listen) : NULL;
-	j->unlisten = rq->unlisten != NULL && rq->unlisten[0] != '\0' ?
-	    xstrdup(rq->unlisten) : NULL;
-	j->listen_keep = rq->listen_keep;
-	j->sctp_also = rq->sctp_also != NULL ? xstrdup(rq->sctp_also) : NULL;
 	return (start(j));
 }
 
@@ -1553,39 +1081,6 @@ arc_network_dumpit(cbl_req *req, const struct arc_network_dump_req *rq,
 }
 
 int
-arc_certs_doit(cbl_req *req, const struct arc_certs_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
-		return (reject(req, "invalid jail name"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_CERTS;
-	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
-	    NULL;
-	return (start(j));
-}
-
-int
-arc_tls_doit(cbl_req *req, const struct arc_tls_req *rq, void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_TLS;
-	j->sha256 = xstrdup(rq->tls_verb);
-	j->source = rq->tls_cert != NULL ? xstrdup(rq->tls_cert) : NULL;
-	j->ref = rq->tls_ca != NULL ? xstrdup(rq->tls_ca) : NULL;
-	j->host_keys = rq->tls_peer != NULL ? xstrdup(rq->tls_peer) : NULL;
-	return (start(j));
-}
-
-int
 arc_ssh_doit(cbl_req *req, const struct arc_ssh_req *rq, void *arg __unused)
 {
 	struct job	*j;
@@ -1598,18 +1093,6 @@ arc_ssh_doit(cbl_req *req, const struct arc_ssh_req *rq, void *arg __unused)
 	j->cmd = ARC_CMD_SSH;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
-	return (start(j));
-}
-
-int
-arc_jail_files_doit(cbl_req *req, void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_JAIL_FILES;
 	return (start(j));
 }
 
@@ -1817,18 +1300,6 @@ arc_crashes_doit(cbl_req *req, const struct arc_crashes_req *rq,
 		j->pkg.names.v = v;
 		j->pkg.names.n = rq->names.n;
 	}
-	return (start(j));
-}
-
-int
-arc_stats_doit(cbl_req *req, void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_STATS;
 	return (start(j));
 }
 

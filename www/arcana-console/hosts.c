@@ -36,9 +36,11 @@
 #include "ytrans.h"
 #include "yqueue.h"
 #include "ygula.h"
+#include "yhostjson.h"
 #include "ystore.h"
 #include "yplug.h"
 #include "yprobes.h"
+#include "ysdwan.h"
 #include "ytshoot.h"
 #include "zprog.h"
 
@@ -1727,12 +1729,12 @@ static const char *
 bundle_of(const char *uri, const char *peer, char **out)
 {
 	static _Thread_local char	 why[300];
-	struct arc_config_export_req	 q;
-	struct arc_config_export_rsp	*r;
 	struct arc_client		 cl;
+	ucl_object_t			*b;
 	cbl_conn			*conn;
 	cbl_tls				*tls;
 	const char			*msg;
+	char				 err[256];
 	int				 error;
 
 	*out = NULL;
@@ -1743,23 +1745,21 @@ bundle_of(const char *uri, const char *peer, char **out)
 	}
 	/* Its files, not its keys: a host's identity (WireGuard's and
 	 * strongSwan's private keys, the agent's own) stays its own; the
-	 * host applied to keeps or makes its own. */
-	memset(&q, 0, sizeof(q));
-	q.secrets = false;
-	if ((error = arc_config_export(&cl, &q, &r)) != 0) {
-		snprintf(why, sizeof(why), "the host the bundle is read from "
-		    "did not answer: %s", strerror(error));
-		hosts_release(uri, peer, conn, tls, &cl, false);
+	 * host applied to keeps or makes its own.  arcana-agent's
+	 * config-export (yhostjson.c). */
+	if ((error = yh_config_export(cl.conn, false, &b, err, sizeof(err))) !=
+	    0) {
+		snprintf(why, sizeof(why), "the host the bundle is read from: "
+		    "%s", err[0] != '\0' ? err : strerror(error));
+		hosts_release(uri, peer, conn, tls, &cl, error == EIO);
 		return (why);
 	}
-	if (!r->ok || r->json == NULL)
-		snprintf(why, sizeof(why), "the host the bundle is read from: "
-		    "%s", r->error != NULL ? r->error : "no bundle");
-	else if ((*out = strdup(r->json)) == NULL)
+	if ((*out = (char *)ucl_object_emit(b, UCL_EMIT_JSON_COMPACT)) ==
+	    NULL)
 		snprintf(why, sizeof(why), "no memory");
 	else
 		why[0] = '\0';
-	arc_config_export_rsp_free(r);
+	ucl_object_unref(b);
 	hosts_release(uri, peer, conn, tls, &cl, true);
 	return (why[0] != '\0' ? why : NULL);
 }
@@ -1780,8 +1780,6 @@ call_run(struct task *t)
 	struct arc_network_rsp	*nr;
 	struct arc_route_lookup_req rlq;
 	struct arc_route_lookup_rsp *rlr;
-	struct arc_stats_rsp	*str;
-	struct arc_jail_files_rsp *jfiles;
 	struct arc_builder_rsp	*bur;
 	struct arc_builder_options_req boq;
 	struct arc_builder_options_rsp *bor;
@@ -1797,18 +1795,8 @@ call_run(struct task *t)
 	struct arc_speeder_rsp	*sper;
 	struct arc_monitors_req	 monq;
 	struct arc_monitors_rsp	*monr;
-	struct arc_certs_req	 ceq;
-	struct arc_certs_rsp	*cer;
 	struct arc_ssh_req	 sshq;
 	struct arc_ssh_rsp	*sshr;
-	struct arc_tls_req	 tlq;
-	struct arc_tls_rsp	*tlr;
-	struct arc_transport_req tpq;
-	struct arc_transport_rsp *tpr;
-	struct arc_config_export_req cxq;
-	struct arc_config_export_rsp *cxr;
-	struct arc_config_apply_req caq;
-	struct arc_config_apply_rsp *car;
 	struct arc_notify_req	 ntq;
 	struct arc_notify_rsp	*ntr;
 	char			*bundle;
@@ -1827,24 +1815,6 @@ call_run(struct task *t)
 	struct arc_console_update_req cuq;
 	struct arc_console_update_rsp *cur;
 	struct arc_source_head_req shq;
-	struct arc_source_log_req slq;
-	struct arc_source_log_rsp *slr;
-	struct arc_sdwan_req	sdq;
-	struct arc_sdwan_rsp	*sdr;
-	struct arc_sdwan_rules_req srq;
-	struct arc_sdwan_rules_rsp *srr;
-	struct arc_sdwan_steer_req ssq;
-	struct arc_sdwan_steer_rsp *ssr;
-	struct arc_sdwan_bird_req sbq;
-	struct arc_sdwan_bird_rsp *sbr;
-	struct arc_sdwan_dhcp_req sdq2;
-	struct arc_sdwan_dhcp_rsp *sdr2;
-	struct arc_sdwan_dns_req sdq3;
-	struct arc_sdwan_dns_rsp *sdr3;
-	struct arc_sdwan_proxy_req sdq4;
-	struct arc_sdwan_proxy_rsp *sdr4;
-	struct arc_sdwan_ids_req sdq5;
-	struct arc_sdwan_ids_rsp *sdr5;
 	struct arc_source_head_rsp *shr;
 	uint8_t			*bin, *sig, *z;
 	size_t			 siglen;
@@ -1883,19 +1853,12 @@ call_run(struct task *t)
 	ytag[0] = '\0';
 	nr = NULL;
 	rlr = NULL;
-	str = NULL;
-	jfiles = NULL;
 	bur = NULL;
 	bor = NULL;
 	surr = NULL;
 	nsr = NULL;
 	sysr = NULL;
-	cer = NULL;
 	sshr = NULL;
-	tlr = NULL;
-	tpr = NULL;
-	cxr = NULL;
-	car = NULL;
 	ntr = NULL;
 	bundle = NULL;
 	reused = again = false;
@@ -1905,7 +1868,6 @@ call_run(struct task *t)
 	abr = NULL;
 	cur = NULL;
 	shr = NULL;
-	slr = NULL;
 	bin = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
@@ -2197,50 +2159,15 @@ connected:
 		put(top, "job", job_object(c, &yjob, false, 0));
 		break;
 	case OP_STATS:
-		if ((error = arc_stats(&cl, &str)) != 0)
-			goto rpcfail;
-		ok = str->ok;
-		put_str(top, "error", str->error);
-		e = ucl_object_typed_new(UCL_OBJECT);
-		if (str->stats != NULL) {
-			const struct arc_stats *st = str->stats;
-			ucl_object_t *pl, *po;
-
-			/* Hundredths on the wire (decimal64, 2 digits). */
-			put(e, "cpu_pct", ucl_object_fromdouble(st->cpu_pct / 100.0));
-			put(e, "load1", ucl_object_fromdouble(st->load1 / 100.0));
-			put(e, "load5", ucl_object_fromdouble(st->load5 / 100.0));
-			put(e, "load15", ucl_object_fromdouble(st->load15 / 100.0));
-			put(e, "mem_total", ucl_object_fromint((int64_t)
-			    st->mem_total));
-			put(e, "mem_used", ucl_object_fromint((int64_t)
-			    st->mem_used));
-			put(e, "mem_inactive", ucl_object_fromint((int64_t)
-			    st->mem_inactive));
-			put(e, "mem_free", ucl_object_fromint((int64_t)
-			    st->mem_free));
-			put(e, "swap_total", ucl_object_fromint((int64_t)
-			    st->swap_total));
-			put(e, "swap_used", ucl_object_fromint((int64_t)
-			    st->swap_used));
-			pl = ucl_object_typed_new(UCL_ARRAY);
-			for (i = 0; i < st->pools.n; i++) {
-				po = ucl_object_typed_new(UCL_OBJECT);
-				put_str(po, "name", st->pools.v[i].name);
-				put(po, "size", ucl_object_fromint((int64_t)
-				    st->pools.v[i].size));
-				put(po, "alloc", ucl_object_fromint((int64_t)
-				    st->pools.v[i].alloc));
-				put(po, "free", ucl_object_fromint((int64_t)
-				    st->pools.v[i].free));
-				put_str(po, "health", st->pools.v[i].health);
-				ucl_array_append(pl, po);
-			}
-			put(e, "pools", pl);
-		}
-		put(top, "stats", e);
-		steps = str->trace.v;
-		nsteps = str->trace.n;
+		/*
+		 * arcana-host's host, its stats (yhostjson.c): what the pages
+		 * poll, a read alone, no step heard.
+		 */
+		ok = yh_stats(cl.conn, &e, ywhy, sizeof(ywhy)) == 0;
+		if (!ok)
+			put_str(top, "error", ywhy);
+		put(top, "stats", e != NULL ? e : ucl_object_typed_new(
+		    UCL_OBJECT));
 		break;
 	case OP_YDATA:
 		/* The models the agent serves, the nodes named in jail. */
@@ -2398,27 +2325,16 @@ connected:
 			put(top, "data", e);
 		break;
 	case OP_SDWAN:
-		memset(&sdq, 0, sizeof(sdq));
-		sdq.has_after = c->has_pos;
-		sdq.after = c->pos;
-		if ((error = arc_sdwan(&cl, &sdq, &sdr)) != 0)
-			goto rpcfail;
-		ok = sdr->ok;
-		put_str(top, "error", sdr->error);
-		e = NULL;
-		if (sdr->json != NULL) {
-			struct ucl_parser *p;
-
-			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
-			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
-			if (ucl_parser_add_string(p, sdr->json, 0))
-				e = ucl_parser_get_object(p);
-			ucl_parser_free(p);
-		}
+		/* arcana-sdwan's and arcana-probe's state, as the sdwan
+		 * operation had them (ysdwan.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = ysdwan_read(cl.conn, c->has_pos, c->pos, &e, ywhy,
+		    sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		if (e != NULL)
 			put(top, "data", e);
-		steps = sdr->trace.v;
-		nsteps = sdr->trace.n;
 		break;
 	case OP_SDWAN_PROBES:
 		/* arcana-probe's edge in the candidate, committed confirmed
@@ -2438,74 +2354,41 @@ connected:
 			put_str(top, "error", ywhy);
 		break;
 	case OP_SDWAN_RULES:
-		memset(&srq, 0, sizeof(srq));
-		srq.json = c->text;
-		if ((error = arc_sdwan_rules(&cl, &srq, &srr)) != 0)
-			goto rpcfail;
-		ok = srr->ok;
-		put_str(top, "error", srr->error);
-		steps = srr->trace.v;
-		nsteps = srr->trace.n;
-		break;
 	case OP_SDWAN_STEER:
-		memset(&ssq, 0, sizeof(ssq));
-		ssq.json = c->text;
-		if ((error = arc_sdwan_steer(&cl, &ssq, &ssr)) != 0)
-			goto rpcfail;
-		ok = ssr->ok;
-		put_str(top, "error", ssr->error);
-		steps = ssr->trace.v;
-		nsteps = ssr->trace.n;
-		break;
 	case OP_SDWAN_BIRD:
-		memset(&sbq, 0, sizeof(sbq));
-		sbq.json = c->text;
-		if ((error = arc_sdwan_bird(&cl, &sbq, &sbr)) != 0)
-			goto rpcfail;
-		ok = sbr->ok;
-		put_str(top, "error", sbr->error);
-		steps = sbr->trace.v;
-		nsteps = sbr->trace.n;
-		break;
 	case OP_SDWAN_DHCP:
-		memset(&sdq2, 0, sizeof(sdq2));
-		sdq2.json = c->text;
-		if ((error = arc_sdwan_dhcp(&cl, &sdq2, &sdr2)) != 0)
-			goto rpcfail;
-		ok = sdr2->ok;
-		put_str(top, "error", sdr2->error);
-		steps = sdr2->trace.v;
-		nsteps = sdr2->trace.n;
-		break;
-	case OP_SDWAN_IDS:
-		memset(&sdq5, 0, sizeof(sdq5));
-		sdq5.json = c->text;
-		if ((error = arc_sdwan_ids(&cl, &sdq5, &sdr5)) != 0)
-			goto rpcfail;
-		ok = sdr5->ok;
-		put_str(top, "error", sdr5->error);
-		steps = sdr5->trace.v;
-		nsteps = sdr5->trace.n;
-		break;
-	case OP_SDWAN_PROXY:
-		memset(&sdq4, 0, sizeof(sdq4));
-		sdq4.json = c->text;
-		if ((error = arc_sdwan_proxy(&cl, &sdq4, &sdr4)) != 0)
-			goto rpcfail;
-		ok = sdr4->ok;
-		put_str(top, "error", sdr4->error);
-		steps = sdr4->trace.v;
-		nsteps = sdr4->trace.n;
-		break;
 	case OP_SDWAN_DNS:
-		memset(&sdq3, 0, sizeof(sdq3));
-		sdq3.json = c->text;
-		if ((error = arc_sdwan_dns(&cl, &sdq3, &sdr3)) != 0)
-			goto rpcfail;
-		ok = sdr3->ok;
-		put_str(top, "error", sdr3->error);
-		steps = sdr3->trace.v;
-		nsteps = sdr3->trace.n;
+	case OP_SDWAN_PROXY:
+	case OP_SDWAN_IDS:
+		/* That part of the edge in arcana-sdwan's candidate,
+		 * committed confirmed and confirmed at once (ysdwan.c): the
+		 * apply's rollback is its own, the part made again as it
+		 * was.  The same as running has: set again (its apply). */
+		ysteps_begin(&cl, c, &ys);
+		{
+			const char	*part;
+			uint64_t	 esid;
+			char		 tok[33];
+			bool		 same;
+
+			part = c->op == OP_SDWAN_RULES ? "rules" : c->op ==
+			    OP_SDWAN_STEER ? "steer" : c->op == OP_SDWAN_BIRD ?
+			    "bird" : c->op == OP_SDWAN_DHCP ? "dhcp" : c->op ==
+			    OP_SDWAN_DNS ? "dns" : c->op == OP_SDWAN_PROXY ?
+			    "proxy" : "ids";
+			ok = ysdwan_edit(cl.conn, part, c->text, &same, ywhy,
+			    sizeof(ywhy), &esid, ytag, sizeof(ytag)) == 0;
+			if (ok && same)
+				ok = ysdwan_apply(cl.conn, part, c->text, ywhy,
+				    sizeof(ywhy)) == 0;
+			else if (ok)
+				ok = ytrans_commit(cl.conn, NULL, NULL, NULL, 0,
+				    0, tok, sizeof(tok), ywhy, sizeof(ywhy),
+				    ytag, sizeof(ytag)) == 0;
+		}
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		break;
 	case OP_STORAGE:
 		/* arcana-storage's read (ystore.c); the dataset rides where a
@@ -2598,16 +2481,15 @@ connected:
 		nsteps = ntr->trace.n;
 		break;
 	case OP_CONFIG_EXPORT:
-		memset(&cxq, 0, sizeof(cxq));
-		cxq.secrets = c->refresh;
-		if ((error = arc_config_export(&cl, &cxq, &cxr)) != 0)
-			goto rpcfail;
-		ok = cxr->ok;
-		put_str(top, "error", cxr->error);
-		if ((e = parse_json(cxr->json)) != NULL)
+		/* arcana-agent's config-export (yhostjson.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = yh_config_export(cl.conn, c->refresh, &e, ywhy,
+		    sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (e != NULL)
 			put(top, "data", e);
-		steps = cxr->trace.v;
-		nsteps = cxr->trace.n;
 		break;
 	case OP_CONFIG_APPLY:
 		/* Another host's bundle, its secrets left out, read by the
@@ -2620,47 +2502,30 @@ connected:
 				break;
 			}
 		}
-		memset(&caq, 0, sizeof(caq));
-		caq.bundle = bundle != NULL ? bundle : c->text;
-		caq.dry_run = c->dry_run;
-		caq.anyway = c->anyway;
-		caq.new_hostname = c->hostname[0] != '\0' ? c->hostname : NULL;
-		if ((error = arc_config_apply(&cl, &caq, &car)) != 0)
-			goto rpcfail;
-		ok = car->ok;
-		put_str(top, "error", car->error);
-		if ((e = parse_json(car->json)) != NULL)
+		/* arcana-agent's config-apply (yhostjson.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = yh_config_apply(cl.conn, bundle != NULL ? bundle : c->text,
+		    c->dry_run, c->anyway, c->hostname, &e, ywhy,
+		    sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (e != NULL)
 			put(top, "data", e);
-		steps = car->trace.v;
-		nsteps = car->trace.n;
 		break;
 	case OP_TRANSPORT:
-		memset(&tpq, 0, sizeof(tpq));
-		tpq.retry = c->retry;
-		tpq.listen = c->listen;
-		tpq.unlisten = c->unlisten;
-		tpq.listen_keep = c->listen_keep;
-		tpq.sctp_also = c->sctp_also;
-		if ((error = arc_transport(&cl, &tpq, &tpr)) != 0)
-			goto rpcfail;
-		ok = tpr->ok;
-		put_str(top, "error", tpr->error);
-		e = NULL;
-		if (tpr->json != NULL) {
-			struct ucl_parser *p;
-
-			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
-			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
-			if (ucl_parser_add_string(p, tpr->json, 0))
-				e = ucl_parser_get_object(p);
-			ucl_parser_free(p);
-		}
+		/* arcana-agent's transport, its retry and listen first
+		 * (yhostjson.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = yh_transport(cl.conn, c->retry, c->listen, c->unlisten,
+		    c->listen_keep, c->sctp_also, &e, ywhy, sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		if (e != NULL)
 			put(top, "data", e);
 		/* How the console itself reaches it. */
 		put_str(top, "uri", c->uri);
-		steps = tpr->trace.v;
-		nsteps = tpr->trace.n;
 		break;
 	case OP_PROCESSES:
 		/* arcana-processes' list, or a process's read (ygula.c). */
@@ -2769,24 +2634,14 @@ connected:
 		}
 		break;
 	case OP_JAIL_FILES:
-		if ((error = arc_jail_files(&cl, &jfiles)) != 0)
-			goto rpcfail;
-		ok = jfiles->ok;
-		put_str(top, "error", jfiles->error);
-		e = NULL;
-		if (jfiles->json != NULL) {
-			struct ucl_parser *p;
-
-			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
-			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
-			if (ucl_parser_add_string(p, jfiles->json, 0))
-				e = ucl_parser_get_object(p);
-			ucl_parser_free(p);
-		}
+		/* arcana-jail-files' read-files (yhostjson.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = yh_jail_files(cl.conn, &e, ywhy, sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		if (e != NULL)
 			put(top, "data", e);
-		steps = jfiles->trace.v;
-		nsteps = jfiles->trace.n;
 		break;
 	case OP_BUILDER:
 		if ((error = arc_builder(&cl, &bur)) != 0)
@@ -2993,75 +2848,52 @@ connected:
 		nsteps = surr->trace.n;
 		break;
 	case OP_CERTS:
-		memset(&ceq, 0, sizeof(ceq));
-		ceq.jail = c->scope[0] != '\0' ? c->scope : NULL;
-		if ((error = arc_certs(&cl, &ceq, &cer)) != 0)
-			goto rpcfail;
-		ok = cer->ok;
-		put_str(top, "error", cer->error);
-		e = NULL;
-		if (cer->json != NULL) {
-			struct ucl_parser *p;
-
-			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
-			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
-			if (ucl_parser_add_string(p, cer->json, 0))
-				e = ucl_parser_get_object(p);
-			ucl_parser_free(p);
-		}
+		/* arcana-host's read-certificates (yhostjson.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = yh_certs(cl.conn, c->scope[0] != '\0' ? c->scope : NULL,
+		    &e, ywhy, sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		if (e != NULL)
 			put(top, "data", e);
-		steps = cer->trace.v;
-		nsteps = cer->trace.n;
 		break;
 	case OP_TLS:
 		/*
 		 * Renewed: a key made on the host and a request for it, the
 		 * request signed here, the certificate sent back with the
 		 * console's own, which the host checks it still trusts.
+		 * arcana-agent's tls, its csr and install (yhostjson.c).
 		 */
-		memset(&tlq, 0, sizeof(tlq));
-		tlq.tls_verb = c->renew ? "csr" : "status";
-		if ((error = arc_tls(&cl, &tlq, &tlr)) != 0)
-			goto rpcfail;
-		ok = tlr->ok;
+		ysteps_begin(&cl, c, &ys);
+		ok = yh_tls(cl.conn, c->renew ? "csr" : "status", NULL, NULL,
+		    NULL, &e, ywhy, sizeof(ywhy)) == 0;
 		if (ok && c->renew) {
 			char		 why[300], hostb[300], *pem, *mine;
-			const char	*req_pem;
-			ucl_object_t	*cj;
 
-			cj = parse_json(tlr->json);
-			req_pem = cj != NULL ? ucl_str(cj, "csr") : NULL;
-			pem = pki_sign_host(req_pem, uri_host(c->uri, hostb,
-			    sizeof(hostb)), why, sizeof(why));
-			if (cj != NULL)
-				ucl_object_unref(cj);
+			pem = pki_sign_host(ucl_str(e, "csr"), uri_host(c->uri,
+			    hostb, sizeof(hostb)), why, sizeof(why));
+			ucl_object_unref(e);
+			e = NULL;
 			mine = pem != NULL ? file_text(cfg.tls_cert) : NULL;
-			arc_tls_rsp_free(tlr);
-			tlr = NULL;
 			if (pem == NULL || mine == NULL) {
+				ysteps_end(&cl, &ys, &steps, &nsteps);
 				ok = false;
 				put_str(top, "error", pem == NULL ? why :
 				    "cannot read the console's own certificate");
 				free(pem);
 				break;
 			}
-			memset(&tlq, 0, sizeof(tlq));
-			tlq.tls_verb = "install";
-			tlq.tls_cert = pem;
-			tlq.tls_peer = mine;
-			error = arc_tls(&cl, &tlq, &tlr);
+			ok = yh_tls(cl.conn, "install", pem, NULL, mine, &e,
+			    ywhy, sizeof(ywhy)) == 0;
 			free(pem);
 			free(mine);
-			if (error != 0)
-				goto rpcfail;
-			ok = tlr->ok;
 		}
-		put_str(top, "error", tlr->error);
-		if (tlr->json != NULL && (e = parse_json(tlr->json)) != NULL)
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (e != NULL)
 			put(top, "data", e);
-		steps = tlr->trace.v;
-		nsteps = tlr->trace.n;
 		break;
 	case OP_ZFS_KEY:
 		/* arcana-storage's load-key, change-key, create-encrypted. */
@@ -3160,26 +2992,34 @@ connected:
 		nsteps = shr->trace.n;
 		break;
 	case OP_SOURCE_LOG:
-		/* What is new in the repository: the latest commits and the
-		 * tags, read by the host as source-head reads the head. */
-		memset(&slq, 0, sizeof(slq));
-		slq.source = cfg.agent_source;
-		slq.ref = cfg.agent_ref;
-		slq.ssh_key = cfg.agent_ssh_key;
-		slq.host_keys = c->host_keys;
-		slq.has_count = true;
-		slq.count = 100;
-		if ((error = arc_source_log(&cl, &slq, &slr)) != 0)
-			goto rpcfail;
-		ok = slr->ok;
-		put_str(top, "error", slr->error);
-		put_str(top, "commit", slr->commit);
-		put_str(top, "log", slr->log);
-		put_str(top, "tags", slr->tags);
-		put_str(top, "host_keys", slr->host_keys);
-		put_str(top, "deploy_key", slr->deploy_key);
-		steps = slr->trace.v;
-		nsteps = slr->trace.n;
+		/*
+		 * What is new in the repository: the latest commits and the
+		 * tags, read by the host as source-head reads the head,
+		 * arcana-agent's source-log (yhostjson.c); each list its JSON
+		 * text, as the operation gave it.
+		 */
+		ysteps_begin(&cl, c, &ys);
+		ok = yh_source_log(cl.conn, cfg.agent_source, cfg.agent_ref,
+		    c->host_keys, cfg.agent_ssh_key, 100, &e, ywhy,
+		    sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (e != NULL) {
+			unsigned char	*lj;
+
+			put_str(top, "commit", ucl_str(e, "commit"));
+			if ((lj = ucl_object_emit(ucl_object_lookup(e, "log"),
+			    UCL_EMIT_JSON_COMPACT)) != NULL)
+				put_str(top, "log", (char *)lj);
+			free(lj);
+			if ((lj = ucl_object_emit(ucl_object_lookup(e, "tags"),
+			    UCL_EMIT_JSON_COMPACT)) != NULL)
+				put_str(top, "tags", (char *)lj);
+			free(lj);
+			ucl_object_unref(e);
+			e = NULL;
+		}
 		break;
 	case OP_AGENT_BUILD:
 		memset(&abq, 0, sizeof(abq));
@@ -3407,10 +3247,6 @@ done:
 		arc_network_rsp_free(nr);
 	if (rlr != NULL)
 		arc_route_lookup_rsp_free(rlr);
-	if (str != NULL)
-		arc_stats_rsp_free(str);
-	if (jfiles != NULL)
-		arc_jail_files_rsp_free(jfiles);
 	if (bur != NULL)
 		arc_builder_rsp_free(bur);
 	if (bor != NULL)
@@ -3421,18 +3257,8 @@ done:
 		arc_netstore_rsp_free(nsr);
 	if (sysr != NULL)
 		arc_system_rsp_free(sysr);
-	if (cer != NULL)
-		arc_certs_rsp_free(cer);
 	if (sshr != NULL)
 		arc_ssh_rsp_free(sshr);
-	if (tlr != NULL)
-		arc_tls_rsp_free(tlr);
-	if (tpr != NULL)
-		arc_transport_rsp_free(tpr);
-	if (cxr != NULL)
-		arc_config_export_rsp_free(cxr);
-	if (car != NULL)
-		arc_config_apply_rsp_free(car);
 	if (ntr != NULL)
 		arc_notify_rsp_free(ntr);
 	free(bundle);
@@ -3448,8 +3274,6 @@ done:
 		arc_console_update_rsp_free(cur);
 	if (shr != NULL)
 		arc_source_head_rsp_free(shr);
-	if (slr != NULL)
-		arc_source_log_rsp_free(slr);
 	free(bin);
 	/*
 	 * Kept for the next request when it answered: also when the agent
@@ -6231,8 +6055,9 @@ hosts_net_in(const char *uri, const char *peer, const char *name,
 
 /*
  * The host's SD-WAN told: what is probes (the targets, an array),
- * rules (the ruleset) or steer (the tables' entries), json as the
- * operation takes it.
+ * rules (the ruleset), steer (the tables' entries), or bird, dhcp, dns,
+ * proxy or ids (the instances), json as its retired operation took it,
+ * an edge's part in arcana-probe or arcana-sdwan by a commit.
  */
 char *
 hosts_sdwan_set(const char *uri, const char *peer, const char *name,

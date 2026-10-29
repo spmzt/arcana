@@ -452,15 +452,15 @@ int	yng_from_json(const char *json, cbl_yarena *a, size_t *np,
 
 /*
  * arcana-host (superbia/yhost.c): the host attribute set with the
- * stats and the certs operation's JSON (yhost_certs_from_json()).
+ * stats (st NULL: none), and the trust store's JSON as the
+ * read-certificates action's output (yhost_certs_from_json()).
  */
 struct arc_host;
-struct arc_stats;
+struct host_stats;
 int	yhost_certs_from_json(const char *json, cbl_yarena *a,
-	    struct arcana_host_host_certificates *out);
-int	yhost_from(const struct arc_host *h, const struct arc_stats *st,
-	    const struct arcana_host_host_certificates *certs, cbl_yarena *a,
-	    struct arcana_host_host *out);
+	    struct arcana_host_host_read_certificates_output *out);
+int	yhost_from(const struct arc_host *h, const struct host_stats *st,
+	    cbl_yarena *a, struct arcana_host_host *out);
 
 /*
  * arcana-agent (superbia/yagent.c): the transport and tls operations'
@@ -482,9 +482,12 @@ int	yagent_log_from_json(const char *commit, const char *log,
 	    const char *tags, cbl_yarena *a,
 	    struct arcana_agent_agent_source_log_output *out);
 
-/* arcana-jail-files (ira/yjf.c): the jail-files operation's JSON. */
+/*
+ * arcana-jail-files (ira/yjf.c): the files' JSON (do_jail_files()) as
+ * the read-files action's output.
+ */
 int	yjf_from_json(const char *json, cbl_yarena *a,
-	    struct arcana_jails_jails_arcjf_files *out);
+	    struct arcana_jails_jails_arcjf_read_files_output *out);
 
 /*
  * arcana-probe (gula/yprobe.c): the edges' targets, links and monitors
@@ -504,19 +507,30 @@ int	yprobe_state_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_probe_probes_state *out);
 
 /*
- * arcana-sdwan (invidia/ysd.c): what the console writes (rules, steer,
- * the instances of each kind) as configuration, the sdwan read as
- * state.  The plain instances (bird, dhcp, dns) have one layout.
+ * arcana-sdwan (invidia/ysd.c): what the setters keep (an edge's rules
+ * and steer, the instances of each kind) as configuration, and back as
+ * the JSON they take, malloc'd: an edge's (jail NULL or "" the host's)
+ * rules (none: emptied, in set), steer, or instances of a kind, for
+ * the proxies and the IDS those of a group (1 the Security section's,
+ * sec-; 0 SD-WAN's; -1 all), NULL and *errp for a spec that is no JSON
+ * object; the sdwan read as state.  The plain instances (bird, dhcp,
+ * dns) have one layout.
  */
 #define	YSD_PLAIN	0
 #define	YSD_PROXY	1
 #define	YSD_IDS		2
 int	ysd_rules_from_json(const char *json, cbl_yarena *a,
-	    struct arcana_sdwan_sdwan_rules *out);
+	    struct arcana_sdwan_rules_config *out);
 int	ysd_steer_from_json(const char *json, cbl_yarena *a,
-	    struct arcana_sdwan_sdwan_steer *out);
+	    struct arcana_sdwan_steer_config *out);
 int	ysd_instances_from_json(const char *json, int kind, cbl_yarena *a,
 	    size_t *np, const void **vp);
+char	*ysd_rules_json(const char *jail,
+	    const struct arcana_sdwan_rules_config *r, unsigned set);
+char	*ysd_steer_json(const char *jail,
+	    const struct arcana_sdwan_steer_config *s);
+char	*ysd_instances_json(int kind, const char *jail, int group, size_t n,
+	    const void *v, const char **errp);
 int	ysd_state_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_sdwan_sdwan_state *out);
 

@@ -418,8 +418,8 @@ int
 yprobe_state_from_json(const char *json, cbl_yarena *a,
     struct arcana_probe_probes_state *out)
 {
-	struct arcana_probe_probes_state_target		*v;
-	struct arcana_probe_probes_state_target_now	*nw;
+	struct arcana_probe_target_state		*v;
+	struct arcana_probe_target_state_now	*nw;
 	const ucl_object_t				*e, *o;
 	ucl_object_iter_t				 it;
 	ucl_object_t					*top;
@@ -448,8 +448,8 @@ yprobe_state_from_json(const char *json, cbl_yarena *a,
 		if ((s = yj_str(a, e, "family")) != NULL) {
 			v[k].has_family = true;
 			v[k].family = strcmp(s, "inet6") == 0 ?
-			    ARCANA_PROBE_PROBES_STATE_TARGET_FAMILY_IPV6 :
-			    ARCANA_PROBE_PROBES_STATE_TARGET_FAMILY_IPV4;
+			    ARCANA_PROBE_TARGET_STATE_FAMILY_IPV6 :
+			    ARCANA_PROBE_TARGET_STATE_FAMILY_IPV4;
 		}
 		YJ_NUM(e, "fib", &v[k], fib);
 		if ((s = yj_str(a, e, "state")) != NULL)

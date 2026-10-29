@@ -40,6 +40,7 @@
 #include <unistd.h>
 
 #include "console.h"
+#include "yhostjson.h"
 
 #define	CA_DAYS		3650
 #define	CERT_DAYS	825
@@ -1128,35 +1129,29 @@ host_tls(const char *uri, const char *peer, const char *verb,
     size_t wlen)
 {
 	struct arc_client	 cl;
-	struct arc_tls_req	 rq;
-	struct arc_tls_rsp	*rs;
+	ucl_object_t		*o;
 	cbl_conn		*conn;
 	cbl_tls			*tls;
 	const char		*e;
-	char			*out;
+	char			*out, err[300];
 	int			 error;
 
 	if ((e = hosts_connect(uri, peer, &conn, &tls, &cl)) != NULL) {
 		snprintf(why, wlen, "%s", e);
 		return (NULL);
 	}
-	memset(&rq, 0, sizeof(rq));
-	rq.tls_verb = verb;
-	rq.tls_cert = cert;
-	rq.tls_ca = ca;
-	rq.tls_peer = mine;
+	/* arcana-agent's tls (yhostjson.c). */
 	out = NULL;
-	if ((error = arc_tls(&cl, &rq, &rs)) != 0) {
-		snprintf(why, wlen, "%s", strerror(error));
-		hosts_release(uri, peer, conn, tls, &cl, false);
+	if ((error = yh_tls(cl.conn, verb, cert, ca, mine, &o, err,
+	    sizeof(err))) != 0) {
+		snprintf(why, wlen, "%s", err[0] != '\0' ? err :
+		    strerror(error));
+		hosts_release(uri, peer, conn, tls, &cl, error == EIO);
 		return (NULL);
 	}
-	if (rs->ok && rs->json != NULL)
-		out = strdup(rs->json);
-	else
-		snprintf(why, wlen, "%s", rs->error != NULL ? rs->error :
-		    "refused");
-	arc_tls_rsp_free(rs);
+	if ((out = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT)) == NULL)
+		snprintf(why, wlen, "out of memory");
+	ucl_object_unref(o);
 	hosts_release(uri, peer, conn, tls, &cl, true);
 	return (out);
 }

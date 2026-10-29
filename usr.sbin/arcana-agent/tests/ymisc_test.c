@@ -25,6 +25,7 @@
  * Through YANG-CBOR and back, the same bytes.
  */
 
+#include "agent.h"
 #include "ycommon.h"
 
 static const char *
@@ -40,7 +41,8 @@ ident(bool has, uint64_t sid)
 }
 
 static void
-cert(const char *what, const struct arcana_host_host_certificates_trusted *c)
+cert(const char *what,
+    const struct arcana_host_host_read_certificates_output_trusted *c)
 {
 
 	printf("%s %s cn=%s org=%s country=%s issuer=%s from=%s until=%s "
@@ -75,11 +77,11 @@ main(int argc, char **argv)
 		    false, .version = "0.123.0", .build = "0123456789abcdef"
 		    "0123456789abcdef0123456789abcdef0123456789abcdef",
 		    .plugins = { 3, plugins } };
-		struct arc_pool pools[] = { { .name = "zroot", .has_size = true,
+		struct host_pool pools[] = { { .name = "zroot", .has_size = true,
 		    .size = 107374182400, .has_alloc = true, .alloc = 10737418240,
 		    .has_free = true, .free = 96636764160, .health = "ONLINE" } };
-		/* The decimals in hundredths, as the wire has them. */
-		struct arc_stats st = { .has_cpu_pct = true, .cpu_pct = 1234,
+		/* The decimals in hundredths, as stats.c has them. */
+		struct host_stats st = { .has_cpu_pct = true, .cpu_pct = 1234,
 		    .has_load1 = true, .load1 = 42, .has_load5 = true, .load5 =
 		    50, .has_load15 = true, .load15 = 55, .has_mem_total =
 		    true, .mem_total = 25769803776, .has_mem_used = true,
@@ -88,12 +90,12 @@ main(int argc, char **argv)
 		    16106127360, .has_swap_total = true, .swap_total =
 		    4294967296, .has_swap_used = true, .swap_used = 0, .pools =
 		    { 1, pools } };
-		struct arcana_host_host_certificates c;
+		struct arcana_host_host_read_certificates_output c, cback;
 		struct arcana_host_host h, back;
 
 		if ((error = yhost_certs_from_json(slurp(argv[2]), a, &c)) != 0)
 			errc(1, error, "yhost_certs_from_json");
-		if ((error = yhost_from(&hh, &st, &c, a, &h)) != 0)
+		if ((error = yhost_from(&hh, &st, a, &h)) != 0)
 			errc(1, error, "yhost_from");
 		printf("host %s %s %s %s osreldate=%u ncpu=%u physmem=%ju boot=%s "
 		    "time=%s securelevel=%d privileged=%s\n", h.hostname,
@@ -127,23 +129,46 @@ main(int argc, char **argv)
 			cert("untrusted", (const void *)&c.untrusted.v[i]);
 		same((void *)arcana_host_host_encode, (void *)
 		    arcana_host_host_decode, &h, &back, a);
+		same((void *)arcana_host_host_read_certificates_output_encode,
+		    (void *)arcana_host_host_read_certificates_output_decode, &c,
+		    &cback, a);
 	} else if (strcmp(argv[1], "transport") == 0) {
 		struct arcana_agent_agent_transport t, back;
 
 		if ((error = yagent_transport_from_json(slurp(argv[2]), a, &t))
 		    != 0)
 			errc(1, error, "yagent_transport_from_json");
-		printf("transport sctp=%s\n", t.sctp ? "yes" : "no");
-		for (size_t i = 0; i < t.listener.n; i++)
-			printf("listener %s %s up=%s why=%s\n", t.listener.v[i].uri,
-			    t.listener.v[i].has_transport ? (const char *[]){
-			    "tcp", "sctp", "unix" }[t.listener.v[i].transport] :
-			    "-", t.listener.v[i].up ? "yes" : "no", str(
-			    t.listener.v[i].why));
-		for (size_t i = 0; i < t.session.n; i++)
-			printf("session %s %s %s since=%s\n", str(
+		printf("transport sctp=%s also=%s seen=%ju time=%s\n", t.sctp ?
+		    "yes" : "no", str(t.sctp_also), (uintmax_t)t.seen,
+		    str(t.time));
+		for (size_t i = 0; i < t.listener.n; i++) {
+			printf("listener %s %s up=%s why=%s also-why=%s",
+			    t.listener.v[i].uri, t.listener.v[i].has_transport ?
+			    (const char *[]){ "tcp", "sctp", "unix" }[
+			    t.listener.v[i].transport] : "-", t.listener.v[i].up ?
+			    "yes" : "no", str(t.listener.v[i].why), str(
+			    t.listener.v[i].also_why));
+			for (size_t k = 0; k < t.listener.v[i].address.n; k++)
+				printf(" %s", t.listener.v[i].address.v[k]);
+			printf("\n");
+		}
+		for (size_t i = 0; i < t.session.n; i++) {
+			printf("session %s %s %s since=%s", str(
 			    t.session.v[i].transport), str(t.session.v[i].address),
 			    str(t.session.v[i].name), str(t.session.v[i].since));
+			for (size_t k = 0; k < t.session.v[i].local.n; k++)
+				printf(" local=%s", t.session.v[i].local.v[k]);
+			printf("\n");
+			for (size_t k = 0; k < t.session.v[i].path.n; k++)
+				printf("path %s %s srtt=%u rto=%u primary=%s\n",
+				    t.session.v[i].path.v[k].address, (const char
+				    *[]){ "active", "inactive", "unconfirmed",
+				    "other" }[t.session.v[i].path.v[k].state],
+				    t.session.v[i].path.v[k].srtt,
+				    t.session.v[i].path.v[k].rto,
+				    t.session.v[i].path.v[k].primary ? "yes" :
+				    "no");
+		}
 		same((void *)arcana_agent_agent_transport_encode, (void *)
 		    arcana_agent_agent_transport_decode, &t, &back, a);
 	} else if (strcmp(argv[1], "tls") == 0) {
@@ -157,9 +182,9 @@ main(int argc, char **argv)
 			    t.certificate->issuer), str(t.certificate->not_before),
 			    str(t.certificate->not_after), str(
 			    t.certificate->sha256));
-			for (size_t i = 0; i < t.certificate->chain.n; i++)
+			for (size_t i = 0; i < t.certificate->intermediate.n; i++)
 				printf("%s%s", i > 0 ? "," : "",
-				    t.certificate->chain.v[i]);
+				    t.certificate->intermediate.v[i].subject);
 			printf("\n");
 		}
 		for (size_t i = 0; i < t.ca.n; i++)
@@ -237,12 +262,12 @@ main(int argc, char **argv)
 			    l.commit_log.v[i].subject), l.commit_log.v[i].body !=
 			    NULL ? strlen(l.commit_log.v[i].body) : 0);
 		for (size_t i = 0; i < l.tag.n; i++)
-			printf("tag %s %s\n", l.tag.v[i].name, str(
-			    l.tag.v[i].message));
+			printf("tag %s %s %s\n", l.tag.v[i].name, str(
+			    l.tag.v[i].message), str(l.tag.v[i].time));
 		same((void *)arcana_agent_agent_source_log_output_encode, (void *)
 		    arcana_agent_agent_source_log_output_decode, &l, &back, a);
 	} else if (strcmp(argv[1], "jail-files") == 0) {
-		struct arcana_jails_jails_arcjf_files f, back;
+		struct arcana_jails_jails_arcjf_read_files_output f, back;
 
 		if ((error = yjf_from_json(slurp(argv[2]), a, &f)) != 0)
 			errc(1, error, "yjf_from_json");
@@ -258,8 +283,9 @@ main(int argc, char **argv)
 			printf("jail %s text=%zu\n", f.jail.v[i].name,
 			    f.jail.v[i].text != NULL ? strlen(f.jail.v[i].text) :
 			    0);
-		same((void *)arcana_jails_jails_arcjf_files_encode, (void *)
-		    arcana_jails_jails_arcjf_files_decode, &f, &back, a);
+		same((void *)arcana_jails_jails_arcjf_read_files_output_encode,
+		    (void *)arcana_jails_jails_arcjf_read_files_output_decode, &f,
+		    &back, a);
 	} else if (strcmp(argv[1], "sshd") == 0) {
 		struct arcana_sshd_sshd d, back;
 

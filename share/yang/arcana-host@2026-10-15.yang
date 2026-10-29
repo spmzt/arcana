@@ -23,10 +23,12 @@ module arcana-host {
      has (programs not the base system's, found installed: BIRD,
      WireGuard's wg, strongSwan, Squid, dnsmasq, Suricata, c-icap),
      how busy it is at this moment (kern.cp_time, getloadavg(3),
-     vm.stats.vm, kvm_getswapinfo(3), zpool list), and the
-     certificates OpenSSL trusts (certctl(8): /etc/ssl/certs and
-     /etc/ssl/untrusted).  The hello, list (its host), stats and certs
-     operations of arcana.yaml converted (Y-3).";
+     vm.stats.vm, kvm_getswapinfo(3), zpool list), and, by an
+     action, the certificates OpenSSL trusts (certctl(8):
+     /etc/ssl/certs and /etc/ssl/untrusted).  The hello, list (its
+     host), stats and certs operations of arcana.yaml converted (Y-3):
+     a read of the host is what the stats operation was, the console's
+     poll, and waits for no certificate.";
 
   revision 2026-10-15 {
     description
@@ -141,6 +143,48 @@ module arcana-host {
       type string;
       description
         "The copy the host was given, when it was: its path.";
+    }
+  }
+
+  grouping trust-store {
+    description
+      "What OpenSSL trusts (certctl(8)).";
+    leaf localbase {
+      type string;
+      description
+        "Where the packages' certificates are (/usr/local).";
+    }
+    leaf added-dir {
+      type string;
+      description
+        "Where a certificate is put to be trusted.";
+    }
+    leaf distrusted-dir {
+      type string;
+      description
+        "Where one is put to be distrusted.";
+    }
+    leaf certctl {
+      type boolean;
+      description
+        "certctl(8) is there.";
+    }
+    leaf now {
+      type yang:date-and-time;
+      description
+        "When read, which the validity is judged against.";
+    }
+    list trusted {
+      key "file";
+      description
+        "Each of /etc/ssl/certs.";
+      uses certificate;
+    }
+    list untrusted {
+      key "file";
+      description
+        "Each of /etc/ssl/untrusted.";
+      uses certificate;
     }
   }
 
@@ -331,52 +375,27 @@ module arcana-host {
         }
       }
     }
-    container certificates {
+    action read-certificates {
       description
-        "What OpenSSL trusts (certctl(8)).";
-      leaf localbase {
-        type string;
-        description
-          "Where the packages' certificates are (/usr/local).";
+        "What OpenSSL trusts (certctl(8)), of the host or of a jail:
+         read when asked, each certificate parsed, which no read of
+         the host's state waits for.";
+      input {
+        leaf jail {
+          type string;
+          description
+            "The jail whose; none: the host's.";
+        }
       }
-      leaf added-dir {
-        type string;
-        description
-          "Where a certificate is put to be trusted.";
-      }
-      leaf distrusted-dir {
-        type string;
-        description
-          "Where one is put to be distrusted.";
-      }
-      leaf certctl {
-        type boolean;
-        description
-          "certctl(8) is there.";
-      }
-      leaf now {
-        type yang:date-and-time;
-        description
-          "When read, which the validity is judged against.";
-      }
-      list trusted {
-        key "file";
-        description
-          "Each of /etc/ssl/certs.";
-        uses certificate;
-      }
-      list untrusted {
-        key "file";
-        description
-          "Each of /etc/ssl/untrusted.";
-        uses certificate;
+      output {
+        uses trust-store;
       }
     }
   }
 
   augment "/arcj:jails/arcj:jail" {
     description
-      "A running jail's plugins, and what OpenSSL trusts in it.";
+      "A running jail's plugins.";
     leaf-list plugin {
       type identityref {
         base plugin;

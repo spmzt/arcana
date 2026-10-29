@@ -1254,7 +1254,9 @@ A job.
 .It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
 The certificates OpenSSL trusts, of the host or of
 .Fl j Ns 's
-jail, read with OpenSSL: trusted and untrusted.
+jail, read with OpenSSL: trusted and untrusted, arcana-host's
+.Ic read-certificates
+action, printed as the JSON the certs operation gave.
 .Cm add
 gives a CA under a name,
 .Cm remove
@@ -1305,6 +1307,13 @@ alone.
 Over TLS,
 .Fl C
 is the certificate the agent checks it still trusts afterwards.
+They are arcana-agent's
+.Ic tls ,
+read, and its
+.Ic csr
+and
+.Ic install
+actions; printed as the JSON the tls operation gave.
 .It Cm sshd Oo Cm list | Cm banner Ar file | Cm set Ar Setting Oo Ar value ... Oc | Cm authorize Ar user keyfile | Cm unauthorize Ar user fingerprint | Cm options Ar user fingerprint Oo Ar options Oc | Cm sign Ar ca-key-file Oo Ar principal ... Oc | Cm user-cas Ar file Oc
 The base system's
 .Xr sshd 8 ,
@@ -1354,11 +1363,16 @@ A jail made from a file of its own, its dataset cloned or sent from a
 snapshot, and started; changed; taken away, with its dataset; the
 jails' defaults; a template included by the jails; each a job.
 .Cm files
-reads the jails' files there are.
+reads the jails' files there are, arcana-jail-files'
+.Ic read-files
+action, printed as the JSON the jail-files operation gave.
 .It Cm config-export Op Fl s
 The host as a bundle, JSON on stdout: the files Arcana manages; with
 .Fl s
 their secrets too.
+arcana-agent's
+.Ic config-export
+action, the bundle as the operation gave it.
 .It Cm config-apply Oo Fl an Oc Oo Fl H Ar hostname Oc Ar bundle.json
 A bundle made this host's configuration;
 .Fl n
@@ -1368,7 +1382,10 @@ though the hardware differs,
 .Fl H
 another host name in
 .Xr rc.conf 5 .
-The report, JSON, on stdout.
+The report, JSON, on stdout, the refused one's too.
+arcana-agent's
+.Ic config-apply
+action.
 .It Cm path-check Oo Fl r Oc Oo Fl F Ar fib Oc Oo Fl i Ar interface Oc Oo Fl p Ar proto Oc Oo Fl P Ar port Oc Ar src dst
 What this host does with a packet from
 .Ar src
@@ -1396,6 +1413,9 @@ The latest commits of the repository's branch, newest first, and its
 tags: what is new;
 .Fl i
 the SSH key git uses.
+arcana-agent's
+.Ic source-log
+action.
 .It Cm ntp Ar server ...
 The NTP servers the host keeps time by: written into
 .Pa /etc/ntp.conf
@@ -1987,6 +2007,13 @@ in its place in
 .Pq arcana_agent_listen , or Fl l No in arcana_agent_flags .
 The console moves a host this way: listened on, tried, and only then
 the old one closed.
+It is arcana-agent's
+.Ic transport ,
+read after its
+.Ic retry
+or
+.Ic listen
+action, printed as the JSON the transport operation gave.
 .It Cm storage health
 How each disk says it is: asked with
 .Xr nvmecontrol 8
@@ -2106,7 +2133,10 @@ In all of these the host checks every word before a program is given
 it; none is ever an option, and none is done in safe mode.
 .It Cm stats
 CPU busy share since the previous request, load averages, memory, swap
-and the ZFS pools.
+and the ZFS pools: a read of arcana-host's
+.Ic host ,
+its
+.Ic stats .
 .It Cm packages Oo Fl i Oc Oo Fl r Oc Oo Fl 4 | Fl 6 Oc Op Ar jail
 Packages of the host, or of the running
 .Ar jail ,
@@ -2331,9 +2361,13 @@ by, as
 get tells it, and the other routes of the table that cover the address,
 each with the length of its prefix: what is left when the best goes.
 .It Cm sdwan
-What the agent's probes of its SD-WAN tunnels have seen, as JSON:
-each target's state, the sample in progress and the samples kept
-(the one-way delay, its variation, the loss, each eval interval).
+What the SD-WAN edge is doing and what the agent's probes of its
+tunnels have seen, as the JSON the retired sdwan operation gave:
+arcana-probe's targets (each its state, the sample in progress and the
+samples kept: the one-way delay, its variation, the loss, each eval
+interval) and arcana-sdwan's state (the rules and the steering, each
+edge that is a vnet jail, the services' instances, ClamAV, the record,
+the keys and the faults).
 .It Cm sdwan probes Ar json
 The targets the agent is to measure from now on, a JSON array as the
 console's SD-WAN apply makes them: each an id and an address, and maybe
@@ -2358,41 +2392,54 @@ A
 of any of these may be
 .Cm @ Ns Ar file ,
 the file's contents (a large list of prefixes, say).
+Each is a part of an SD-WAN edge in arcana-sdwan, as the console's
+SD-WAN apply makes it (the JSON its retired sdwan-* operation took),
+put in the candidate in place of what running has of that part, the
+rest as running has it, and committed; the agent sets what changed.
+Sent the same as running has, nothing is committed: arcana-sdwan's
+.Ic apply
+action sets the part again, which starts what of it is not running.
 The rules that classify what comes in at the SD-WAN UNIs and steer
-it, as the sdwan-rules operation takes them: an object with the set,
-the tables and the rules, and with jail those of an edge that is that
-vnet jail, run by its own
+it: an object with the set, the tables and the rules (each its number
+and words, in their order), and with jail those of an edge that is
+that vnet jail (its entry of arcana-sdwan's
+.Ic jail ) ,
+run by its own
 .Xr ipfw 8 .
 .It Cm sdwan steer Ar json
-What the policy tables hold, as the sdwan-steer operation takes it:
-each prefix's candidate tunnels in order; the first not down is
-chosen, and chosen again when a probe's state changes.
+What the policy tables hold: each prefix's candidate tunnels in order;
+the first not down is chosen, and chosen again when a probe's state
+changes; and the breakout's routes, each a destination of a FIB and its
+gateways.
 With jail, a jail's edge's.
 .It Cm sdwan bird Ar json
-The BIRD instances of the services at this edge, as the sdwan-bird
-operation takes them: each a name, the fib it runs in and its form,
-which the agent renders into BIRD's configuration; parsed first,
-started or told to read it again, those not named stopped.
+The BIRD instances of the services at this edge: each a name, the fib
+it runs in, the host's name and its form (spec, JSON text in the
+module), which the agent renders into BIRD's configuration; parsed
+first, started or told to read it again, those not named stopped.
+With jail, a jail's edge's.
 .It Cm sdwan dhcp Ar json
-The DHCP servers of the services at this edge, as the sdwan-dhcp
-operation takes them: each a name, the fib it runs in and its form,
-which the agent renders into
+The DHCP servers of the services at this edge: each a name, the fib
+it runs in and its form, which the agent renders into
 .Xr dnsmasq 8
 configuration; checked first, started or started again, those not
 named stopped.
 .It Cm sdwan proxy Ar json
 The proxies of the services at this edge (MEF 138's URLF, MBSF and
-MD+R), as the sdwan-proxy operation takes them: each a name, its fib,
-its mode (sni or inspect), its form, which the agent renders into
-Squid's configuration and c-icap's, and its lists, files by name.
+MD+R): each a name, its fib, its mode (sni or inspect), its form,
+which the agent renders into Squid's configuration and c-icap's, and
+its lists, files by name.
+With group security, the Security section's (each named sec-), apart
+from SD-WAN's.
 .It Cm sdwan ids Ar json
-The intrusion detection of the services at this edge, as the
-sdwan-ids operation takes them: each a name, its interfaces, Suricata's
-configuration, its rules and, to prevent, its divert port.
+The intrusion detection of the services at this edge: each a name, its
+interfaces, Suricata's configuration (its form, or its YAML whole), its
+rules and, to prevent, its divert port.
+With group security, the Security section's.
 .It Cm sdwan dns Ar json
-The resolvers of the services at this edge (MEF 138's DNF and PDNS), as the
-sdwan-dns operation takes them: each a name, the fib it runs in and
-its form, which the agent renders into
+The resolvers of the services at this edge (MEF 138's DNF and PDNS):
+each a name, the fib it runs in and its form, which the agent renders
+into
 .Xr unbound 8
 configuration, run by the base system's local-unbound; checked by
 local-unbound-checkconf first, started or started again, those not

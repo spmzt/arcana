@@ -1440,27 +1440,45 @@ target_json(const struct target *t, double now, uint64_t after)
 	return (o);
 }
 
-/* What the probes have seen, as JSON. */
+static int
+json_reply(struct work *w, ucl_object_t *top, struct json_rsp *rsp)
+{
+	unsigned char	*json;
+
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	rsp->has_ok = true;
+	if (json == NULL) {
+		rsp->ok = false;
+		rsp->error = "no memory";
+		return (0);
+	}
+	rsp->json = wadopt(w, (char *)json);
+	rsp->ok = true;
+	return (0);
+}
+
+/*
+ * What the probes have seen, as JSON, arcana-probe's state: the SD-WAN
+ * targets (with after, only the samples after that time), when, and
+ * whether the prober runs.
+ */
 int
-do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
+do_probes_read(struct work *w, uint64_t after, struct json_rsp *rsp)
 {
 	ucl_object_t	*top, *arr;
-	struct target	*t;
-	unsigned char	*json;
 	double		 now;
 	int		 i;
 
-	rsp->has_ok = true;
 	top = ucl_object_typed_new(UCL_OBJECT);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	now = now_s();
 	pthread_mutex_lock(&lock);
 	for (i = 0; i < ntargets; i++) {
-		t = &targets[i];
 		/* The admin's monitors are read apart (do_monitors). */
-		if (is_monitor(t))
+		if (is_monitor(&targets[i]))
 			continue;
-		ucl_array_append(arr, target_json(t, now, after));
+		ucl_array_append(arr, target_json(&targets[i], now, after));
 	}
 	pthread_mutex_unlock(&lock);
 	ucl_object_insert_key(top, arr, "targets", 0, false);
@@ -1468,6 +1486,20 @@ do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
 	    false);
 	ucl_object_insert_key(top, ucl_object_frombool(started), "probing", 0,
 	    false);
+	return (json_reply(w, top, rsp));
+}
+
+/*
+ * The SD-WAN edge as it is, as JSON, arcana-sdwan's state: the rules
+ * and the steering, the services' instances, the record, the keys and
+ * the faults.
+ */
+int
+do_sdwan_state(struct work *w, struct json_rsp *rsp)
+{
+	ucl_object_t	*top;
+
+	top = ucl_object_typed_new(UCL_OBJECT);
 	sdwan_json(w, top);
 	sdwan_bird_json(w, top);
 	sdwan_dhcp_json(w, top);
@@ -1477,16 +1509,7 @@ do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
 	record_json(top);
 	sa_keys_json(w, top);
 	faults_json(top);
-	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
-	ucl_object_unref(top);
-	if (json == NULL) {
-		rsp->ok = false;
-		rsp->error = "no memory";
-		return (0);
-	}
-	rsp->json = wadopt(w, (char *)json);
-	rsp->ok = true;
-	return (0);
+	return (json_reply(w, top, rsp));
 }
 
 /* ---- Monitors: the admin's own, on any tunnel ----------------------- */

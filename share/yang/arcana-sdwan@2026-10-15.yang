@@ -30,21 +30,68 @@ module arcana-sdwan {
      classify what comes in at the UNIs and steer it (an ipfw set of
      their own, tables, dummynet and NAT objects); the policy tables'
      candidates in the console's order, the first whose far end the
-     probes do not say is down chosen (sdwan-steer); the BIRD, dnsmasq,
-     unbound (MEF 138's DNF and PDNS), Squid (MEF 138's URLF, MBSF and
-     MD+R, with a CA of its own where TLS is opened) and Suricata (the ids
+     probes do not say is down chosen; the BIRD, dnsmasq, unbound (MEF
+     138's DNF and PDNS), Squid (MEF 138's URLF, MBSF and MD+R, with a
+     CA of its own where TLS is opened) and Suricata (the ids
      criterion) instances of the services, one each in its FIB
-     (setfib), as the console writes them; and as state what each is
-     doing, the security policies' record (ipfw's logdst rtsock), the
-     IPsec keys of the tunnels (sdwan-key-*.pem) and the faults of the
-     day (Mplify 119 §11.3).  The sdwan, sdwan-rules, sdwan-steer,
-     sdwan-bird, sdwan-dhcp, sdwan-dns, sdwan-proxy and sdwan-ids
-     operations of arcana.yaml converted (Y-3); the probes are
-     arcana-probe's.";
+     (setfib), and the Security section's Squid and Suricata (named
+     sec-), as the console writes them; the rules, steering and BIRD of
+     each edge that is a vnet jail under jail; and as state what each
+     is doing, the security policies' record (ipfw's logdst rtsock),
+     the IPsec keys of the tunnels (sdwan-key-*.pem) and the faults of
+     the day (Mplify 119 §11.3).  Written by EDIT and a commit: what
+     changed of an edge is applied as the operations did, the rules
+     and the steering each swapped whole.  The sdwan, sdwan-rules,
+     sdwan-steer, sdwan-bird, sdwan-dhcp, sdwan-dns, sdwan-proxy and
+     sdwan-ids operations of arcana.yaml converted (Y-3) and retired;
+     the probes are arcana-probe's.";
 
   revision 2026-10-15 {
     description
       "Initial revision.";
+  }
+
+  typedef far-state {
+    type enumeration {
+      enum up {
+        description
+          "Up.";
+      }
+      enum down {
+        description
+          "Down.";
+      }
+      enum unknown {
+        description
+          "Not yet known.";
+      }
+      enum not-probed {
+        description
+          "No probe watches it.";
+      }
+    }
+    description
+      "A tunnel's far end, as the probes see it.";
+  }
+
+  grouping candidate-state {
+    description
+      "A candidate of the steering, as it is.";
+    leaf id {
+      type string;
+      description
+        "The tunnel.";
+    }
+    leaf via {
+      type inet:ip-address-no-zone;
+      description
+        "Its address.";
+    }
+    leaf state {
+      type far-state;
+      description
+        "As the probes see it.";
+    }
   }
 
   grouping edge-state {
@@ -141,34 +188,40 @@ module arcana-sdwan {
         ordered-by user;
         description
           "The candidates, with what the probes say of each.";
-        leaf id {
-          type string;
+        uses candidate-state;
+        leaf bfd {
+          type far-state;
           description
-            "The tunnel.";
+            "As BFD sees its address, where a session watches it.";
         }
-        leaf via {
-          type inet:ip-address-no-zone;
-          description
-            "Its address.";
-        }
-        leaf state {
-          type enumeration {
-            enum up {
-              description
-                "Up.";
-            }
-            enum down {
-              description
-                "Down.";
-            }
-            enum unknown {
-              description
-                "Not probed, or not yet known.";
-            }
-          }
-          description
-            "As the probes see it.";
-        }
+      }
+    }
+    list route {
+      cg:struct "steered-route";
+      description
+        "The breakout's routes steered: each a destination of a FIB
+         and its candidates, the first not down in the table.";
+      leaf fib {
+        type uint16;
+        description
+          "The FIB.";
+      }
+      leaf destination {
+        type string;
+        description
+          "The destination.";
+      }
+      leaf chosen {
+        type int32;
+        description
+          "Which candidate is the route, by its place; -1 none.";
+      }
+      list candidate {
+        key "id";
+        ordered-by user;
+        description
+          "The candidates.";
+        uses candidate-state;
       }
     }
   }
@@ -191,39 +244,33 @@ module arcana-sdwan {
       config false;
       description
         "The program's configuration text, as the agent rendered it
-         from the console's form (the forms are the console's SD-WAN
-         document's until the module says them).";
+         from spec.";
     }
-  }
-
-  grouping running {
-    description
-      "An instance as it runs.";
-    leaf name {
+    leaf host {
       type string;
       description
-        "The service.";
+        "The host's name, for the files' comments.";
     }
-    leaf fib {
-      type uint16;
+    leaf spec {
+      type string;
       description
-        "Its FIB.";
-    }
-    leaf running {
-      type boolean;
-      description
-        "Its process is there.";
+        "The form the agent renders the program's configuration from:
+         a JSON object (RFC 8259), the console's SD-WAN document's or
+         the Security section's, until the module says the forms
+         (PLAN-SDN-YANG 4.5.5).";
     }
   }
 
-  container sdwan {
+  grouping edge-config {
     description
-      "The edge.";
+      "What the console writes to an edge, the host's or a vnet
+       jail's: its rules, its steering and its BIRD instances.";
     container rules {
+      cg:struct "rules-config";
       description
         "The classification and steering rules, as the console
-         compiles them (sdwan-rules): kept for the next start; with
-         none, the set is emptied.";
+         compiles them: kept for the next start; with none, the set
+         is emptied.";
       leaf set {
         type uint8 {
           range "2..31";
@@ -281,17 +328,25 @@ module arcana-sdwan {
       }
       leaf-list object {
         type string;
+        ordered-by user;
         description
           "dummynet pipes, queues and schedulers, and NAT instances
            the rules name, each as ipfw takes it (pipe N config ...),
            made before the rules, deleted with them.";
       }
       list rule {
-        key "number";
+        key "index";
         description
-          "The rules.";
+          "The rules, in their order: ipfw lets rules share a
+           number.";
+        leaf index {
+          type uint32;
+          description
+            "Its place, from 0.";
+        }
         leaf number {
           type arcfw:rule-number;
+          mandatory true;
           description
             "Its number.";
         }
@@ -301,16 +356,12 @@ module arcana-sdwan {
             "Its words.";
         }
       }
-      leaf jail {
-        type string;
-        description
-          "The edge that is this vnet jail, whose ipfw they are;
-           none, the host itself.";
-      }
     }
     container steer {
+      cg:struct "steer-config";
       description
-        "What the policy tables hold (sdwan-steer).";
+        "What the policy tables hold, kept for the next start; made
+         again when a probe's state changes.";
       list entry {
         key "table prefix";
         description
@@ -342,34 +393,119 @@ module arcana-sdwan {
           }
         }
       }
-      leaf jail {
-        type string;
+      list route {
+        key "fib destination";
         description
-          "The edge that is this vnet jail; none, the host itself.";
+          "The breakout's routes steered: a destination of a FIB and
+           the gateways it may go by, in the console's order, the
+           first whose far end the probes do not say is down the
+           route.";
+        leaf fib {
+          type uint16;
+          description
+            "The FIB.";
+        }
+        leaf destination {
+          type string;
+          description
+            "The destination.";
+        }
+        list candidate {
+          key "id";
+          ordered-by user;
+          description
+            "The gateways, best first.";
+          leaf id {
+            type string;
+            description
+              "The probe target that watches it.";
+          }
+          leaf via {
+            type inet:ip-address-no-zone;
+            description
+              "The gateway.";
+          }
+        }
       }
     }
     list bird-instance {
+      cg:struct "bird-instance";
       key "name";
       description
-        "The BIRD instances of the services (sdwan-bird).";
+        "The BIRD instances of the services, and of the UCS End
+         Points that route with the underlay: each file parsed by
+         bird -p before it is the instance's; one running told to
+         read it again, one not yet started; those not named any more
+         stopped.";
       uses instance;
     }
+  }
+
+  grouping running {
+    description
+      "An instance as it runs.";
+    leaf name {
+      type string;
+      description
+        "The service.";
+    }
+    leaf fib {
+      type uint16;
+      description
+        "Its FIB.";
+    }
+    leaf running {
+      type boolean;
+      description
+        "Its process is there.";
+    }
+  }
+
+  grouping file {
+    description
+      "A file of an instance's.";
+    leaf path {
+      type string;
+      description
+        "Where.";
+    }
+    leaf size {
+      type uint64;
+      units "bytes";
+      description
+        "How long.";
+    }
+    leaf at {
+      type yang:date-and-time;
+      description
+        "When last written.";
+    }
+  }
+
+  container sdwan {
+    description
+      "The edge.";
+    uses edge-config;
     list dhcp-instance {
       key "name";
       description
-        "The dnsmasq instances (sdwan-dhcp).";
+        "The dnsmasq instances: each checked by dnsmasq --test before
+         it is the instance's, one running started again on it.";
       uses instance;
     }
     list dns-instance {
       key "name";
       description
-        "The unbound instances (sdwan-dns).";
+        "The unbound instances: each checked by
+         local-unbound-checkconf, one running started again on it.";
       uses instance;
     }
     list proxy-instance {
       key "name";
       description
-        "The Squid instances (sdwan-proxy).";
+        "The Squid instances, SD-WAN's and the Security section's
+         (sec-): each checked by squid -k parse, one running told to
+         reconfigure.";
       uses instance;
       leaf mode {
         type enumeration {
@@ -385,16 +521,28 @@ module arcana-sdwan {
         description
           "How TLS is treated.";
       }
-      leaf deny {
-        type string;
+      list named-list {
+        key "name";
         description
-          "The domains denied, one a line.";
+          "The files a zone's URLF names, by name.";
+        leaf name {
+          type string;
+          description
+            "The list.";
+        }
+        leaf text {
+          type string;
+          description
+            "Its text.";
+        }
       }
     }
     list ids-instance {
       key "name";
       description
-        "The Suricata instances (sdwan-ids).";
+        "The Suricata instances, SD-WAN's and the Security section's
+         (sec-): each checked by suricata -T before it runs, one whose
+         files changed started again.";
       leaf name {
         type string;
         description
@@ -402,13 +550,15 @@ module arcana-sdwan {
       }
       leaf-list interface {
         type string;
+        ordered-by user;
         description
           "The UNIs it watches.";
       }
       leaf conf {
         type string;
         description
-          "Suricata's YAML, with what the agent places marked.";
+          "Suricata's YAML whole, with @LOGDIR@, @RULES@, @PID@ and
+           @THRESHOLD@ for what the agent places; or spec instead.";
       }
       leaf rules {
         type string;
@@ -419,6 +569,137 @@ module arcana-sdwan {
         type inet:port-number;
         description
           "For one that prevents: the divert port it runs on.";
+      }
+      leaf host {
+        type string;
+        description
+          "The host's name, for the YAML's comment.";
+      }
+      leaf spec {
+        type string;
+        description
+          "Its settings, a JSON object (RFC 8259), which the agent
+           renders into Suricata's YAML: the console's form, or for an
+           SD-WAN service flavor sdwan.";
+      }
+      leaf capture {
+        type enumeration {
+          enum pcap {
+            description
+              "By libpcap.";
+          }
+          enum netmap {
+            description
+              "By netmap(4).";
+          }
+        }
+        description
+          "How it takes the packets, where it does not prevent.";
+      }
+      leaf offload {
+        type boolean;
+        description
+          "false: its interfaces' offloading turned off as it starts.";
+      }
+      list lua {
+        key "name";
+        description
+          "Its Lua scripts.";
+        leaf name {
+          type string;
+          description
+            "NAME.lua.";
+        }
+        leaf text {
+          type string;
+          description
+            "The script.";
+        }
+      }
+      leaf-list plugin {
+        type string;
+        ordered-by user;
+        description
+          "The plugins it loads, .so files under /usr/local/lib.";
+      }
+      leaf stopped {
+        type boolean;
+        description
+          "Stopped by the admin: kept, not run.";
+      }
+      leaf thresholds {
+        type string;
+        description
+          "Its threshold.config lines.";
+      }
+    }
+    list jail {
+      key "name";
+      description
+        "Each edge that is a vnet jail on this host: its rules,
+         steering and BIRD, run in it.";
+      leaf name {
+        type string;
+        description
+          "The jail.";
+      }
+      uses edge-config;
+    }
+    action apply {
+      description
+        "A part of an edge set again as running has it, as its
+         operation was when sent the same again: what of it is not
+         running started (one the admin stopped left so), what runs
+         left be.  An edit that changes nothing sets nothing; this
+         does.";
+      input {
+        leaf part {
+          type enumeration {
+            enum rules {
+              description
+                "The rules.";
+            }
+            enum steer {
+              description
+                "The steering.";
+            }
+            enum bird {
+              description
+                "The BIRD instances.";
+            }
+            enum dhcp {
+              description
+                "The dnsmasq instances.";
+            }
+            enum dns {
+              description
+                "The unbound instances.";
+            }
+            enum proxy {
+              description
+                "The Squid instances.";
+            }
+            enum ids {
+              description
+                "The Suricata instances.";
+            }
+          }
+          mandatory true;
+          description
+            "Which.";
+        }
+        leaf jail {
+          type string;
+          description
+            "The edge that is this vnet jail; none, the host's.";
+        }
+        leaf security {
+          type boolean;
+          default "false";
+          description
+            "For the proxies and the IDS: the Security section's
+             (sec-), not SD-WAN's.";
+        }
       }
     }
     container state {
@@ -437,12 +718,22 @@ module arcana-sdwan {
             "The jail.";
         }
         uses edge-state;
+        leaf error {
+          type string;
+          description
+            "Why its ipfw could not be read.";
+        }
       }
       list bird {
-        key "name";
         description
           "Each BIRD instance, and its protocols.";
         uses running;
+        leaf jail {
+          type string;
+          description
+            "The edge that is a vnet jail it runs in; none, the
+             host's.";
+        }
         list protocol {
           key "name";
           description
@@ -451,7 +742,7 @@ module arcana-sdwan {
             type string;
             description
               "The protocol.";
-            }
+          }
           leaf proto {
             type string;
             description
@@ -541,6 +832,11 @@ module arcana-sdwan {
         description
           "Each unbound instance.";
         uses running;
+        leaf tls-cert {
+          type string;
+          description
+            "Its certificate, PEM, where it serves DNS over TLS.";
+        }
       }
       list proxy {
         key "name";
@@ -564,6 +860,64 @@ module arcana-sdwan {
              where TLS is opened.";
         }
       }
+      container clamav {
+        description
+          "ClamAV's signatures, for the proxies that scan for
+           malware, as freshclam left them.";
+        list database {
+          key "name";
+          description
+            "Each database there.";
+          leaf name {
+            type string;
+            description
+              "main, daily or bytecode.";
+          }
+          leaf file {
+            type string;
+            description
+              "Its file.";
+          }
+          leaf built {
+            type string;
+            description
+              "When it was built, as its head says.";
+          }
+          leaf version {
+            type int64;
+            description
+              "Its version.";
+          }
+          leaf signatures {
+            type int64;
+            description
+              "Its signatures.";
+          }
+        }
+        leaf freshclam {
+          type boolean;
+          description
+            "freshclam runs.";
+        }
+        leaf conf {
+          type boolean;
+          description
+            "freshclam's configuration is there, and not the port's
+             sample.";
+        }
+        leaf-list mirror {
+          type string;
+          ordered-by user;
+          description
+            "Its DatabaseMirror lines.";
+        }
+        leaf-list log {
+          type string;
+          ordered-by user;
+          description
+            "The last lines of its log.";
+        }
+      }
       list ids {
         key "name";
         description
@@ -575,6 +929,7 @@ module arcana-sdwan {
         }
         leaf-list interface {
           type string;
+          ordered-by user;
           description
             "The UNIs it watches.";
         }
@@ -646,7 +1001,214 @@ module arcana-sdwan {
             description
               "The protocol.";
           }
+          leaf interface {
+            type string;
+            description
+              "Where it came in.";
+          }
+          leaf signature-id {
+            type int64;
+            description
+              "The signature's id.";
+          }
+          leaf rev {
+            type int64;
+            description
+              "Its revision.";
+          }
+          leaf category {
+            type string;
+            description
+              "Its category.";
+          }
+          leaf severity {
+            type int64;
+            description
+              "Its severity.";
+          }
+          leaf action {
+            type string;
+            description
+              "allowed or blocked.";
+          }
         }
+        leaf stopped {
+          type boolean;
+          description
+            "Stopped by the admin.";
+        }
+        container stats {
+          description
+            "Its counters as Suricata wrote them, the oldest first.";
+          leaf-list field {
+            type string;
+            ordered-by user;
+            description
+              "What each value of a row is.";
+          }
+          list series {
+            description
+              "A row.";
+            leaf-list value {
+              type int64;
+              ordered-by user;
+              description
+                "Its values, as field names them.";
+            }
+          }
+          leaf flows {
+            type string;
+            description
+              "The flows by application layer protocol, JSON as the
+               agent read them.";
+          }
+        }
+        leaf capture {
+          type enumeration {
+            enum pcap {
+              description
+                "libpcap.";
+            }
+            enum divert {
+              description
+                "divert(4).";
+            }
+            enum netmap {
+              description
+                "netmap(4).";
+            }
+          }
+          description
+            "How it takes the packets.";
+        }
+        list pcap {
+          key "path";
+          description
+            "The packets it logged.";
+          uses file;
+          leaf from {
+            type int64;
+            description
+              "The time in its name, where it has one.";
+          }
+        }
+        list replay-capture {
+          key "path";
+          description
+            "The captures that came for its replay.";
+          uses file;
+        }
+        leaf replay {
+          type string;
+          description
+            "The last capture replayed through it, JSON as the agent
+             wrote it.";
+        }
+        list offload {
+          key "interface";
+          description
+            "Each interface's offloading still on.";
+          leaf interface {
+            type string;
+            description
+              "The interface.";
+          }
+          leaf-list capability {
+            type string;
+            ordered-by user;
+            description
+              "rxcsum, txcsum, tso4 ... as ifconfig(8) names them.";
+          }
+        }
+      }
+      container ids-build {
+        description
+          "What the host's Suricata is built with (--build-info).";
+        leaf version {
+          type string;
+          description
+            "Its version.";
+        }
+        leaf lua {
+          type boolean;
+          description
+            "HAVE_LUA.";
+        }
+        leaf profiling {
+          type boolean;
+          description
+            "Profiling.";
+        }
+        leaf profiling-rules {
+          type boolean;
+          description
+            "Rule profiling.";
+        }
+        leaf profiling-locks {
+          type boolean;
+          description
+            "Lock profiling.";
+        }
+        leaf hyperscan {
+          type boolean;
+          description
+            "Hyperscan.";
+        }
+        leaf netmap {
+          type boolean;
+          description
+            "netmap(4).";
+        }
+        leaf ipfw {
+          type boolean;
+          description
+            "IPFW, divert(4).";
+        }
+        leaf plugins {
+          type boolean;
+          description
+            "Plugins.";
+        }
+      }
+      container ids-host {
+        description
+          "The host's CPUs and memory domains, for the instances'
+           threads.";
+        leaf ncpu {
+          type uint32;
+          description
+            "hw.ncpu.";
+        }
+        leaf ndomains {
+          type uint32;
+          description
+            "vm.ndomains.";
+        }
+        list irq {
+          key "irq";
+          description
+            "The interrupts of the instances' interfaces.";
+          leaf irq {
+            type uint32;
+            description
+              "Its number.";
+          }
+          leaf name {
+            type string;
+            description
+              "As hw.intrnames has it.";
+          }
+          leaf cpus {
+            type string;
+            description
+              "The CPUs it may run on, as cpuset(1) lists them.";
+          }
+        }
+      }
+      container ids-ruleset {
+        description
+          "The ruleset suricata-update fetched, where it has.";
+        uses file;
       }
       container record {
         description
@@ -661,6 +1223,11 @@ module arcana-sdwan {
           type uint64;
           description
             "The latest number.";
+        }
+        leaf untold {
+          type uint64;
+          description
+            "Those dropped before they were told.";
         }
         list last {
           description
@@ -807,6 +1374,11 @@ module arcana-sdwan {
           type yang:date-and-time;
           description
             "When it went.";
+        }
+        leaf compressed {
+          type boolean;
+          description
+            "Others like it before were folded into it.";
         }
       }
     }

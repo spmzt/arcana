@@ -1,14 +1,15 @@
 module: arcana-jail-files
 
   augment /arcj:jails:
-    +--ro files
-       +--ro directory?   string
-       +--ro defaults
-       |  +--ro path?   string
-       |  +--ro text?   string
-       +--ro template* [name]
-       |  +--ro name    string
-       |  +--ro text?   string
-       +--ro jail* [name]
-          +--ro name    string
-          +--ro text?   string
+    +---x read-files
+       +--ro output
+          +--ro directory?   string
+          +--ro defaults
+          |  +--ro path?   string
+          |  +--ro text?   string
+          +--ro template* [name]
+          |  +--ro name    string
+          |  +--ro text?   string
+          +--ro jail* [name]
+             +--ro name    string
+             +--ro text?   string

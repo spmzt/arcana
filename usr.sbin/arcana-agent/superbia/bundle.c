@@ -535,8 +535,7 @@ emit(struct work *w, ucl_object_t *top)
 }
 
 int
-do_config_export(struct work *w, bool secrets,
-    struct arc_config_export_rsp *rsp)
+do_config_export(struct work *w, bool secrets, struct json_rsp *rsp)
 {
 	ucl_object_t	*top;
 	char		 iso[32];
@@ -663,7 +662,7 @@ rehost(struct work *w, const char *text, const char *name)
 
 int
 do_config_apply(struct work *w, const char *bundle, bool dry_run,
-    bool anyway, const char *new_hostname, struct arc_config_apply_rsp *rsp)
+    bool anyway, const char *new_hostname, struct json_rsp *rsp)
 {
 	struct ucl_parser	*p;
 	ucl_object_t		*b, *top, *mism, *files, *pk, *one, *here;

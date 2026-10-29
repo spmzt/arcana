@@ -5,10 +5,9 @@
  */
 
 /*
- * Superbia: the host as YANG, arcana-host: the
- * host attribute set of hello and list, the stats attribute set, and
- * the certs operation's JSON (certs.c) read back into the module's
- * structs.
+ * Superbia: the host as YANG, arcana-host: the host attribute set of
+ * hello with the stats (stats.c), and the trust store's JSON (certs.c)
+ * read back into the read-certificates action's output.
  */
 
 #include <sys/param.h>
@@ -21,6 +20,7 @@
 
 #include <arcana.h>
 
+#include "agent.h"
 #include "collect.h"
 #include "yjson.h"
 
@@ -56,7 +56,7 @@ ident(const char *mod, const char *name)
 /* A certificate of the trust store; the two lists have one layout. */
 static void
 cert_of(cbl_yarena *a, const ucl_object_t *o,
-    struct arcana_host_host_certificates_trusted *c)
+    struct arcana_host_host_read_certificates_output_trusted *c)
 {
 	int64_t	t;
 
@@ -80,10 +80,10 @@ cert_of(cbl_yarena *a, const ucl_object_t *o,
 
 int
 yhost_certs_from_json(const char *json, cbl_yarena *a,
-    struct arcana_host_host_certificates *out)
+    struct arcana_host_host_read_certificates_output *out)
 {
-	struct arcana_host_host_certificates_trusted	*t;
-	struct arcana_host_host_certificates_untrusted	*u;
+	struct arcana_host_host_read_certificates_output_trusted	*t;
+	struct arcana_host_host_read_certificates_output_untrusted	*u;
 	const ucl_object_t				*e;
 	ucl_object_iter_t				 it;
 	ucl_object_t					*top;
@@ -127,9 +127,8 @@ yhost_certs_from_json(const char *json, cbl_yarena *a,
 }
 
 int
-yhost_from(const struct arc_host *h, const struct arc_stats *st,
-    const struct arcana_host_host_certificates *certs, cbl_yarena *a,
-    struct arcana_host_host *out)
+yhost_from(const struct arc_host *h, const struct host_stats *st,
+    cbl_yarena *a, struct arcana_host_host *out)
 {
 	struct arcana_host_host_agent		*ag;
 	struct arcana_host_host_stats		*s;
@@ -214,6 +213,5 @@ yhost_from(const struct arc_host *h, const struct arc_stats *st,
 		s->pool.v = p;
 		out->stats = s;
 	}
-	out->certificates = certs;
 	return (0);
 }

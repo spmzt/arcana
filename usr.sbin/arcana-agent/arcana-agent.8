@@ -162,7 +162,20 @@ between two requests, memory from the
 counters, swap from
 .Xr swapinfo 8
 and the ZFS pools from
-.Xr zpool 8 .
+.Xr zpool 8 :
+arcana-host's
+.Ic host ,
+with what
+.Xr uname 3
+and the sysctls say of the host, read when asked and nothing else with
+it.
+The certificates OpenSSL trusts, of the host or of a jail, are its
+.Ic read-certificates
+action: each of
+.Pa /etc/ssl/certs
+and
+.Pa /etc/ssl/untrusted
+read with OpenSSL, which no read of the host waits for.
 Packages that the repository has newer versions of are listed with
 .Ql pkg version -vRl '<'
 and upgraded with
@@ -243,6 +256,12 @@ jail new, a file of its own,
 .Ar name Ns .conf .
 Default
 .Pa /etc/jail.conf.d .
+Its files, with the one of
+.Fl f
+and the templates, are arcana-jail-files'
+.Ic read-files
+action on the jails, read when asked: no read of the jails waits for
+them.
 .It Fl d
 Log debugging messages.
 .It Fl F
@@ -295,12 +314,19 @@ SCTP.
 It does not load the
 .Xr sctp 4
 module, and where it is missing does not try again by itself: it is
-told to with the
-.Cm transport
-operation, as
+told to with arcana-agent's
+.Ic retry
+action of its
+.Ic transport ,
+as
 .Xr arcanactl 8
 .Cm transport retry
 does.
+The listeners, the connections open and each SCTP association's paths
+are that container's state; its
+.Ic listen
+action listens on another address, closes one and keeps the change in
+.Xr rc.conf 5 .
 .It Fl p Ar pidfile
 Default
 .Pa /var/run/arcana-agent.pid .
@@ -358,8 +384,11 @@ to beside its own
 an association with the console has a path to each, and goes on over
 another when one fails.
 An IPv4 listener takes IPv4 addresses, an IPv6 one either.
-What cannot be bound is said with the listener in the transport
-operation, and the addresses are changed there while the agent runs
+What cannot be bound is said with the listener in arcana-agent's
+.Ic transport ,
+and the addresses are changed by its
+.Ic listen
+action while the agent runs
 .Pq kept in rc.conf as arcana_agent_sctp_also .
 .It Fl -telegram-api Ar url
 Where the Telegram Bot API is, for the notify operation.
@@ -808,6 +837,24 @@ a kind at a time, kept beside the history file for the next start
 .Pq Pa sdwan-probes.json , monitors.json , No and their Pa @ Ns Ar jail No files ;
 a monitor without an address, on the host, probes its interface's far
 end through the interface's FIB;
+.It
+the SD-WAN edge (arcana-sdwan): the host's rules (an
+.Xr ipfw 8
+set of their own, its tables, dummynet and NAT objects, loaded while
+the set is disabled), its steering (the policy tables' candidates and
+the breakout's routes, the first not down chosen) and its BIRD
+instances, the same of each edge that is a vnet jail, run in it; the
+services' dnsmasq, unbound, Squid and Suricata instances, SD-WAN's and
+the Security section's (sec-), each from its form, which the agent
+renders and the daemon's checker takes before it runs.
+What changed is set, a part at a time, as the operations it replaces
+did, and kept beside the history file for the next start
+.Pq Pa sdwan-rules.json , sdwan-steer.json , sdwan-bird.json , No and their Pa @ Ns Ar jail No files, Pa sdwan-dhcp.json , sdwan-dns.json , sdwan-proxy.json , security-proxy.json , sdwan-ids.json , security-ids.json ;
+a part that fails puts back those set before it in the same edit.
+The node's
+.Ic apply
+action sets a part again as it is, which starts what of it is not
+running;
 .It
 the network instance an interface is in, its FIB
 .Pq Dq fib Ar N No first on Va ifconfig_ Ns Ar if ,

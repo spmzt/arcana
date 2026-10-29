@@ -2,9 +2,13 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-agent",
     "module-revision": "2026-10-15",
-    "sid-file-version": 2,
+    "sid-file-version": 6,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
+      {
+        "module-name": "ietf-netconf-acm",
+        "module-revision": "2018-02-14"
+      },
       {
         "module-name": "ietf-yang-types",
         "module-revision": "2025-12-22"
@@ -14,6 +18,10 @@
       {
         "entry-point": "71700",
         "size": "200"
+      },
+      {
+        "entry-point": "82100",
+        "size": "100"
       }
     ],
     "item": [
@@ -715,6 +723,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-agent:agent/tls/certificate/chain",
+        "status": "obsolete",
         "sid": "71839"
       },
       {
@@ -916,6 +925,141 @@
         "namespace": "data",
         "identifier": "/arcana-agent:agent/update/input/signature",
         "sid": "71879"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/tag/time",
+        "sid": "71880"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/output/refused",
+        "sid": "71881"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listen",
+        "sid": "71882"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listen/input",
+        "sid": "71883"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listen/input/keep",
+        "sid": "71884"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listen/input/listen",
+        "sid": "71885"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listen/input/sctp-also",
+        "sid": "71886"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listen/input/unlisten",
+        "sid": "71887"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listen/output",
+        "sid": "71888"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listener/address",
+        "sid": "71889"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listener/also-why",
+        "sid": "71890"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/sctp-also",
+        "sid": "71891"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/seen",
+        "sid": "71892"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session/local",
+        "sid": "71893"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session/path",
+        "sid": "71894"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session/path/address",
+        "sid": "71895"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session/path/primary",
+        "sid": "71896"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session/path/rto",
+        "sid": "71897"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session/path/srtt",
+        "sid": "71898"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session/path/state",
+        "sid": "71899"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/time",
+        "sid": "82100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/intermediate",
+        "sid": "82101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/intermediate/issuer",
+        "sid": "82102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/intermediate/not-after",
+        "sid": "82103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/intermediate/not-before",
+        "sid": "82104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/intermediate/sha256",
+        "sid": "82105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/intermediate/subject",
+        "sid": "82106"
       }
     ]
   }

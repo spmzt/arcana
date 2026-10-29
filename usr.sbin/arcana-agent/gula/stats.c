@@ -11,18 +11,15 @@
 
 #include <sys/types.h>
 
+#include <string.h>
+
 #include "agent.h"
 
-int
-do_stats(struct work *w, struct arc_stats_rsp *rsp)
+void
+do_stats(struct work *w, struct host_stats *st)
 {
-	struct arc_stats	*st;
 
-	rsp->has_ok = true;
-	rsp->ok = true;
-	st = wcalloc(w, 1, sizeof(*st));
-	rsp->stats = st;
+	memset(st, 0, sizeof(*st));
 	resources_measure(w, st);
 	pools_measure(w, st);
-	return (0);
 }

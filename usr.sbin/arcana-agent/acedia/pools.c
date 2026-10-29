@@ -23,9 +23,9 @@
 
 /* "zpool list -Hp": name size alloc free health, tab separated. */
 void
-pools_measure(struct work *w, struct arc_stats *st)
+pools_measure(struct work *w, struct host_stats *st)
 {
-	struct arc_pool	*v;
+	struct host_pool	*v;
 	struct execres	 res;
 	char		*argv[6], *copy, *line, *it, *f[5];
 	size_t		 n, i;
