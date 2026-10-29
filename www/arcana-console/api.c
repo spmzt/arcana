@@ -179,7 +179,14 @@ guard(struct http_request *req, bool mutate)
 		    "longer", mutate ? "change" : "read");
 		return (false);
 	}
-	if (!mutate)
+	/*
+	 * A GET changes nothing (the routes go by their method), so the
+	 * reads counted as changes for the roles above, a host's system
+	 * files among them, need no proof of our page: a browser sends no
+	 * Origin with a GET, and over HTTP/2 its X-Arcana is lost from the
+	 * second use on.  The session cookie is SameSite=Strict besides.
+	 */
+	if (!mutate || req->method == HTTP_METHOD_GET)
 		return (true);
 	/*
 	 * That our page asked: its Origin, which a browser sends with every

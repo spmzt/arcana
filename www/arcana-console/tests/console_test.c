@@ -2076,6 +2076,7 @@ ATF_TC_BODY(csrf, tc)
 {
 	struct authn	a;
 	struct resp	r;
+	char		path[128];
 
 	start(tc, 0, NULL);
 	enrol(&a);
@@ -2093,6 +2094,14 @@ ATF_TC_BODY(csrf, tc)
 	http("POST", "/api/servers", "{\"name\":\"x\",\"uri\":\"unix:/x.sock\"}",
 	    &r);
 	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "/api/servers/%s/system", jstr(&r, "id"));
+	resp_free(&r);
+	/* A read counted as a change for the roles (a host's system
+	 * files) is still a GET: neither header is asked for, as a
+	 * browser sends no Origin with one.  No agent answers there. */
+	origin_hdr = NULL;
+	http("GET", path, NULL, &r);
+	ATF_CHECK_MSG(r.status != 403, "HTTP %d: %s", r.status, r.body);
 	resp_free(&r);
 	send_xjg = true;
 	origin_hdr = "https://evil.example";
