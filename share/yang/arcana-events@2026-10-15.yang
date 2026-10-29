@@ -624,6 +624,11 @@ module arcana-events {
           description
             "Why not.";
         }
+        leaf user {
+          type string;
+          description
+            "Who asked for it, as the job has it.";
+        }
       }
       container jail-state {
         description

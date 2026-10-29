@@ -290,6 +290,7 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		j->title = yj_str(a, d, "title");
 		j->ok = yj_yes(d, "ok", &j->has_ok);
 		j->error = yj_str(a, d, "error");
+		j->user = yj_str(a, d, "user");
 		y->job = j;
 		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_JOB;
 	} else if (strcmp(kind, "jail-state") == 0) {

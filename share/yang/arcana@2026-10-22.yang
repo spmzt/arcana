@@ -693,6 +693,11 @@ module arcana {
       description
         "With state unconfirmed, the Unix time it is undone at.";
     }
+    leaf user {
+      type string;
+      description
+        "Who asked for it, the request's NACM user; none for the recovery session.";
+    }
   }
 
   sx:structure jail {

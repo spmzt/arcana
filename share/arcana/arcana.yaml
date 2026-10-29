@@ -1273,3 +1273,6 @@ attribute-sets:
       - name: confirm-by
         type: s64
         doc: With state unconfirmed, the Unix time it is undone at.
+      - name: user
+        type: text
+        doc: Who asked for it, the request's NACM user; none for the recovery session.

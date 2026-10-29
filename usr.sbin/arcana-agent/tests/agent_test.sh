@@ -3790,22 +3790,32 @@ jobs_body()
 	    -o match:'^ +3 cancelled ' "$JGC" -c "$SOCK" jobs
 	atf_check test -f running.sshd
 	atf_check -s exit:1 test -e root/usr/local/etc/rc.conf.d/arcana
-	# A job that fails says why, and the next still runs.
 	rm slow
+	# Who asked: none for the recovery session, the user said by -u.
+	atf_check -o save:jobs.json "$JGC" --libxo json -c "$SOCK" jobs
+	atf_check -o not-match:'"user"' cat jobs.json
+	atf_check -o match:'"peer"' cat jobs.json
+	atf_check -o ignore "$JGC" -q -u admin -c "$SOCK" service sshd stop
+	atf_check -o ignore "$JGC" -c "$SOCK" job -w 4
+	atf_check -o match:'"id":4,.*"user":"admin"' \
+	    "$JGC" --libxo json -c "$SOCK" job 4
+	atf_check -o match:'job\\",\\"data\\":\{\\"id\\":4,[^}]*\\"user\\":\\"admin' \
+	    "$JGC" --libxo json -c "$SOCK" events
+	# A job that fails says why, and the next still runs.
 	touch fail
 	atf_check -o ignore "$JGC" -q -c "$SOCK" start db
 	atf_check -o ignore "$JGC" -q -c "$SOCK" service ntpd enable
-	atf_check -s exit:1 -o match:'^ +4 failed +start db: jail exited' \
-	    "$JGC" -c "$SOCK" job -w 4
+	atf_check -s exit:1 -o match:'^ +5 failed +start db: jail exited' \
+	    "$JGC" -c "$SOCK" job -w 5
 	# Enabled as a commit writes it: refused until its warnings are
 	# accepted, -a as a commit's; then Arcana's file has it, the
 	# user's line commented out.
-	atf_check -s exit:1 -o match:'^ +5 failed .*accept rc-conf-files' \
-	    "$JGC" -c "$SOCK" job -w 5
+	atf_check -s exit:1 -o match:'^ +6 failed .*accept rc-conf-files' \
+	    "$JGC" -c "$SOCK" job -w 6
 	atf_check -o inline:'ntpd_enable="NO"\n' cat root/etc/rc.conf
 	atf_check -o ignore "$JGC" -q -c "$SOCK" service -a rc-conf-files \
 	    -a rc-conf-conflict ntpd enable
-	atf_check -o match:'^ +6 done ' "$JGC" -c "$SOCK" job -w 6
+	atf_check -o match:'^ +7 done ' "$JGC" -c "$SOCK" job -w 7
 	atf_check -o match:'^ntpd_enable="YES"$' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
 	atf_check -o match:'^#ntpd_enable="NO"  # taken by Arcana$' \

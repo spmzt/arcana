@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana",
     "module-revision": "2026-10-22",
-    "sid-file-version": 11,
+    "sid-file-version": 12,
     "description": "Arcana's SIDs for arcana (RFC 9595's experimental range; share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -12,10 +12,6 @@
       {
         "module-name": "ietf-yang-structure-ext",
         "module-revision": "2020-06-17"
-      },
-      {
-        "module-name": "arcana-family",
-        "module-revision": "2026-10-22"
       }
     ],
     "assignment-range": [
@@ -10938,6 +10934,11 @@
         "namespace": "data",
         "identifier": "/arcana:jail/vnet",
         "sid": "74837"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:job/user",
+        "sid": "74838"
       }
     ]
   }

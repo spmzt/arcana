@@ -83,6 +83,7 @@ struct qjob {
 	bool			 undo_live;	/* rc.conf had it before: keep that */
 	char			*title;
 	char			*peer;
+	char			*user;		/* NACM's; NULL: recovery */
 	const char		*error;		/* in w's pool */
 	time_t			 created;
 	time_t			 started;
@@ -540,6 +541,7 @@ job_free(struct qjob *j)
 	free((char *)(uintptr_t)j->spec.user);
 	free(j->title);
 	free(j->peer);
+	free(j->user);
 	work_free(&j->w);
 	free(j);
 }
@@ -1849,6 +1851,9 @@ run(struct qjob *j, bool lane)
 		if (!ok)
 			ucl_object_insert_key(e, ucl_object_fromstring(error !=
 			    NULL ? error : "failed"), "error", 0, false);
+		if (j->user != NULL)
+			ucl_object_insert_key(e, ucl_object_fromstring(j->user),
+			    "user", 0, false);
 		if ((js = (char *)ucl_object_emit(e, UCL_EMIT_JSON_COMPACT)) !=
 		    NULL)
 			event_add("job", "%s", js);
@@ -2105,6 +2110,8 @@ fill(struct work *w, struct arc_job *o, struct qjob *j)
 	o->has_created = true;
 	o->created = j->created;
 	o->peer = wtext(w, wstrdup(w, j->peer));
+	if (j->user != NULL)
+		o->user = wtext(w, wstrdup(w, j->user));
 	if (j->state != ARC_JOB_STATE_QUEUED &&
 	    j->state != ARC_JOB_STATE_CANCELLED) {
 		o->has_started = true;
@@ -2124,12 +2131,13 @@ fill(struct work *w, struct arc_job *o, struct qjob *j)
 }
 
 /*
- * Queue n jobs in order.  The specs have been checked by the caller.
- * The queued jobs come back in w's pool.
+ * Queue n jobs in order, for user (NACM's; NULL: the recovery session)
+ * by peer.  The specs have been checked by the caller.  The queued jobs
+ * come back in w's pool.
  */
 int
 jobs_submit(const struct arc_job_spec *specs, size_t n, const char *peer,
-    struct work *w, const struct arc_job **vp, size_t *np)
+    const char *user, struct work *w, const struct arc_job **vp, size_t *np)
 {
 	struct arc_job	*v;
 	struct qjob	*j;
@@ -2146,12 +2154,14 @@ jobs_submit(const struct arc_job_spec *specs, size_t n, const char *peer,
 		spec_copy(&j->spec, &specs[i]);
 		j->title = title_of(&j->spec);
 		j->peer = xdup(peer);
+		j->user = user != NULL ? xdup(user) : NULL;
 		work_init(&j->w);
 		j->w.told = true;
 		TAILQ_INSERT_TAIL(&jobs, j, link);
 		fill(w, &v[i], j);
-		logmsg(LOG_INFO, "%s: job %ju queued: %s", peer,
-		    (uintmax_t)j->id, j->title);
+		logmsg(LOG_INFO, "%s%s%s%s: job %ju queued: %s", peer,
+		    user != NULL ? " (" : "", user != NULL ? user : "",
+		    user != NULL ? ")" : "", (uintmax_t)j->id, j->title);
 	}
 	yang_changed(YANG_JOBS);
 	pthread_cond_signal(&jobs_cv);

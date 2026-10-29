@@ -759,7 +759,7 @@ jobs_submit_checked(cbl_req *req, const struct arc_job_spec *specs, size_t n,
 		return (-1);
 	}
 	peer = peer_name(req);
-	jobs_submit(specs, n, peer, w, v, nv);
+	jobs_submit(specs, n, peer, cbl_req_user(req), w, v, nv);
 	free(peer);
 	return (0);
 }

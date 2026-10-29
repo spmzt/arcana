@@ -202,6 +202,7 @@ job_action(const char *name)
 	(j)->peer = (y)->peer;						\
 	if (((j)->has_confirm_by = (y)->has_confirm_by))		\
 		(j)->confirm_by = (y)->confirm_by;			\
+	(j)->user = (y)->user;						\
 } while (0)
 
 int

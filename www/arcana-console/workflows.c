@@ -963,6 +963,7 @@ struct run {
 	ucl_object_t	*params;
 	ucl_object_t	*event;		/* of what began it, or NULL */
 	char		 trigger[64];
+	char		 started_by[64];	/* the console user, or "" */
 	char		 state[12];
 	time_t		 started, ended;
 	double		 began;		/* started, to the millisecond */
@@ -1009,6 +1010,8 @@ run_object(struct run *r, bool traces)
 	put(o, "workflow", ucl_object_fromstring(ucl_str(r->wf, "id")));
 	put(o, "name", ucl_object_fromstring(ucl_str(r->wf, "name")));
 	put(o, "trigger", ucl_object_fromstring(r->trigger));
+	if (r->started_by[0] != '\0')
+		put(o, "started_by", ucl_object_fromstring(r->started_by));
 	put(o, "state", ucl_object_fromstring(r->state));
 	/* To the millisecond, as its steps' are, when it is known. */
 	put(o, "started", r->began > 0 ? ucl_object_fromdouble(floor(r->began *
@@ -1896,12 +1899,13 @@ wf_running(const char *id)
 
 /*
  * A run of wf begun on its hosts, or on hosts when given; params over
- * the defaults; event what began it.  Its number, or 0 and why.
+ * the defaults; event what began it, by the console user who started
+ * it (NULL: none did).  Its number, or 0 and why.
  */
 static uint32_t
 run_start(const ucl_object_t *wf, const ucl_object_t *hosts,
     const ucl_object_t *params, const ucl_object_t *event,
-    const char *trigger, const char **whyp)
+    const char *trigger, const char *by, const char **whyp)
 {
 	struct run		*r;
 	const ucl_object_t	*v, *p;
@@ -1935,6 +1939,8 @@ run_start(const ucl_object_t *wf, const ucl_object_t *hosts,
 	}
 	r->event = event != NULL ? ucl_object_copy(event) : NULL;
 	snprintf(r->trigger, sizeof(r->trigger), "%s", trigger);
+	snprintf(r->started_by, sizeof(r->started_by), "%s", by != NULL ? by :
+	    "");
 	snprintf(r->state, sizeof(r->state), "running");
 	r->started = time(NULL);
 	{
@@ -2125,7 +2131,7 @@ fire(const ucl_object_t *wfs, const char *sid, const char *kind,
 			put(ev, "kind", ucl_object_fromstring(kind));
 			put(ev, "host", ucl_object_fromstring(sid));
 			snprintf(trig, sizeof(trig), "event %s", kind);
-			(void)run_start(w, hosts, NULL, ev, trig, &why);
+			(void)run_start(w, hosts, NULL, ev, trig, NULL, &why);
 			ucl_object_unref(hosts);
 			ucl_object_unref(ev);
 			break;
@@ -2443,7 +2449,7 @@ scheduler(void *arg __unused)
 					due[k].last = now;
 					every_ran(due[k].id, now);
 					(void)run_start(w, NULL, NULL, NULL,
-					    "every", &why);
+					    "every", NULL, &why);
 				}
 			}
 			/* The hosts whose events it waits for. */
@@ -2688,7 +2694,8 @@ api_workflows(struct http_request *req)
 				return (WEB_OK);
 			}
 		}
-		n = run_start(w, hosts, params, NULL, "hand", &why);
+		n = run_start(w, hosts, params, NULL, "hand",
+		    session_user(req), &why);
 		ucl_object_unref(w);
 		if (body != NULL)
 			ucl_object_unref(body);

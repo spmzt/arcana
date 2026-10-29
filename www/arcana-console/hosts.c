@@ -5180,6 +5180,7 @@ job_object(struct call *c, const struct arc_job *j,
 	if (j->has_confirm_by && j->confirm_by > 0)
 		put(o, "confirm_by", ucl_object_fromint(j->confirm_by));
 	put_str(o, "peer", j->peer);
+	put_str(o, "user", j->user);
 	put(o, "created", ucl_object_fromint(j->created));
 	put(o, "started", j->has_started ? ucl_object_fromint(j->started) :
 	    ucl_object_typed_new(UCL_NULL));

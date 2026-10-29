@@ -92,6 +92,7 @@ module: arcana-events
      |     |     +--ro title?   string
      |     |     +--ro ok?      boolean
      |     |     +--ro error?   string
+     |     |     +--ro user?    string
      |     +--:(jail-state)
      |     |  +--ro jail-state
      |     |     +--ro jail?    string
@@ -247,6 +248,7 @@ module: arcana-events
            |     |     +--ro title?   string
            |     |     +--ro ok?      boolean
            |     |     +--ro error?   string
+           |     |     +--ro user?    string
            |     +--:(jail-state)
            |     |  +--ro jail-state
            |     |     +--ro jail?    string
@@ -399,6 +401,7 @@ module: arcana-events
           |     +---- title?   string
           |     +---- ok?      boolean
           |     +---- error?   string
+          |     +---- user?    string
           +--:(jail-state)
           |  +---- jail-state
           |     +---- jail?    string

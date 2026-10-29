@@ -336,6 +336,14 @@ each in a jail of its own, run up to four at once, a jail's own one
 after another, so that a download stalled in one jail holds up no
 other; the next job of any other kind waits for all of them.
 Such a job can be cancelled while it runs: its pkg is stopped.
+A job keeps who asked for it: its
+.Ic user ,
+the request's NACM user (the console's user it acted for, or
+.Dq console ) ,
+in its list entry, its read and the event of its end; none for the
+recovery session, whose
+.Ic peer
+says who it was.
 .Pp
 Every operation requires an authenticated peer.
 On a local socket that is anyone who can open it: the socket is mode

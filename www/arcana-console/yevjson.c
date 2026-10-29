@@ -219,6 +219,7 @@ data_of(const yevent *e)
 		put_str(d, "title", e->job->title);
 		PUT_YES(d, "ok", e->job, ok);
 		put_str(d, "error", e->job->error);
+		put_str(d, "user", e->job->user);
 		break;
 	case ARCANA_EVENTS_EVENT_ENTRY_DATA_JAIL_STATE:
 		put_str(d, "jail", e->jail_state->jail);

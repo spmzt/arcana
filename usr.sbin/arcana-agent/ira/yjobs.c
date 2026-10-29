@@ -41,6 +41,7 @@ typedef struct arcana_jobs_jobs_job yjob;
 	(y)->peer = (j)->peer;						\
 	if (((y)->has_confirm_by = (j)->has_confirm_by))		\
 		(y)->confirm_by = (j)->confirm_by;			\
+	(y)->user = (j)->user;						\
 } while (0)
 
 /* Job j with its trace (steps) as the read action's output; strings

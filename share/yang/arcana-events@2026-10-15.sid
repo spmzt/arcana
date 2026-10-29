@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-events",
     "module-revision": "2026-10-15",
-    "sid-file-version": 5,
+    "sid-file-version": 6,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -2138,6 +2138,21 @@
         "namespace": "data",
         "identifier": "/arcana-events:events/read/output/kept",
         "sid": "80121"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/job/user",
+        "sid": "80122"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/job/user",
+        "sid": "80123"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/job/user",
+        "sid": "80124"
       }
     ]
   }

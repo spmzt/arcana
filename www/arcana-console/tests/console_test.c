@@ -458,6 +458,148 @@ ATF_TC_BODY(nacm_console, tc)
 }
 
 /*
+ * Who asked for a job: the console's user, as the host's NACM has it,
+ * in the list, the job read and the event of its end; a run by hand,
+ * who started it.  arcanactl as the host's recovery session names none.
+ */
+static void	run_wait(const char *, struct resp *);
+
+CONSOLE_TC(job_user, "A job records the console user who asked for it; "
+    "a run who started it")
+ATF_TC_BODY(job_user, tc)
+{
+	static const char rules[] = "{\"groups\":{\"group\":[{\"name\":"
+	    "\"admin\",\"user-name\":[\"admin\",\"console\",\"alice\"]}]},"
+	    "\"rule-list\":[{\"name\":\"admin\",\"group\":[\"admin\"],\"rule\":"
+	    "[{\"name\":\"all\",\"module-name\":\"*\",\"access-operations\":"
+	    "\"*\",\"action\":\"permit\"}]}]}";
+	struct authn	 a, b;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 512], id[16];
+	char		 path[256], jpath[300], invite[80], wid[16], run[16];
+	char		 cmd[3 * MAXPATHLEN], jid[24], key[64];
+	const char	*ctl, *v;
+	FILE		*fp;
+	int		 i;
+	bool		 seen;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	ctl = locate(tc, "../../../usr.sbin/arcanactl/arcanactl", "arcanactl",
+	    "/usr/local/sbin/arcanactl");
+	ATF_REQUIRE((fp = fopen("rules.json", "w")) != NULL);
+	fprintf(fp, "%s\n", rules);
+	fclose(fp);
+	snprintf(cmd, sizeof(cmd), "%s -c unix:%s/jgd.sock edit nacm "
+	    "@rules.json && %s -c unix:%s/jgd.sock commit", ctl, cwd, ctl, cwd);
+	ATF_REQUIRE_EQ_MSG(0, system(cmd), "%s", cmd);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"again\",\"hosts\":[\"%s\"],"
+	    "\"steps\":[{\"id\":\"s\",\"job\":{\"kind\":\"service-action\","
+	    "\"service\":\"sshd\",\"action\":\"restart\"}}]}", id);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	snprintf(wid, sizeof(wid), "%s", jstr(&r, "id"));
+	resp_free(&r);
+	http("PUT", "/api/users/alice", "{\"roles\":[\"operator\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/users/alice/invite", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	authn_new(&b, -8);
+	do_register(&b, invite, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("alice", jstr(&r, "user"));
+	resp_free(&r);
+
+	/* alice's job: hers in the list, the read and the event. */
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", id);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"service-action\","
+	    "\"service\":\"sshd\",\"action\":\"stop\"}]}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE_MSG(jstr(&r, "jobs.0.id") != NULL, "%s", r.body);
+	snprintf(jid, sizeof(jid), "%s", jstr(&r, "jobs.0.id"));
+	ATF_CHECK_STREQ("alice", jstr(&r, "jobs.0.user"));
+	resp_free(&r);
+	snprintf(jpath, sizeof(jpath), "%s/%s", path, jid);
+	for (i = 0; i < 100; i++) {
+		http("GET", jpath, NULL, &r);
+		EXPECT(&r, 200);
+		if (strcmp(jstr(&r, "job.state"), "done") == 0)
+			break;
+		resp_free(&r);
+		usleep(50000);
+	}
+	ATF_REQUIRE_MSG(i < 100, "the job did not finish");
+	ATF_CHECK_STREQ("alice", jstr(&r, "job.user"));
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(jid, jstr(&r, "jobs.0.id"));
+	ATF_CHECK_STREQ("alice", jstr(&r, "jobs.0.user"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/events", id);
+	seen = false;
+	for (i = 0; i < 50 && !seen; i++) {
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		for (int k = 0; k < 64 && !seen; k++) {
+			snprintf(key, sizeof(key), "data.events.%d.kind", k);
+			if ((v = jstr(&r, key)) == NULL)
+				break;
+			snprintf(key, sizeof(key), "data.events.%d.data.id", k);
+			if (strcmp(v, "job") != 0 || jstr(&r, key) == NULL ||
+			    strcmp(jstr(&r, key), jid) != 0)
+				continue;
+			snprintf(key, sizeof(key), "data.events.%d.data.user",
+			    k);
+			ATF_CHECK_STREQ("alice", jstr(&r, key));
+			seen = true;
+		}
+		resp_free(&r);
+		if (!seen)
+			usleep(100000);
+	}
+	ATF_CHECK_MSG(seen, "no event of job %s", jid);
+
+	/* A run by hand: who started it, and its job hers too. */
+	snprintf(path, sizeof(path), "/api/workflows/%s/run", wid);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("alice", jstr(&r, "started_by"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.0.state"));
+	ATF_CHECK_STREQ("alice", jstr(&r, "hosts.0.steps.0.trace.job.user"));
+	resp_free(&r);
+	http("GET", "/api/runs", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("alice", jstr(&r, "runs.0.started_by"));
+	resp_free(&r);
+
+	/* arcanactl over the unix socket, saying no user: none. */
+	snprintf(cmd, sizeof(cmd), "%s -q -c unix:%s/jgd.sock service sshd "
+	    "start > /dev/null && %s --libxo json -c unix:%s/jgd.sock jobs > "
+	    "ctl.json", ctl, cwd, ctl, cwd);
+	ATF_REQUIRE_EQ_MSG(0, system(cmd), "%s", cmd);
+	ATF_CHECK(system("grep -q '\"user\":\"alice\"' ctl.json") == 0);
+	ATF_CHECK(system("grep -q '\"title\":\"service sshd start\",[^}]*"
+	    "\"user\"' ctl.json") != 0);
+	ATF_CHECK(system("grep -q '\"title\":\"service sshd start\"' "
+	    "ctl.json") == 0);
+}
+
+/*
  * RESTCONF's changes (RFC 8040, RFC 8527): running is not written; the
  * candidate's node PUT, read back from the candidate's datastore; a
  * confirmed commit refused without persist; with it, then confirmed by
@@ -12909,6 +13051,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf_tag_malformed_message);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_console);
+	ATF_TP_ADD_TC(tp, job_user);
 	ATF_TP_ADD_TC(tp, services);
 	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, agent_build);

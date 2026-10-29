@@ -7285,6 +7285,8 @@ emit_job(const struct arc_job *j)
 	    st, j->title);
 	if (j->error != NULL)
 		xo_emit(": {:error/%s}", j->error);
+	if (j->user != NULL)
+		xo_emit("{e:user/%s}", j->user);
 	xo_emit("{e:peer/%s}{e:created/%jd}\n", j->peer != NULL ? j->peer : "",
 	    (intmax_t)j->created);
 	xo_close_instance("job");

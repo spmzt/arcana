@@ -16,6 +16,7 @@ module: arcana-jobs
         +--ro finished?     int64
         +--ro peer?         string
         +--ro confirm-by?   int64
+        +--ro user?         string
         +---x cancel
         |  +--ro output
         |     +--ro state?   job-state
@@ -34,6 +35,7 @@ module: arcana-jobs
               +--ro finished?     int64
               +--ro peer?         string
               +--ro confirm-by?   int64
+              +--ro user?         string
               +--ro step* [id]
                  +--ro id              uint32
                  +--ro parent?         int32

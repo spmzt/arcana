@@ -130,6 +130,13 @@ module arcana-jobs {
       description
         "Unconfirmed: when it is undone without confirm.";
     }
+    leaf user {
+      type string;
+      description
+        "Who asked for it: the user of the request that queued it,
+         RFC 8341's, the console's user it acted for or the console
+         itself; absent for the recovery session, which peer names.";
+    }
   }
 
   grouping step {

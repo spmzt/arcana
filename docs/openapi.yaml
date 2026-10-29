@@ -4036,7 +4036,13 @@ components:
           enum: [queued, running, done, cancelled, unconfirmed]
         ok: { type: boolean, nullable: true, description: With done. }
         error: { type: string, nullable: true }
-        peer: { type: string, description: Who queued it. }
+        peer: { type: string, description: Who queued it, the connection. }
+        user:
+          type: string
+          description: >-
+            Who asked for it: the console user it acted for, "console" for
+            the console's own, a host's local login; absent for the
+            host's recovery session (root over its unix socket).
         created: { type: integer }
         started: { type: integer, nullable: true }
         finished: { type: integer, nullable: true }
@@ -4147,6 +4153,9 @@ components:
           type: string
           description: hand, every, or event and the event's kind.
           examples: [hand, every, event host-down]
+        started_by:
+          type: string
+          description: The console user who started it by hand; absent otherwise.
         state:
           type: string
           enum: [running, done, failed, cancelled, interrupted]
