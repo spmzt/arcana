@@ -267,6 +267,8 @@ extern const char	*web_certfile, *web_certkey;
  * request's where it verified (freed by the caller), else NULL.
  */
 void		 web_client_ca(const char *);
+/* Strict-Transport-Security's max-age over TLS, in seconds; 0 for none. */
+void		 web_hsts(int);
 struct x509_st;
 struct x509_st	*web_peer_cert(struct http_request *);
 

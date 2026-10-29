@@ -84,6 +84,7 @@ struct config {
 	char		*agent_ssh_key;	/* a key on the build host, or NULL */
 	int		 session_idle;	/* seconds a sign-in may sit idle */
 	int		 session_max;	/* seconds a sign-in lasts at most */
+	int		 hsts_max_age;	/* seconds, 0 for no HSTS */
 	char		*local_agent;	/* the agent beside the console, or NULL */
 	char		*notif_base;	/* where the hosts reach the console's
 					 * receiver (notif.c), or NULL: the origin */

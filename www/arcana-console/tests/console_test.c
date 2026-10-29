@@ -5344,6 +5344,19 @@ ATF_TC_BODY(settings, tc)
 	EXPECT(&r, 400);
 	resp_free(&r);
 	ATF_CHECK(access("data/settings.json", F_OK) == -1);
+	/* HSTS's days: 0 (none sent) to 730. */
+	http("POST", "/api/settings", "{\"set\":{\"hsts_days\":\"731\"}}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"hsts_days\":\"0\"}}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"hsts_days\":\"730\"}}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
 
 	http("POST", "/api/settings", "{\"set\":{\"rp_name\":\"Lab\","
 	    "\"agent_source\":\"https://example.org/arcana.git\","
@@ -11417,6 +11430,11 @@ ATF_TC_BODY(tls_ec, tc)
 	    "'%%{http_version} %%{http_code}' https://127.0.0.1:%d/api/health "
 	    "| grep -qx '1.1 200'", port);
 	ATF_CHECK_MSG(system(cmd) == 0, "no HTTP/1.1");
+	/* Over HTTPS, browsers are kept to it for the settings' days
+	 * (a year unless set). */
+	snprintf(cmd, sizeof(cmd), "curl -skI https://127.0.0.1:%d/api/health "
+	    "| grep -qi '^strict-transport-security: max-age=31536000'", port);
+	ATF_CHECK_MSG(system(cmd) == 0, "no Strict-Transport-Security");
 	/*
 	 * A reply of a handler's larger than an HTTP/2 frame (16 KB): a
 	 * host's sysctl, read with a session opened by an API token, its

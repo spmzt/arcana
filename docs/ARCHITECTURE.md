@@ -131,8 +131,9 @@ a tenant, a fleet of its own, and then sees that tenant's hosts alone.
   `Cross-Origin-Resource-Policy` and `Cross-Origin-Opener-Policy`
   `same-origin`, `X-Content-Type-Options: nosniff`, `Referrer-Policy:
   no-referrer`, a Permissions-Policy allowing passkeys, fullscreen and
-  the clipboard alone, and over TLS `Strict-Transport-Security` (a
-  year, this host only).
+  the clipboard alone, and over TLS `Strict-Transport-Security` for
+  this host only, as many days as the setting `hsts_days` says (365
+  unless set; 0 sends none).
 
 ## Enrolment (host to console)
 

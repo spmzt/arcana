@@ -1173,6 +1173,7 @@ static const struct {
 };
 
 static int	sec_add(struct lws *, unsigned char **, unsigned char *);
+static int	hsts_max_age = 365 * 86400;
 
 /* A file of the web root; 0 when it is being sent, -1 for none. */
 static int
@@ -1320,7 +1321,15 @@ static const struct {
 	  "browsing-topics=()" },
 };
 
-/* sec_headers, and over TLS the browser's keeping to it, at *pp. */
+void
+web_hsts(int seconds)
+{
+
+	hsts_max_age = seconds;
+}
+
+/* sec_headers, and over TLS the browser's keeping to it for the days
+ * the settings say (none for 0), at *pp. */
 static int
 sec_add(struct lws *wsi, unsigned char **pp, unsigned char *end)
 {
@@ -1331,10 +1340,15 @@ sec_add(struct lws *wsi, unsigned char **pp, unsigned char *end)
 		rc = lws_add_http_header_by_name(wsi, sec_headers[i].name,
 		    sec_headers[i].value,
 		    (int)strlen((const char *)sec_headers[i].value), pp, end);
-	if (rc == 0 && lws_is_ssl(wsi))
+	if (rc == 0 && hsts_max_age > 0 && lws_is_ssl(wsi)) {
+		char	v[32];
+		int	n;
+
+		n = snprintf(v, sizeof(v), "max-age=%d", hsts_max_age);
 		rc = lws_add_http_header_by_name(wsi, (const unsigned char *)
-		    "strict-transport-security:", (const unsigned char *)
-		    "max-age=31536000", 16, pp, end);
+		    "strict-transport-security:", (const unsigned char *)v,
+		    n, pp, end);
+	}
 	return (rc);
 }
 

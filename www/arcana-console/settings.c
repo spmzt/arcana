@@ -47,6 +47,7 @@ static const char	*v_ref(const char *);
 static const char	*v_keypath(const char *);
 static const char	*v_minutes(const char *);
 static const char	*v_hours(const char *);
+static const char	*v_days(const char *);
 static const char	*v_mails(const char *);
 static const char	*v_mail(const char *);
 static const char	*v_severity(const char *);
@@ -100,6 +101,11 @@ static struct setting {
 	{ "session_max", K_TEXT, "A sign-in lasts at most, in hours",
 	    "However much it is used: from 1 to 720 hours. Changed, it holds "
 	    "for the sign-ins there are too.", v_hours, NULL, NULL },
+	{ "hsts_days", K_TEXT, "Browsers kept to HTTPS, in days",
+	    "Over HTTPS, Strict-Transport-Security tells a browser to refuse "
+	    "this host over plain HTTP for so long (this host alone, not its "
+	    "domain's others): from 0, none sent, to 730.", v_days, NULL,
+	    NULL },
 	{ "mail_to", K_TEXT, "Mail to",
 	    "Addresses, a comma between them; empty for no mail. Sent by "
 	    "sendmail(8) on the console's host: dma(8) as FreeBSD comes, "
@@ -429,6 +435,14 @@ v_hours(const char *s)
 }
 
 static const char *
+v_days(const char *s)
+{
+
+	return (v_count(s, 0, 730) != NULL ? "a number of days, 0 to 730" :
+	    NULL);
+}
+
+static const char *
 v_url(const char *s)
 {
 
@@ -601,6 +615,9 @@ apply(void)
 	    value("session_idle")) * 60 : SESSION_IDLE;
 	cfg.session_max = v_hours(value("session_max")) == NULL ? atoi(
 	    value("session_max")) * 3600 : SESSION_MAX;
+	cfg.hsts_max_age = v_days(value("hsts_days")) == NULL ? atoi(
+	    value("hsts_days")) * 86400 : 365 * 86400;
+	web_hsts(cfg.hsts_max_age);
 	/* The mail's are read where they are used: settings_peek(). */
 }
 
@@ -657,6 +674,7 @@ settings_init(const char *update_check, const char *update_url)
 	find("agent_ssh_key")->base = cfg.agent_ssh_key;
 	find("session_idle")->base = xstrdup("30");
 	find("session_max")->base = xstrdup("12");
+	find("hsts_days")->base = xstrdup("365");
 	find("telegram_faults")->base = xstrdup("Major");
 	find("telegram_jobs")->base = xstrdup("failed");
 	find("telegram_runs")->base = xstrdup("failed");
