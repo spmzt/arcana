@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.336.1"
+#define	ARCW_VERSION		"0.337.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -102,12 +102,18 @@ struct config {
 	char		*android_package;	/* the Android app, or NULL */
 	uint8_t		 android_keys[ANDROID_KEYS][32];	/* SHA-256 of its signers */
 	int		 nandroid_keys;
+	char		*plugins_dir;	/* the console plugins (cplug.c), or "" */
 };
 
 extern struct config cfg;
 
 int		 config_load(const char *);
 int		 config_check_certs(void);
+
+/* cplug.c: console plugins, the page's extensions; not the hosts'. */
+int		 api_cplugs(struct http_request *);
+int		 api_cplug(struct http_request *);
+int		 api_cplug_file(struct http_request *);
 
 /* mail.c: what happened, mailed. */
 void		 mail_init(void);

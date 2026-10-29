@@ -2143,6 +2143,302 @@ ATF_TC_BODY(csrf, tc)
 	origin_hdr = ORIGIN;
 }
 
+/* "sha384-" and the base64 of the SHA-384 of s, as the page's
+ * integrity says it. */
+static void
+sri_of(const char *s, char *out, size_t len)
+{
+	unsigned char	md[EVP_MAX_MD_SIZE], b64[96];
+	unsigned int	mdlen;
+
+	EVP_Digest(s, strlen(s), md, &mdlen, EVP_sha384(), NULL);
+	EVP_EncodeBlock(b64, md, (int)mdlen);
+	snprintf(out, len, "sha384-%s", b64);
+}
+
+/* What the reply says of the console plugin id, at path in it. */
+static const char *
+cplug_str(const struct resp *r, const char *id, const char *path)
+{
+	const ucl_object_t	*p, *v;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((p = ucl_object_iterate(ucl_object_lookup(r->json, "plugins"),
+	    &it, true)) != NULL)
+		if (strcmp(ucl_object_tostring(ucl_object_lookup(p, "id")), id)
+		    == 0)
+			break;
+	if (p == NULL || (v = ucl_object_lookup_path(p, path)) == NULL)
+		return (NULL);
+	return (ucl_object_tostring_forced(v));
+}
+
+static bool
+has(const char *s, const char *want)
+{
+
+	return (s != NULL && strstr(s, want) != NULL);
+}
+
+CONSOLE_TC(console_plugins, "Console plugins: scanned and hashed, served "
+    "only as listed, from inside their directory, once a console owner "
+    "enabled them; rescanned without a restart")
+ATF_TC_BODY(console_plugins, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], sri[128], hdr[256], owner[160];
+	char		other[160], invite[80];
+	const char	*js = "window.x = 1;\n";
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	ATF_REQUIRE(mkdir("plugins", 0755) == 0);
+	/* A good one, with files it does not list. */
+	ATF_REQUIRE(mkdir("plugins/good", 0755) == 0);
+	ATF_REQUIRE(mkdir("plugins/good/img", 0755) == 0);
+	put("plugins/good/plugin.json", "{\"id\":\"good\",\"name\":\"Good\","
+	    "\"version\":\"1.2.0\",\"arcana\":\"0.1.0\",\"description\":"
+	    "\"A test\",\"author\":\"Tests\",\"entry\":[\"main.js\"],"
+	    "\"styles\":[\"look.css\"],\"assets\":[\"img/*.png\"],"
+	    "\"provides\":[\"theme\"]}");
+	put("plugins/good/main.js", js);
+	put("plugins/good/look.css", "body { color: red; }\n");
+	put("plugins/good/img/a.png", "PNG a");
+	put("plugins/good/img/b.png", "PNG b");
+	put("plugins/good/img/.hidden.png", "hidden");
+	put("plugins/good/extra.js", "window.y = 2;\n");
+	/* Its id not its directory's. */
+	ATF_REQUIRE(mkdir("plugins/bad", 0755) == 0);
+	put("plugins/bad/plugin.json", "{\"id\":\"other\",\"name\":\"Bad\","
+	    "\"version\":\"1\",\"arcana\":\"0.1.0\"}");
+	/* A file that is a link out of its directory. */
+	put("outside.js", "window.secret = 1;\n");
+	ATF_REQUIRE(mkdir("plugins/leak", 0755) == 0);
+	put("plugins/leak/plugin.json", "{\"id\":\"leak\",\"name\":\"Leak\","
+	    "\"version\":\"1\",\"arcana\":\"0.1.0\",\"entry\":[\"s.js\"]}");
+	ATF_REQUIRE(symlink("../../outside.js", "plugins/leak/s.js") == 0);
+	/* Of a console to come. */
+	ATF_REQUIRE(mkdir("plugins/newer", 0755) == 0);
+	put("plugins/newer/plugin.json", "{\"id\":\"newer\",\"name\":\"Newer\","
+	    "\"version\":\"1\",\"arcana\":\"99.0.0\"}");
+	/* A path out of its directory; a key not of the format. */
+	ATF_REQUIRE(mkdir("plugins/up", 0755) == 0);
+	put("plugins/up/plugin.json", "{\"id\":\"up\",\"name\":\"Up\","
+	    "\"version\":\"1\",\"arcana\":\"0.1.0\",\"entry\":"
+	    "[\"../outside.js\"]}");
+	ATF_REQUIRE(mkdir("plugins/odd", 0755) == 0);
+	put("plugins/odd/plugin.json", "{\"id\":\"odd\",\"name\":\"Odd\","
+	    "\"version\":\"1\",\"arcana\":\"0.1.0\",\"colour\":\"red\"}");
+	snprintf(harness_webconf, sizeof(harness_webconf), "plugins_dir = "
+	    "\"%s/plugins\";\n", cwd);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(owner, sizeof(owner), "%s", cookie);
+
+	/* Listed, each with why it is not served, the good one's files
+	 * with their integrity. */
+	http("GET", "/api/plugins", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "dir") != NULL);
+	ATF_CHECK_STREQ("bad", jstr(&r, "plugins.0.id"));
+	ATF_CHECK(has(cplug_str(&r, "bad", "error"), "directory"));
+	ATF_CHECK(cplug_str(&r, "good", "error") == NULL);
+	ATF_CHECK_STREQ("Good", cplug_str(&r, "good", "name"));
+	ATF_CHECK_STREQ("1.2.0", cplug_str(&r, "good", "version"));
+	ATF_CHECK_STREQ("Tests", cplug_str(&r, "good", "author"));
+	ATF_CHECK_STREQ("theme", cplug_str(&r, "good", "provides.0"));
+	ATF_CHECK_STREQ("false", cplug_str(&r, "good", "enabled"));
+	ATF_CHECK_STREQ("main.js", cplug_str(&r, "good", "files.0.path"));
+	ATF_CHECK_STREQ("script", cplug_str(&r, "good", "files.0.kind"));
+	sri_of(js, sri, sizeof(sri));
+	ATF_CHECK_STREQ(sri, cplug_str(&r, "good", "files.0.integrity"));
+	ATF_CHECK_STREQ("style", cplug_str(&r, "good", "files.1.kind"));
+	ATF_CHECK_STREQ("img/a.png", cplug_str(&r, "good", "files.2.path"));
+	ATF_CHECK_STREQ("asset", cplug_str(&r, "good", "files.2.kind"));
+	ATF_CHECK_STREQ("img/b.png", cplug_str(&r, "good", "files.3.path"));
+	ATF_CHECK(cplug_str(&r, "good", "files.4.path") == NULL);
+	ATF_CHECK(has(cplug_str(&r, "leak", "error"), "outside"));
+	ATF_CHECK(cplug_str(&r, "leak", "files") == NULL);
+	ATF_CHECK(has(cplug_str(&r, "newer", "error"), "needs console "
+	    "99.0.0"));
+	ATF_CHECK(has(cplug_str(&r, "up", "error"), "not a path"));
+	ATF_CHECK(has(cplug_str(&r, "odd", "error"), "colour"));
+	resp_free(&r);
+
+	/* Not served until enabled. */
+	http("GET", "/plugins/good/main.js", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("POST", "/api/plugins/good", "{\"enabled\":true}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", cplug_str(&r, "good", "enabled"));
+	resp_free(&r);
+	ATF_CHECK(access("data/console-plugins.json", F_OK) == 0);
+	/* One with something wrong is not enabled; one not there neither. */
+	http("POST", "/api/plugins/leak", "{\"enabled\":true}", &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	http("POST", "/api/plugins/nosuch", "{\"enabled\":true}", &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("POST", "/api/plugins/good", "{\"enabled\":\"yes\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/* Served: its bytes, its type, its hash its tag, the console's
+	 * headers. */
+	http("GET", "/plugins/good/main.js", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(js, r.body);
+	ATF_CHECK(resp_header(&r, "content-type", hdr, sizeof(hdr)) != NULL &&
+	    strncmp(hdr, "text/javascript", 15) == 0);
+	ATF_CHECK(resp_header(&r, "cache-control", hdr, sizeof(hdr)) != NULL &&
+	    strcmp(hdr, "no-cache") == 0);
+	ATF_CHECK(resp_header(&r, "etag", hdr, sizeof(hdr)) != NULL &&
+	    strncmp(hdr + 1, sri, strlen(sri)) == 0);
+	ATF_CHECK(strcasestr(r.head, "x-content-type-options: nosniff") !=
+	    NULL);
+	ATF_CHECK(strcasestr(r.head, "content-security-policy: default-src "
+	    "'self'") != NULL);
+	resp_free(&r);
+	snprintf(hdr, sizeof(hdr), "If-None-Match: \"%s\"\r\n", sri);
+	http_with("GET", "/plugins/good/main.js", hdr, NULL, &r);
+	EXPECT(&r, 304);
+	resp_free(&r);
+	http("GET", "/plugins/good/img/b.png", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(resp_header(&r, "content-type", hdr, sizeof(hdr)) != NULL &&
+	    strcmp(hdr, "image/png") == 0);
+	resp_free(&r);
+	/* What it does not list, a hidden file, a way out: not found. */
+	http("GET", "/plugins/good/extra.js", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("GET", "/plugins/good/plugin.json", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("GET", "/plugins/good/img/.hidden.png", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("GET", "/plugins/good/%2e%2e/%2e%2e/outside.js", NULL, &r);
+	ATF_CHECK_MSG(r.status == 404, "HTTP %d", r.status);
+	resp_free(&r);
+	http("GET", "/plugins/good/img/..%2f..%2f..%2foutside.js", NULL, &r);
+	ATF_CHECK_MSG(r.status == 404, "HTTP %d", r.status);
+	resp_free(&r);
+	http("GET", "/plugins/leak/s.js", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	/* Without a session, nothing. */
+	cookie[0] = '\0';
+	http("GET", "/plugins/good/main.js", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	http("GET", "/api/plugins", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+
+	/* An operator of the console, then a member: they read the list
+	 * and load what is enabled, and enable or disable nothing. */
+	snprintf(cookie, sizeof(cookie), "%s", owner);
+	http("PUT", "/api/users/bob", "{\"roles\":[\"operator\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/users/bob/invite", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	authn_new(&b, -8);
+	do_register(&b, invite, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("operator", jstr(&r, "console"));
+	resp_free(&r);
+	snprintf(other, sizeof(other), "%s", cookie);
+	http("POST", "/api/plugins/good", "{\"enabled\":false}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", "/api/plugins", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "dir") == NULL);
+	ATF_CHECK_STREQ("true", cplug_str(&r, "good", "enabled"));
+	resp_free(&r);
+	http("GET", "/plugins/good/main.js", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(cookie, sizeof(cookie), "%s", owner);
+	http("PUT", "/api/users/bob", "{\"roles\":[\"viewer\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(cookie, sizeof(cookie), "%s", other);
+	http("POST", "/api/plugins/good", "{\"enabled\":false}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", "/plugins/good/look.css", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+
+	/* Changed while the console runs: a plugin added, a file
+	 * rewritten, a file made a link out; seen without a restart. */
+	ATF_REQUIRE(mkdir("plugins/fresh", 0755) == 0);
+	put("plugins/fresh/plugin.json", "{\"id\":\"fresh\",\"name\":\"Fresh\","
+	    "\"version\":\"1\",\"arcana\":\"0.1.0\",\"entry\":[\"f.js\"]}");
+	put("plugins/fresh/f.js", "window.f = 1;\n");
+	put("plugins/good/main.js", "window.x = 2;\n");
+	usleep(1200 * 1000);
+	http("GET", "/api/plugins", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(cplug_str(&r, "fresh", "name") != NULL);
+	ATF_CHECK(cplug_str(&r, "fresh", "error") == NULL);
+	ATF_CHECK_STREQ("false", cplug_str(&r, "fresh", "enabled"));
+	sri_of("window.x = 2;\n", sri, sizeof(sri));
+	ATF_CHECK_STREQ(sri, cplug_str(&r, "good", "files.0.integrity"));
+	resp_free(&r);
+	http("GET", "/plugins/good/main.js", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("window.x = 2;\n", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(unlink("plugins/good/img/b.png") == 0);
+	ATF_REQUIRE(symlink("../../../outside.js", "plugins/good/img/b.png") ==
+	    0);
+	http("GET", "/plugins/good/img/b.png", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	usleep(1200 * 1000);
+	http("GET", "/api/plugins", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(has(cplug_str(&r, "good", "error"), "outside"));
+	resp_free(&r);
+	http("GET", "/plugins/good/main.js", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	ATF_REQUIRE(unlink("plugins/good/img/b.png") == 0);
+	put("plugins/good/img/b.png", "PNG b");
+	usleep(1200 * 1000);
+	http("GET", "/plugins/good/main.js", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+
+	/* Disabled by the owner: not served again; both in the audit
+	 * trail. */
+	snprintf(cookie, sizeof(cookie), "%s", owner);
+	http("POST", "/api/plugins/good", "{\"enabled\":false}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", cplug_str(&r, "good", "enabled"));
+	resp_free(&r);
+	snprintf(cookie, sizeof(cookie), "%s", other);
+	http("GET", "/plugins/good/main.js", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	snprintf(cookie, sizeof(cookie), "%s", owner);
+	http("GET", "/api/sdwan/audit", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(has(r.body, "plugin-enabled"));
+	ATF_CHECK(has(r.body, "plugin-disabled"));
+	resp_free(&r);
+}
+
 CONSOLE_TC(jails, "Servers, jails, actions and addresses through arcana-agent")
 ATF_TC_BODY(jails, tc)
 {
@@ -12548,6 +12844,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, second_key);
 	ATF_TP_ADD_TC(tp, users);
 	ATF_TP_ADD_TC(tp, csrf);
+	ATF_TP_ADD_TC(tp, console_plugins);
 	ATF_TP_ADD_TC(tp, jails);
 	ATF_TP_ADD_TC(tp, restconf);
 	ATF_TP_ADD_TC(tp, restconf_write);

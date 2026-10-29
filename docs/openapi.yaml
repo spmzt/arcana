@@ -1413,6 +1413,107 @@ paths:
       responses:
         "200":
           description: The cluster's state.
+  /api/plugins:
+    get:
+      tags: [console]
+      summary: The console plugins
+      description: Extensions of the console's page that the console
+        host's administrator installed under web.conf's plugins_dir
+        (not the hosts' plugins). Each with its plugin.json's id, name,
+        version, arcana (the least console version), description,
+        author and provides; whether it is enabled; error, why it is
+        not served, when something is wrong with it; and otherwise its
+        files, each with its path, kind (script, style or asset), size
+        and integrity, which the page loads them with. Any signed-in
+        user; dir, where they are installed, to a console owner alone.
+        The directory is looked at again at most once a second.
+      responses:
+        "200":
+          description: The plugins, by id.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plugins]
+                properties:
+                  dir: { type: string }
+                  plugins:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, enabled, provides]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        version: { type: string }
+                        arcana: { type: string }
+                        description: { type: string }
+                        author: { type: string }
+                        provides: { type: array, items: { type: string } }
+                        enabled: { type: boolean }
+                        error: { type: string }
+                        files:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              path: { type: string }
+                              kind: { type: string, enum: [script, style, asset] }
+                              size: { type: integer }
+                              integrity:
+                                type: string
+                                description: sha384- and the base64 of
+                                  the file's SHA-384, for the integrity
+                                  attribute.
+  /api/plugins/{id}:
+    post:
+      tags: [console]
+      summary: Enable or disable a console plugin
+      description: By an owner of the console alone; kept in
+        console-plugins.json in the data directory and written in the
+        audit trail (plugin-enabled, plugin-disabled). A plugin with an
+        error is not enabled. An enabled plugin is served to every
+        signed-in user, and runs with the page's rights.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9-]{1,40}$" } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200":
+          description: The plugins as they are now, as GET /api/plugins.
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /plugins/{id}/{file}:
+    get:
+      tags: [console]
+      summary: A console plugin's file
+      description: A file its plugin.json lists, of an enabled plugin,
+        to a signed-in session, with the console's security headers,
+        Cache-Control no-cache and its hash as its ETag (If-None-Match
+        answered 304). Not found for anything else, a file that is not
+        listed, a hidden one, a path or link out of the plugin's
+        directory, a disabled plugin's.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: file, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The file, as text/javascript, text/css, image/png,
+            image/svg+xml, image/webp, application/json or font/woff2.
+        "304":
+          description: Unchanged.
+        "401": { $ref: "#/components/responses/Error" }
+        "404":
+          description: Not found.
   /api/groups:
     get:
       tags: [users]

@@ -57,7 +57,8 @@ get(const ucl_object_t *top, const char *path, const char *def)
  * without it.  notif_auth is how the receiver knows a host:
  * "certificate" (the host's, from the console's PKI; the default),
  * "token" (the one the console handed it in its subscription), or
- * "either" (whichever a request carries).
+ * "either" (whichever a request carries).  plugins_dir holds the
+ * console plugins (cplug.c), "" for none.
  *
  *	android { package = "..."; fingerprints = [ "AB:CD:..." ]; }
  *
@@ -118,6 +119,7 @@ config_load(const char *path)
 	cfg.local_agent = get(top, "local_agent", ARCW_LOCAL_AGENT);
 	cfg.notif_base = get(top, "notif_base", NULL);
 	cfg.notif_auth = get(top, "notif_auth", "certificate");
+	cfg.plugins_dir = get(top, "plugins_dir", ARCW_PLUGINS);
 	if (cfg.local_agent != NULL && cfg.local_agent[0] == '\0')
 		cfg.local_agent = NULL;
 	if (strcmp(cfg.notif_auth, "certificate") != 0 && strcmp(cfg.notif_auth,

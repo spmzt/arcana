@@ -152,6 +152,45 @@ a tenant, a fleet of its own, and then sees that tenant's hosts alone.
   this host only, as many days as the setting `hsts_days` says (365
   unless set; 0 sends none).
 
+## Console plugins
+
+Extensions of the console's page, served by the console from its own
+origin (`cplug.c`); not the hosts' plugins (BIRD, Suricata and the
+others), which run on the hosts.  A console plugin's script runs with
+the page's full rights, the signed-in user's, so only what the console
+host's administrator installed and a console owner enabled is served.
+
+* **Where.**  A directory each under web.conf's `plugins_dir`
+  (`/usr/local/share/arcana-console/plugins` unless set; `""`, or no
+  such directory, for none), named by the plugin's id.  A link to a
+  directory elsewhere is not a plugin.
+* **Format.**  `plugin.json` in it: `id` (`[a-z0-9-]{1,40}`, the
+  directory's name), `name`, `version`, `arcana` (the least console
+  version, `a.b.c`; an older console lists the plugin with why and
+  serves none of it), optional `description`, `author`, `entry` (the
+  `.js` files, in order), `styles` (`.css`), `assets` (files or
+  glob(3) patterns of `.png`, `.svg`, `.webp`, `.json`, `.woff2`) and
+  `provides` (words: `guide-pack`, `theme`, ...).  Anything else, a key
+  the format does not have, a path that is absolute, hidden or has
+  `..`, a file larger than 8 MB, a file whose real path is out of the
+  plugin's directory (a link out), and the plugin is listed with the
+  reason and none of it served.
+* **Hashes.**  Each listed file's size and SHA-384 are kept; the page
+  loads exactly these, with `integrity="sha384-..."`.  The directory is
+  looked at again at most once a second, on `GET /api/plugins` and on a
+  plugin's file asked for: rescanned when it, a plugin's directory,
+  its `plugin.json` or the directory of a listed file changed, and a
+  listed file whose time or size changed is hashed again.  No restart.
+* **Enabled** by a console owner alone (`POST /api/plugins/<id>`
+  `{"enabled": bool}`), kept in `console-plugins.json` in the data
+  directory, written in the audit trail.  An enabled plugin is served
+  to every signed-in user.
+* **Served** at `/plugins/<id>/<file>`: a file the plugin lists, of an
+  enabled plugin, to a session (not to an API token), with the
+  headers every reply has (above), `Cache-Control: no-cache` and the hash as the
+  ETag; read and hashed again as it is sent, its real path checked to
+  be in the plugin's directory.  Anything else is not found.
+
 ## Enrolment (host to console)
 
 Without a `tls { }` block the console runs its own CA (`pki.c`): EC

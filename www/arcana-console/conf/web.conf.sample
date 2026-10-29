@@ -98,6 +98,12 @@ cookie_secure = true;
 #local_agent = "unix:/var/run/arcana-agent.sock";
 #local_agent = "";
 
+# Console plugins, extensions of the console's page (not the hosts'
+# plugins): a directory each, with its plugin.json, served once an owner
+# of the console enables it.  Another directory, or none:
+#plugins_dir = "/usr/local/share/arcana-console/plugins";
+#plugins_dir = "";
+
 # A host's configured subscription (RFC 8639 section 2.5) sends its
 # records to the console over HTTPS-notif, at /api/notif/<host>/ of a
 # TLS listener, the host shown by its certificate.  The base the hosts

@@ -185,6 +185,21 @@ and sends that instead of
 .It Va agent_ref
 The branch or tag to build.
 Default: the repository's own.
+.It Va plugins_dir
+The console plugins: extensions of the console's page, a directory
+each, named by the plugin's id, with its
+.Pa plugin.json
+and the files it lists; not the hosts' plugins.
+Read again when it changes, without a restart; a plugin is served once
+an owner of the console enables it, to every signed-in user, and runs
+with the page's rights.
+Default
+.Pa /usr/local/share/arcana-console/plugins ;
+an empty one for none.
+Which are enabled is kept in
+.Pa console-plugins.json
+in
+.Va datadir .
 .It Va android
 A block naming an Android app that may log in:
 .Va package ,

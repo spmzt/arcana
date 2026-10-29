@@ -6,7 +6,8 @@ SRCS=		web.c keymgr.c routes.c api.c auth.c config.c hosts.c pki.c push.c server
 		stream.c follow.c watch.c tokens.c transfers.c workflows.c sdwan.c \
 		sdwan_edge.c \
 		store.c update.c webpush.c audit.c sen.c mail.c templates.c ldap.c labels.c notif.c prefixlists.c users.c \
-		craft.c nodes.c ytrans.c yjsonin.c restconf.c rcstream.c idsfiles.c drift.c
+		craft.c nodes.c ytrans.c yjsonin.c restconf.c rcstream.c idsfiles.c drift.c \
+		cplug.c
 # A program compressed for agent-update, and one agent-build sent so:
 # the agent's.
 SRCS+=		zprog.c
@@ -27,6 +28,7 @@ ARC_CLUSTER=	yes
 CFLAGS+=	-I${.CURDIR}/../../usr.sbin/arcana-agent/ira
 CFLAGS+=	${LWS_CFLAGS} ${UCL_CFLAGS} ${SSL_CFLAGS} \
 		-DARCW_WEBROOT=\"${PREFIX}/www/arcana-console\" \
+		-DARCW_PLUGINS=\"${PREFIX}/share/arcana-console/plugins\" \
 		-DARCW_CONF=\"${PREFIX}/etc/arcana/web.conf\"
 LDADD+=		${LWS_LIBS} ${UCL_LIBS} ${SSL_LDFLAGS} -lssl -lcrypto -lfetch \
 		-lcrypt -lutil -lm -lpthread -lz
