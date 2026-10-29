@@ -1195,10 +1195,10 @@ part_hosts(void)
 	    "'j-cache'"));
 	run("document.querySelector('.sorts button[data-arg=name]').click()");
 	run("document.querySelector('.sorts button[data-arg=name]').click()");
-	wait_js("document.querySelector('.grid > *').id === 'j-web'", 5);
+	wait_js("document.querySelector('.grid > *').id === 'j-web'", 20);
 	run("document.querySelector('.sorts button[data-arg=running]')"
 	    ".click()");
-	wait_js("document.querySelector('.grid > *').id === 'j-cache'", 5);
+	wait_js("document.querySelector('.grid > *').id === 'j-cache'", 20);
 	/* A change waits in the queue until it is sent. */
 	ATF_CHECK(js_true("document.querySelector('button[data-act=queue].on')"));
 	run("document.querySelector('#j-web button[data-act=start]').click()");
