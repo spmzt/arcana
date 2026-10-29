@@ -518,9 +518,12 @@ fw_trace_body()
 	kldstat -q -m ipfw || atf_skip "ipfw(4) is not loaded"
 	kldload -n dtraceall || atf_skip "no dtrace(4)"
 	start_daemon
-	ping -c 6 -i 0.3 127.0.0.1 >/dev/null 2>&1 &
-	atf_check -o save:trace.json "$JGC" -c "$SOCK" ipfw trace 127.0.0.1 3 4
-	atf_check -o match:'"verdict":"pass","family":"inet","source":"127.0.0.1","destination":"127.0.0.1","proto":1,"sport":0,"dport":0,"rule":[0-9]+,"interface":"lo0","direction":"(in|out)"' \
+	# An address of its own: other tests' traffic to 127.0.0.1 would
+	# fill the limit before a ping.
+	atf_check ifconfig lo0 inet 127.0.0.57/32 alias
+	ping -S 127.0.0.57 -c 6 -i 0.3 127.0.0.57 >/dev/null 2>&1 &
+	atf_check -o save:trace.json "$JGC" -c "$SOCK" ipfw trace 127.0.0.57 3 4
+	atf_check -o match:'"verdict":"pass","family":"inet","source":"127.0.0.57","destination":"127.0.0.57","proto":1,"sport":0,"dport":0,"rule":[0-9]+,"interface":"lo0","direction":"(in|out)"' \
 	    -o match:'"seconds":3,"limit":4' cat trace.json
 	# No more than asked for.
 	atf_check -o inline:'4\n' sh -c "grep -o '\"ms\"' trace.json | wc -l | tr -d ' '"
@@ -528,6 +531,7 @@ fw_trace_body()
 fw_trace_cleanup()
 {
 	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	ifconfig lo0 inet 127.0.0.57 -alias 2>/dev/null
 	true
 }
 

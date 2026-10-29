@@ -83,7 +83,9 @@ libwebsockets, emscripten or the libraries' sources. The port,
 
 `make check` skips the tests that need root; run it as root to drive a
 throwaway jail (`arcana-test`, on `127.0.10.0/24` on `lo0`) through
-jail(8) for real.
+jail(8) for real.  `make check-root` runs the root cases (vnet jails,
+routes, carp) as root through mdo(1), with no descriptor above stderr
+passed on: jail_attach(2) refuses a process holding an open directory.
 
 ## Setting it up
 

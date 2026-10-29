@@ -134,6 +134,19 @@ check: .PHONY
 	for p in $$pids; do wait $$p || rc=1; done; \
 	exit $$rc
 
+# The cases that need root (vnet jails, routes, carp), as root through
+# mdo(1).  tools/closefds runs kyua with no descriptor above stderr:
+# jail_attach(2) refuses a process holding an open directory.
+check-root: .PHONY
+	@${MAKE} -j${CHECK_JOBS} -C ${.CURDIR} all
+	@${CC} -O2 -Wall -Werror -o ${.OBJDIR}/closefds \
+	    ${.CURDIR}/tools/closefds.c
+	@set -o pipefail; cd ${.OBJDIR}/usr.sbin/arcana-agent/tests && \
+	    mdo ${.OBJDIR}/closefds kyua test -k Kyuafile agent_root_test \
+	    2>&1 | sed -n '/->/p;$$p' || { kyua report --verbose \
+	    --results-filter broken,failed | awk '/^===> /{ \
+	    ctx = $$0 == "===> Execution context" } !ctx'; exit 1; }
+
 # Everything built is under obj/, cblink's under its own.
 clean cleandir: .PHONY
 	rm -rf ${ARC_TOP}/obj ${ARC_TOP}/cblink/obj
