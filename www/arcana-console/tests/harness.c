@@ -197,6 +197,23 @@ sweep_orphans(void)
 }
 
 /*
+ * What start() began is stopped when the case's process exits, passed
+ * or failed, also where the case has no cleanup of its own (a case
+ * killed for its time has one, which calls stop()): its agent and
+ * console otherwise outlive it, and the agents fill devd(8)'s clients.
+ * Not in a child forked since, whose exit is not the case's.
+ */
+static pid_t	 started_by;
+
+static void
+stop_at_exit(void)
+{
+
+	if (getpid() == started_by)
+		stop();
+}
+
+/*
  * arcana-agent on ./jgd.sock with a lab configuration and a stand-in for
  * jail(8), and the console on ./k.sock.  Their pids go to files for
  * cleanup.
@@ -215,6 +232,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	*argv[140];
 	FILE	*fp;
 	pid_t	 pid;
+
+	if (started_by == 0) {
+		started_by = getpid();
+		atexit(stop_at_exit);
+	}
 
 	sweep_orphans();
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
