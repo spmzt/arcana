@@ -1270,6 +1270,7 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	/* What the page's address named, now that its host can be found. */
 	loc_pending();
+	plugins_servers();
 }
 
 void
@@ -3052,6 +3053,7 @@ logout_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	app.screen = SCREEN_LOGIN;
 	app.auth_error[0] = '\0';
+	plugins_signed_out();
 	/* The reply is the status: which ways in the sign-in page offers. */
 	if (status == 200) {
 		app.ldap_on = jbool(o, "ldap");

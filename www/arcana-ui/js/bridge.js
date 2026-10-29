@@ -43,6 +43,399 @@ addToLibrary({
 	},
 
 	/*
+	 * Console plugins (the console's cplug.c, the page's plugins.c): the
+	 * files of each plugin a console owner enabled, loaded with the
+	 * integrity the console lists, and what their scripts are given,
+	 * window.Arcana.  A plugin that fails, to load or as it runs, is
+	 * told to the page as its error; the page goes on without it.
+	 * What a plugin's code is called for is caught alike.  The C side
+	 * is told by actions, after what it is doing is done.
+	 */
+	$arcPlug__deps: ["$arcStr"],
+	$arcPlug: {
+		plugins: {},	/* by id: { pending, reg, failed } */
+		listed: null,	/* the list as last given */
+		ev: {},		/* event: [{ id, fn }] */
+		want: "",	/* the screen the address names */
+		shown: null,	/* { id, name, rest, root, scr } */
+		cur: "",	/* the plugin whose code runs now */
+		servers: null,	/* the hosts as last told */
+		user: { name: "", role: "" },
+		version: "",
+		events: ["route", "theme", "servers", "signed-out",
+		    "gamepad-first"],
+
+		act: function (a, b, c) {
+			Promise.resolve().then(function () {
+				Module._arc_on_action(arcStr(a), arcStr(b),
+				    arcStr(c));
+			});
+		},
+		fail: function (id, e) {
+			var m = e && e.message ? e.message : String(e);
+
+			if (arcPlug.plugins[id])
+				arcPlug.plugins[id].failed = true;
+			arcPlug.act("plugin-error", id, m.slice(0, 300));
+		},
+		/* A plugin's function called, what it throws its error. */
+		call: function (id, fn, args) {
+			var was = arcPlug.cur, r;
+
+			if (typeof fn !== "function")
+				return (undefined);
+			arcPlug.cur = id;
+			try {
+				r = fn.apply(null, args);
+			} catch (e) {
+				arcPlug.fail(id, e);
+			}
+			arcPlug.cur = was;
+			return (r);
+		},
+		/* The plugin whose script runs, or whose function. */
+		whose: function () {
+			var s = document.currentScript;
+
+			return (s && s.dataset && s.dataset.plugin ?
+			    s.dataset.plugin : arcPlug.cur);
+		},
+		/* An event to every plugin that listens; true when one of
+		 * them took it (gamepad-first). */
+		emit: function (name, data) {
+			var took = false;
+
+			(arcPlug.ev[name] || []).forEach(function (h) {
+				if (arcPlug.call(h.id, h.fn, [data]) === true)
+					took = true;
+			});
+			return (took);
+		},
+		on: function (id, name, fn) {
+			if (arcPlug.events.indexOf(name) < 0)
+				throw new Error("Arcana.on: no event " + name);
+			if (typeof fn !== "function")
+				throw new Error("Arcana.on: " + name +
+				    ": not a function");
+			(arcPlug.ev[name] = arcPlug.ev[name] || []).push({
+			    id: id, fn: fn });
+			/* The hosts as they are, not only when they change. */
+			if (name === "servers" && arcPlug.servers !== null)
+				arcPlug.call(id, fn, [arcPlug.servers]);
+		},
+		register: function (def) {
+			var id = arcPlug.whose(), p = arcPlug.plugins[id], menu;
+
+			if (!p)
+				throw new Error("Arcana.registerPlugin: from " +
+				    "a plugin's own script only");
+			if (!def || def.id !== id)
+				throw new Error("Arcana.registerPlugin: it is " +
+				    "plugin " + id + ", not " + (def && def.id));
+			if (p.reg)
+				throw new Error("Arcana.registerPlugin: once");
+			p.reg = def;
+			Object.keys(def.on || {}).forEach(function (k) {
+				arcPlug.on(id, k, def.on[k]);
+			});
+			menu = (def.menu || []).filter(function (m) {
+				return (m && typeof m.label === "string" &&
+				    typeof m.screen === "string" && def.screens &&
+				    def.screens[m.screen]);
+			}).map(function (m) {
+				return ({ label: m.label, screen: m.screen });
+			});
+			if (menu.length > 0)
+				arcPlug.act("plugin-menu", id, JSON.stringify(menu));
+			/* Its screen named by the address before it was here. */
+			if (arcPlug.want !== "" && arcPlug.shown === null)
+				Promise.resolve().then(function () {
+					arcPlug.screen(arcPlug.want, true);
+				});
+		},
+		file: function (id, f) {
+			return ("/plugins/" + encodeURIComponent(id) + "/" +
+			    f.path.split("/").map(encodeURIComponent).join("/"));
+		},
+		/* Every plugin's files loaded, or failed: none is waited for. */
+		settled: function () {
+			return (Object.keys(arcPlug.plugins).every(function (id) {
+				return (arcPlug.plugins[id].pending === 0);
+			}));
+		},
+		done: function (id) {
+			var p = arcPlug.plugins[id];
+
+			if (--p.pending > 0)
+				return;
+			if (!p.failed)
+				arcPlug.act("plugin-loaded", id, "");
+			if (arcPlug.want !== "" && arcPlug.shown === null &&
+			    arcPlug.settled())
+				arcPlug.screen(arcPlug.want, true);
+		},
+		/*
+		 * The list from GET /api/plugins: each enabled plugin with
+		 * nothing wrong and not loaded yet, its styles and then its
+		 * scripts in their order.  A plugin disabled since stays
+		 * until the page is loaded again.
+		 */
+		load: function (text) {
+			var list;
+
+			if (text === arcPlug.listed)
+				return;
+			arcPlug.listed = text;
+			try {
+				list = JSON.parse(text).plugins || [];
+			} catch (e) {
+				return;
+			}
+			list.forEach(function (p) {
+				var files = p.files || [], st, sc;
+
+				if (!p.enabled || p.error || arcPlug.plugins[p.id])
+					return;
+				st = files.filter(function (f) {
+					return (f.kind === "style");
+				});
+				sc = files.filter(function (f) {
+					return (f.kind === "script");
+				});
+				arcPlug.plugins[p.id] = { pending: st.length +
+				    sc.length + 1, reg: null, failed: false };
+				st.forEach(function (f) {
+					var el = document.createElement("link");
+
+					el.rel = "stylesheet";
+					el.integrity = f.integrity;
+					el.crossOrigin = "anonymous";
+					el.dataset.plugin = p.id;
+					el.onload = function () {
+						arcPlug.done(p.id);
+					};
+					el.onerror = function () {
+						arcPlug.fail(p.id, "the browser would "
+						    + "not use " + f.path + ": not "
+						    + "served, or not as listed "
+						    + "(integrity)");
+						arcPlug.done(p.id);
+					};
+					el.href = arcPlug.file(p.id, f);
+					document.head.appendChild(el);
+				});
+				sc.forEach(function (f) {
+					var el = document.createElement("script");
+
+					/* In their order, as they come. */
+					el.async = false;
+					el.integrity = f.integrity;
+					el.crossOrigin = "anonymous";
+					el.dataset.plugin = p.id;
+					el.onload = function () {
+						arcPlug.done(p.id);
+					};
+					el.onerror = function () {
+						arcPlug.fail(p.id, "the browser would "
+						    + "not run " + f.path + ": not "
+						    + "served, or not as listed "
+						    + "(integrity)");
+						arcPlug.done(p.id);
+					};
+					el.src = arcPlug.file(p.id, f);
+					document.head.appendChild(el);
+				});
+				arcPlug.done(p.id);
+			});
+		},
+		/*
+		 * The screen the address names (<plugin>/<screen>[/rest]),
+		 * or none: a root over the whole page, the console's own
+		 * regions put away under it, the plugin's enter() given the
+		 * root and its ctx; leave() called, and the page as it was,
+		 * when another is named or none.  A screen not there once
+		 * every plugin is loaded is told to the page.
+		 */
+		screen: function (spec, again) {
+			var parts = spec.split("/"), id = parts[0],
+			    name = parts[1] || "", rest = parts.slice(2).join("/"),
+			    s = arcPlug.shown, p, scr, root, ctx;
+
+			if (spec === arcPlug.want && !again) {
+				if (s !== null)
+					document.title = (s.scr.title || s.name) +
+					    " · Arcana";
+				return;
+			}
+			arcPlug.want = spec;
+			if (s !== null && (spec === "" || s.id !== id ||
+			    s.name !== name))
+				arcPlug.hide();
+			else if (s !== null) {
+				s.rest = s.ctx.rest = rest;
+				return;
+			}
+			if (spec === "")
+				return;
+			p = arcPlug.plugins[id];
+			scr = p && p.reg && p.reg.screens ? p.reg.screens[name] :
+			    null;
+			if (!scr || typeof scr.enter !== "function") {
+				if (!p || arcPlug.settled())
+					arcPlug.act("plugin-missing", spec, "");
+				return;
+			}
+			root = document.createElement("div");
+			root.id = "plug-root";
+			root.className = "plug-root";
+			root.dataset.plugin = id;
+			root.dataset.screen = name;
+			document.body.appendChild(root);
+			document.documentElement.classList.add("plug-screen");
+			ctx = { plugin: id, screen: name, rest: rest,
+			    exit: function () {
+				arcPlug.act("plugin-exit", id + "/" + name, "");
+			    } };
+			arcPlug.shown = { id: id, name: name, rest: rest,
+			    root: root, scr: scr, ctx: ctx };
+			document.title = (scr.title || name) + " · Arcana";
+			arcPlug.call(id, scr.enter, [root, ctx]);
+		},
+		hide: function () {
+			var s = arcPlug.shown;
+
+			arcPlug.shown = null;
+			arcPlug.call(s.id, s.scr.leave, []);
+			s.root.remove();
+			document.documentElement.classList.remove("plug-screen");
+		},
+		/* What a plugin's script is given. */
+		init: function () {
+			window.Arcana = Object.freeze({
+				get version() {
+					return (arcPlug.version);
+				},
+				get user() {
+					return ({ name: arcPlug.user.name,
+					    role: arcPlug.user.role });
+				},
+				registerPlugin: function (def) {
+					arcPlug.register(def);
+				},
+				on: function (name, fn) {
+					var id = arcPlug.whose();
+
+					if (!arcPlug.plugins[id])
+						throw new Error("Arcana.on: from a "
+						    + "plugin's own code only");
+					arcPlug.on(id, name, fn);
+				},
+				/* A request to the console as the page makes
+				 * them: its own paths alone, JSON both ways. */
+				api: function (method, url, body) {
+					var o = { method: method || "GET",
+					    credentials: "same-origin", headers: {
+					    "X-Arcana": "1",
+					    Accept: "application/json" } };
+
+					if (typeof url !== "string" || url[0] !==
+					    "/" || url[1] === "/")
+						return (Promise.reject(new Error(
+						    "Arcana.api: a path of the "
+						    + "console's, as /api/...")));
+					if (body !== undefined && body !== null) {
+						o.headers["Content-Type"] =
+						    "application/json";
+						o.body = typeof body === "string" ?
+						    body : JSON.stringify(body);
+					}
+					return (fetch(url, o).then(function (r) {
+						return (r.text().then(function (t) {
+							var j = null, e;
+
+							try {
+								j = t ? JSON.parse(t) :
+								    null;
+							} catch (x) {
+							}
+							if (r.ok)
+								return (j);
+							e = new Error(j && j.error ?
+							    j.error.message ||
+							    String(j.error) :
+							    "HTTP " + r.status);
+							e.status = r.status;
+							e.body = j;
+							throw e;
+						}));
+					}));
+				},
+				navigate: function (hash) {
+					if (typeof hash === "string" &&
+					    hash[0] === "#")
+						location.hash = hash;
+				},
+				toast: function (text, bad) {
+					arcPlug.act("plugin-toast", bad ? "1" : "",
+					    String(text).slice(0, 300));
+				},
+				fullscreen: function (on) {
+					var d = document;
+
+					try {
+						if (on && !d.fullscreenElement)
+							d.documentElement
+							    .requestFullscreen()
+							    .catch(function () {});
+						else if (!on && d.fullscreenElement)
+							d.exitFullscreen()
+							    .catch(function () {});
+					} catch (e) {
+					}
+				}
+			});
+			/* An error thrown by a plugin's script: its own. */
+			window.addEventListener("error", function (e) {
+				var m = /\/plugins\/([a-z0-9-]+)\//.exec(
+				    e.filename || "");
+
+				if (m !== null && arcPlug.plugins[m[1]])
+					arcPlug.fail(m[1], e.error || e.message);
+			});
+		}
+	},
+
+	/* The plugins' list (plugins.c), with who is signed in. */
+	arc_plugins_set__deps: ["$arcPlug", "$UTF8ToString"],
+	arc_plugins_set: function (listp, versionp, userp, rolep) {
+		arcPlug.version = UTF8ToString(versionp);
+		arcPlug.user = { name: UTF8ToString(userp),
+		    role: UTF8ToString(rolep) };
+		arcPlug.load(UTF8ToString(listp));
+	},
+	/* After each drawing: the plugin's screen to show, or "". */
+	arc_plug_screen__deps: ["$arcPlug", "$UTF8ToString"],
+	arc_plug_screen: function (specp) {
+		arcPlug.screen(UTF8ToString(specp), false);
+	},
+	/* An event for the plugins, its data as JSON; after what the page
+	 * does now is done. */
+	arc_plug_event__deps: ["$arcPlug", "$UTF8ToString"],
+	arc_plug_event: function (namep, jsonp) {
+		var name = UTF8ToString(namep), data = null;
+
+		try {
+			data = JSON.parse(UTF8ToString(jsonp));
+		} catch (e) {
+		}
+		if (name === "servers")
+			arcPlug.servers = data;
+		Promise.resolve().then(function () {
+			arcPlug.emit(name, data);
+		});
+	},
+
+	/*
 	 * Replace the children of #id with html, keeping what has not
 	 * changed (and the field being typed in) so transitions and focus
 	 * survive re-rendering.
@@ -153,7 +546,7 @@ addToLibrary({
 	 * Events: clicks on [data-act], submitted forms (fields as a JSON
 	 * object), typing in [data-input], Escape, network and visibility.
 	 */
-	arc_events_init__deps: ["$arcStr"],
+	arc_events_init__deps: ["$arcStr", "$arcPlug"],
 	arc_events_init: function () {
 		function act(name, arg, value) {
 			var a = arcStr(name), b = arcStr(arg), c = arcStr(value);
@@ -161,6 +554,7 @@ addToLibrary({
 			Module._arc_on_action(a, b, c);
 		}
 
+		arcPlug.init();
 		document.addEventListener("click", function (e) {
 			var t = e.target.closest("[data-act]"), more, c;
 
@@ -226,7 +620,12 @@ addToLibrary({
 		});
 		/* Back, forward, or an address typed: go where it says. */
 		window.addEventListener("popstate", function () {
-			Module._arc_on_loc(arcStr(location.hash));
+			var h = location.hash;
+
+			Module._arc_on_loc(arcStr(h));
+			/* Said again otherwise: told by arc_loc_set. */
+			if (location.hash === h)
+				arcPlug.emit("route", { hash: h });
 		});
 		document.addEventListener("submit", function (e) {
 			var f = e.target, o = {}, i, el;
@@ -308,9 +707,9 @@ addToLibrary({
 		});
 
 		/*
-		 * Game mode: the console used by a game controller alone (a
-		 * Steam Deck in its Game Mode, the page a non-Steam game), by
-		 * the Gamepad API.  While one is in use the root has the class
+		 * A game controller: the console used by one alone (a Steam
+		 * Deck in its Game Mode, the page a non-Steam game), by the
+		 * Gamepad API.  While one is in use the root has the class
 		 * pad: a visible focus, larger targets, and the buttons' words
 		 * at the foot of the screen.  The D-pad and the left stick
 		 * move the focus to the nearest control that way; A presses
@@ -319,9 +718,13 @@ addToLibrary({
 		 * before or after, else to the side bar's page before or
 		 * after; the right stick scrolls, or pans the network map;
 		 * the triggers zoom it.  The standard mapping's buttons.
+		 *
+		 * Its first press is told to the plugins (gamepad-first); one
+		 * that takes it has it alone.  A plugin's screen reads the
+		 * controller itself: none of this while one is shown.
 		 */
 		var pad = { on: false, shown: false, frame: 0, held: {},
-		    next: {}, hint: null };
+		    next: {}, hint: null, told: false, mute: false };
 
 		function padVisible(el) {
 			var r = el.getBoundingClientRect();
@@ -498,6 +901,15 @@ addToLibrary({
 				padOff();
 				return;
 			}
+			/* A plugin's screen: its input, and nothing here until
+			 * every button is let go after it. */
+			if (arcPlug.shown !== null) {
+				if (pad.shown)
+					padShow(false);
+				pad.mute = true;
+				pad.frame = requestAnimationFrame(padTick);
+				return;
+			}
 			/* Used again after the mouse: shown again. */
 			if (!pad.shown && (g.buttons.some(function (x) {
 				return (x.pressed);
@@ -514,6 +926,26 @@ addToLibrary({
 
 				return (Math.abs(v) < 0.35 ? 0 : v);
 			};
+			if (pad.mute) {
+				if (!g.buttons.some(function (x) {
+					return (x.pressed);
+				})) {
+					pad.mute = false;
+					pad.held = {};
+				}
+				pad.frame = requestAnimationFrame(padTick);
+				return;
+			}
+			if (!pad.told && g.buttons.some(function (x) {
+				return (x.pressed);
+			})) {
+				pad.told = true;
+				if (arcPlug.emit("gamepad-first", { id: g.id })) {
+					pad.mute = true;
+					pad.frame = requestAnimationFrame(padTick);
+					return;
+				}
+			}
 			if (padEdge("up", b(12) || ax(1) < 0, now))
 				padMove(0, -1);
 			if (padEdge("down", b(13) || ax(1) > 0, now))
@@ -542,7 +974,7 @@ addToLibrary({
 			}
 			pad.frame = requestAnimationFrame(padTick);
 		}
-		/* The look of Game mode, and the buttons' words, on or off. */
+		/* A controller's look, and the buttons' words, on or off. */
 		function padShow(on) {
 			pad.shown = on;
 			document.documentElement.classList.toggle("pad", on);
@@ -1794,7 +2226,7 @@ addToLibrary({
 		a.remove();
 		setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
 	},
-	arc_theme_set__deps: ["$UTF8ToString"],
+	arc_theme_set__deps: ["$UTF8ToString", "$arcPlug"],
 	arc_theme_set: function (namep) {
 		var name = UTF8ToString(namep), meta;
 
@@ -1816,6 +2248,9 @@ addToLibrary({
 		if (meta)
 			meta.content = getComputedStyle(document.documentElement)
 			    .getPropertyValue("--bg").trim() || meta.content;
+		Promise.resolve().then(function () {
+			arcPlug.emit("theme", { theme: name });
+		});
 	},
 
 	/* The requests in flight that can be given up: id to its abort. */
@@ -2079,7 +2514,7 @@ addToLibrary({
 	arc_loc_get: function () {
 		return (arcStr(location.hash));
 	},
-	arc_loc_set__deps: ["$UTF8ToString"],
+	arc_loc_set__deps: ["$UTF8ToString", "$arcPlug"],
 	arc_loc_set: function (p, push) {
 		var h = UTF8ToString(p);
 
@@ -2092,6 +2527,9 @@ addToLibrary({
 				history.replaceState(null, "", h);
 		} catch (e) {
 		}
+		Promise.resolve().then(function () {
+			arcPlug.emit("route", { hash: h });
+		});
 	},
 
 	arc_title__deps: ["$UTF8ToString"],

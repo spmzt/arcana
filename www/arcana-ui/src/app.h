@@ -87,6 +87,10 @@ void		 arc_gl_note(const char *);
 void		 arc_gl_fresh(void);
 int		 arc_css_rgb(const char *);
 void		 arc_install_dismiss(void);
+void		 arc_plugins_set(const char *, const char *, const char *,
+		    const char *);
+void		 arc_plug_screen(const char *);
+void		 arc_plug_event(const char *, const char *);
 
 /* Called from bridge.js. */
 void		 arc_on_action(char *, char *, char *);
@@ -1012,7 +1016,7 @@ bool		 workflows_action(const char *, const char *, const char *);
 /* view.c: the settings' tabs. */
 enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
     SET_WEBCONF, SET_NEWS, SET_CA, SET_UPDATE, SET_USERS, SET_AAA,
-    SET_CLUSTER };
+    SET_CLUSTER, SET_PLUGINS };
 /* The AAA tab's own: who signs in (users, roles, keys, the directory),
  * and what programs use (tokens). */
 enum { AAA_USERS, AAA_ROLES, AAA_KEYS, AAA_LDAP, AAA_TOKENS, AAA_GROUPS };
@@ -1033,6 +1037,18 @@ void		 ca_load(void);
 void		 day_text(char *, size_t, int64_t);
 void		 cluster_tick(double);
 void		 set_cluster(struct html *);
+/* plugins.c: console plugins, the page's side. */
+void		 plugins_tick(double);
+void		 plugins_poke(void);
+void		 plugins_open(const char *);
+void		 plugins_close(void);
+bool		 plugins_loc(char *, size_t);
+void		 plugins_render(void);
+void		 plugins_servers(void);
+void		 plugins_signed_out(void);
+void		 plugins_menu(struct html *);
+bool		 plugins_action(const char *, const char *, const char *);
+void		 set_plugins(struct html *);
 void		 ca_tick(double);
 void		 set_ca(struct html *);
 bool		 ca_form(const char *, const ucl_object_t *);

@@ -91,6 +91,7 @@ render(void)
 	    app.screen == SCREEN_CONSOLE ? s->name : "",
 	    s != NULL && app.screen == SCREEN_CONSOLE ? " · " : "", APP_NAME);
 	arc_title(title);
+	plugins_render();
 	loc_show();
 }
 
@@ -168,6 +169,8 @@ loc_of(char *buf, size_t len)
 	struct server	*s;
 	char		 jail[sizeof(app.jail) * 3];
 
+	if (plugins_loc(buf, len))
+		return;
 	s = cur_server();
 	switch (app.node) {
 	case NODE_NETWORK:
@@ -255,8 +258,18 @@ loc_go(const char *r)
 {
 	char	 buf[sizeof(loc_wanted)], *f[4], *q, *query;
 	char	 id[sizeof(app.servers[0].id)], arg[sizeof(app.jail)];
+	const char *p;
 	int	 i, np;
 
+	/* A plugin's screen, over the page as it is: the rest of the
+	 * address is the plugin's own.  Any other address puts it away. */
+	for (p = r; *p == '#' || *p == '/'; p++)
+		;
+	if (strncmp(p, "p/", 2) == 0) {
+		plugins_open(p + 2);
+		return;
+	}
+	plugins_close();
 	snprintf(buf, sizeof(buf), "%s", r);
 	query = strchr(buf, '?');
 	buf[strcspn(buf, "?")] = '\0';
@@ -514,6 +527,7 @@ tick(void *arg)
 			sysview_tick(now);
 			ca_tick(now);
 			cluster_tick(now);
+			plugins_tick(now);
 			net_live_tick(now);
 			monitors_tick(now);
 			tq_tick(now);
@@ -1081,7 +1095,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	bool			 replug = false;
 
 	s = cur_server();
-	if (export_action(act, arg, value) || hostconf_action(act, arg, value) ||
+	if (plugins_action(act, arg, value) ||
+	    export_action(act, arg, value) || hostconf_action(act, arg, value) ||
 	    templates_action(act, arg, value) ||
 	    topo_action(act, arg, value) || tq_action(act, arg, value) ||
 	    ng_action(act, arg, value) ||
@@ -2232,8 +2247,10 @@ arc_on_visible(int visible)
 {
 
 	app.visible = visible != 0;
-	if (app.visible)
+	if (app.visible) {
 		last_refresh = 0;
+		plugins_poke();
+	}
 }
 
 int

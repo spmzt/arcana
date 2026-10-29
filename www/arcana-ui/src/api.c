@@ -135,6 +135,7 @@ arc_on_http(int id, int status, char *text)
 		app.api = LINK_UP;
 	if (status == 401 && app.screen == SCREEN_CONSOLE) {
 		app.screen = SCREEN_LOGIN;
+		plugins_signed_out();
 		snprintf(app.auth_error, sizeof(app.auth_error),
 		    "Your session ended. Touch your key to continue.");
 	}

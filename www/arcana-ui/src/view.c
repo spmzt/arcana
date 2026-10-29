@@ -315,6 +315,8 @@ topbar(struct html *h)
 		    app.notify_off ? "off, press to turn on" : "on, press to "
 		    "turn off" : app.notify == 2 ? "blocked in the browser's "
 		    "settings" : "off, press to allow");
+	/* What console plugins add (plugins.c). */
+	plugins_menu(h);
 	h_raw(h, "<button class=\"ghost\" data-act=\"logout\">Log out</button>");
 	if (app.user[0] != '\0')
 		h_raw(h, "</div></div>");
@@ -1515,6 +1517,7 @@ static const struct {
 	{ SET_UPDATE, "update", "Update" },
 	{ SET_CA, "ca", "Certificate authority" },
 	{ SET_CLUSTER, "cluster", "Cluster" },
+	{ SET_PLUGINS, "plugins", "Plugins" },
 	{ SET_WEBCONF, "webconf", "web.conf" },
 	{ SET_NEWS, "news", "What's new" },
 };
@@ -2293,6 +2296,9 @@ view_settings(struct html *h)
 		break;
 	case SET_CLUSTER:
 		set_cluster(h);
+		break;
+	case SET_PLUGINS:
+		set_plugins(h);
 		break;
 	default:
 		set_look(h);

@@ -190,6 +190,42 @@ host's administrator installed and a console owner enabled is served.
   headers every reply has (above), `Cache-Control: no-cache` and the hash as the
   ETag; read and hashed again as it is sent, its real path checked to
   be in the plugin's directory.  Anything else is not found.
+* **Loaded** by the page (`bridge.js`, `plugins.c`) once signed in:
+  the list is read then and again with the health (every 15 s while
+  the page is looked at), and each enabled plugin with no error that
+  the page has not loaded yet gets its styles (`<link rel=stylesheet
+  integrity crossorigin>`) and its scripts (`<script integrity>`, in
+  `entry` order).  A file the browser refuses (its bytes not what was
+  listed), a script that throws, a plugin function that throws: the
+  plugin's error, shown in Settings, Plugins and in a toast; the page
+  goes on without it.  Enabled, a plugin is loaded at once; disabled,
+  it stays in a page until that page is loaded again (Settings says
+  so).  Settings, Plugins lists them (name, version, author, provides,
+  enabled, and what the page made of each) and has Enable and Disable
+  for a console owner.
+
+The page gives a plugin's scripts `window.Arcana`:
+
+| Member | What |
+|---|---|
+| `version` | the console's version |
+| `user` | `{name, role}` of who is signed in |
+| `registerPlugin({id, screens, menu, on})` | once, from the plugin's own script, `id` its own; `on` as `Arcana.on` for each key |
+| `api(method, url, body)` | a request to the console as the page makes them (its session, `X-Arcana`), a path of the console's alone; `body` sent as JSON; a Promise of the reply's JSON, rejected with an `Error` (`status`, `body`) unless 2xx |
+| `navigate(hash)` | goes to an address of the page (`#/...`) |
+| `toast(text, bad)` | a toast, an error's when `bad` |
+| `fullscreen(on)` | the page over the whole screen, or not, where the browser lets it |
+| `on(event, fn)` | `route` (`{hash}`, each address), `theme` (`{theme}`), `servers` (`[{id, name, local}]`, when the hosts change, and at once with them as they are), `signed-out`, `gamepad-first` (`{id}`, a controller's first press on the console's pages; a handler that returns `true` takes it, and the page does nothing with that press) |
+
+`screens: {<name>: {title, enter(root, ctx), leave()}}` are the
+plugin's screens, at `#/p/<plugin>/<name>[/<rest>]`: shown, the page's
+own regions are put away and its controller overlay is off (the screen
+reads the Gamepad API itself), `enter` gets a root element over the
+whole page and `ctx` (`plugin`, `screen`, `rest`, `exit()` back to the
+page as it was); `leave` is called when another address is gone to.
+The rest of the address is the plugin's: `route` tells it when it
+changes.  `menu: [{label, screen}]` adds entries to the account menu
+that open a screen of the plugin's.
 
 ## Enrolment (host to console)
 

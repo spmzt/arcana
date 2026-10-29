@@ -24,6 +24,7 @@
 #include <openssl/evp.h>
 
 #include <atf-c.h>
+#include <fcntl.h>
 #include <math.h>
 #include <signal.h>
 #include <stdio.h>
@@ -546,7 +547,7 @@ prologue(const atf_tc_t *tc, int nservers)
 }
 
 /*
- * Game mode: a controller (a stand-in for the Gamepad API's) shows the
+ * A game controller (a stand-in for the Gamepad API's) shows the
  * buttons' words, moves a visible focus with the D-pad, and goes to the
  * next tab with RB, the side bar's next page where there is none.
  */
@@ -7624,7 +7625,7 @@ ATF_TC_WITH_CLEANUP(pwa_pad);
 ATF_TC_HEAD(pwa_pad, tc)
 {
 
-	atf_tc_set_md_var(tc, "descr", "Game mode: a controller moves the focus, presses and goes between tabs, its buttons' words shown");
+	atf_tc_set_md_var(tc, "descr", "A game controller moves the focus, presses and goes between tabs, its buttons' words shown");
 	atf_tc_set_md_var(tc, "timeout", "120");
 }
 ATF_TC_BODY(pwa_pad, tc)
@@ -7634,6 +7635,228 @@ ATF_TC_BODY(pwa_pad, tc)
 	part_pad();
 }
 ATF_TC_CLEANUP(pwa_pad, tc)
+{
+
+	browser_stop();
+}
+
+/*
+ * Console plugins in the page: a test plugin with a screen, a menu
+ * entry and what it reads of window.Arcana; one whose script throws;
+ * one whose file is changed after it was listed, its size and time
+ * kept, so that the console lists it as it was and serves it as it is.
+ */
+static const char cplug_test_js[] =
+    "window.tlog = [];\n"
+    "Arcana.registerPlugin({\n"
+    "\tid: 'test',\n"
+    "\tscreens: {\n"
+    "\t\tmain: {\n"
+    "\t\t\ttitle: 'Test screen',\n"
+    "\t\t\tenter: function (root, ctx) {\n"
+    "\t\t\t\tvar h = document.createElement('h1');\n"
+    "\t\t\t\tvar b = document.createElement('button');\n"
+    "\t\t\t\th.id = 'test-h';\n"
+    "\t\t\t\th.textContent = 'Test screen';\n"
+    "\t\t\t\tb.id = 'test-exit';\n"
+    "\t\t\t\tb.textContent = 'Exit';\n"
+    "\t\t\t\tb.addEventListener('click', function () { ctx.exit(); });\n"
+    "\t\t\t\troot.append(h, b);\n"
+    "\t\t\t\twindow.tctx = { rest: ctx.rest };\n"
+    "\t\t\t\twindow.tlog.push('enter ' + ctx.rest);\n"
+    "\t\t\t},\n"
+    "\t\t\tleave: function () { window.tlog.push('leave'); }\n"
+    "\t\t}\n"
+    "\t},\n"
+    "\tmenu: [{ label: 'Test screen', screen: 'main' }],\n"
+    "\ton: {\n"
+    "\t\troute: function (r) { window.tlog.push('route ' + r.hash); },\n"
+    "\t\tservers: function (s) { window.tservers = s; }\n"
+    "\t}\n"
+    "});\n"
+    "Arcana.on('gamepad-first', function () {\n"
+    "\twindow.tpad = (window.tpad || 0) + 1;\n"
+    "\treturn (true);\n"
+    "});\n"
+    "window.tuser = Arcana.user;\n"
+    "window.tversion = Arcana.version;\n"
+    "Arcana.api('GET', '/api/servers').then(function (o) {\n"
+    "\twindow.tapi = o;\n"
+    "});\n";
+
+static void
+cplug_put(const char *id, const char *name, const char *js, const char *css)
+{
+	char	path[MAXPATHLEN], json[512];
+
+	snprintf(path, sizeof(path), "plugins/%s", id);
+	ATF_REQUIRE(mkdir(path, 0755) == 0);
+	snprintf(json, sizeof(json), "{\"id\":\"%s\",\"name\":\"%s\","
+	    "\"version\":\"1.0.0\",\"arcana\":\"0.1.0\",\"description\":"
+	    "\"A plugin of the tests\",\"author\":\"Tests\",\"entry\":"
+	    "[\"main.js\"]%s,\"provides\":[\"screen\"]}", id, name, css != NULL ?
+	    ",\"styles\":[\"look.css\"]" : "");
+	snprintf(path, sizeof(path), "plugins/%s/plugin.json", id);
+	put(path, json);
+	snprintf(path, sizeof(path), "plugins/%s/main.js", id);
+	put(path, js);
+	if (css != NULL) {
+		snprintf(path, sizeof(path), "plugins/%s/look.css", id);
+		put(path, css);
+	}
+}
+
+#define	CPLUG_ROW(id)	"document.querySelector('table.cplugs " \
+			    "tr[data-plugin=" id "]')"
+#define	CPLUG_STATE(id, text)	"(" CPLUG_ROW(id) " || {})." \
+			    "textContent.includes('" text "')"
+
+static void
+part_cplug(void)
+{
+	struct stat	sb;
+	struct timespec	ts[2];
+	FILE		*fp;
+
+	/* Listed in Settings, none enabled: nothing loaded, Arcana there. */
+	run("location.hash = '#/settings/plugins'");
+	wait_js("document.querySelectorAll('table.cplugs tr[data-plugin]')."
+	    "length === 3", 10);
+	ATF_CHECK(js_true("typeof Arcana.registerPlugin === 'function' && "
+	    "!document.querySelector('script[data-plugin]')"));
+	/* Its table sorts and filters as every table does. */
+	click_when("table.cplugs th.sortable", 5);
+	wait_js("[...document.querySelectorAll('table.cplugs tr[data-plugin]')]"
+	    ".map(r => r.dataset.plugin).join() === 'broken,tamper,test'", 5);
+	click_when("table.cplugs th.sortable", 5);
+	wait_js("[...document.querySelectorAll('table.cplugs tr[data-plugin]')]"
+	    ".map(r => r.dataset.plugin).join() === 'test,tamper,broken'", 5);
+	run("const f = document.getElementById('filter'); f.value = 'Tamp'; "
+	    "f.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("document.querySelectorAll('table.cplugs tr[data-plugin]')."
+	    "length === 1 && " CPLUG_ROW("tamper"), 5);
+	run("const f = document.getElementById('filter'); f.value = ''; "
+	    "f.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("document.querySelectorAll('table.cplugs tr[data-plugin]')."
+	    "length === 3", 5);
+
+	/* Changed on disk as it was listed: its size and time kept. */
+	ATF_REQUIRE(stat("plugins/tamper/main.js", &sb) == 0);
+	ATF_REQUIRE((fp = fopen("plugins/tamper/main.js", "r+")) != NULL);
+	fputs("window.tampered = 2;\n", fp);
+	fclose(fp);
+	ts[0] = sb.st_atim;
+	ts[1] = sb.st_mtim;
+	ATF_REQUIRE(utimensat(AT_FDCWD, "plugins/tamper/main.js", ts, 0) == 0);
+
+	/* Enabled: loaded at once with its integrity, given Arcana. */
+	click_when("tr[data-plugin=test] button[data-act=plugin-enable]", 10);
+	wait_js("window.tapi && Array.isArray(window.tapi.servers) && "
+	    "window.tservers && window.tservers.length === 1 && "
+	    "window.tservers[0].name === 'lab' && window.tuser.name !== '' && "
+	    "/^[0-9]+[.][0-9]+[.][0-9]+/.test(window.tversion) && "
+	    CPLUG_STATE("test", "running here"), 15);
+	ATF_CHECK(js_true("document.querySelector('script[data-plugin=test]')."
+	    "integrity.startsWith('sha384-') && document.querySelector("
+	    "'link[data-plugin=test]').integrity.startsWith('sha384-')"));
+	wait_js("document.querySelector('button[data-act=plugin-open]"
+	    "[data-arg=\"test/main\"]')", 5);
+	shot("0c-cplug-settings");
+
+	/* Its screen from its menu entry, over the page; ctx.exit() back. */
+	run("document.querySelector('button[data-act=plugin-open][data-arg="
+	    "\"test/main\"]').click()");
+	wait_js("location.hash === '#/p/test/main' && document.querySelector("
+	    "'#plug-root #test-h') && document.documentElement.classList."
+	    "contains('plug-screen') && document.querySelector('.shell')."
+	    "offsetParent === null && getComputedStyle(document."
+	    "getElementById('test-h')).color === 'rgb(1, 2, 3)' && "
+	    "document.title.startsWith('Test screen')", 10);
+	shot("0c-cplug-screen");
+	run("document.getElementById('test-exit').click()");
+	wait_js("!document.getElementById('plug-root') && location.hash === "
+	    "'#/settings/plugins' && window.tlog.includes('leave') && "
+	    "document.querySelector('.shell').offsetParent !== null", 10);
+	ATF_CHECK(js_true("window.tlog.includes('route #/p/test/main')"));
+
+	/* A controller's first press on the page: the plugin took it. */
+	run("window.__pad = { connected: true, index: 0, id: 'stand-in', "
+	    "mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({ "
+	    "length: 17 }, () => ({ pressed: false, value: 0 })) }; "
+	    "navigator.getGamepads = () => [window.__pad]; "
+	    "window.dispatchEvent(new Event('gamepadconnected'));");
+	run("document.activeElement.blur(); window.__pad.buttons[13].pressed "
+	    "= true;");
+	wait_js("window.tpad === 1", 10);
+	ATF_CHECK(js_true("document.activeElement === document.body"));
+	run("window.__pad.buttons[13].pressed = false;");
+	usleep(300000);
+	run("window.__pad.buttons[13].pressed = true;");
+	wait_js("document.activeElement !== document.body", 10);
+	run("window.__pad.buttons[13].pressed = false;");
+	ATF_CHECK(js_true("window.tpad === 1"));
+
+	/* One that throws: its error said, the page goes on. */
+	click_when("tr[data-plugin=broken] button[data-act=plugin-enable]", 10);
+	wait_js(CPLUG_STATE("broken", "broken on purpose"), 15);
+	click_when("button.tab[data-arg=look]", 5);
+	wait_js("document.querySelector('.themes')", 5);
+	click_when("button.tab[data-arg=plugins]", 5);
+	/* One not as listed: the browser refuses it, and it is said. */
+	wait_js(CPLUG_ROW("tamper") " && " CPLUG_ROW("tamper") ".querySelector("
+	    "'button[data-act=plugin-enable]:not([disabled])')", 10);
+	click_when("tr[data-plugin=tamper] button[data-act=plugin-enable]", 10);
+	wait_js(CPLUG_STATE("tamper", "integrity"), 15);
+	ATF_CHECK(!js_true("window.tampered"));
+	shot("0c-cplug-errors");
+
+	/* Its screen by the address a page is opened at, the rest of the
+	 * address its own. */
+	go("/#/p/test/main/a/b");
+	wait_js("document.querySelector('#plug-root #test-h') && "
+	    "window.tctx.rest === 'a/b' && location.hash === "
+	    "'#/p/test/main/a/b'", 20);
+	/* A screen none has: said, and the page's own again. */
+	run("location.hash = '#/p/test/nosuch'");
+	wait_js("!document.getElementById('plug-root') && location.hash !== "
+	    "'#/p/test/nosuch' && [...document.querySelectorAll('.toast')]."
+	    "some(t => t.textContent.includes('No plugin'))", 10);
+
+	/* Disabled: running here until the page is loaded again. */
+	run("location.hash = '#/settings/plugins'");
+	wait_js(CPLUG_STATE("test", "running here"), 10);
+	click_when("tr[data-plugin=test] button[data-act=plugin-enable]", 10);
+	wait_js(CPLUG_STATE("test", "until this page is reloaded"), 10);
+	go("/");
+	wait_js("document.querySelector('script[data-plugin=broken]')", 20);
+	ATF_CHECK(!js_true("document.querySelector('script[data-plugin=test]') "
+	    "|| document.querySelector('button[data-act=plugin-open]')"));
+}
+
+ATF_TC_WITH_CLEANUP(pwa_cplug);
+ATF_TC_HEAD(pwa_cplug, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Console plugins in the page: listed and enabled in Settings, loaded with their integrity, window.Arcana, a plugin's screen and menu entry, a plugin that throws and one not as listed told");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_cplug, tc)
+{
+	char	dir[MAXPATHLEN];
+
+	ATF_REQUIRE(getcwd(dir, sizeof(dir)) != NULL);
+	ATF_REQUIRE(mkdir("plugins", 0755) == 0);
+	cplug_put("test", "Test", cplug_test_js,
+	    "#test-h { color: rgb(1, 2, 3); }\n");
+	cplug_put("broken", "Broken", "throw new Error('broken on "
+	    "purpose');\n", NULL);
+	cplug_put("tamper", "Tamper", "window.tampered = 1;\n", NULL);
+	snprintf(harness_webconf, sizeof(harness_webconf), "plugins_dir = "
+	    "\"%s/plugins\";\n", dir);
+	prologue(tc, 1);
+	part_cplug();
+}
+ATF_TC_CLEANUP(pwa_cplug, tc)
 {
 
 	browser_stop();
@@ -9468,6 +9691,7 @@ ATF_TP_ADD_TCS(tp)
 
 	ATF_TP_ADD_TC(tp, pwa_shell);
 	ATF_TP_ADD_TC(tp, pwa_pad);
+	ATF_TP_ADD_TC(tp, pwa_cplug);
 	ATF_TP_ADD_TC(tp, pwa_routes);
 	ATF_TP_ADD_TC(tp, pwa_hosts);
 	ATF_TP_ADD_TC(tp, pwa_nacm);
