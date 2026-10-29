@@ -6,6 +6,10 @@ SRCS=		web.c keymgr.c routes.c api.c auth.c config.c hosts.c pki.c push.c server
 		stream.c follow.c tokens.c transfers.c workflows.c sdwan.c sdwan_edge.c \
 		store.c update.c webpush.c audit.c sen.c mail.c templates.c ldap.c labels.c notif.c prefixlists.c users.c \
 		craft.c nodes.c ytrans.c yjsonin.c restconf.c rcstream.c idsfiles.c drift.c
+# A program compressed for agent-update, and one agent-build sent so:
+# the agent's.
+SRCS+=		zprog.c
+.PATH:		${.CURDIR}/../../usr.sbin/arcana-agent/ira
 BINDIR?=	${PREFIX}/sbin
 MAN=		arcana-console.8
 
@@ -20,11 +24,12 @@ ARC_CLUSTER=	yes
 # Network tab's interfaces (ytrans.c), RESTCONF's reads (restconf.c).
 .include "${.CURDIR}/../../share/mk/arcana.yang.mk"
 
+CFLAGS+=	-I${.CURDIR}/../../usr.sbin/arcana-agent/ira
 CFLAGS+=	${LWS_CFLAGS} ${UCL_CFLAGS} ${SSL_CFLAGS} \
 		-DARCW_WEBROOT=\"${PREFIX}/www/arcana-console\" \
 		-DARCW_CONF=\"${PREFIX}/etc/arcana/web.conf\"
 LDADD+=		${LWS_LIBS} ${UCL_LIBS} ${SSL_LDFLAGS} -lssl -lcrypto -lfetch \
-		-lcrypt -lutil -lm -lpthread
+		-lcrypt -lutil -lm -lpthread -lz
 
 # The configuration's sample and the rc.d(8) script.
 FILESGROUPS+=	CONF RC

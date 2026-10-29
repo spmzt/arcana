@@ -40,6 +40,7 @@
 #include "yplug.h"
 #include "yprobes.h"
 #include "ytshoot.h"
+#include "zprog.h"
 
 enum op {
 	OP_HELLO,
@@ -1553,7 +1554,7 @@ agent_binary(uint8_t **binp, size_t *lenp, char sha[65])
 		    "send: agent_binary in web.conf names none" :
 		    "the console cannot read its arcana-agent");
 	if (fstat(fd, &sb) == -1 || !S_ISREG(sb.st_mode) || sb.st_size == 0 ||
-	    sb.st_size > ARC_MAX_BINARY || (bin = malloc((size_t)sb.st_size)) ==
+	    sb.st_size > ARC_MAX_PROGRAM || (bin = malloc((size_t)sb.st_size)) ==
 	    NULL) {
 		close(fd);
 		return ("the console's arcana-agent is not a program an "
@@ -1845,9 +1846,9 @@ call_run(struct task *t)
 	struct arc_sdwan_ids_req sdq5;
 	struct arc_sdwan_ids_rsp *sdr5;
 	struct arc_source_head_rsp *shr;
-	uint8_t			*bin, *sig;
+	uint8_t			*bin, *sig, *z;
 	size_t			 siglen;
-	size_t			 binlen;
+	size_t			 binlen, zlen;
 	char			 sha[65];
 	unsigned char		 md[EVP_MAX_MD_SIZE];
 	unsigned int		 mdlen;
@@ -3186,6 +3187,11 @@ connected:
 		abq.ref = cfg.agent_ref;
 		abq.ssh_key = cfg.agent_ssh_key;
 		abq.host_keys = c->host_keys;
+		/* Sent back compressed by an agent that can. */
+		if ((error = arc_hello(&cl, &hr)) != 0)
+			goto rpcfail;
+		abq.compress = hr->host != NULL && zprog_taken(
+		    hr->host->features.v, hr->host->features.n);
 		if ((error = arc_agent_build(&cl, &abq, &abr)) != 0)
 			goto rpcfail;
 		ok = abr->ok;
@@ -3201,9 +3207,21 @@ connected:
 		nsteps = abr->trace.n;
 		if (!ok)
 			break;
+		/* Compressed, it is inflated first: its SHA-256 is the
+		 * program's. */
+		binlen = abr->binary.len;
+		if (abr->has_program_size) {
+			if ((msg = zprog_inflate(abr->binary.p, abr->binary.len,
+			    abr->program_size, ARC_MAX_PROGRAM, &bin)) != NULL) {
+				ok = false;
+				put_str(top, "error", msg);
+				break;
+			}
+			binlen = abr->program_size;
+		}
 		/* What arrived has to be what the host says it built. */
-		if (abr->sha256 == NULL || abr->binary.len == 0 ||
-		    EVP_Digest(abr->binary.p, abr->binary.len, md, &mdlen,
+		if (abr->sha256 == NULL || binlen == 0 || EVP_Digest(bin !=
+		    NULL ? bin : abr->binary.p, binlen, md, &mdlen,
 		    EVP_sha256(), NULL) != 1) {
 			ok = false;
 			put_str(top, "error", "the host sent no program");
@@ -3214,8 +3232,8 @@ connected:
 		if (strcmp(sha, abr->sha256) != 0)
 			msg = "the program does not match its SHA-256";
 		else
-			msg = agent_keep(abr->binary.p, abr->binary.len,
-			    abr->agent_version);
+			msg = agent_keep(bin != NULL ? bin : abr->binary.p,
+			    binlen, abr->agent_version);
 		if (msg != NULL) {
 			ok = false;
 			put_str(top, "error", msg);
@@ -3238,6 +3256,44 @@ connected:
 			break;
 		}
 		memset(&auq, 0, sizeof(auq));
+		/*
+		 * Compressed for an agent that takes it so; as it is for one
+		 * before, which takes no more than max-binary bytes.  The
+		 * signature and the SHA-256 are the program's either way.
+		 */
+		if ((error = arc_hello(&cl, &hr)) != 0) {
+			free(sig);
+			sig = NULL;
+			goto rpcfail;
+		}
+		if (hr->host != NULL && zprog_taken(hr->host->features.v,
+		    hr->host->features.n)) {
+			if (zprog_deflate(bin, binlen, &z, &zlen) != 0)
+				msg = "the console cannot compress its "
+				    "arcana-agent";
+			else if (zlen > ARC_MAX_BINARY) {
+				free(z);
+				msg = "the console's arcana-agent does not "
+				    "compress into what an update carries";
+			} else {
+				auq.has_program_size = true;
+				auq.program_size = (uint32_t)binlen;
+				free(bin);
+				bin = z;
+				binlen = zlen;
+			}
+		} else if (binlen > ARC_MAX_BINARY)
+			msg = "this host's arcana-agent is older than compressed "
+			    "updates and cannot take the console's, bigger than "
+			    "it takes uncompressed: update it to arcana-agent "
+			    ZPROG_SINCE " first";
+		if (msg != NULL) {
+			free(sig);
+			sig = NULL;
+			ok = false;
+			put_str(top, "error", msg);
+			break;
+		}
 		auq.binary.p = bin;
 		auq.binary.len = binlen;
 		auq.sha256 = sha;

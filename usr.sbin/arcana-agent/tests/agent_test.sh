@@ -8612,7 +8612,8 @@ echo "HOME=\$HOME" >> $(pwd)/made
 [ -f $(pwd)/make-fails ] && exit 1
 case " \$* " in
 *" -V .OBJDIR "*) echo "\$dir/obj" ;;
-*/usr.sbin/arcana-agent*) mkdir -p "\$dir/obj" && cp "$JGD" "\$dir/obj/arcana-agent" ;;
+*/usr.sbin/arcana-agent*) src="$JGD"; [ -f $(pwd)/big-agent ] && src=$(pwd)/big-agent
+	mkdir -p "\$dir/obj" && cp "\$src" "\$dir/obj/arcana-agent" ;;
 esac
 EOS
 	# The server's host key is a real one, so that ssh-keygen(1) can
@@ -8633,6 +8634,7 @@ EOS
 
 	atf_check -o match:'^Built: +[0-9]+\.[0-9]+' \
 	    -o match:'git clone --depth 1 --recurse-submodules --shallow-submodules --branch main -- https://example.org/arcana.git' \
+	    -o match:'deflate\(3\)' \
 	    "$JGC" -t -c "$SOCK" agent-build -o built https://example.org/arcana.git main
 	atf_check cmp -s "$JGD" built
 	atf_check test -x built
@@ -8642,6 +8644,15 @@ EOS
 	    sh -c "grep -v -e '^HOME=' -e '-V .OBJDIR' made | sed -n \
 	    -e 's,.* cblink-build\$,cblink-build,p' -e 's,.*/lib/\\(lib[a-z]*\\) .*,\\1,p' \
 	    -e 's,.*/usr.sbin/arcana-agent .*,arcana-agent,p'"
+	# Sent back compressed: past max-binary, as a frame would not carry
+	# it as it is.
+	dd if=/dev/zero of=zeros bs=1m count=7 2>/dev/null
+	cat "$JGD" zeros > big-agent
+	chmod +x big-agent
+	atf_check -o match:'^Built: ' "$JGC" -c "$SOCK" agent-build -o built \
+	    https://example.org/arcana.git main
+	atf_check cmp -s big-agent built
+	rm big-agent zeros
 	# What was built is said by its commit, and the head of the
 	# repository is asked without cloning or building anything.
 	atf_check -o match:'^Commit: +1111111111111111111111111111111111111111$' \
@@ -8860,12 +8871,19 @@ agent_update_body()
 	    "$JGC" -c "$SOCK" agent-update bogus
 	atf_check -o inline:'old\n' cat installed-agent
 	atf_check test ! -e installed-agent.new
-	# The real one does, and the one before is kept.
+	# The real one does, sent compressed, and the one before is kept.
 	atf_check -o match:'^Agent: +[0-9]+\.[0-9]+.* in place' \
-	    "$JGC" -c "$SOCK" agent-update "$JGD"
+	    -o match:'inflate\(3\)' \
+	    "$JGC" -t -c "$SOCK" agent-update "$JGD"
 	atf_check cmp -s "$JGD" installed-agent
 	atf_check -o inline:'old\n' cat installed-agent.old
 	atf_check test ! -e running.arcana_agent
+	# As it is with -p, as to an agent before compressed updates.
+	rm -f installed-agent && echo old > installed-agent
+	atf_check -o match:'^Agent: +[0-9]+\.[0-9]+.* in place' \
+	    -o not-match:'inflate' \
+	    "$JGC" -t -c "$SOCK" agent-update -p "$JGD"
+	atf_check cmp -s "$JGD" installed-agent
 	# With -r the service is restarted, after the reply.
 	atf_check -o match:'"restarting":"true"' -o match:'replace' \
 	    "$JGC" --libxo json -t -c "$SOCK" agent-update -r "$JGD"
@@ -8876,6 +8894,95 @@ agent_update_body()
 	atf_check test -e running.arcana_agent
 }
 agent_update_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case agent_update_gzip cleanup
+agent_update_gzip_head()
+{
+	atf_set "descr" "A program sent compressed is inflated, bounded, " \
+	    "and checked as it runs"
+}
+agent_update_gzip_body()
+{
+	start_daemon
+	echo old > installed-agent
+	atf_check -o match:'gzip-update' "$JGC" --libxo json -c "$SOCK" hello
+	# Past max-binary, which a frame does not carry as it is: the real
+	# agent with 7 MiB of zeros after it still runs.
+	dd if=/dev/zero of=zeros bs=1m count=7 2>/dev/null
+	cat "$JGD" zeros > big-agent
+	chmod +x big-agent
+	atf_check -o match:'in place' -o match:'inflate\(3\)' \
+	    "$JGC" -t -c "$SOCK" agent-update big-agent
+	atf_check cmp -s big-agent installed-agent
+	# Compressed or not, what is not arcana-agent is refused by -V.
+	rm -f installed-agent && echo old > installed-agent
+	printf '#!/bin/sh\necho hello\n' > bogus
+	atf_check -s exit:1 -e match:'does not run on this host' \
+	    -o match:'inflate\(3\)' "$JGC" -t -c "$SOCK" agent-update bogus
+	atf_check -o inline:'old\n' cat installed-agent
+	atf_check test ! -e installed-agent.new
+	# An inflate bomb: 64 MiB of zeros said to be 1 KiB stops a byte
+	# past it; said to be more than max-program, it is not inflated.
+	dd if=/dev/zero bs=1m count=64 2>/dev/null | gzip -9 > bomb.gz
+	sha=$(sha256 -q bogus)
+	atf_check -s exit:1 -o match:'inflates past the size it came with' \
+	    "$(atf_get_srcdir)/zupdate" "$SOCK" bomb.gz 1024 "$sha"
+	atf_check -s exit:1 -o match:'past what this host takes' \
+	    "$(atf_get_srcdir)/zupdate" "$SOCK" bomb.gz 33554433 "$sha"
+	# Not gzip, and gzip that ends short.
+	atf_check -s exit:1 -o match:'not gzip' \
+	    "$(atf_get_srcdir)/zupdate" "$SOCK" bogus 1024 "$sha"
+	gzip -9 < "$JGD" | head -c 100000 > short.gz
+	atf_check -s exit:1 -o match:'ends short' \
+	    "$(atf_get_srcdir)/zupdate" "$SOCK" short.gz \
+	    "$(stat -f %z "$JGD")" "$(sha256 -q "$JGD")"
+	# Its SHA-256 is the program's, inflated.
+	gzip -9 < "$JGD" > agent.gz
+	atf_check -s exit:1 -o match:'does not match its SHA-256' \
+	    "$(atf_get_srcdir)/zupdate" "$SOCK" agent.gz \
+	    "$(stat -f %z "$JGD")" "$(sha256 -q agent.gz)"
+	atf_check -o inline:'ok\n' \
+	    "$(atf_get_srcdir)/zupdate" "$SOCK" agent.gz \
+	    "$(stat -f %z "$JGD")" "$(sha256 -q "$JGD")"
+	atf_check cmp -s "$JGD" installed-agent
+}
+agent_update_gzip_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case agent_update_old cleanup
+agent_update_old_head()
+{
+	atf_set "descr" "An agent before compressed updates is sent the " \
+	    "program as it is, within max-binary"
+}
+agent_update_old_body()
+{
+	# Without gzip-update in hello's features, as one before it.
+	DAEMON_ARGS="--features none"
+	start_daemon
+	echo old > installed-agent
+	atf_check -o not-match:'gzip-update' \
+	    "$JGC" --libxo json -c "$SOCK" hello
+	atf_check -o match:'in place' -o not-match:'inflate' \
+	    "$JGC" -t -c "$SOCK" agent-update "$JGD"
+	atf_check cmp -s "$JGD" installed-agent
+	# One past max-binary is not sent: the agent is to be updated first.
+	dd if=/dev/zero of=zeros bs=1m count=7 2>/dev/null
+	cat "$JGD" zeros > big-agent
+	atf_check -s exit:1 -e match:'update it to arcana-agent [0-9.]+ first' \
+	    "$JGC" -c "$SOCK" agent-update big-agent
+	# What it would not decode, it refuses.
+	gzip -9 < "$JGD" > agent.gz
+	atf_check -s exit:1 -o match:'program-size' \
+	    "$(atf_get_srcdir)/zupdate" "$SOCK" agent.gz \
+	    "$(stat -f %z "$JGD")" "$(sha256 -q "$JGD")"
+}
+agent_update_old_cleanup()
 {
 	stop_daemon
 }
@@ -12763,6 +12870,8 @@ atf_init_test_cases()
 	atf_add_test_case safe_if_destroy
 	atf_add_test_case safe_l2
 	atf_add_test_case agent_update
+	atf_add_test_case agent_update_gzip
+	atf_add_test_case agent_update_old
 	atf_add_test_case agent_restart
 	atf_add_test_case agent_build
 	atf_add_test_case stop

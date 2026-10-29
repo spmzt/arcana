@@ -60,14 +60,28 @@ page, or **Update N agents** on the fleet page for every such host.
 Builds are told apart by the program's SHA-256, which each agent
 reports, so a rebuilt agent of the same version counts as another. The
 console sends the `arcana-agent` installed with it (`agent_binary` in
-`web.conf` names another). Each host
+`web.conf` names another). It sends the program compressed with gzip
+(the base system's zlib) to an agent that says, in its `hello`, that it
+takes it so (`gzip-update` in its features), and as it is to an agent
+before: a cblink frame carries at most 6 MiB (`max-binary`), which the
+agent has outgrown, and compressed it is a quarter of that. Each host
 
-1. checks the program against the SHA-256 sent with it,
-2. writes it beside the installed one and runs it with `-V`: a program
+1. inflates a compressed program, to no more than the size sent with it
+   and never past 32 MiB (`max-program`),
+2. checks the program, inflated, against the SHA-256 sent with it, and
+   against its signature by the console's CA key (over a network
+   connection; the local socket's root is root already),
+3. writes it beside the installed one and runs it with `-V`: a program
    built for another machine or FreeBSD version does not run, and is
    dropped,
-3. puts it in place of the installed one, which stays as
+4. puts it in place of the installed one, which stays as
    `arcana-agent.old`.
+
+An agent older than compressed updates (before 0.235.0) takes the
+program as it is, within 6 MiB. Once the agent is bigger than that, such
+a host cannot be sent it: the console says to update it to
+arcana-agent 0.235.0 first, which fits and takes the next one
+compressed; `pkg upgrade arcana` there does it too.
 
 With **Restart the agent now**, on by default, the host then restarts
 its `arcana_agent` service. The console watches for it to answer as the
@@ -77,7 +91,8 @@ says the service did not restart, which is what happens when
 host's log says which); without it, the new program runs from the next
 start of the service. A restart drops jobs still queued on the host; one that is
 running finishes first. From a shell, `arcanactl agent-update [-r]
-program` does the same for one host.
+program` does the same for one host, compressed when the agent takes it
+so; `-p` sends it as it is.
 
 The program has to suit the host: the same architecture, a FreeBSD
 version it runs on, and `devel/libcbor` installed (libcblink is linked
@@ -98,8 +113,9 @@ agent_ref = "main";            # a branch or tag; optional
 
 and each host's header gets **Build agent here**. That host clones the
 repository afresh into `/var/cache/arcana-build`, builds cblink, the
-libraries and `arcana-agent` with `make`, and sends the program back;
-nothing is installed there. The console checks it against its SHA-256, keeps it in
+libraries and `arcana-agent` with `make`, and sends the program back, compressed
+when it can (as above); nothing is installed there. The console inflates
+it, checks it against its SHA-256, keeps it in
 `agent/` under its data directory, and sends that one from then on, so
 the hosts that run another build are offered the update. The build is
 in the activity bar with the output of git and make.

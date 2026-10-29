@@ -29,6 +29,7 @@
 #include <unistd.h>
 
 #include "agent.h"
+#include "zprog.h"
 
 struct job {
 	cbl_req			*req;
@@ -46,6 +47,7 @@ struct job {
 	bool			 from_rc;	/* ipfw-rules: rc.conf's file */
 	uint8_t			*binary;	/* agent-update */
 	size_t			 binlen;
+	size_t			 progsize;	/* inflated; 0 not compressed */
 	char			*sha256;
 	uint8_t			*sig;		/* by the console's CA key */
 	size_t			 siglen;
@@ -53,6 +55,7 @@ struct job {
 	bool			 restart;
 	char			*source;	/* agent-build */
 	char			*ref;
+	bool			 compress;
 	char			*host_keys;
 	char			*ssh_key;
 	uint32_t		 log_count;	/* source-log: commits at most */
@@ -843,7 +846,7 @@ worker(void *arg)
 		/* One build at a time: they share the directory. */
 		pthread_mutex_lock(&build_lock);
 		do_agent_build(&w, j->source, j->ref, j->host_keys,
-		    j->ssh_key, &abr);
+		    j->ssh_key, j->compress, &abr);
 		pthread_mutex_unlock(&build_lock);
 		ok = abr.ok;
 		error = abr.error;
@@ -902,8 +905,8 @@ worker(void *arg)
 		} else {
 			if (change_note("%s", what))
 				do_agent_update(&w, j->binary, j->binlen,
-				    j->sha256, j->sig, j->siglen, j->local,
-				    &aur);
+				    j->progsize, j->sha256, j->sig, j->siglen,
+				    j->local, &aur);
 			else {
 				aur.has_ok = true;
 				aur.error = STOPPING;
@@ -1090,6 +1093,9 @@ arc_agent_build_doit(cbl_req *req, const struct arc_agent_build_req *rq,
 {
 	struct job	*j;
 
+	/* An agent before gzip-update decodes no compress at all. */
+	if (rq->compress && !has_feature(ZPROG_FEATURE))
+		return (reject(req, "unknown attribute compress"));
 	if ((j = calloc(1, sizeof(*j))) == NULL)
 		return (ENOMEM);
 	j->req = req;
@@ -1099,6 +1105,7 @@ arc_agent_build_doit(cbl_req *req, const struct arc_agent_build_req *rq,
 	    NULL;
 	j->host_keys = rq->host_keys != NULL ? xstrdup(rq->host_keys) : NULL;
 	j->ssh_key = rq->ssh_key != NULL ? xstrdup(rq->ssh_key) : NULL;
+	j->compress = rq->compress;
 	return (start(j));
 }
 
@@ -1166,6 +1173,13 @@ arc_agent_update_doit(cbl_req *req, const struct arc_agent_update_req *rq,
 
 	if (rq->binary.len == 0 || strlen(rq->sha256) != 64)
 		return (reject(req, "a program and its SHA-256 are needed"));
+	/* An agent before gzip-update decodes no program-size at all. */
+	if (rq->has_program_size && !has_feature(ZPROG_FEATURE))
+		return (reject(req, "unknown attribute program-size"));
+	if (rq->has_program_size && (rq->program_size == 0 ||
+	    rq->program_size > ARC_MAX_PROGRAM))
+		return (reject(req, "the program would inflate past what this "
+		    "host takes"));
 	if ((j = calloc(1, sizeof(*j))) == NULL)
 		return (ENOMEM);
 	j->req = req;
@@ -1184,6 +1198,7 @@ arc_agent_update_doit(cbl_req *req, const struct arc_agent_update_req *rq,
 		err(1, "malloc");
 	memcpy(j->binary, rq->binary.p, rq->binary.len);
 	j->binlen = rq->binary.len;
+	j->progsize = rq->has_program_size ? rq->program_size : 0;
 	j->sha256 = xstrdup(rq->sha256);
 	j->restart = rq->restart;
 	return (start(j));

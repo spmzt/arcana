@@ -442,7 +442,7 @@ arcana_agent_agent_build_action(cbl_req *req, const struct cbl_bytes *target,
 	/* One build at a time: they share the directory. */
 	pthread_mutex_lock(&build_lock);
 	(void)do_agent_build(w, in->source, in->ref != NULL && in->ref[0] !=
-	    '\0' ? in->ref : NULL, in->host_keys, in->ssh_key, &r);
+	    '\0' ? in->ref : NULL, in->host_keys, in->ssh_key, false, &r);
 	pthread_mutex_unlock(&build_lock);
 	if (!r.ok)
 		return (said(req, r.error));
@@ -749,7 +749,7 @@ arcana_agent_agent_update_action(cbl_req *req, const struct cbl_bytes *target,
 	if (pthread_mutex_trylock(&change_lock) != 0)
 		return (said(req, change_busy(w)));
 	if (change_note("agent update"))
-		(void)do_agent_update(w, in->binary.p, in->binary.len,
+		(void)do_agent_update(w, in->binary.p, in->binary.len, 0,
 		    in->sha256, in->signature.p, in->signature.len, local, &r);
 	else
 		r.error = "not done: arcana-agent is stopping";

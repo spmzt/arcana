@@ -738,8 +738,14 @@ definitions:
       - name: inet6
   - name: max-binary
     type: const
-    doc: The largest arcana-agent an update carries; a frame is 8 MiB.
+    doc: |
+      The most bytes of arcana-agent an update carries, compressed or
+      not; a frame is 8 MiB.
     value: 6291456
+  - name: max-program
+    type: const
+    doc: The largest arcana-agent a compressed update inflates to.
+    value: 33554432
   - name: max-output
     type: const
     value: 262144
@@ -1417,6 +1423,21 @@ attribute-sets:
         doc: |
           For a jail's packages: whether its base system is pkgbase
           (FreeBSD-runtime is one of its packages).
+      - name: program-size
+        type: u32
+        doc: |
+          For agent-update and agent-build: binary is the program
+          compressed with gzip (RFC 1952), which inflates to this many
+          bytes; sha256 and signature are the program's, inflated.
+        checks:
+          min: 1
+          max: max-program
+      - name: compress
+        type: flag
+        doc: |
+          For agent-build: send the program compressed, with
+          program-size, as an agent whose features have gzip-update
+          does.
   - name: host
     attributes:
       - name: hostname
@@ -1466,6 +1487,15 @@ attribute-sets:
           The seconds a change made in safe mode waits to be confirmed
           before the agent undoes it, when the change does not say:
           the agent's own (-w).
+      - name: features
+        type: text
+        multi-attr: true
+        doc: |
+          What this agent takes that one before it did not.
+          gzip-update is agent-update's program compressed
+          (program-size) and agent-build's compress.
+        checks:
+          max-count: 64
 
   - name: jail
     attributes:
@@ -2289,7 +2319,11 @@ operations:
       by running it with -V, on this host, before it takes the place of
       the one installed, which is kept beside it with the suffix .old.  With restart the service is restarted
       after the reply; otherwise the new program runs from the next
-      start.
+      start.  With program-size, binary is the program compressed with
+      gzip, inflated first, to no more than max-program bytes; the
+      checks are of the program inflated.  The console and arcanactl
+      send it so to an agent whose hello has gzip-update in features,
+      and the program as it is, within max-binary, to one before.
     do:
       request:
         attributes:
@@ -2297,6 +2331,7 @@ operations:
           - sha256
           - signature
           - restart
+          - program-size
         required:
           - binary
           - sha256
@@ -2315,7 +2350,8 @@ operations:
       Build arcana-agent from a git repository on this host and return
       the program.  The tree is cloned afresh into the build directory
       and built with make(1), as an unprivileged user when the daemon
-      is root; nothing is installed.
+      is root; nothing is installed.  With compress, the program comes
+      compressed with gzip, with program-size; sha256 is the program's.
     do:
       request:
         attributes:
@@ -2323,6 +2359,7 @@ operations:
           - ref
           - host-keys
           - ssh-key
+          - compress
         required:
           - source
       reply:
@@ -2337,6 +2374,7 @@ operations:
           - deploy-key
           - trace
           - commit
+          - program-size
 
   - name: console-update
     attribute-set: arcana

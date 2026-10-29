@@ -42,6 +42,7 @@ module arcana {
   // max-batch = 64
   // max-json = 4194304
   // max-binary = 6291456
+  // max-program = 33554432
   // max-output = 262144
 
   grouping set-arcana {
@@ -831,6 +832,22 @@ module arcana {
         "For a jail's packages: whether its base system is pkgbase
          (FreeBSD-runtime is one of its packages).";
     }
+    leaf program-size {
+      type uint32 {
+        range "1..33554432";
+      }
+      description
+        "For agent-update and agent-build: binary is the program
+         compressed with gzip (RFC 1952), which inflates to this many
+         bytes; sha256 and signature are the program's, inflated.";
+    }
+    leaf compress {
+      type empty;
+      description
+        "For agent-build: send the program compressed, with
+         program-size, as an agent whose features have gzip-update
+         does.";
+    }
   }
 
   grouping set-host {
@@ -894,8 +911,15 @@ module arcana {
       description
         "The seconds a change made in safe mode waits to be confirmed
          before the agent undoes it, when the change does not say:
-         the agent's own (-w).
-         ";
+         the agent's own (-w).";
+    }
+    leaf-list features {
+      type string;
+      max-elements 64;
+      description
+        "What this agent takes that one before it did not.
+         gzip-update is agent-update's program compressed
+         (program-size) and agent-build's compress.";
     }
   }
 
@@ -2974,6 +2998,28 @@ module arcana {
     }
   }
 
+  grouping attr-program-size {
+    leaf program-size {
+      type uint32 {
+        range "1..33554432";
+      }
+      description
+        "For agent-update and agent-build: binary is the program
+         compressed with gzip (RFC 1952), which inflates to this many
+         bytes; sha256 and signature are the program's, inflated.";
+    }
+  }
+
+  grouping attr-compress {
+    leaf compress {
+      type empty;
+      description
+        "For agent-build: send the program compressed, with
+         program-size, as an agent whose features have gzip-update
+         does.";
+    }
+  }
+
   rpc hello {
     fam:command 1;
     fam:auth;
@@ -3096,7 +3142,11 @@ module arcana {
        by running it with -V, on this host, before it takes the place of
        the one installed, which is kept beside it with the suffix .old.  With restart the service is restarted
        after the reply; otherwise the new program runs from the next
-       start.";
+       start.  With program-size, binary is the program compressed with
+       gzip, inflated first, to no more than max-program bytes; the
+       checks are of the program inflated.  The console and arcanactl
+       send it so to an agent whose hello has gzip-update in features,
+       and the program as it is, within max-binary, to one before.";
     input {
       uses attr-binary {
         refine binary {
@@ -3110,6 +3160,7 @@ module arcana {
       }
       uses attr-signature;
       uses attr-restart;
+      uses attr-program-size;
     }
     output {
       uses attr-ok;
@@ -3127,7 +3178,8 @@ module arcana {
       "Build arcana-agent from a git repository on this host and return
        the program.  The tree is cloned afresh into the build directory
        and built with make(1), as an unprivileged user when the daemon
-       is root; nothing is installed.";
+       is root; nothing is installed.  With compress, the program comes
+       compressed with gzip, with program-size; sha256 is the program's.";
     input {
       uses attr-source {
         refine source {
@@ -3137,6 +3189,7 @@ module arcana {
       uses attr-ref;
       uses attr-host-keys;
       uses attr-ssh-key;
+      uses attr-compress;
     }
     output {
       uses attr-ok;
@@ -3149,6 +3202,7 @@ module arcana {
       uses attr-deploy-key;
       uses attr-trace;
       uses attr-commit;
+      uses attr-program-size;
     }
   }
 

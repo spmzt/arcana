@@ -130,7 +130,7 @@ enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
     OPT_SURICATA_RULES, OPT_EXPORTS, OPT_CTL_CONF, OPT_HAST_CONF,
     OPT_SMTPD_CONF, OPT_SMTPD_DIR, OPT_PKG_IDLE, OPT_JOBS_CONF,
     OPT_SPEEDER_LOG, OPT_SMTPD_WATCH, OPT_NACM, OPT_SUBSCRIPTIONS,
-    OPT_RTADVCTL };
+    OPT_RTADVCTL, OPT_FEATURES };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
@@ -143,6 +143,9 @@ static const struct option longopts[] = {
 	/* The configured subscriptions (RFC 8639 section 2.5), as family 1
 	 * serves and edits them. */
 	{ "subscriptions", required_argument, NULL, OPT_SUBSCRIPTIONS },
+	/* Of hello's features, those named: an agent before the others,
+	 * as a test of what a console sends it has it. */
+	{ "features", required_argument, NULL, OPT_FEATURES },
 	/* How often BIRD's sessions are looked at for faults; 0, never. */
 	{ "bird-watch", required_argument, NULL, OPT_BIRD_WATCH },
 	{ "smtpd-watch", required_argument, NULL, OPT_SMTPD_WATCH },
@@ -213,7 +216,7 @@ usage(void)
 	    "                 [--smtpd-watch seconds]\n"
 	    "                 [--speederv2-log file]\n"
 	    "                 [--jobs-conf file] [--nacm file]\n"
-	    "                 [--subscriptions file]\n");
+	    "                 [--subscriptions file] [--features list]\n");
 	exit(2);
 }
 
@@ -465,6 +468,9 @@ main(int argc, char *argv[])
 			break;
 		case OPT_SUBSCRIPTIONS:
 			opts.subs_file = optarg;
+			break;
+		case OPT_FEATURES:
+			opts.features = optarg;
 			break;
 		case OPT_PKG_IDLE:
 			opts.pkg_idle_s = (int)strtonum(optarg, 1, 86400, &errstr);

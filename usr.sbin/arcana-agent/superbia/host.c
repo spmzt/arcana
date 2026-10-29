@@ -14,6 +14,33 @@
 #include <unistd.h>
 
 #include "agent.h"
+#include "zprog.h"
+
+/* What this agent takes that one before it did not (hello's features). */
+static const char *const features[] = {
+	ZPROG_FEATURE,		/* agent-update's program compressed */
+};
+
+/*
+ * Whether this agent has the feature: all of them, unless --features
+ * names those it has, as an agent before the others.
+ */
+bool
+has_feature(const char *name)
+{
+	const char	*p;
+	size_t		 n;
+
+	if (opts.features == NULL)
+		return (true);
+	n = strlen(name);
+	for (p = opts.features; *p != '\0'; p += strcspn(p, ",")) {
+		p += strspn(p, ",");
+		if (strncmp(p, name, n) == 0 && (p[n] == ',' || p[n] == '\0'))
+			return (true);
+	}
+	return (false);
+}
 
 /* Facts about this host, from uname(3) and sysctl(3). */
 void
@@ -21,8 +48,9 @@ host_info(struct work *w, struct arc_host *h)
 {
 	struct utsname	 u;
 	struct timeval	 boot;
+	const char	**fv;
 	uint64_t	 physmem;
-	size_t		 len;
+	size_t		 len, i;
 	char		 name[MAXHOSTNAMELEN];
 	int		 ncpu, securelevel, step;
 
@@ -75,4 +103,9 @@ host_info(struct work *w, struct arc_host *h)
 	if (opts.build[0] != '\0')
 		h->build = opts.build;
 	plugins_there(w, 0, NULL, &h->plugins.v, &h->plugins.n);
+	fv = wcalloc(w, nitems(features), sizeof(*fv));
+	for (i = 0; i < nitems(features); i++)
+		if (has_feature(features[i]))
+			fv[h->features.n++] = features[i];
+	h->features.v = fv;
 }

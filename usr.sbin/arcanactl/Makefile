@@ -1,9 +1,11 @@
 PROG=		arcanactl
 SRCS=		arcanactl.c yjsonin.c yqueue.c ychange.c ystore.c ygula.c \
-		yevjson.c ytshoot.c ytsjson.c yprobes.c
+		yevjson.c ytshoot.c ytsjson.c yprobes.c zprog.c
 # RFC 7951's JSON in, arcana-jobs, arcana-storage, what runs and was
-# written down, packets and paths followed, arcana-probe: the console's.
-.PATH:		${.CURDIR}/../../www/arcana-console
+# written down, packets and paths followed, arcana-probe: the console's;
+# a program compressed for agent-update: the agent's.
+.PATH:		${.CURDIR}/../../www/arcana-console \
+		${.CURDIR}/../arcana-agent/ira
 MAN=		arcanactl.8
 
 .include "${.CURDIR}/../../share/mk/arcana.mk"
@@ -22,7 +24,8 @@ ychange.c: ${ARC_TOP}/share/arcana/jobs.awk ${ARC_TOP}/share/arcana/jobs.yaml \
 	    > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
 
-CFLAGS+=	-I${.CURDIR}/../../www/arcana-console ${UCL_CFLAGS}
-LDADD+=		-lxo -lmd -lcasper -lcap_fileargs -lnv ${UCL_LIBS}
+CFLAGS+=	-I${.CURDIR}/../../www/arcana-console \
+		-I${.CURDIR}/../arcana-agent/ira ${UCL_CFLAGS}
+LDADD+=		-lxo -lmd -lcasper -lcap_fileargs -lnv -lz ${UCL_LIBS}
 
 .include <bsd.prog.mk>

@@ -9,7 +9,9 @@
  * installed one, checked against the SHA-256 that came with it, and run
  * with -V: a program for another machine or system does not run, and
  * never takes the place of one that does.  The one installed stays as
- * <path>.old.
+ * <path>.old.  A program sent compressed is inflated first, to no more
+ * than max-program bytes: what is checked, signed and installed is the
+ * program, as it runs.
  */
 
 #include <sys/types.h>
@@ -31,6 +33,7 @@
 #include <openssl/x509.h>
 
 #include "agent.h"
+#include "zprog.h"
 
 #define	VERSION_PREFIX	"arcana-agent "
 
@@ -88,8 +91,8 @@ signed_by_ca(const uint8_t *data, size_t len, const uint8_t *sig,
 	return (ok);
 }
 
-int
-do_agent_update(struct work *w, const uint8_t *data, size_t len,
+static int
+agent_install(struct work *w, const uint8_t *data, size_t len,
     const char *sha256, const uint8_t *sig, size_t siglen, bool local,
     struct arc_agent_update_rsp *rsp)
 {
@@ -184,6 +187,38 @@ do_agent_update(struct work *w, const uint8_t *data, size_t len,
 	step_end(w, s, true, "the one before is %s", old);
 	rsp->ok = true;
 	return (0);
+}
+
+/*
+ * The program of len bytes at data, or, with size, compressed and to
+ * inflate to size bytes.
+ */
+int
+do_agent_update(struct work *w, const uint8_t *data, size_t len,
+    size_t size, const char *sha256, const uint8_t *sig, size_t siglen,
+    bool local, struct arc_agent_update_rsp *rsp)
+{
+	const char	*why;
+	uint8_t		*prog;
+	int		 rc, s;
+
+	if (size == 0)
+		return (agent_install(w, data, len, sha256, sig, siglen, local,
+		    rsp));
+	rsp->has_ok = true;
+	rsp->ok = false;
+	s = step_begin(w, ARC_STEP_KIND_LIB, "inflate(3)", "%zu bytes of "
+	    "gzip into %zu", len, size);
+	if ((why = zprog_inflate(data, len, size, ARC_MAX_PROGRAM,
+	    &prog)) != NULL) {
+		step_end(w, s, false, "%s", why);
+		rsp->error = why;
+		return (0);
+	}
+	step_end(w, s, true, "%zu bytes", size);
+	rc = agent_install(w, prog, size, sha256, sig, siglen, local, rsp);
+	free(prog);
+	return (rc);
 }
 
 /*

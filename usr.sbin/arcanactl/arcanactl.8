@@ -99,7 +99,12 @@ and from the console's certificate.
 The commands are:
 .Bl -tag -width Ds
 .It Cm hello
-Show the host.
+Show the host, and the features of its agent: what it takes that an
+agent before it did not, as
+.Li gzip-update ,
+a program for
+.Cm agent-update
+compressed.
 .It Cm get Oo Fl d Ar datastore Oc Oo Fl w Ar mode Oc Oo Fl o Oc Oo Fl x Ar xpath Oc Op Ar node ...
 What the agent serves of the standard models, by cblink's YANG family:
 ietf-interfaces' interfaces with ietf-ip's addresses and neighbours and
@@ -2751,6 +2756,8 @@ It is saved as
 .Ar file ,
 .Pa arcana-agent
 by default, after a check against its SHA-256.
+An agent that takes a program compressed sends it back compressed with
+gzip, and it is inflated, to no more than 32 MiB, before the check.
 For a repository reached over SSH, a host that does not know the
 server's host key builds nothing: the fingerprints of the keys the
 server showed are printed, with the public key the host shows the
@@ -2786,12 +2793,24 @@ and
 .Fl i
 are as for
 .Cm agent-build .
-.It Cm agent-update Oo Fl r Oc Ar program
+.It Cm agent-update Oo Fl pr Oc Ar program
 Put
 .Ar program
 in place of the host's
 .Xr arcana-agent 8 .
-The host checks it against its SHA-256 and by running it with
+It is sent compressed with gzip
+.Pq Xr zlib 3
+to an agent whose
+.Cm hello
+has the feature
+.Li gzip-update ,
+which inflates it to no more than 32 MiB, and as it is, no bigger than
+6 MiB, to an agent before, or with
+.Fl p .
+A program bigger than that for an agent before is not sent: update that
+agent first to one that takes it compressed.
+The host checks the program, inflated, against its SHA-256 and by
+running it with
 .Fl V
 before it replaces the one installed, which it keeps with the suffix
 .Pa .old ;

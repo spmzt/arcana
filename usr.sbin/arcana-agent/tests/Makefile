@@ -134,6 +134,10 @@ LDADD.kmsg+=	${CBLINK_LIBS} -ljail -lpthread
 PROGS+=		notifrecv
 SRCS.notifrecv=	notifrecv.c
 LDADD.notifrecv+=	-lssl -lcrypto
+# zupdate: agent-update with what a sender lies about (an inflate bomb).
+PROGS+=		zupdate
+SRCS.zupdate=	zupdate.c arcana_v2_schema.c
+LDADD.zupdate+=	${CBLINK_LIBS}
 # fwmatch: a packet walked through an ipfw ruleset.
 PROGS+=		fwmatch
 SRCS.fwmatch=	fwmatch_test.c fwmatch.c

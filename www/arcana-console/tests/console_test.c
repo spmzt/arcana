@@ -2237,12 +2237,18 @@ ATF_TC_BODY(jails, tc)
 }
 
 CONSOLE_TC(agent_update, "The console sends its arcana-agent to a host, "
-    "which puts it in place and restarts on request")
+    "which puts it in place and restarts on request; compressed to an agent "
+    "that takes it so, as it is to one before")
 ATF_TC_BODY(agent_update, tc)
 {
 	struct authn	a;
 	struct resp	r;
 	char		path[160], jails[160], cwd[MAXPATHLEN], body[MAXPATHLEN];
+	char		old[160], jgd[MAXPATHLEN], listen[MAXPATHLEN], *argv[16];
+	struct stat	sb, sbig;
+	FILE		*fp;
+	pid_t		pid;
+	int		i;
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	start(tc, 0, NULL);
@@ -2284,6 +2290,85 @@ ATF_TC_BODY(agent_update, tc)
 	ATF_CHECK_STREQ("false", jstr(&r, "restarting"));
 	ATF_CHECK(jstr(&r, "version") != NULL);
 	ATF_CHECK(access("installed-agent", X_OK) == 0);
+	/* Sent compressed: the agent says it takes it so. */
+	ATF_CHECK_MSG(strstr(r.body, "inflate(3)") != NULL, "%s", r.body);
+	resp_free(&r);
+
+	/*
+	 * An agent before compressed updates, as one with no features in
+	 * hello: the program as it is, within max-binary.
+	 */
+	snprintf(jgd, sizeof(jgd), "%s", locate(tc,
+	    "../../../usr.sbin/arcana-agent/arcana-agent", "arcana-agent",
+	    "/usr/local/sbin/arcana-agent"));
+	snprintf(listen, sizeof(listen), "unix:%s/old.sock", cwd);
+	i = 0;
+	argv[i++] = jgd;
+	argv[i++] = (char *)(uintptr_t)"-F";
+	argv[i++] = (char *)(uintptr_t)"-l";
+	argv[i++] = listen;
+	argv[i++] = (char *)(uintptr_t)"-f";
+	argv[i++] = (char *)(uintptr_t)"etc/jail.conf";
+	argv[i++] = (char *)(uintptr_t)"-D";
+	argv[i++] = (char *)(uintptr_t)"etc/jail.conf.d";
+	argv[i++] = (char *)(uintptr_t)"-y";
+	argv[i++] = (char *)(uintptr_t)"./fake-sysrc";
+	argv[i++] = (char *)(uintptr_t)"-U";
+	argv[i++] = (char *)(uintptr_t)"installed-agent3";
+	argv[i++] = (char *)(uintptr_t)"--features";
+	argv[i++] = (char *)(uintptr_t)"none";
+	argv[i] = NULL;
+	pid = spawn_server(argv, "arcana-agent2.out");
+	ATF_REQUIRE((fp = fopen("arcana-agent2.pid", "w")) != NULL);
+	fprintf(fp, "%d\n", (int)pid);
+	fclose(fp);
+	wait_for("old.sock");
+	snprintf(body, sizeof(body), "{\"name\":\"old\",\"uri\":\"%s\"}",
+	    listen);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(old, sizeof(old), "/api/servers/%s/agent-update", jstr(&r,
+	    "servers.1.id"));
+	resp_free(&r);
+	http("POST", old, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "true") == 0, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "inflate") == NULL, "%s", r.body);
+	ATF_CHECK(stat("installed-agent3", &sb) == 0 && stat(jgd, &sbig) == 0 &&
+	    sb.st_size == sbig.st_size);
+	resp_free(&r);
+
+	/*
+	 * One past max-binary, the agent with 7 MiB of zeros after it:
+	 * carried compressed to the one that takes it so, refused for the
+	 * one before, which is to be updated first.
+	 */
+	snprintf(body, sizeof(body), "cat '%s' > big-agent && dd if=/dev/zero "
+	    "bs=1m count=7 >> big-agent 2>/dev/null && chmod 755 big-agent",
+	    jgd);
+	ATF_REQUIRE(system(body) == 0);
+	snprintf(body, sizeof(body), "{\"set\":{\"agent_binary\":"
+	    "\"%s/big-agent\"}}", cwd);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "true") == 0, "%s", r.body);
+	ATF_CHECK(stat("installed-agent", &sb) == 0 && stat("big-agent",
+	    &sbig) == 0 && sb.st_size == sbig.st_size);
+	resp_free(&r);
+	http("POST", old, "{}", &r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "false") == 0, "%s", r.body);
+	ATF_CHECK_MSG(jstr(&r, "error") != NULL && strstr(jstr(&r, "error"),
+	    "update it to arcana-agent") != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(stat("installed-agent3", &sb) == 0 && sb.st_size !=
+	    sbig.st_size);
+	snprintf(body, sizeof(body), "{\"set\":{\"agent_binary\":"
+	    "\"%s\"}}", jgd);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
 	resp_free(&r);
 
 	http("POST", path, "{\"restart\":true}", &r);
@@ -2748,8 +2833,13 @@ ATF_TC_BODY(agent_build, tc)
 	ATF_REQUIRE(jstr(&r, "sha256") != NULL);
 	ATF_CHECK(strcmp(sha, jstr(&r, "sha256")) != 0);
 	strlcpy(sha, jstr(&r, "sha256"), sizeof(sha));
+	/* Sent back compressed, kept inflated: its SHA-256 the program's. */
+	ATF_CHECK_MSG(strstr(r.body, "deflate(3)") != NULL, "%s", r.body);
 	resp_free(&r);
 	ATF_CHECK(access("data/agent/arcana-agent", X_OK) == 0);
+	snprintf(body, sizeof(body), "test \"$(sha256 -q "
+	    "data/agent/arcana-agent)\" = %s", sha);
+	ATF_CHECK(system(body) == 0);
 
 	/* After: what the host built is what the console sends. */
 	http("GET", "/api/health", NULL, &r);
@@ -7044,6 +7134,8 @@ ATF_TC_BODY(mtls, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "true") == 0, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "verified") != NULL, "%s", r.body);
+	/* Compressed, and the signature the program's, inflated. */
+	ATF_CHECK_MSG(strstr(r.body, "inflate(3)") != NULL, "%s", r.body);
 	ATF_CHECK(access("installed-agent2", X_OK) == 0);
 	resp_free(&r);
 

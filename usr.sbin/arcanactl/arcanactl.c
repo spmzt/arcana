@@ -42,6 +42,7 @@
 #include "ystore.h"
 #include "yprobes.h"
 #include "ytshoot.h"
+#include "zprog.h"
 
 #define	PATH_SOCKET	"unix:/var/run/arcana-agent.sock"
 #define	MAX_FRAME	(8 * 1024 * 1024)
@@ -367,7 +368,7 @@ usage(void)
 	    "    jobs [lanes number]\n"
 	    "    job [-w] id\n"
 	    "    job-cancel id\n"
-	    "    agent-update [-r] program\n"
+	    "    agent-update [-pr] program\n"
 	    "    agent-build [-y] [-i key] [-o file] repository [ref]\n"
 	    "    console-update [-y] [-i key] repository [ref]\n"
 	    "    source-head [-y] [-i key] repository [ref]\n"
@@ -1489,6 +1490,18 @@ cmd_hello(struct arc_client *cl)
 		xo_close_list("plugins");
 		xo_emit("\n");
 	}
+	/* What it takes that an agent before it did not. */
+	if (h->features.n > 0) {
+		size_t	i;
+
+		xo_emit("{Lwc:Features}");
+		xo_open_list("features");
+		for (i = 0; i < h->features.n; i++)
+			xo_emit("{P:/%s}{l:features/%s}", i > 0 ? " " : "",
+			    h->features.v[i]);
+		xo_close_list("features");
+		xo_emit("\n");
+	}
 	xo_close_container("host");
 	arc_hello_rsp_free(rsp);
 	return (0);
@@ -2463,19 +2476,37 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 	return (service_show(cl, argv[1], true));
 }
 
+/* Whether the agent takes its program compressed (hello's features). */
+static bool
+takes_gzip(struct arc_client *cl)
+{
+	struct arc_hello_rsp	*rsp;
+	bool			 yes;
+	int			 error;
+
+	if ((error = arc_hello(cl, &rsp)) != 0)
+		fail(cl, error, "hello");
+	yes = rsp->host != NULL && zprog_taken(rsp->host->features.v,
+	    rsp->host->features.n);
+	arc_hello_rsp_free(rsp);
+	return (yes);
+}
+
 /*
  * agent-build [-o file] repository [ref]: have the host build
- * arcana-agent from a git repository, and keep what it sends back.
+ * arcana-agent from a git repository, and keep what it sends back,
+ * sent compressed by an agent that can.
  */
 static int
 cmd_agent_build(struct arc_client *cl, int argc, char **argv)
 {
 	struct arc_agent_build_req	 req;
 	struct arc_agent_build_rsp	*rsp;
-	const char			*out;
+	const char			*out, *why;
 	char				 hex[SHA256_DIGEST_STRING_LENGTH];
 	char				*keys;
-	size_t				 i;
+	uint8_t				*prog;
+	size_t				 i, len;
 	bool				 trust;
 	int				 ch, error, fd;
 
@@ -2503,6 +2534,8 @@ cmd_agent_build(struct arc_client *cl, int argc, char **argv)
 		usage();
 	req.source = argv[optind];
 	req.ref = argv[optind + 1];
+	req.compress = takes_gzip(cl);
+	prog = NULL;
 again:
 	if ((error = arc_agent_build(cl, &req, &rsp)) != 0)
 		fail(cl, error, "agent-build");
@@ -2526,14 +2559,21 @@ again:
 	if (!rsp->ok && rsp->deploy_key != NULL)
 		xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n", rsp->deploy_key);
 	if (rsp->ok) {
+		len = rsp->binary.len;
+		if (rsp->has_program_size) {
+			if ((why = zprog_inflate(rsp->binary.p, len,
+			    rsp->program_size, ARC_MAX_PROGRAM, &prog)) != NULL)
+				xo_errx(1, "agent-build: %s", why);
+			len = rsp->program_size;
+		}
 		/* What arrived is what the host says it built. */
-		if (rsp->sha256 == NULL || strcmp(SHA256_Data(rsp->binary.p,
-		    rsp->binary.len, hex), rsp->sha256) != 0)
+		if (rsp->sha256 == NULL || strcmp(SHA256_Data(prog != NULL ?
+		    prog : rsp->binary.p, len, hex), rsp->sha256) != 0)
 			xo_errx(1, "agent-build: the program does not match "
 			    "its SHA-256");
 		if ((fd = fileargs_open(outfiles, out)) == -1 ||
-		    write(fd, rsp->binary.p, rsp->binary.len) !=
-		    (ssize_t)rsp->binary.len || close(fd) == -1)
+		    write(fd, prog != NULL ? prog : rsp->binary.p, len) !=
+		    (ssize_t)len || close(fd) == -1)
 			xo_err(1, "%s", out);
 		xo_emit("{Lwc:Built}{:agent-version/%s}{P: }{:sha256/%s}"
 		    "{P: }{:file/%s}\n", rsp->agent_version != NULL ?
@@ -2546,6 +2586,7 @@ again:
 	error = rsp->ok ? 0 : 1;
 	arc_agent_build_rsp_free(rsp);
 	free(keys);
+	free(prog);
 	return (error);
 }
 
@@ -2733,7 +2774,11 @@ cmd_source_log(struct arc_client *cl, int argc, char **argv)
 	return (0);
 }
 
-/* agent-update [-r] program: put a new arcana-agent in place. */
+/*
+ * agent-update [-pr] program: put a new arcana-agent in place, sent
+ * compressed to an agent that takes it so; as it is with -p, and to an
+ * agent before, which takes no more than max-binary bytes.
+ */
 static int
 cmd_agent_update(struct arc_client *cl, int argc, char **argv)
 {
@@ -2741,23 +2786,32 @@ cmd_agent_update(struct arc_client *cl, int argc, char **argv)
 	struct arc_agent_update_rsp	*rsp;
 	struct stat			 sb;
 	char				 hex[SHA256_DIGEST_STRING_LENGTH];
-	uint8_t				*data;
+	uint8_t				*data, *z;
 	ssize_t				 n;
-	size_t				 off;
+	size_t				 off, zlen;
+	bool				 plain;
 	int				 ch, error, fd;
 
 	memset(&req, 0, sizeof(req));
+	plain = false;
 	optreset = optind = 1;
-	while ((ch = getopt(argc, argv, "r")) != -1) {
-		if (ch != 'r')
+	while ((ch = getopt(argc, argv, "pr")) != -1) {
+		switch (ch) {
+		case 'p':
+			plain = true;
+			break;
+		case 'r':
+			req.restart = true;
+			break;
+		default:
 			usage();
-		req.restart = true;
+		}
 	}
 	if (argc - optind != 1)
 		usage();
 	if ((fd = fileargs_open(files, argv[optind])) == -1 || fstat(fd, &sb) == -1)
 		xo_err(1, "%s", argv[optind]);
-	if (sb.st_size == 0 || sb.st_size > ARC_MAX_BINARY)
+	if (sb.st_size == 0 || sb.st_size > ARC_MAX_PROGRAM)
 		xo_errx(1, "%s: not a program an update can carry",
 		    argv[optind]);
 	if ((data = malloc((size_t)sb.st_size)) == NULL)
@@ -2766,9 +2820,29 @@ cmd_agent_update(struct arc_client *cl, int argc, char **argv)
 		if ((n = read(fd, data + off, (size_t)sb.st_size - off)) <= 0)
 			xo_err(1, "%s", argv[optind]);
 	close(fd);
-	req.binary.p = data;
-	req.binary.len = off;
 	req.sha256 = SHA256_Data(data, off, hex);
+	z = NULL;
+	if (!plain && takes_gzip(cl)) {
+		if ((error = zprog_deflate(data, off, &z, &zlen)) != 0)
+			xo_errc(1, error, "%s: deflate", argv[optind]);
+		if (zlen > ARC_MAX_BINARY)
+			xo_errx(1, "%s: %zu bytes compressed, more than the %d "
+			    "an update carries", argv[optind], zlen,
+			    ARC_MAX_BINARY);
+		req.binary.p = z;
+		req.binary.len = zlen;
+		req.has_program_size = true;
+		req.program_size = (uint32_t)off;
+	} else if (off > ARC_MAX_BINARY)
+		xo_errx(1, "%s: %zu bytes, more than the %d an agent takes "
+		    "uncompressed: %s", argv[optind], off, ARC_MAX_BINARY,
+		    plain ? "send it without -p" : "this agent is older than "
+		    "compressed updates; update it to arcana-agent "
+		    ZPROG_SINCE " first");
+	else {
+		req.binary.p = data;
+		req.binary.len = off;
+	}
 	if ((error = arc_agent_update(cl, &req, &rsp)) != 0)
 		fail(cl, error, "agent-update");
 	if (rsp->ok)
@@ -2784,6 +2858,7 @@ cmd_agent_update(struct arc_client *cl, int argc, char **argv)
 		    "failed");
 	arc_agent_update_rsp_free(rsp);
 	free(data);
+	free(z);
 	return (error);
 }
 

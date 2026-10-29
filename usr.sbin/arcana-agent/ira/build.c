@@ -9,7 +9,8 @@
  * the other hosts.  The tree is cloned afresh into the build directory
  * and built there with make(1); as root, git and make run as nobody, so
  * what a repository's makefiles do is done without privilege.  Nothing
- * is installed: the program goes back in the reply.
+ * is installed: the program goes back in the reply, compressed when
+ * asked (zprog.c).
  */
 
 #include <sys/types.h>
@@ -29,6 +30,7 @@
 #include <ucl.h>
 
 #include "agent.h"
+#include "zprog.h"
 
 #define	BUILD_USER	"nobody"
 #define	VERSION_PREFIX	"arcana-agent "
@@ -623,7 +625,7 @@ tree_fetch(struct work *w, const char *source, const char *ref,
 
 static int
 agent_build(struct work *w, const char *source, const char *ref,
-    const char *accepted, const char *sshkey,
+    const char *accepted, const char *sshkey, bool compress,
     struct arc_agent_build_rsp *rsp)
 {
 	struct fetched	 f;
@@ -632,9 +634,9 @@ agent_build(struct work *w, const char *source, const char *ref,
 	unsigned char	 md[EVP_MAX_MD_SIZE];
 	const char	*argv[MAX_ARGS], *nl;
 	char		*src, *objdir, *prog, *sha;
-	uint8_t		*bin;
+	uint8_t		*bin, *z;
 	ssize_t		 r;
-	size_t		 off;
+	size_t		 off, zlen;
 	unsigned int	 i, mdlen;
 	bool		 unpriv;
 	int		 fd, n, s;
@@ -706,7 +708,8 @@ agent_build(struct work *w, const char *source, const char *ref,
 
 	s = step_begin(w, ARC_STEP_KIND_FILE, "read", "%s", prog);
 	if ((fd = open(prog, O_RDONLY | O_CLOEXEC)) == -1 || fstat(fd,
-	    &sb) == -1 || sb.st_size == 0 || sb.st_size > ARC_MAX_BINARY) {
+	    &sb) == -1 || sb.st_size == 0 || sb.st_size > (compress ?
+	    ARC_MAX_PROGRAM : ARC_MAX_BINARY)) {
 		step_end(w, s, false, "%s", fd == -1 ? strerror(errno) :
 		    "not a program an update can carry");
 		rsp->error = wfmt(w, "%s: no program to send back", prog);
@@ -746,6 +749,28 @@ agent_build(struct work *w, const char *source, const char *ref,
 	    strlen(VERSION_PREFIX));
 	rsp->binary.p = bin;
 	rsp->binary.len = off;
+	if (compress) {
+		s = step_begin(w, ARC_STEP_KIND_LIB, "deflate(3)", "%zu bytes "
+		    "to gzip", off);
+		if (zprog_deflate(bin, off, &z, &zlen) != 0) {
+			step_end(w, s, false, "failed");
+			rsp->error = "the program cannot be compressed";
+			return (0);
+		}
+		wadopt(w, z);
+		if (zlen > ARC_MAX_BINARY) {
+			step_end(w, s, false, "%zu bytes, past max-binary",
+			    zlen);
+			rsp->error = "the program does not compress into what "
+			    "an update carries";
+			return (0);
+		}
+		step_end(w, s, true, "%zu bytes", zlen);
+		rsp->binary.p = z;
+		rsp->binary.len = zlen;
+		rsp->has_program_size = true;
+		rsp->program_size = (uint32_t)off;
+	}
 	rsp->sha256 = sha;
 	rsp->commit = f.commit;
 	rsp->ok = true;
@@ -1049,13 +1074,13 @@ source_log(struct work *w, const char *source, const char *ref,
 /* The builds, with the build directory as the home of what they run. */
 int
 do_agent_build(struct work *w, const char *source, const char *ref,
-    const char *accepted, const char *sshkey,
+    const char *accepted, const char *sshkey, bool compress,
     struct arc_agent_build_rsp *rsp)
 {
 	int	rc;
 
 	exec_set_home(w, opts.build_dir);
-	rc = agent_build(w, source, ref, accepted, sshkey, rsp);
+	rc = agent_build(w, source, ref, accepted, sshkey, compress, rsp);
 	exec_set_home(w, NULL);
 	return (rc);
 }

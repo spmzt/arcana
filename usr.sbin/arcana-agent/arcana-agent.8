@@ -64,6 +64,7 @@
 .Op Fl -jobs-conf Ar file
 .Op Fl -nacm Ar file
 .Op Fl -subscriptions Ar file
+.Op Fl -features Ar list
 .Op Fl -bird-watch Ar seconds
 .Op Fl -smtpd-watch Ar seconds
 .Op Fl -sctp-also Ar addresses
@@ -439,6 +440,22 @@ to the rules, never one of the console's users.
 An rpc or action of Arcana's modules that changes the host is
 .Ic nacm:default-deny-all :
 run only by a rule that permits it.
+.It Fl -features Ar list
+Of the features
+.Ic hello
+names, what this agent takes that one before it did not, only those in
+.Ar list ,
+separated by commas; one left out is refused as an agent before it
+refuses it.
+All of them by default.
+It stands in for an older agent, for a test of what a client sends one.
+The only feature is
+.Li gzip-update :
+a program for
+.Cm agent-update
+compressed, and
+.Cm agent-build Ns 's
+sent back so.
 .It Fl -subscriptions Ar file
 Where the configured subscriptions are kept (RFC 8639 section 2.5):
 ietf-subscribed-notifications' subscriptions container, as YANG-CBOR,
@@ -1037,7 +1054,9 @@ in the build directory and checked strictly from then on.
 git shows the server a key of this host's, made on first use as
 .Pa id_ed25519
 there, or the one the client names.
-The program is sent back with its SHA-256 and the version it reports;
+The program is sent back with its SHA-256 and the version it reports,
+compressed with gzip when the client asks
+.Pq the SHA-256 is still the program's ;
 nothing is installed.
 One build runs at a time.
 .Pp
@@ -1056,7 +1075,17 @@ the console does, and
 .Xr arcanactl 8
 with
 .Cm agent-update .
-The program is checked against the SHA-256 sent with it, written beside
+A frame carries at most 6 MiB of it; a client that sees
+.Li gzip-update
+in
+.Ic hello Ns 's
+features sends it compressed with gzip
+.Pq Xr zlib 3 ,
+with the size it inflates to, and the daemon inflates it first: to no
+more than that size, nor than 32 MiB, stopping a byte past it.
+The program, inflated, is checked against its signature by the
+console's CA key (asked of every client but the local socket's) and
+the SHA-256 sent with it, written beside
 the installed one, and run with
 .Fl V ;
 one that does not run on this host is dropped.

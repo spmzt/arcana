@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.234.0"
+#define	ARCANA_AGENT_VERSION	"0.235.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -181,6 +181,7 @@ struct opts {
 	const char	*nacm_file;	/* NACM's rules (superbia/ynacm.c) */
 	const char	*subs_file;	/* the configured subscriptions
 					 * (invidia/ynotif.c) */
+	const char	*features;	/* --features: hello's, NULL all */
 	char		 build[65];	/* SHA-256 of the running program */
 	bool		 debug;
 };
@@ -368,6 +369,7 @@ const char	*cjail_param1(const struct cjail *, const char *);
 
 /* superbia/host.c */
 void		 host_info(struct work *, struct arc_host *);
+bool		 has_feature(const char *);
 
 /* ira/jail.c: one jail record from runtime and configured state. */
 void		 jail_record(struct work *, struct arc_jail *, const char *,
@@ -1282,7 +1284,8 @@ void		 pools_measure(struct work *, struct arc_stats *);
 
 /* ira/build.c */
 int		 do_agent_build(struct work *, const char *, const char *,
-		    const char *, const char *, struct arc_agent_build_rsp *);
+		    const char *, const char *, bool,
+		    struct arc_agent_build_rsp *);
 int		 do_source_head(struct work *, const char *, const char *,
 		    const char *, const char *, struct arc_source_head_rsp *);
 int		 do_source_log(struct work *, const char *, const char *,
@@ -1294,7 +1297,7 @@ int		 do_console_update(struct work *, const char *, const char *,
 
 /* ira/update.c */
 int		 do_agent_update(struct work *, const uint8_t *, size_t,
-		    const char *, const uint8_t *, size_t, bool,
+		    size_t, const char *, const uint8_t *, size_t, bool,
 		    struct arc_agent_update_rsp *);
 void		 service_restart(const char *);
 void		 service_detached(const char *, const char *);

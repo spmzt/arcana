@@ -17,7 +17,7 @@ SRCS+=		bird.c birdwatch.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c
 		ybird.c ybuilder.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c jailallow.c packages.c pkgbase.c \
-		services.c update.c yjailedit.c yjails.c yjf.c yjobs.c \
+		services.c update.c zprog.c yjailedit.c yjails.c yjf.c yjobs.c \
 		ypackages.c yservices.c ysvcedit.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
 SRCS+=		record.c \
@@ -27,7 +27,7 @@ SRCS+=		record.c \
 .PATH:		${.CURDIR}/superbia ${.CURDIR}/invidia ${.CURDIR}/ira \
 		${.CURDIR}/acedia ${.CURDIR}/avaritia ${.CURDIR}/gula \
 		${.CURDIR}/luxuria
-CFLAGS+=	-I${.CURDIR}
+CFLAGS+=	-I${.CURDIR} -I${.CURDIR}/ira
 MAN=		arcana-agent.8
 
 # Shipped to the hosts by agent-update: libcblink linked in (arcana.mk).
@@ -56,7 +56,7 @@ LDADD+=		${.OBJDIR}/../../lib/libvarconf/libvarconf_pie.a
 DPADD+=		${.OBJDIR}/../../lib/libvarconf/libvarconf_pie.a
 CFLAGS+=	-I${.CURDIR}/../../lib/libvarconf
 DPADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
-LDADD+=		-lfetch -ljail -lgeom -lmemstat -lprocstat -ldevstat -lnv -lutil -lpthread -lcrypto ${UCL_LIBS}
+LDADD+=		-lfetch -ljail -lgeom -lmemstat -lprocstat -ldevstat -lnv -lutil -lpthread -lcrypto -lz ${UCL_LIBS}
 # Every symbol bound when the agent starts (ld(1) -z now): with a
 # libcblink older than the agent, it stops there, rtld(1) saying what
 # is missing, not at the first call to it, detached, its stderr closed.
