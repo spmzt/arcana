@@ -204,7 +204,9 @@ function ydesc(doc, ind,    n, i, a, out) {
 			opname[nop] = opcur
 			opform = ""
 			opauth[opcur] = 0
-		} else if (ind == 4 && key == "auth")
+		} else if (ind == 4 && key == "retired")
+			opretired[opcur] = value(line) == "true"
+		else if (ind == 4 && key == "auth")
 			opauth[opcur] = value(line) == "true"
 		else if (ind == 4 && key == "mcgrp")
 			opgrp[opcur] = value(line)
@@ -273,7 +275,10 @@ function cval(v) {
 }
 
 # The command number of an operation: its place among the operations,
-# from 1, events counted (an event's is its notification's command).
+# from 1, events counted (an event's is its notification's command).  A
+# retired one keeps its place, nothing made of it, so that no command
+# after it moves: an agent and a console of different releases then
+# still agree on every command both have (agent-update among them).
 function cmd_of(op,    i) {
 	for (i = 1; i <= nop; i++)
 		if (opname[i] == op)
@@ -473,6 +478,8 @@ function out_yang(    i, j, s, op, famset, st, cmd) {
 	# The operations.
 	for (i = 1; i <= nop; i++) {
 		op = opname[i]
+		if (opretired[op])
+			continue
 		if (opforms[op, "event"]) {
 			printf "  sx:structure %s-ntf {\n", op
 			printf "    fam:command %d;\n", cmd_of(op)
@@ -556,6 +563,8 @@ function out_h(    i, j, s, op, e, u, d, famset, st) {
 	printf "/* The commands, as the frames carry them; an event's is its\n * notification's. */\n"
 	for (i = 1; i <= nop; i++) {
 		op = opname[i]
+		if (opretired[op])
+			continue
 		printf "#define\t%s_CMD_%s\t%d\n", u, uname(op), cmd_of(op)
 	}
 	printf "\n/* The multicast groups, by their place in the family. */\n"
@@ -575,6 +584,8 @@ function out_h(    i, j, s, op, e, u, d, famset, st) {
 	}
 	for (i = 1; i <= nop; i++) {
 		op = opname[i]
+		if (opretired[op])
+			continue
 		if (opforms[op, "event"]) {
 			printf "#define\t%s_%s_ntf\t%s_%s_ntf\n", pfx, cname(op),
 			    cname(spec), cname(op)
@@ -606,6 +617,8 @@ function out_h(    i, j, s, op, e, u, d, famset, st) {
 	printf "int\t%s_register(cbl_ctx *, void *, cbl_family **);\n\n", pfx
 	for (i = 1; i <= nop; i++) {
 		op = opname[i]
+		if (opretired[op])
+			continue
 		if (opforms[op, "event"]) {
 			printf "int\t%s_%s_notify(cbl_family *, const struct %s_%s_ntf *);\n",
 			    pfx, cname(op), pfx, cname(op)
@@ -650,6 +663,8 @@ function out_h(    i, j, s, op, e, u, d, famset, st) {
 	printf "void\t%s_client_fini(struct %s_client *);\n\n", pfx, pfx
 	for (i = 1; i <= nop; i++) {
 		op = opname[i]
+		if (opretired[op])
+			continue
 		if (opforms[op, "event"]) {
 			printf "struct %s_%s_handlers {\n\tvoid\t(*%s)(const struct %s_%s_ntf *, void *);\n};\n",
 			    pfx, cname(opgrp[op]), cname(op), pfx, cname(op)
@@ -691,6 +706,8 @@ function out_c_server(    i, op, u, st, pl, n) {
 	printf "/* ---- The server ----------------------------------------------- */\n\n"
 	for (i = 1; i <= nop; i++) {
 		op = opname[i]
+		if (opretired[op])
+			continue
 		if (opforms[op, "event"]) {
 			printf "int\n%s_%s_notify(cbl_family *fam, const struct %s_%s_ntf *ntf)\n{\n\tcbl_msg *msg;\n\tint error;\n\n",
 			    pfx, cname(op), pfx, cname(op)
@@ -792,6 +809,8 @@ function out_c_server(    i, op, u, st, pl, n) {
 	n = 0
 	for (i = 1; i <= nop; i++) {
 		op = opname[i]
+		if (opretired[op])
+			continue
 		if (opforms[op, "event"])
 			continue
 		st = stream_of(op)
@@ -844,6 +863,8 @@ function out_c_client(    i, op, u, st) {
 	    pfx, pfx, pfx, pfx
 	for (i = 1; i <= nop; i++) {
 		op = opname[i]
+		if (opretired[op])
+			continue
 		if (opforms[op, "event"]) {
 			printf "struct %s__%s_sub {\n\tstruct %s_%s_handlers h;\n\tvoid\t*arg;\n};\n\n",
 			    pfx, cname(opgrp[op]), pfx, cname(opgrp[op])
@@ -1060,6 +1081,8 @@ function out_schema(    i, j, s, op, ak, sets, ops, rows, t, path, cmd, form) {
 	ops = ""
 	for (i = 1; i <= nop; i++) {
 		op = opname[i]
+		if (opretired[op])
+			continue
 		cmd = cmd_of(op)
 		if (opforms[op, "event"]) {
 			path = "/" spec ":" op "-ntf"

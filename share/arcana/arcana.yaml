@@ -2161,6 +2161,12 @@ operations:
         attributes:
           - host
 
+  - name: list
+    retired: true
+
+  - name: action
+    retired: true
+
   - name: address
     attribute-set: arcana
     auth: true
@@ -2299,6 +2305,12 @@ operations:
           - error
           - stats
           - trace
+
+  - name: packages
+    retired: true
+
+  - name: pkg-upgrade
+    retired: true
 
   - name: job-submit
     attribute-set: arcana
