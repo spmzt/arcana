@@ -91,7 +91,7 @@ write_backup(struct work *w, const char *path, const char *buf, size_t len,
 	int		 fd, step;
 
 	bak = wfmt(w, "%s.arcana.bak", path);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write",
+	step = step_begin(w, STEP_FILE, "write",
 	    "previous version to %s", bak);
 	if ((fd = open(bak, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
 	    0600)) == -1)

@@ -1,10 +1,10 @@
 PROG=		arcanactl
 SRCS=		arcanactl.c yjsonin.c yqueue.c ychange.c ystore.c ygula.c \
 		yevjson.c ytshoot.c ytsjson.c yprobes.c yhostjson.c ysdwan.c \
-		zprog.c
+		yreads.c yflat.c ystream.c zprog.c
 # RFC 7951's JSON in, arcana-jobs, arcana-storage, what runs and was
 # written down, packets and paths followed, arcana-probe, the host and
-# its agent, arcana-sdwan: the console's; a program compressed for
+# its agent, arcana-sdwan, the host's daemons and files: the console's; a program compressed for
 # agent-update: the agent's.
 .PATH:		${.CURDIR}/../../www/arcana-console \
 		${.CURDIR}/../arcana-agent/ira
@@ -12,7 +12,6 @@ MAN=		arcanactl.8
 
 .include "${.CURDIR}/../../share/mk/arcana.mk"
 
-ARC_WIRE=	client
 .include "${.CURDIR}/../../share/mk/arcana.wire.mk"
 .include "${.CURDIR}/../../share/mk/arcana.yang.mk"
 

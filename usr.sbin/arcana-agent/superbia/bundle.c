@@ -550,15 +550,15 @@ do_config_export(struct work *w, bool secrets, struct json_rsp *rsp)
 	put_str(top, "host", sysctl_str(w, "kern.hostname"));
 	put_str(top, "agent", ARCANA_AGENT_VERSION);
 	put_str(top, "taken", iso);
-	step = step_begin(w, ARC_STEP_KIND_LIB, "sysctl(3)", "the hardware: "
+	step = step_begin(w, STEP_LIB, "sysctl(3)", "the hardware: "
 	    "hw.*, kern.disks, getifaddrs(3) less the cloners");
 	ucl_object_insert_key(top, facts(w), "facts", 0, true);
 	step_end(w, step, true, NULL);
-	step = step_begin(w, ARC_STEP_KIND_EXEC, "pkg", "query: those "
+	step = step_begin(w, STEP_EXEC, "pkg", "query: those "
 	    "installed by hand");
 	ucl_object_insert_key(top, packages(w), "packages", 0, true);
 	step_end(w, step, true, NULL);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "read", "the configuration "
+	step = step_begin(w, STEP_FILE, "read", "the configuration "
 	    "files Arcana manages%s", secrets ? ", secrets too" : "");
 	ucl_object_insert_key(top, files_of(w, secrets), "files", 0, true);
 	step_end(w, step, true, NULL);
@@ -702,7 +702,7 @@ do_config_apply(struct work *w, const char *bundle, bool dry_run,
 	top = ucl_object_typed_new(UCL_OBJECT);
 
 	/* The hardware the bundle was made on, against this host's. */
-	step = step_begin(w, ARC_STEP_KIND_LIB, "sysctl(3)", "the hardware "
+	step = step_begin(w, STEP_LIB, "sysctl(3)", "the hardware "
 	    "against the bundle's");
 	here = facts(w);
 	mism = ucl_object_typed_new(UCL_ARRAY);
@@ -736,7 +736,7 @@ do_config_apply(struct work *w, const char *bundle, bool dry_run,
 	ucl_object_insert_key(top, mism, "mismatches", 0, true);
 
 	/* The packages it has and this host does not: told, not installed. */
-	step = step_begin(w, ARC_STEP_KIND_EXEC, "pkg", "query: those "
+	step = step_begin(w, STEP_EXEC, "pkg", "query: those "
 	    "here, against the bundle's");
 	pk = ucl_object_typed_new(UCL_ARRAY);
 	{
@@ -755,7 +755,7 @@ do_config_apply(struct work *w, const char *bundle, bool dry_run,
 	ucl_object_unref(here);
 
 	/* Each file: where it goes here, and what it changes. */
-	step = step_begin(w, ARC_STEP_KIND_FILE, "read", "each file of the "
+	step = step_begin(w, STEP_FILE, "read", "each file of the "
 	    "bundle against this host's");
 	files = ucl_object_typed_new(UCL_ARRAY);
 	nchanged = 0;
@@ -807,7 +807,7 @@ do_config_apply(struct work *w, const char *bundle, bool dry_run,
 	strftime(iso, sizeof(iso), "%Y%m%d-%H%M%S", localtime(&now));
 	backup = wfmt(w, "%s%s/config-%s", opts.root != NULL ? opts.root : "",
 	    BUNDLE_BACKUPS, iso);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "the files before, "
+	step = step_begin(w, STEP_FILE, "write", "the files before, "
 	    "to %s", backup);
 	it = NULL;
 	while ((f = ucl_object_iterate(ucl_object_lookup(b, "files"), &it,
@@ -856,7 +856,7 @@ do_config_apply(struct work *w, const char *bundle, bool dry_run,
 		    ucl_object_tostring_forced(ucl_object_lookup(f, "group"))) :
 		    NULL;
 		own = geteuid() == 0;
-		step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s (%04o)",
+		step = step_begin(w, STEP_FILE, "write", "%s (%04o)",
 		    local, (unsigned)mode);
 		if ((error = write_file(local, text, mode, pw != NULL ?
 		    pw->pw_uid : 0, gr != NULL ? gr->gr_gid : 0, own)) != 0) {

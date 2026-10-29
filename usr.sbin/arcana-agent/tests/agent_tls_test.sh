@@ -138,13 +138,40 @@ mtls_body()
 	# nothing as the console does.
 	cert ca otherhost "IP:127.0.0.2,URI:urn:arcana:role:agent" \
 	    "serverAuth,clientAuth"
-	atf_check -s exit:1 -e match:'[Pp]ermission denied' -o ignore \
+	atf_check -s exit:1 -e match:'not let in' -o ignore \
 	    "$JGC" -c "$URI" -A ca.pem -C otherhost.pem -K otherhost.key hello
 	atf_check -o match:"a host's certificate asked: refused" \
 	    cat daemon.out
 	# Nor of the standard models (cblink's YANG family).
 	atf_check -s exit:1 -e not-empty -o ignore \
 	    "$JGC" -c "$URI" -A ca.pem -C otherhost.pem -K otherhost.key get
+	# Nor of what moved off the arcana family: sshd, poudriere, the
+	# reads, a notice, read through their modules.
+	for c in sshd poudriere crashes system netstore smtpd speeder \
+	    monitor "suricata rules"; do
+		atf_check -s exit:1 -e not-empty -o ignore \
+		    "$JGC" -c "$URI" -A ca.pem -C otherhost.pem \
+		    -K otherhost.key $c
+	done
+	atf_check -s exit:1 -e not-empty -o ignore \
+	    env ARCANA_TELEGRAM_TOKEN=1:a "$JGC" -c "$URI" -A ca.pem \
+	    -C otherhost.pem -K otherhost.key notify 5 hi
+	# Nor may it open a stream of arcana-stream: a snapshot sent or
+	# received, a capture put, a pcap-log file got.  The console may,
+	# its words then the agent's to refuse.
+	local ys="$(atf_get_srcdir)/ystreamc"
+	for cmd in 1 2 3 4; do
+		atf_check -o match:'^refused: .*(not let in|[Pp]ermission denied|only the console)' \
+		    "$ys" "$URI" ca.pem otherhost.pem otherhost.key $cmd x
+	done
+	atf_check -o match:'^refused: a snapshot, dataset@name' \
+	    "$ys" "$URI" ca.pem client.pem client.key 1 x
+	atf_check -o match:'^refused: a dataset under a pool' \
+	    "$ys" "$URI" ca.pem client.pem client.key 2 x
+	atf_check -o match:'^refused: a capture is sent by instance=' \
+	    "$ys" "$URI" ca.pem client.pem client.key 3 x
+	atf_check -o match:'^refused: a file of pcap-log is asked by' \
+	    "$ys" "$URI" ca.pem client.pem client.key 4 x
 	# NACM's (RFC 8341) default: the console, which asks for nobody,
 	# and its admin may do anything; another user reads, and asks what
 	# changes nothing, but what changes the host is denied, counted.

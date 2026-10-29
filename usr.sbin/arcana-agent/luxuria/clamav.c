@@ -193,7 +193,7 @@ do_clamav_job(struct work *w, const struct arc_job_spec *sp,
 		}
 		from_sample = true;
 	}
-	step = step_begin(w, ARC_STEP_KIND_FILE, "freshclam.conf", "%s, its "
+	step = step_begin(w, STEP_FILE, "freshclam.conf", "%s, its "
 	    "mirrors written%s", conf, from_sample ? ", made from the port's "
 	    "sample" : "");
 	/* The lines as they were, less the Example line and the mirrors;

@@ -41,19 +41,19 @@ static struct event	ring[EVENTS_KEPT];
 static size_t		ring_first, ring_n;
 static uint64_t		ev_last;
 static time_t		ev_since;	/* the first event's, or the start */
-static cbl_family	*ev_family;	/* up: the events are told */
+static bool		 ev_told;	/* up: the events are told */
 
 /*
- * The agent's family, up: the events are told to those who subscribed,
- * as arcana-events' notification; NULL before it goes, so that none is
+ * The agent up: the events are told to those who subscribed, as
+ * arcana-events' notification; down before it goes, so that none is
  * told after.
  */
 void
-event_family(cbl_family *fam)
+events_told(bool up)
 {
 
 	pthread_mutex_lock(&ev_lock);
-	ev_family = fam;
+	ev_told = up;
 	pthread_mutex_unlock(&ev_lock);
 }
 
@@ -127,7 +127,7 @@ event_vadd(const char *jail, const char *kind, const char *fmt, va_list ap)
 	/* Told to the subscribers too, as arcana-events' notification,
 	 * in the order they are kept. */
 	json = NULL;
-	if (ev_family != NULL && asprintf(&json, "{\"n\":%ju,\"t\":%jd,"
+	if (ev_told && asprintf(&json, "{\"n\":%ju,\"t\":%jd,"
 	    "\"kind\":\"%s\"%s%s%s,\"data\":%s}", (uintmax_t)e->n,
 	    (intmax_t)e->t, kind, jname != NULL ? ",\"jail\":\"" : "",
 	    jname != NULL ? jname : "", jname != NULL ? "\"" : "", data) !=
@@ -191,7 +191,7 @@ do_events(struct work *w, uint64_t after, struct json_rsp *rsp)
 
 	rsp->has_ok = true;
 	rsp->ok = false;
-	step = step_begin(w, ARC_STEP_KIND_DAEMON, "events",
+	step = step_begin(w, STEP_DAEMON, "events",
 	    "those after number %ju", (uintmax_t)after);
 	json = NULL;
 	if ((fp = open_memstream(&json, &len)) == NULL) {

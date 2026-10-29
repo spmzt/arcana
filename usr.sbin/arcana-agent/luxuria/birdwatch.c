@@ -184,7 +184,7 @@ bfd(const char *place, const ucl_object_t *o)
 static void
 place_watch(struct work *w, const char *place)
 {
-	struct arc_network_rsp	 rsp;
+	struct net_rsp	 rsp;
 	struct ucl_parser	*p;
 	const ucl_object_t	*top, *o;
 	ucl_object_iter_t	 it;

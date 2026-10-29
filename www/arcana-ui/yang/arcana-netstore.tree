@@ -1,0 +1,48 @@
+module: arcana-netstore
+  +--ro netstore
+     +---x read
+        +---w input
+        |  +---w name*   enumeration
+        +--ro output
+           +--ro nfs
+           |  +--ro nfsd-enabled?          boolean
+           |  +--ro nfsd-running?          boolean
+           |  +--ro mountd-enabled?        boolean
+           |  +--ro mountd-running?        boolean
+           |  +--ro nfs-server-enable?     string
+           |  +--ro nfsv4-server-enable?   string
+           |  +--ro nfsv4-server-only?     string
+           |  +--ro nfsuserd-enable?       string
+           |  +--ro flags?                 string
+           |  +--ro threads?               string
+           |  +--ro pnfs?                  string
+           |  +--ro mirror?                string
+           |  +--ro max-minorversion?      int32
+           |  +--ro exports-path?          string
+           |  +--ro exports?               string
+           |  +--ro v4root?                string
+           |  +--ro v4root-zfs?            boolean
+           |  +--ro v4root-error?          string
+           |  +--ro zfs-exports?           string
+           |  +--ro share* [dataset]
+           |  |  +--ro dataset       string
+           |  |  +--ro mountpoint?   string
+           |  |  +--ro sharenfs?     string
+           |  +--ro exported?              string
+           +--ro iscsi
+           |  +--ro ctld-enabled?     boolean
+           |  +--ro ctld-running?     boolean
+           |  +--ro iscsid-enabled?   boolean
+           |  +--ro iscsid-running?   boolean
+           |  +--ro conf-path?        string
+           |  +--ro conf?             string
+           |  +--ro luns?             string
+           |  +--ro sessions?         string
+           |  +--ro ports?            string
+           +--ro hast
+              +--ro hastd-enabled?   boolean
+              +--ro hastd-running?   boolean
+              +--ro conf-path?       string
+              +--ro conf?            string
+              +--ro status?          string
+              +--ro resources?       string

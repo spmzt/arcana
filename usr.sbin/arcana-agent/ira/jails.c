@@ -111,7 +111,7 @@ jails_running(struct work *w, struct jinfo **out, size_t *nout,
 	int			 idx[P_COUNT];
 	int			 i, np, jid, lastjid, step;
 
-	step = step_begin(w, ARC_STEP_KIND_LIB, "jailparam_get(3)",
+	step = step_begin(w, STEP_LIB, "jailparam_get(3)",
 	    "iterate jails by lastjid, flags JAIL_DYING");
 	/* Parameters this kernel lacks (ip6.addr without INET6) go. */
 	memset(jp, 0, sizeof(jp));
@@ -188,7 +188,7 @@ jails_procstats(struct work *w, struct jinfo *list, size_t n)
 
 	if (n == 0)
 		return;
-	step = step_begin(w, ARC_STEP_KIND_LIB, "procstat_getprocs(3)",
+	step = step_begin(w, STEP_LIB, "procstat_getprocs(3)",
 	    "KERN_PROC_PROC, grouped by ki_jid");
 	if ((ps = procstat_open_sysctl()) == NULL) {
 		step_end(w, step, false, "procstat_open_sysctl failed");
@@ -230,7 +230,7 @@ jail_named(struct work *w, const char *name, struct jinfo *ji)
 	int	jid, step;
 
 	memset(ji, 0, sizeof(*ji));
-	step = step_begin(w, ARC_STEP_KIND_LIB, "jail_getv(3)",
+	step = step_begin(w, STEP_LIB, "jail_getv(3)",
 	    "name %s: vnet, path, osrelease", name);
 	jid = jail_getv(0, "name", name, "vnet", vnet, "path", path,
 	    "osrelease", rel, NULL);
@@ -253,7 +253,7 @@ jail_lookup(struct work *w, const char *name)
 {
 	int	jid, step;
 
-	step = step_begin(w, ARC_STEP_KIND_LIB, "jail_getid(3)", "%s", name);
+	step = step_begin(w, STEP_LIB, "jail_getid(3)", "%s", name);
 	jid = jail_getid(name);
 	if (jid < 0)
 		step_end(w, step, true, "not running");

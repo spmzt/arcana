@@ -25,14 +25,15 @@
  * has none of, refused rather than lost (*bad says which).
  * yq_submit(): the job-specs v (n of them) queued, in that order: the
  * jobs as the queue has them after, *jobs and *njobs.  yq_list(): the
- * queue, without the traces.  yq_job(): job id with its trace, by its
- * read action.  yq_cancel(), yq_confirm(): its cancel and confirm, the
- * job as it is after in *j where j is not NULL.  yq_lanes(): how many
- * jobs of pkg in jails run at once, arcana-jobs' lanes in the
- * candidate, committed.
+ * queue, without the traces.  yq_job(): job id, and its trace in
+ * *steps, *nsteps, by its read action.  yq_cancel(), yq_confirm(): its
+ * cancel and confirm, the job as it is after in *j where j is not NULL.
+ * yq_lanes(): how many jobs of pkg in jails run at once, arcana-jobs'
+ * lanes in the candidate, committed.
  */
 struct arc_job;
 struct arc_job_spec;
+struct arcana_jobs_step;
 struct arcana_jobs_submit_input_change;
 
 struct yq_jobs {
@@ -51,8 +52,13 @@ int	yq_submit(cbl_conn *conn, const struct arc_job_spec *v, size_t n,
 	    size_t errlen);
 int	yq_list(cbl_conn *conn, cbl_yarena *a, struct yq_jobs *out,
 	    char *err, size_t errlen);
+/* yq_list_of(): the same of arcana-jobs' data, as a push held it. */
+struct arcana_jobs;
+int	yq_list_of(const struct arcana_jobs *d, cbl_yarena *a,
+	    struct yq_jobs *out);
 int	yq_job(cbl_conn *conn, uint64_t id, cbl_yarena *a, struct arc_job *j,
-	    char *err, size_t errlen);
+	    const struct arcana_jobs_step **steps, size_t *nsteps, char *err,
+	    size_t errlen);
 int	yq_cancel(cbl_conn *conn, uint64_t id, cbl_yarena *a,
 	    struct arc_job *j, char *err, size_t errlen);
 int	yq_confirm(cbl_conn *conn, uint64_t id, char *err, size_t errlen);
@@ -68,7 +74,8 @@ int	yq_lanes(cbl_conn *conn, int lanes, char *err, size_t errlen);
  * discarded where the commit fails; yq_call(), rpc act (list NULL), or
  * action act of list's entry whose one key is *key, or of container
  * list (key NULL), in its input (NULL: none), out its output (NULL: not
- * read), in a.
+ * read), in a; yq_call_wait(), the same waited for no longer than
+ * timeout_ms (-1: the connection's longest).
  */
 const struct cbl_ynode *yq_top(const char *mod, const char *name);
 const struct cbl_ynode *yq_child(const struct cbl_ynode *n,
@@ -80,5 +87,9 @@ int	yq_commit(cbl_conn *conn, const struct cbl_ynode *n, const void *d,
 int	yq_call(cbl_conn *conn, const struct cbl_ynode *list, const void *key,
 	    const struct cbl_ynode *act, const void *in, void *out,
 	    cbl_yarena *a, char *err, size_t errlen);
+int	yq_call_wait(cbl_conn *conn, const struct cbl_ynode *list,
+	    const void *key, const struct cbl_ynode *act, const void *in,
+	    void *out, cbl_yarena *a, int timeout_ms, char *err,
+	    size_t errlen);
 
 #endif	/* !_ARCANA_YQUEUE_H_ */

@@ -53,7 +53,7 @@
 static void	sources_json(struct work *, ucl_object_t *);
 static const char *matcher_line(struct work *, const char *);
 static bool	sc_read(struct work *, const char *const *, size_t,
-		    struct arc_suricata_rules_rsp *);
+		    struct json_rsp *);
 
 /* A rule the admin set: 'e' on, 'd' off, 'p' drop. */
 struct rstate {
@@ -587,7 +587,7 @@ put_s(ucl_object_t *o, const char *k, const char *v)
 
 void
 do_suricata_rules(struct work *w, const char *const *names, size_t nn,
-    struct arc_suricata_rules_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	static const char *const keys[] = { "q", "sid", "only", "classtype",
 	    "offset", "limit", "sources", "instance", "command", "iface",
@@ -993,7 +993,7 @@ suricata_source_job(struct work *w, const struct arc_job_spec *sp,
 			name = sp->names.v[i] + 5;
 	on = source_file(w, name, false);
 	off = source_file(w, name, true);
-	step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+	step = step_begin(w, STEP_DAEMON, "arcana-agent", "%s",
 	    strcmp(sp->verb, "source-disable") == 0 ? wfmt(w, "%s disabled, "
 	    "kept as %s", name, off) : strcmp(sp->verb, "source-remove") == 0 ?
 	    wfmt(w, "%s taken away", name) : wfmt(w, "%s written", on));
@@ -1312,7 +1312,7 @@ sc_ask(struct work *w, const char *path, const char *cmd, const char *iface,
 /* instance=NAME command=CMD [iface=IF]: Suricata's answer, as it is. */
 static bool
 sc_read(struct work *w, const char *const *names, size_t nn,
-    struct arc_suricata_rules_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	const char	*inst, *cmd, *ifn, *e, *r;
 	size_t		 i;

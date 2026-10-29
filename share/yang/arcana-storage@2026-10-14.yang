@@ -26,8 +26,9 @@ module arcana-storage {
 
      Its changes are jobs (arcana-jobs's zfs, zpool, mount, gpart, cam
      kinds), but for the actions here: a dataset's key loaded,
-     unloaded or changed, fstab(5)'s text put in place, and a snapshot
-     sent or one received, the bytes riding the request's stream.";
+     unloaded or changed, and fstab(5)'s text put in place.  A snapshot
+     is sent and received on the agent's own stream family
+     (arcana-stream).";
 
   revision 2026-10-14 {
     description
@@ -693,30 +694,6 @@ module arcana-storage {
           }
         }
       }
-      augment "snapshot" {
-        description
-          "A snapshot sent.";
-        action send {
-          nacm:default-deny-all;
-          description
-            "zfs send of it, its bytes the request's stream, each data
-             message the next; half-closed when send ended well.";
-          input {
-            leaf from {
-              type string;
-              description
-                "A snapshot of the same dataset: only what changed since
-                 it (zfs send -i).";
-            }
-            leaf recursive {
-              type boolean;
-              default "false";
-              description
-                "The datasets under it too (-R).";
-            }
-          }
-        }
-      }
       augment "fstab" {
         description
           "fstab(5) written.";
@@ -832,22 +809,6 @@ module arcana-storage {
       }
       output {
         uses storage-state;
-      }
-    }
-  }
-
-  rpc receive {
-    nacm:default-deny-all;
-    description
-      "zfs receive -u into the dataset named, the bytes the request's
-       stream, given to receive only as fast as it reads them; never
-       over a dataset (no -F), nor into a pool's own.";
-    input {
-      leaf dataset {
-        type string;
-        mandatory true;
-        description
-          "The dataset made.";
       }
     }
   }

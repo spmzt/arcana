@@ -67,7 +67,7 @@ main(int argc, char **argv)
 	if (strcmp(argv[1], "host") == 0) {
 		static const char *const plugins[] = { "bird", "wireguard",
 		    "nothing" };
-		struct arc_host hh = { .hostname = "labvm", .sysname = "FreeBSD",
+		struct host_facts hh = { .hostname = "labvm", .sysname = "FreeBSD",
 		    .release = "16.0-CURRENT", .machine = "amd64",
 		    .has_osreldate = true, .osreldate = 1600000, .has_ncpu = true,
 		    .ncpu = 12, .has_physmem = true, .physmem = 25769803776,
@@ -301,7 +301,7 @@ main(int argc, char **argv)
 		    d.settings_from_file), d.banner != NULL ? strlen(d.banner) :
 		    0, d.before_kept ? "yes" : "no");
 		for (size_t i = 0; i < d.host_key.n; i++) {
-			const struct arcana_sshd_sshd_host_key *h =
+			const struct arcana_sshd_host_key *h =
 			    &d.host_key.v[i];
 
 			printf("host-key %s %s %u %s %s used=%s", h->path, str(
@@ -334,8 +334,9 @@ main(int argc, char **argv)
 				    d.user.v[i].key.v[k].comment), str(
 				    d.user.v[i].key.v[k].options));
 		}
-		for (size_t i = 0; i < d.user_ca.n; i++)
-			printf("user-ca %s\n", d.user_ca.v[i]);
+		for (size_t i = 0; i < d.user_ca_key.n; i++)
+			printf("user-ca %s %s\n", d.user_ca_key.v[i].fingerprint,
+			    str(d.user_ca_key.v[i].type));
 		same((void *)arcana_sshd_sshd_encode, (void *)
 		    arcana_sshd_sshd_decode, &d, &back, a);
 	} else if (strcmp(argv[1], "builder") == 0) {

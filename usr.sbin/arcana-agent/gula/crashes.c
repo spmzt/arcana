@@ -188,7 +188,7 @@ core_backtrace(struct work *w, const char *dir, const char *core,
 	argv[n++] = (char *)(uintptr_t)"--";
 	argv[n++] = (char *)(uintptr_t)program;
 	argv[n] = NULL;
-	step = step_begin(w, ARC_STEP_KIND_EXEC, "lldb", "%s of %s", core,
+	step = step_begin(w, STEP_EXEC, "lldb", "%s of %s", core,
 	    program);
 	(void)run_exec_max(w, argv, &res, BT_MAX);
 	text = wfmt(w, "%.*s%.*s", (int)res.outlen, res.out != NULL ? res.out :
@@ -215,7 +215,7 @@ core_backtrace(struct work *w, const char *dir, const char *core,
 		argv[n++] = (char *)(uintptr_t)program;
 		argv[n++] = (char *)(uintptr_t)path;
 		argv[n] = NULL;
-		step = step_begin(w, ARC_STEP_KIND_EXEC, "gdb", "%s of %s",
+		step = step_begin(w, STEP_EXEC, "gdb", "%s of %s",
 		    core, program);
 		(void)run_exec_max(w, argv, &res, BT_MAX);
 		text = wfmt(w, "%s\n%.*s%.*s", text, (int)res.outlen, res.out !=
@@ -245,7 +245,7 @@ core_backtrace(struct work *w, const char *dir, const char *core,
  */
 void
 do_crashes(struct work *w, const char *const *names, size_t n,
-    struct arc_crashes_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	static const char *const elsewhere[] = { "/", "/root", "/tmp",
 	    "/var/tmp", "/var/db/bird", "/usr/local/etc/bird" };

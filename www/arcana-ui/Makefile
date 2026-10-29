@@ -105,8 +105,6 @@ ${DIST}/icons/icon-maskable-512.png: ${MKICON}
 	mkdir -p ${DIST}/icons
 	${MKICON} -m 512 ${.TARGET}
 
-# The family's schema, shown beside an operation: cblink-gen's reference
-# for share/arcana/arcana.yaml, as JSON.
 # The kinds of job, for the workflows' forms: share/arcana/jobs.yaml.
 ${DIST}/jobs.json: ${ARC_TOP}/share/arcana/jobs.yaml \
     ${ARC_TOP}/share/arcana/jobs.awk ${ARC_TOP}/share/arcana/arcana.yaml
@@ -116,18 +114,8 @@ ${DIST}/jobs.json: ${ARC_TOP}/share/arcana/jobs.yaml \
 	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
 
-# The family's reference the Schema panel shows: the spec's sets and
-# operations with the SIDs the wire carries them by (share/yang's .sid).
-${DIST}/schema.json: ${ARC_TOP}/share/arcana/arcana.yaml \
-    ${ARC_TOP}/share/arcana/wire.awk ${ARC_TOP}/share/yang/arcana@2026-10-22.sid
-	mkdir -p ${DIST}
-	awk -v out=schema -v sids=${ARC_TOP}/share/yang/arcana@2026-10-22.sid \
-	    -f ${ARC_TOP}/share/arcana/wire.awk ${ARC_TOP}/share/arcana/arcana.yaml \
-	    > ${.TARGET}.tmp
-	mv ${.TARGET}.tmp ${.TARGET}
-
-# The YANG model of each operation converted to YANG (share/arcana/
-# yang-ops), shown beside its CBOR schema: the module's RFC 8340 tree.
+# The YANG model of each operation (share/arcana/yang-ops), shown beside
+# it: the module's RFC 8340 tree.
 # The trees are committed in yang/, as the agent's tables are: building
 # needs no libyang, only "make regen-yang" does, and make check fails
 # when they are not what it makes.
@@ -174,7 +162,7 @@ ${DIST}/openapi.json: ${ARC_TOP}/docs/openapi.yaml \
 	awk -f ${.CURDIR}/tools/openapi.awk ${ARC_TOP}/docs/openapi.yaml > \
 	    ${.TARGET}
 
-SHELL_FILES=	${STATIC:S,^,${DIST}/,} ${DIST}/arcana.js ${DIST}/schema.json \
+SHELL_FILES=	${STATIC:S,^,${DIST}/,} ${DIST}/arcana.js \
 		${DIST}/yang.json ${DIST}/jobs.json \
 		${DIST}/openapi.json ${DIST}/openapi.yaml \
 		${DIST}/morphdom-umd.min.js ${FONTS:S,^,${DIST}/fonts/,} \

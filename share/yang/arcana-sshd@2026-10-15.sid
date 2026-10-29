@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-sshd",
     "module-revision": "2026-10-15",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -10,13 +10,17 @@
         "module-revision": "2025-12-22"
       },
       {
-        "module-name": "arcana-jails",
-        "module-revision": "2026-10-14"
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
       }
     ],
     "assignment-range": [
       {
         "entry-point": "72300",
+        "size": "100"
+      },
+      {
+        "entry-point": "85000",
         "size": "100"
       }
     ],
@@ -29,171 +33,205 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd",
+        "status": "obsolete",
         "sid": "72301"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/banner",
+        "status": "obsolete",
         "sid": "72302"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/before-kept",
+        "status": "obsolete",
         "sid": "72303"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key",
+        "status": "obsolete",
         "sid": "72304"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/bits",
+        "status": "obsolete",
         "sid": "72305"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/certificate",
+        "status": "obsolete",
         "sid": "72306"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/certificate-used",
+        "status": "obsolete",
         "sid": "72307"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/certificate/ca",
+        "status": "obsolete",
         "sid": "72308"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/certificate/id",
+        "status": "obsolete",
         "sid": "72309"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/certificate/kind",
+        "status": "obsolete",
         "sid": "72310"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/certificate/principal",
+        "status": "obsolete",
         "sid": "72311"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/certificate/valid-after",
+        "status": "obsolete",
         "sid": "72312"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/certificate/valid-before",
+        "status": "obsolete",
         "sid": "72313"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/comment",
+        "status": "obsolete",
         "sid": "72314"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/fingerprint",
+        "status": "obsolete",
         "sid": "72315"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/path",
+        "status": "obsolete",
         "sid": "72316"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/host-key/type",
+        "status": "obsolete",
         "sid": "72317"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/setting",
+        "status": "obsolete",
         "sid": "72318"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/setting/name",
+        "status": "obsolete",
         "sid": "72319"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/setting/value",
+        "status": "obsolete",
         "sid": "72320"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/settings-from-file",
+        "status": "obsolete",
         "sid": "72321"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user",
+        "status": "obsolete",
         "sid": "72322"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user-ca",
+        "status": "obsolete",
         "sid": "72323"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user/home",
+        "status": "obsolete",
         "sid": "72324"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user/key",
+        "status": "obsolete",
         "sid": "72325"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user/key/bits",
+        "status": "obsolete",
         "sid": "72326"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user/key/comment",
+        "status": "obsolete",
         "sid": "72327"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user/key/fingerprint",
+        "status": "obsolete",
         "sid": "72328"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user/key/options",
+        "status": "obsolete",
         "sid": "72329"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user/key/type",
+        "status": "obsolete",
         "sid": "72330"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user/keys-file",
+        "status": "obsolete",
         "sid": "72331"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user/name",
+        "status": "obsolete",
         "sid": "72332"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user/shell",
+        "status": "obsolete",
         "sid": "72333"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-sshd:sshd/user/uid",
+        "status": "obsolete",
         "sid": "72334"
       },
       {
@@ -309,6 +347,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-sshd:sshd/user-ca",
+        "status": "obsolete",
         "sid": "72357"
       },
       {
@@ -365,6 +404,276 @@
         "namespace": "data",
         "identifier": "/arcana-sshd:sshd/user/uid",
         "sid": "72368"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/config",
+        "sid": "85000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/host-key/certificate/serial",
+        "sid": "85001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read",
+        "sid": "85002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/input",
+        "sid": "85003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/input/jail",
+        "sid": "85004"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output",
+        "sid": "85005"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/banner",
+        "sid": "85006"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/before-kept",
+        "sid": "85007"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/config",
+        "sid": "85008"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key",
+        "sid": "85009"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/bits",
+        "sid": "85010"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/certificate",
+        "sid": "85011"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/certificate-used",
+        "sid": "85012"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/certificate/ca",
+        "sid": "85013"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/certificate/id",
+        "sid": "85014"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/certificate/kind",
+        "sid": "85015"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/certificate/principal",
+        "sid": "85016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/certificate/serial",
+        "sid": "85017"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/certificate/valid-after",
+        "sid": "85018"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/certificate/valid-before",
+        "sid": "85019"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/comment",
+        "sid": "85020"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/fingerprint",
+        "sid": "85021"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/path",
+        "sid": "85022"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/host-key/type",
+        "sid": "85023"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/setting",
+        "sid": "85024"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/setting/name",
+        "sid": "85025"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/setting/value",
+        "sid": "85026"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/settings-from-file",
+        "sid": "85027"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user",
+        "sid": "85028"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user-ca-key",
+        "sid": "85029"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user-ca-key/bits",
+        "sid": "85030"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user-ca-key/comment",
+        "sid": "85031"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user-ca-key/fingerprint",
+        "sid": "85032"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user-ca-key/options",
+        "sid": "85033"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user-ca-key/type",
+        "sid": "85034"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user-cas-text",
+        "sid": "85035"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user/home",
+        "sid": "85036"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user/key",
+        "sid": "85037"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user/key/bits",
+        "sid": "85038"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user/key/comment",
+        "sid": "85039"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user/key/fingerprint",
+        "sid": "85040"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user/key/options",
+        "sid": "85041"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user/key/type",
+        "sid": "85042"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user/keys-file",
+        "sid": "85043"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user/name",
+        "sid": "85044"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user/shell",
+        "sid": "85045"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/read/output/user/uid",
+        "sid": "85046"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/user-ca-key",
+        "sid": "85047"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/user-ca-key/bits",
+        "sid": "85048"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/user-ca-key/comment",
+        "sid": "85049"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/user-ca-key/fingerprint",
+        "sid": "85050"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/user-ca-key/options",
+        "sid": "85051"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/user-ca-key/type",
+        "sid": "85052"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sshd:sshd/user-cas-text",
+        "sid": "85053"
       }
     ]
   }

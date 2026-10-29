@@ -27,8 +27,8 @@ module arcana-host {
      action, the certificates OpenSSL trusts (certctl(8):
      /etc/ssl/certs and /etc/ssl/untrusted).  The hello, list (its
      host), stats and certs operations of arcana.yaml converted (Y-3):
-     a read of the host is what the stats operation was, the console's
-     poll, and waits for no certificate.";
+     a read of the host is what the hello and stats operations were,
+     the console's poll, and waits for no certificate.";
 
   revision 2026-10-15 {
     description
@@ -74,6 +74,21 @@ module arcana-host {
     base plugin;
     description
       "c-icap, beside Squid.";
+  }
+  identity poudriere {
+    base plugin;
+    description
+      "poudriere(8), the ports' builder.";
+  }
+  identity smtpd {
+    base plugin;
+    description
+      "OpenSMTPD, through smtpctl(8).";
+  }
+  identity speederv2 {
+    base plugin;
+    description
+      "UDPspeeder, the SD-WAN's FEC relay.";
   }
 
   grouping certificate {
@@ -264,6 +279,22 @@ module arcana-host {
         description
           "The SHA-256 of the running program: two builds of one
            version differ in it.";
+      }
+      leaf-list feature {
+        type string;
+        description
+          "What this agent takes that one before it did not:
+           gzip-update, arcana-agent's update with program-size and
+           its build with compress, the program compressed.  An agent
+           without the leaf takes none.";
+      }
+      leaf safe-wait {
+        type uint32;
+        units "seconds";
+        description
+          "How long a change made in safe mode waits to be confirmed
+           before the agent undoes it, when the change does not say:
+           the agent's own (-w).";
       }
     }
     leaf-list plugin {

@@ -293,10 +293,10 @@ static struct {
 	ucl_object_t	*tabs;
 } tcache[8];
 
-static int	do_bird_locked(struct work *, struct arc_network_rsp *);
+static int	do_bird_locked(struct work *, struct net_rsp *);
 
 int
-do_bird(struct work *w, struct arc_network_rsp *rsp)
+do_bird(struct work *w, struct net_rsp *rsp)
 {
 	int	rc;
 
@@ -307,7 +307,7 @@ do_bird(struct work *w, struct arc_network_rsp *rsp)
 }
 
 static int
-do_bird_locked(struct work *w, struct arc_network_rsp *rsp)
+do_bird_locked(struct work *w, struct net_rsp *rsp)
 {
 	struct execres	 res;
 	ucl_object_t	*top, *st, *arr, *o, *chan, *tabs;
@@ -558,7 +558,7 @@ bad:
  * are counted first, and more than a page shows are not asked for.
  */
 int
-do_bird_routes(struct work *w, const char *filter, struct arc_network_rsp *rsp)
+do_bird_routes(struct work *w, const char *filter, struct net_rsp *rsp)
 {
 	struct execres	 res;
 	ucl_object_t	*top, *arr, *o, *nh, *hops, *attrs;
@@ -802,7 +802,7 @@ ospf_topology(struct work *w, char *text)
  * router of an area is enough: every router of it holds the same.
  */
 int
-do_bird_ospf(struct work *w, const char *filter, struct arc_network_rsp *rsp)
+do_bird_ospf(struct work *w, const char *filter, struct net_rsp *rsp)
 {
 	struct execres	 res, r2;
 	ucl_object_t	*top, *arr, *po, *areas;
@@ -1309,7 +1309,7 @@ conf_unplace(struct work *w, const char *path, bool had, const char *base,
 {
 	int	step;
 
-	step = step_begin(w, ARC_STEP_KIND_FILE, "restore", "%s", path);
+	step = step_begin(w, STEP_FILE, "restore", "%s", path);
 	step_end(w, step, scope_rename(w, path, had ? bak : base, had ? base :
 	    NULL) == 0, NULL);
 }
@@ -1332,7 +1332,7 @@ conf_place(struct work *w, const char *path, const char *text, bool *hadp,
 	*basep = strrchr(path, '/') + 1;
 	*bakp = wfmt(w, "%s.arcana-old", *basep);
 	*hadp = scope_slurp(w, path, &oldlen) != NULL;
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
+	step = step_begin(w, STEP_FILE, "write", "%s", path);
 	if (scope_replace(w, path, text, strlen(text), 0640, *hadp ? *bakp :
 	    NULL) == -1) {
 		step_end(w, step, false, "%s", strerror(errno));

@@ -96,6 +96,10 @@ int	ytrans_kernel(cbl_conn *conn, ucl_object_t **data, char *err,
  */
 int	ytrans_jails(cbl_conn *conn, bool config_only, ucl_object_t *top,
 	    char *err, size_t errlen);
+/* ytrans_jails_of(): the same of arcana-jails' data, as a push held it. */
+struct arcana_jails;
+void	ytrans_jails_of(const struct arcana_jails *d, bool config_only,
+	    ucl_object_t *top);
 ucl_object_t *ytrans_jail(cbl_conn *conn, const char *name);
 int	ytrans_jail_action(cbl_conn *conn, const char *name, const char *verb,
 	    char *err, size_t errlen);

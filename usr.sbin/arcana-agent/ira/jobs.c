@@ -115,7 +115,7 @@ static const char *undo_prepare(struct qjob *);
 static const char *confirm_apply(struct qjob *);
 static const char *undo(struct qjob *);
 static void	*runner(void *);
-static void	 fill(struct work *, struct arc_job *, struct qjob *, bool);
+static void	 fill(struct work *, struct arc_job *, struct qjob *);
 
 static const char *action_names[] = { "start", "stop", "restart", "kill",
     "enable", "disable" };
@@ -587,7 +587,7 @@ await_confirm(struct qjob *j)
 	bool		confirmed, rejected;
 	int		step;
 
-	step = step_begin(&j->w, ARC_STEP_KIND_DAEMON, "safe mode",
+	step = step_begin(&j->w, STEP_DAEMON, "safe mode",
 	    "the change is made; waiting %d s to hear from the client again",
 	    safe_wait(&j->spec));
 	clock_gettime(CLOCK_REALTIME, &ts);
@@ -672,7 +672,7 @@ undo_files_back(struct qjob *j, const char **errp)
 	rc = 0;
 	for (i = 0; i < j->undo_nfiles; i++) {
 		f = &j->undo_files[i];
-		step = step_begin(&j->w, ARC_STEP_KIND_FILE, f->had ? "write" :
+		step = step_begin(&j->w, STEP_FILE, f->had ? "write" :
 		    "remove", "%s, as it was", f->path);
 		if (f->had)
 			rc = scope_replace(&j->w, f->path, f->text, f->len, 0600,
@@ -1159,7 +1159,7 @@ confirm_apply(struct qjob *j)
 	    "configure") != 0)
 		return (NULL);
 	e = NULL;
-	step = step_begin(&j->w, ARC_STEP_KIND_EXEC, "birdc", "configure "
+	step = step_begin(&j->w, STEP_EXEC, "birdc", "configure "
 	    "confirm");
 	if (bird_configure_confirm(&j->w, &e) == 0) {
 		step_end(&j->w, step, true, NULL);
@@ -1173,8 +1173,8 @@ confirm_apply(struct qjob *j)
 static const char *
 undo(struct qjob *j)
 {
-	struct arc_address_req		 dq;
-	struct arc_address_rsp		 dr;
+	struct address_req		 dq;
+	struct address_rsp		 dr;
 	struct service_action_rsp	 sar;
 	struct route_more		 rm;
 	const struct arc_job_spec	*sp;
@@ -1464,8 +1464,8 @@ static void
 run(struct qjob *j, bool lane)
 {
 	struct jail_done		 ar;
-	struct arc_address_req		 dq;
-	struct arc_address_rsp		 dr;
+	struct address_req		 dq;
+	struct address_rsp		 dr;
 	struct service_action_rsp	 sar;
 	struct route_more		 rm;
 	struct pkg_upgrade		 uq;
@@ -1477,7 +1477,7 @@ run(struct qjob *j, bool lane)
 
 	held = false;
 	sp = &j->spec;
-	root = step_begin(&j->w, ARC_STEP_KIND_DAEMON, "arcana-agent", "job %ju: %s",
+	root = step_begin(&j->w, STEP_DAEMON, "arcana-agent", "job %ju: %s",
 	    (uintmax_t)j->id, j->title);
 	if (lane)
 		go = !changes_stopping();
@@ -2051,7 +2051,7 @@ jobs_init(void)
 
 /* j as a reply structure in w's pool; jobs_lock held. */
 static void
-fill(struct work *w, struct arc_job *o, struct qjob *j, bool trace)
+fill(struct work *w, struct arc_job *o, struct qjob *j)
 {
 
 	memset(o, 0, sizeof(*o));
@@ -2081,8 +2081,6 @@ fill(struct work *w, struct arc_job *o, struct qjob *j, bool trace)
 		o->has_finished = true;
 		o->finished = j->finished;
 	}
-	if (trace)
-		trace_copy(w, &j->w, &o->trace.v, &o->trace.n);
 }
 
 /*
@@ -2111,7 +2109,7 @@ jobs_submit(const struct arc_job_spec *specs, size_t n, const char *peer,
 		work_init(&j->w);
 		j->w.told = true;
 		TAILQ_INSERT_TAIL(&jobs, j, link);
-		fill(w, &v[i], j, false);
+		fill(w, &v[i], j);
 		logmsg(LOG_INFO, "%s: job %ju queued: %s", peer,
 		    (uintmax_t)j->id, j->title);
 	}
@@ -2155,15 +2153,16 @@ jobs_list(struct work *w, const struct arc_job **vp, size_t *np)
 	v = wcalloc(w, n + 1, sizeof(*v));
 	n = 0;
 	TAILQ_FOREACH(j, &jobs, link)
-		fill(w, &v[n++], j, false);
+		fill(w, &v[n++], j);
 	pthread_mutex_unlock(&jobs_lock);
 	*vp = v;
 	*np = n;
 }
 
-/* One job with its trace so far, or NULL. */
+/* One job, and its trace so far in *vp, *np; or NULL. */
 const struct arc_job *
-jobs_get(struct work *w, uint64_t id)
+jobs_get(struct work *w, uint64_t id, const struct arcana_jobs_step **vp,
+    size_t *np)
 {
 	struct arc_job	*o;
 	struct qjob	*j;
@@ -2173,7 +2172,8 @@ jobs_get(struct work *w, uint64_t id)
 	TAILQ_FOREACH(j, &jobs, link)
 		if (j->id == id) {
 			o = wcalloc(w, 1, sizeof(*o));
-			fill(w, o, j, true);
+			fill(w, o, j);
+			trace_copy(w, &j->w, vp, np);
 			break;
 		}
 	pthread_mutex_unlock(&jobs_lock);
@@ -2202,7 +2202,7 @@ jobs_cancel(struct work *w, uint64_t id, const char **errp)
 			j->rejected = true;
 			pthread_cond_broadcast(&confirm_cv);
 			o = wcalloc(w, 1, sizeof(*o));
-			fill(w, o, j, false);
+			fill(w, o, j);
 			break;
 		}
 		/* pkg in a jail at work: stopped, which a download or
@@ -2211,7 +2211,7 @@ jobs_cancel(struct work *w, uint64_t id, const char **errp)
 		if (j->state == ARC_JOB_STATE_RUNNING && pkg_lane(&j->spec)) {
 			j->w.cancel = true;
 			o = wcalloc(w, 1, sizeof(*o));
-			fill(w, o, j, false);
+			fill(w, o, j);
 			break;
 		}
 		if (j->state != ARC_JOB_STATE_QUEUED) {
@@ -2224,7 +2224,7 @@ jobs_cancel(struct work *w, uint64_t id, const char **errp)
 		j->finished = time(NULL);
 		yang_changed(YANG_JOBS);
 		o = wcalloc(w, 1, sizeof(*o));
-		fill(w, o, j, false);
+		fill(w, o, j);
 		break;
 	}
 	pthread_mutex_unlock(&jobs_lock);
@@ -2267,7 +2267,7 @@ jobs_confirm(struct work *w, uint64_t id, const char **errp)
 		j->confirmed = true;
 		pthread_cond_broadcast(&confirm_cv);
 		o = wcalloc(w, 1, sizeof(*o));
-		fill(w, o, j, false);
+		fill(w, o, j);
 		break;
 	}
 	pthread_mutex_unlock(&jobs_lock);

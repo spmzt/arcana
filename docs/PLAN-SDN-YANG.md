@@ -485,8 +485,8 @@ Depends on Y-2 for every write.
   old verbs go with the interim module.
 - **3.7 Tests.** every former operation's test rewritten against the
   module; the root suite on real jails.
-- **3.8 The switch.** A, C: the interim module gone with its last
-  operation.
+- **3.8 The switch.** A, C (done, agent 0.238.0, console 0.336.0):
+  the interim module gone with its last operation.
 
 ### Y-4 RESTCONF and the service models (16 weeks)
 
@@ -988,9 +988,10 @@ whose first part is served.
   console and arcanactl make the operation's JSON of a part from the
   read's output (ystore.c, the order of each tool's reading kept), so
   the pages' storage, fstab and key replies keep their shapes.  The
-  second SID range is 79 600.  Left: zfs-send and zfs-receive, the
-  snapshot's send action and the receive rpc, which wait for the
-  streams (3.4): the operations stay.  Check: `storage`,
+  second SID range is 79 600.  zfs-send and zfs-receive are streams
+  of arcana-stream now (3.8.0); the snapshot's send action and the
+  receive rpc, which refused (EOPNOTSUPP) since, went with the switch
+  (3.8.1), their SIDs obsolete.  Check: `storage`,
   `yang_storage`, agent_root_test's `zfs_key`; the console's
   `services` (its storage part); `pwa_storage`.
 - 3.1.6 A (done): `arcana-sysctl` (`running` ↔ sysctl.conf) and
@@ -1152,7 +1153,33 @@ whose first part is served.
   `tls_files`, `configured`; the console's `services`, `load`,
   `config_bundle`, `templates`, `mtls`, `enrol`, `users`,
   `update_notes`, `workflows`, `agent_update`; `pwa_storage`,
-  `pwa_hosts`, `pwa_firewall`.
+  `pwa_hosts`, `pwa_firewall`.  The rest retired (2026-10-29), for
+  the switch (3.8): hello is a read of arcana-host's `host`, its
+  agent's `feature` (gzip-update) and `safe-wait` added; agent-update,
+  agent-build, console-update and source-head are arcana-agent's
+  actions, update with `program-size`, build with `compress` and
+  `program-size`, console-update with `commit`, and a fetch the server
+  refused (host keys to confirm, the deploy key to give) answered with
+  them and `refused` beside, where an action's error would lose them;
+  the step operation and the steps group are arcana-jobs' `steps`
+  notification, told to the peer of the request alone (cblink's
+  `cbl_ynotify_conn()`), which the console (a call's trace, a live
+  read's steps) and arcanactl (`-t`) hear on group notify.  An error
+  is what cblink's carries (CBL_ERRMSG_MAX, 1 KiB): a server's long
+  answer is whole in the trace.  The bridge to the field: 0.236.0's
+  arcana-host has no `feature` and its update action no
+  `program-size`, so the console and arcanactl send it the program as
+  it is, through that action, within its 8 MiB frame
+  (`ZPROG_MAX_BINARY`, 8 MiB less 64 KiB; an agent of 6.1 MB, 5.5 MB
+  stripped); the agent it becomes says gzip-update and takes the next
+  compressed.  Third SID ranges 83 000 (arcana-host), 83 100
+  (arcana-agent), second 83 200 (arcana-jobs).  Check: the console's
+  `agent_update_bridge` (with `ARCANA_OLD_AGENT`, a 0.236.0 build:
+  over a unix socket and over TCP with mutual TLS), `agent_update`,
+  `agent_build`, `mtls`, `jails`, `workflows`; agent_test's
+  `agent_update`, `agent_update_gzip`, `agent_update_old`,
+  `agent_build`, `agent_restart`, `hello`; agent_tls_test's `mtls`,
+  `renew`; cblink's `notify_conn`.
 - 3.1.10 A: the ipfw-rules, fw-trace, path-check, traceroute and
   capture operations retired; check: the firewall tests.  The fw-trace
   operation retired (2026-10-29): arcana-firewall's `trace`, of the
@@ -1161,11 +1188,40 @@ whose first part is served.
   operation's JSON (ytshoot.c); the family do_fw_trace() writes, inet
   and inet6, read as the model's (it read ipv6).  Check: `fw_trace`,
   agent_root_test's `fw_trace`; the console's `services`.  Left, the
-  ipfw-rules operation, whole: its write (the kept rules replaced, a
-  dry run) and its read from rc.conf (from-rc) have no path in the
-  model yet (arcana-firewall's EDIT says EOPNOTSUPP, a jail's kept rules
-  are not read into its entry), and the kept rules are the admin's: they
-  are written through EDIT only when that is decided (the user's).
+  ipfw-rules operation, whole.  Done (2026-10-29, with 3.8's network
+  area): the ipfw-rules operation retired.  The kept text is
+  `/firewall/kept/text`, a vnet jail's `/firewall/jail[name]/text`,
+  written by a commit (ipfw_kept_commit(), ipfw.c): ipfw -n of the
+  whole file first, the file before kept beside it, nothing loaded
+  (Apply does that, set 1 swapped with set 0 as before).  Decided by
+  the user: the admin's rules are not disturbed unless migrated first.
+  Installing or updating the agent changes no firewall variable and
+  writes no file; the host's first commit moves the boot to Arcana's
+  own script beside the kept file (`ipfw.sh`, 0700, `ipfw -q` of the
+  kept file), which `firewall_script` names in Arcana's rc.conf file
+  (rca_*, rc-conf-files and rc-conf-conflict asked first), the admin's
+  own script and rc.firewall never edited; and it is refused, nothing
+  written, unless the rules the file would load are those the kernel's
+  set 0 has now, by ipfw -n's wording (ipfw_differs()).  The new
+  `from-rc` action is that migration's dry run: the admin's
+  firewall_script (its ipfw commands taken out), else the
+  firewall_type file, or the kept file where an older Arcana's
+  persisted enable pointed firewall_type at it, or the kept file where
+  it is what the kernel has; booted by rc.firewall, its own rules as
+  the kernel has them first.  A confirmed commit undone (its time up,
+  or cancelled) puts every file it changed back as it was, the kept
+  file, the script and rc.conf's (rca_undo()).  `check` checks a text.
+  A kept rule's `norm` and the state's `pipes` (raw lines) added, a
+  rule's own set taken off as before.  The console's ipfw-rules route
+  keeps its replies (`text`, `sha256`, `rc_file`, `migrated` new), its
+  POST taking `accept`; the page asks a refusal's warning (Accept and
+  keep again).  Check: agent_test's `firewall` (the migration of
+  rc.firewall's own rules, a refusal that writes nothing),
+  `firewall_migrate` (a Handbook script with $cmd variables, a
+  firewall_type file, the older persisted enable; one that would
+  differ refused, nothing written; a confirmed commit's time up putting
+  back every file), `firewall_aliases`; the console's `services`;
+  `pwa_firewall`.  SIDs: arcana-firewall's second range, 84 700.
   The path-check, traceroute and capture operations retired:
   arcana-troubleshoot's actions, the console and arcanactl making the
   operations' JSON (ytsjson.c, in the agent's order; agent_test's
@@ -1358,13 +1414,66 @@ whose first part is served.
   notifications; counters; check: one test per point.
 - 3.3.3 A, C (done): the console's user passed per connection to an agent
   that trusts it by certificate role; check: two users, two views.
-- 3.4.1 C: one long-lived cblink connection per agent with streams;
-  reconnect with backoff; check: an agent restarted.
-- 3.4.2 C: jobs, stats, lists and the SD-WAN read taken from
+- 3.4.1 C (done): one long-lived cblink connection per agent with
+  streams; reconnect with backoff; check: an agent restarted.  Done
+  (2026-10-29, `watch.c`): a thread and a connection of its own per
+  agent a page reads from, beside the requests' pool (over SCTP an
+  association of its own beside the shared one); RFC 8639 dynamic
+  subscriptions on cblink's SUBSCRIBE streams, each topic for the user
+  a read asks it for (its establish-subscription carrying the user, so
+  the agent's NACM holds it), let go two minutes after the last read
+  of it, the connection ten minutes after; lost, made again a second
+  on, doubling to a minute, the topics subscribed anew.  `GET
+  /api/servers/<id>/watch` says its state.  Checked: console_test
+  `watch_reconnect` (the agent restarted, the jails' subscription back
+  and the reads held again), `watch_nacm` (two users, the second's
+  rules denying arcana-probe and arcana-host: never the first's).
+- 3.4.2 C (done): jobs, stats, lists and the SD-WAN read taken from
   subscriptions, the one-second polls removed, the JSON off the wire;
-  check: the browser test's timings.
-- 3.4.3 C: `events` subscribed and relayed to the page; check: an
-  event within a second in the page.
+  check: the browser test's timings.  Done: the page polls as before
+  and the console answers from what it holds, in the shapes the host's
+  answers have (the converters split from their reads: `yh_stats_of`,
+  `ytrans_jails_of`, `yq_list_of`, `ysdwan_held`): jobs on-change (the
+  agent tells them), stats and jails periodic (5 s), arcana-sdwan
+  periodic (2 s); a push-change-update's YANG Patch applied to a copy
+  of the tree held; a change the console makes, or a job's, lets go of
+  what is periodic until its next push.  Not held, each read the host's
+  as before: a read
+  that shows its steps, the first of a topic, an agent that refuses the
+  subscription.  Left, and why: a running job's trace is its read
+  action's alone, which no subscription carries (no leaf of job-info
+  changes with a step), so it is read at most once a second whatever
+  number of pages poll it, a finished job's read kept; arcana-probe's
+  samples (3600 a target by default, in a keyless list whose diff
+  replaces the container whole) are too long to push, so the thread
+  reads the probes' `read` action after the newest it holds at the
+  sdwan topic's period, as the user, and a page's samples after a
+  time are held for ten minutes; a jails list's host comes by its hello
+  each time (what tools a host has changes unannounced: the plugins'
+  tabs); the SD-WAN read is subscribed only for a page that reads the
+  samples after a time.  Measured with the console's count of requests
+  to agents (`GET /watch`, and a line at the worker's end), on the lab
+  VM, the browser tests before (0.334.0) and after, each case's time,
+  requests a minute and reads answered from what is held: pwa_hosts 30
+  s, 373 / 28 s, 406, 23 held; pwa_plugins 99 s, 229 / 88 s, 245, 83
+  held; pwa_flows 83 s, 289 / 93 s, 254, 108 held; pwa_map 297 s, 9.4 /
+  260 s, 15.7, 14 held.  These tests are a user's clicks, each a read
+  of its own, so the requests a minute move little; what is held is
+  the pages' polling.  pwa_hosts had been 40 s: a read just after the
+  page's own change answered with what was pushed before it, the page
+  then waiting for its next refresh; a change the console makes, or a
+  job's, now lets go of what is periodic, and a push within a period
+  of it is not held.  The jobs, on-change, as they were pushed before a change the
+  console made on the host are not answered with either: the host is
+  asked until the push after it (a job just submitted, then read).  Checked: console_test `watch_held`.
+- 3.4.3 C (done): `events` subscribed and relayed to the page; check: an
+  event within a second in the page.  Done: the NETCONF stream
+  subscribed once per agent and user while a page follows it (follow.c
+  takes each event from the watch's thread, relayed every 50 ms); the
+  connection lost, the follows told so as before; an agent that refuses
+  it followed by a thread and connection of the follow's own as before.
+  Checked: console_test `watch_events` (two follows, one subscription,
+  the event in the page no later than in the agent's own read).
 - 3.5.1 A, C: `arcana-steer`: candidates, chosen, reason, events;
   written by local failover and by the console; check: a failover
   seen on both.
@@ -1396,10 +1505,108 @@ whose first part is served.
   until 3.8 takes the interim module away.
 - 3.7.1 A, C: every former operation's test against its module; the
   root suite on real jails; check: `make check` green as root.
-- 3.8.1 A, C: the interim module, `share/arcana/wire.awk` and
+- 3.8.0 A, C (done): the last reads and the streams off the interim
+  family.  The ssh, builder, builder-options, notify, monitors,
+  crashes, system, netstore, suricata-rules, smtpd, speeder, zfs-send,
+  zfs-receive, suricata-pcap-put and suricata-pcap-get operations
+  retired, their numbers kept.  ssh is arcana-sshd's `read` action, of
+  the host or a jail (with or without a vnet; the jail augment
+  obsolete), the model given what the JSON had and it lacked (the user
+  CAs as keys and their text, sshd_config's path, a certificate's
+  serial); builder a GET of arcana-builder, builder-options its
+  `port-options`, notify arcana-notify's rpc (its token's and chat's
+  form the agent's to check: a pattern's refusal showed the token);
+  monitors arcana-probe's `read` with `monitors`.  The six reads
+  without a module have one each, an action on an empty container:
+  arcana-crashes, arcana-system (its host's settings a presence
+  container), arcana-netstore, arcana-suricata (`read-rules`,
+  `read-sources`, `command`, `read-profiling`; Suricata's own JSON a
+  text leaf, as an instance's form is), arcana-smtpd (the form a text
+  leaf, as SD-WAN's), arcana-speeder; ietf-ntp (RFC 9249) is what the
+  system's NTP part would be once ntp.conf is written from a model.
+  Their nodes are named as the operations' JSON keys, so one
+  schema-driven mapper (ira/yflat.c, its rules per module in
+  yflatnames.h: a key renamed, a list an object or an array of
+  tuples, a container's keys its parent's, a list left out when
+  empty) reads the agent's JSON into the output and writes it back in
+  the console and arcanactl (www/arcana-console/yreads.c), keys in the
+  order the module declares them, which is the agent's.  The streams
+  are a cblink family of the agent's own, `arcana-stream` (cblink's
+  FAMILIES.md: a family of its own is for a stream; ira/ystream.c),
+  its commands zfs-send 1, zfs-receive 2, suricata-pcap-put 3,
+  suricata-pcap-get 4, its bodies arcana-stream's structures (`open`,
+  `opened`, `chunk`); the relay's flow control kept (manual credit on
+  the sender, the receiver's room given back as zfs receive reads),
+  the console's alone as the arcana family's were (admit_user(), NACM
+  default-deny, and a host refused before the open is read).  SIDs
+  from 85 000 (SIDS.md).  Check: agent_test's `yang_host_agent`,
+  `sshd`, `poudriere`, `notify`, `monitors`, `yang_sdwan`, `crashes`,
+  `netstore`, `sysfiles`, `smtpd`, `speeder`, `relay_rc`, `sdwan`,
+  `storage`; agent_tls_test's `mtls` (a host refused each stream and
+  read, the console let in); agent_root_test's `monitors_*`,
+  `zfs_key`, `crash_event`; the console's `telegram`, `monitors`,
+  `smtpd`, `speeder`, `services`, `mail`, `transfers`; `pwa_storage`,
+  `pwa_flows`, `pwa_firewall`.
+- 3.8.1 A, C (done 2026-10-29, agent 0.238.0, console 0.336.0): the
+  interim module, `share/arcana/wire.awk`'s family glue and
   arcana.yaml's operations removed once the last is converted;
-  versions bumped; UPDATING.md on the flag day; check: a fleet of two
-  updated on the lab.
+  versions bumped; UPDATING.md on the flag day.  No release keeps the
+  interim protocol: a console of the switch reads and updates an agent
+  before it through YANG alone (3.1.9's bridge: console_test
+  `agent_update_bridge`, passed against real 0.236.0 and 0.237.1
+  builds, over a unix socket and TCP with mutual TLS), and nothing else
+  of such an agent.  Gone: the agent's registration of the `arcana`
+  family (admit.c sets whom a request is for, admit_user(), and
+  nothing else; NACM holds every rpc and action, a host's certificate
+  still refused before), its handlers and worker, the console's and
+  arcanactl's `struct arc_client` (a connection is a `cbl_conn` now:
+  `hosts_connect()`, `hosts_shared()`, the watch's thread, whose hello
+  is arcana-host's read), `arc_step` and `ARC_STEP_*` (a trace is
+  arcana-jobs' `step`, the agent's kinds `STEP_*` by its numbers; a
+  job's trace comes beside the job, `jobs_get()`, `yq_job()`), the
+  Schema panel's CBOR half (schema.json; a trace's call is "libcblink
+  YANG <operation>", the panel's YANG tree found by it), and the
+  arcana-storage placeholders.  Kept: `arcana.yaml` with no operations,
+  the structures the programs keep (a jail, a service, a job and its
+  spec, the kinds of job) and the definitions they are named by, from
+  which `wire.awk` writes `arcana@2026-10-22` of structures alone (its
+  rpcs' SIDs obsolete, SIDS.md) and `arcana.h`; `cluster.yaml`, a family
+  as it was.  The ipfw read's sysctls Apply needs, the objects'
+  modules and a table's set (0.237.2) are arcana-firewall's state's
+  `tunable`, `modules` and a table's `set`, the console's JSON as the
+  read had it.  Check: the whole suite and the root suite.
+  The network area done (2026-10-29): the
+  network (every kind left), network-dump, route-lookup,
+  network-parts, address and ipfw-rules operations retired, numbers
+  kept.  A module of Arcana's, `arcana-network` (SIDs 84 000), for the
+  tables as FreeBSD's tools print them, which the standard models do
+  not carry as such: `/network`'s read actions routes (filter, offset,
+  total, truncated), nexthops, nhgroups, connections, sockets,
+  interfaces (with carp(4)'s), bridges, geneve, neighbours, multicast,
+  kept-routes, ipsec, ipfw (a vnet jail's arcana-firewall data) and
+  lookup (the best route and those that cover the address:
+  ietf-routing's active-route has the best alone); each the host's or
+  a running vnet jail's.  A leaf keeps the tool's name, so the agent
+  reads the tool's JSON into any action's output by one reader
+  (ynet.c: a data tree of the output, what the model has no node or
+  type for left out) and the console makes the operation's JSON of any
+  output by one writer (ynet.c: cbl_yjson(), its 64-bit numbers numbers
+  again, its empty lists there, the wrapping put back), so the pages
+  read what they read.  network-parts is a stream of the agent's own
+  family, arcana-parts (one stream op, its every message the
+  network-part structure), its flow control kept: a part sent only
+  when the reader has room.  A jail's address is the `address` action
+  arcana-network adds to arcana-jails' jail.  arcanactl's `net`, `route
+  get`, `address` and `ipfw rules` speak them.  Left as they were: the
+  interfaces kind of the host stays ietf-interfaces' (ytrans.c); an
+  IPsec connection's proposals and an SA's rarer fields (marks,
+  if-ids) are left out of the model (the page reads none of them); the
+  `net-kind` and `net-family` definitions and the `jail` set (a
+  structure now, the agent's jail.c) stay for the family's removal.
+  Check: agent_test's `network` (the parts, 3000 routes), `interfaces`,
+  `network_more`, `vnet`, `l2`, `ipsec`, `multicast`, `address_*`,
+  `firewall*`; the console's `services`, `jails`, `load`;
+  `pwa_nettab`, `pwa_firewall`.
 
 ### Y-4
 

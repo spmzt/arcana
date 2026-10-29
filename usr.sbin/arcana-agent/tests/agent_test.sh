@@ -1966,7 +1966,7 @@ EOT
 	# sshd: the settings each with its values, the host keys with
 	# their certificates (forever said as none), the users' keys.
 	cat > sshd.json <<'EOT'
-{"settings":{"permitrootlogin":["without-password"],"passwordauthentication":["no"],"port":["22","2222"]},"banner_text":"Welcome\n","host_keys":[{"path":"/etc/ssh/ssh_host_ed25519_key","type":"ED25519","bits":256,"fingerprint":"SHA256:abc","comment":"root@labvm","certificate":{"kind":"host","id":"labvm","principals":["labvm","labvm.example"],"valid_after":1791990000,"valid_before":-1,"ca":"SHA256:ca1"},"certificate_used":true},{"path":"/etc/ssh/ssh_host_rsa_key","type":"RSA","bits":3072,"fingerprint":"SHA256:def","comment":"","certificate_used":false}],"users":[{"name":"pouria","uid":1001,"home":"/home/bsdusr","shell":"/bin/sh","keys_file":"/home/bsdusr/.ssh/authorized_keys","keys":[{"type":"ED25519","fingerprint":"SHA256:k1","bits":256,"comment":"laptop","options":"restrict"}]}],"user_cas":["ssh-ed25519 AAAA ca"],"before_kept":true}
+{"settings":{"permitrootlogin":["without-password"],"passwordauthentication":["no"],"port":["22","2222"]},"banner_text":"Welcome\n","host_keys":[{"path":"/etc/ssh/ssh_host_ed25519_key","type":"ED25519","bits":256,"fingerprint":"SHA256:abc","comment":"root@labvm","certificate":{"kind":"host","id":"labvm","principals":["labvm","labvm.example"],"valid_after":1791990000,"valid_before":-1,"ca":"SHA256:ca1"},"certificate_used":true},{"path":"/etc/ssh/ssh_host_rsa_key","type":"RSA","bits":3072,"fingerprint":"SHA256:def","comment":"","certificate_used":false}],"users":[{"name":"pouria","uid":1001,"home":"/home/bsdusr","shell":"/bin/sh","keys_file":"/home/bsdusr/.ssh/authorized_keys","keys":[{"type":"ED25519","fingerprint":"SHA256:k1","bits":256,"comment":"laptop","options":"restrict"}]}],"user_cas":[{"type":"ssh-ed25519","fingerprint":"SHA256:ca","comment":"ca"}],"before_kept":true}
 EOT
 	cat > want <<'EOT'
 setting permitrootlogin = without-password
@@ -1977,8 +1977,8 @@ host-key /etc/ssh/ssh_host_ed25519_key ED25519 256 SHA256:abc root@labvm used=ye
 host-key /etc/ssh/ssh_host_rsa_key RSA 3072 SHA256:def  used=no
 user pouria uid=1001 home=/home/bsdusr shell=/bin/sh keys=/home/bsdusr/.ssh/authorized_keys
   key SHA256:k1 ED25519 256 laptop options=restrict
-user-ca ssh-ed25519 AAAA ca
-yang-cbor 439 bytes, the same back
+user-ca SHA256:ca ssh-ed25519
+yang-cbor 450 bytes, the same back
 EOT
 	atf_check -o file:want "$y" sshd sshd.json
 }
@@ -3437,15 +3437,15 @@ service_config_cleanup()
 atf_test_case network cleanup
 network_head()
 {
-	atf_set "descr" "routes as the kernel has them, through the helper; nexthops, connections and sockets as the programs' libxo JSON"
+	atf_set "descr" "arcana-network's actions: routes as the kernel has them, through the helper; nexthops, connections and sockets as the programs' libxo JSON has them; the routes, connections and sockets in parts, by the arcana-parts stream"
 }
 network_body()
 {
 	start_daemon
 	# The routes: asked of the kernel by the helper, each with what
-	# the kernel says of it; the two families in one document.
+	# the kernel says of it; the two families in one output.
 	atf_check -o save:routes.out "$JGC" -c "$SOCK" net routes -6
-	atf_check -o match:'"route-table":\{"rt-family":\[\{"address-family":"Internet6","rt-entry":\[\{"destination":"::1","gateway":"link#2","flags":"UHS","nhop":1,"mtu":16384,"interface-name":"lo0","metric":1,"weight":1,"fib":0,"prefixlen":128\}\]\}\]' \
+	atf_check -o match:'^\{"rt-family":\[\{"address-family":"Internet6","rt-entry":\[\{"destination":"::1","fib":0,"flags":"UHS","gateway":"link#2","interface-name":"lo0","metric":1,"mtu":16384,"nhop":1,"prefixlen":128,"weight":1\}\]\}\],"total":"2","truncated":false\}$' \
 	    cat routes.out
 	atf_check -o match:'fake-helper --scope-helper 0 routes 6 0 - -:' \
 	    "$JGC" -t -c "$SOCK" net routes -6
@@ -3459,20 +3459,20 @@ network_body()
 	# The connections and sockets: the kernel's own lists, read by the
 	# helper here (by the daemon itself when it is its own helper).
 	atf_check -o match:'fake-helper --scope-helper 0 pcb-conns 4' \
-	    -o match:'"statistics":\{"socket":\[\{"protocol":"tcp4"' \
+	    -o match:'^\{"socket":\[\{"local":\{"address":"10.0.0.1","port":"22"\},"protocol":"tcp4"' \
 	    "$JGC" -t -c "$SOCK" net connections -4
 	atf_check -o save:so.out "$JGC" -t -c "$SOCK" net sockets
 	atf_check -o match:'fake-helper --scope-helper 0 pcb-socks 0' \
-	    -o match:'"sockstat":\{"socket":\[\{"user":"root","command":"sshd"' cat so.out
+	    -o match:'"socket":\[\{"command":"sshd",[^}]*\}[^}]*\}[^}]*"user":"root"' cat so.out
 	# The nexthop groups, what a route of several next hops points to.
-	atf_check -o match:'"nhgrp-index":1,"nhg-refcnt":1,"nhop-weights":\[\{"nh-index":5,"nh-weight":2' \
+	atf_check -o match:'"nhg-refcnt":"1","nhgrp-index":1,"nhop-weights":\[\{"nh-gw":"10.0.0.1","nh-index":5,"nh-interface":"em0","nh-slots":2,"nh-weight":2' \
 	    -o match:'fake-netstat --libxo json -OnW -f inet$' \
 	    "$JGC" -t -c "$SOCK" net nhgroups
 	# The neighbours, of ARP and NDP, asked of the kernel.
 	atf_check -o match:'fake-helper --scope-helper 0 route-neighs 0 -' \
-	    -o match:'"neighbours":\[\{"family":"inet","address":"10.0.0.2".*"router":true\}\],"total":2' \
+	    -o match:'"neighbours":\[\{"address":"10.0.0.2","family":"inet",.*"router":true.*\}\],"total":"2"' \
 	    "$JGC" -t -c "$SOCK" net neighbours
-	atf_check -o match:'^\{"neighbours":\[\{"family":"inet6"[^]]*\],"total":2\}$' \
+	atf_check -o match:'^\{"neighbours":\[\{"address":"fe80::1%em0","family":"inet6"[^]]*\],"total":"2"\}$' \
 	    "$JGC" -c "$SOCK" net neighbours -6 fe80
 	atf_check -s exit:2 -e ignore "$JGC" -c "$SOCK" net tables
 	# A table too large to send whole: its first rows come, with how
@@ -3489,27 +3489,26 @@ network_body()
 	# for on the host.
 	atf_check -o save:parts.out "$JGC" -c "$SOCK" net routes -4 parts
 	atf_check -o inline:'3000\n' sh -c "grep -o '\"destination\"' parts.out | wc -l | tr -d ' '"
-	atf_check -o match:'^\[\{"family":"Internet","destination":"10.0.0.0/24"' \
-	    -o not-match:'Internet6' cat parts.out
-	atf_check -o match:'"family":"Internet6","destination":"::1"' \
+	atf_check -o match:'^\{"route":\[\{"destination":"10.0.0.0/24",[^}]*"family":"Internet"' \
+	    -o match:'"total":"3000"' -o not-match:'Internet6' cat parts.out
+	atf_check -o match:'"destination":"::1",[^}]*"family":"Internet6"' \
 	    "$JGC" -c "$SOCK" net routes -6 parts
 	atf_check -o match:'"destination":"10.11.249.0/24"' -o not-match:'10.0.0.0/24' \
 	    "$JGC" -c "$SOCK" net routes -4 parts 10.11.249.
-	atf_check -o match:'^\[\{"protocol":"tcp4"' "$JGC" -c "$SOCK" net connections -4 parts
-	atf_check -o match:'"command":"sshd"' "$JGC" -c "$SOCK" net sockets parts
+	atf_check -o match:'^\{"connection":\[\{[^]]*"protocol":"tcp4"' \
+	    "$JGC" -c "$SOCK" net connections -4 parts
+	atf_check -o match:'^\{"socket":\[\{"command":"sshd"' "$JGC" -c "$SOCK" net sockets parts
 	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" net nexthops parts
 	atf_check -o save:found.out "$JGC" -c "$SOCK" net routes -4 10.11.249.
 	atf_check -o match:'"destination":"10.11.249.0/24"' \
-	    -o not-match:'"destination":"10.0.0.0/24"' cat found.out
-	atf_check -o match:'"total":3000' -o match:'"truncated":"false"' \
-	    "$JGC" --libxo json -c "$SOCK" net routes -4 10.11.249.
+	    -o not-match:'"destination":"10.0.0.0/24"' \
+	    -o match:'"total":"3000","truncated":false' cat found.out
 	# And read on: the rows after the first 2000, which are the rest.
 	atf_check -o save:more.out -e ignore "$JGC" -c "$SOCK" net routes -4 -o 2000
 	atf_check -o match:'"destination":"10.8.0.0/24"' \
 	    -o not-match:'"destination":"10.7.249.0/24"' \
-	    -o match:'"destination":"10.11.249.0/24"' cat more.out
-	atf_check -o match:'"total":3000' -o match:'"truncated":"false"' \
-	    "$JGC" --libxo json -c "$SOCK" net routes -4 -o 2000
+	    -o match:'"destination":"10.11.249.0/24"' \
+	    -o match:'"total":"3000","truncated":false' cat more.out
 	rm huge
 }
 network_cleanup()
@@ -4174,11 +4173,11 @@ EOS
 	# What rc.conf keeps, read: each by its name, read as route(8)
 	# would; one the list does not name; the default routers.
 	printf 'route_stray="10.94.0.0/16 10.0.0.1"\n' >> rc.conf
-	atf_check -o match:'"name":"lan2","family":"inet","list":"static_routes","variable":"route_lan2","listed":true,"value":"10.93.0.0/16 10.0.0.1","destination":"10.93.0.0/16","gateway":"10.0.0.1","kind":"gateway","fib":0' \
-	    -o match:'"name":"arc_10_80_0_0_16_fib3".*"gateway":"lo0","kind":"interface","fib":3' \
-	    -o match:'"name":"edge2_gre0".*"gateway":"10.0.0.3"' \
-	    -o match:'"name":"stray".*"listed":false' \
-	    -o match:'"name":"arc_2001_db8_7___48","family":"inet6"' \
+	atf_check -o match:'\{"destination":"10.93.0.0/16","family":"inet","fib":0,"gateway":"10.0.0.1","kind":"gateway","list":"static_routes","listed":true,"name":"lan2","value":"10.93.0.0/16 10.0.0.1","variable":"route_lan2"\}' \
+	    -o match:'"fib":3,"gateway":"lo0","kind":"interface",[^}]*"name":"arc_10_80_0_0_16_fib3"' \
+	    -o match:'"gateway":"10.0.0.3",[^}]*"name":"edge2_gre0"' \
+	    -o match:'"listed":false,"name":"stray"' \
+	    -o match:'"family":"inet6",[^}]*"name":"arc_2001_db8_7___48"' \
 	    "$JGC" -c "$SOCK" net kept-routes
 	atf_check -o not-match:'route-del' \
 	    "$JGC" -t -c "$SOCK" route keep delete 10.93.0.0/16
@@ -4216,10 +4215,10 @@ EOS
 	# The route to an address: the one taken, and those that cover it,
 	# each with the length of its prefix.
 	atf_check -o save:get.out "$JGC" -c "$SOCK" route get 10.77.5.5
-	atf_check -o match:'"best":\{"to":"10.77.5.5","destination":"10.77.0.0","prefixlen":16,"gateway":"10.0.0.1","fib":"0","interface":"em0"' \
+	atf_check -o match:'"best":\{"destination":"10.77.0.0","fib":"0",[^}]*"gateway":"10.0.0.1","interface":"em0",[^}]*"prefixlen":16,"to":"10.77.5.5"' \
 	    -o match:'"destination":"default".*"prefixlen":0' \
 	    -o match:'"destination":"10.77.0.0/16".*"prefixlen":16' \
-	    -o match:'"destination":"10.77.5.0/24","gateway":"10.0.0.9".*"prefixlen":24' \
+	    -o match:'"destination":"10.77.5.0/24",[^}]*"gateway":"10.0.0.9".*"prefixlen":24' \
 	    -o match:'"destination":"10.77.5.5".*"prefixlen":32' \
 	    cat get.out
 	atf_check -o match:'^0 routes 0 0 - 10.77.5.5$' cat helper.log
@@ -4381,10 +4380,12 @@ EOS
 	# with their children; no key yet.
 	atf_check -o save:ipsec.json "$JGC" -c "$SOCK" net ipsec
 	atf_check -o match:'"running":true' -o not-match:'public-key' \
-	    -o match:'"local_addrs":\["10.202.0.1"\].*"version":"IKEv2".*"children":\[\{"mode":"TRANSPORT","local-ts":\["10.202.0.1/32\[gre\]"\],"remote-ts":\["10.202.0.2/32\[gre\]"\],"name":"gre12"\}\]' \
-	    -o match:'"name":"gre12".*"local-id":"10.202.0.1","remote-id":"10.202.0.2","arcana":false' \
+	    -o match:'"children":\[\{"local-ts":\["10.202.0.1/32\[gre\]"\],"mode":"TRANSPORT","name":"gre12","remote-ts":\["10.202.0.2/32\[gre\]"\]\}\].*"local_addrs":\["10.202.0.1"\].*"version":"IKEv2"' \
+	    -o match:'\{"arcana":false,"children":\[\{"local-ts"' \
+	    -o match:'"local-id":"10.202.0.1","local_addrs":\["10.202.0.1"\],"name":"gre12","remote-1":\{[^}]*\},"remote-id":"10.202.0.2"' \
 	    -o match:'"version":"IKEv1/2"' \
-	    -o match:'"sas":\[\{"uniqueid":5,"version":2,"state":"ESTABLISHED".*"children":\[\{"name":"gre12","reqid":1,"state":"INSTALLED","mode":"TRANSPORT","spi-in":"12345678","bytes-in":192232' \
+	    -o match:'"sas":\[\{"children":\[\{"bytes-in":"192232","bytes-out":"265028","local-ts":\["10.202.0.1/32\[gre\]"\],"mode":"TRANSPORT","name":"gre12","reqid":1,"spi-in":"12345678","state":"INSTALLED"\}\]' \
+	    -o match:'"state":"ESTABLISHED","uniqueid":"5","version":2' \
 	    cat ipsec.json
 
 	# The host's key: made here, the private half for root alone, the
@@ -4415,7 +4416,7 @@ EOS
 	atf_check -o match:'BEGIN PUBLIC KEY' cat swanctl/pubkey/arcana-gre12.pub
 	atf_check -o match:'^--load-all --noprompt$' cat swanctl.log
 	atf_check -o match:'arcana-gre12.conf' cat loaded
-	atf_check -o match:'"name":"gre12".*"arcana":true' "$JGC" -c "$SOCK" net ipsec
+	atf_check -o match:'\{"arcana":true,"children":\[\{[^}]*"name":"gre12"' "$JGC" -c "$SOCK" net ipsec
 	# Of an ipsec interface: tunnel mode, its policies the interface's.
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec conn vti12 fd00:5a::1 fd00:5a::2 \
 	    mode tunnel pubkey "$PUB" reqid 100
@@ -4466,7 +4467,7 @@ EOS
 	atf_check -o not-match:'lan \{' -o match:'^			gre12 \{$' \
 	    cat swanctl/conf.d/arcana-gre12.conf
 	# The connection known by what it tells of itself: its children.
-	atf_check -o match:'"model":\{"children":\{"gre12":' \
+	atf_check -o match:'"model":\{"children":\[\{[^}]*"name":"gre12"' \
 	    -o match:'"remote_id":"peer.example"' "$JGC" -c "$SOCK" net ipsec
 	# Certificates in x509 and x509ca, read: a peer known by its own,
 	# or by the CA that signed it, needs no key pasted.
@@ -4480,9 +4481,9 @@ EOS
 	    -addext 'subjectAltName=DNS:peer.example,IP:10.202.0.2' >/dev/null 2>&1
 	echo "not a cert" > swanctl/x509/junk.pem
 	atf_check -o save:certs.json "$JGC" -c "$SOCK" net ipsec
-	atf_check -o match:'"file":"peer.pem","where":"x509","subject":"CN=peer.example","issuer":"CN=peer.example",[^}]*"ca":false,"self_signed":true,"names":\["peer.example","10.202.0.2"\],"sha256":"[0-9a-f:]+"' \
-	    -o match:'"file":"lab-ca.pem","where":"x509ca",[^}]*"ca":true' \
-	    -o match:'"file":"junk.pem","where":"x509","error":"not a certificate in PEM"' \
+	atf_check -o match:'"ca":false,"file":"peer.pem","issuer":"CN=peer.example","names":\["peer.example","10.202.0.2"\],[^}]*"self_signed":true,"sha256":"[0-9a-f:]+","subject":"CN=peer.example","where":"x509"' \
+	    -o match:'"ca":true,"file":"lab-ca.pem",[^}]*"where":"x509ca"' \
+	    -o match:'"error":"not a certificate in PEM","file":"junk.pem","where":"x509"' \
 	    cat certs.json
 	atf_check -s exit:1 -o match:'nope.pem is not in swanctl.s x509' -e ignore \
 	    "$JGC" -c "$SOCK" ipsec conn bycert 10.202.0.1 10.202.0.2 remote-cert nope.pem
@@ -5285,7 +5286,7 @@ EOS
 	# told which jail.
 	atf_check -o match:'fake-helper --scope-helper 4 routes 4 0 - -' \
 	    "$JGC" -t -j gateway -c "$SOCK" net routes -4
-	atf_check -o match:'"gateway":"10.99.0.1","fib":"0","interface":"epair91b"' \
+	atf_check -o match:'"gateway":"10.99.0.1","interface":"epair91b"' \
 	    "$JGC" -j gateway -c "$SOCK" route get 192.0.2.9
 	atf_check -o match:'^--scope-helper 4 route-get 192.0.2.9 0$' cat helper.log
 
@@ -8891,8 +8892,7 @@ EOS
 	    sh -c "grep -v -e '^HOME=' -e '-V .OBJDIR' made | sed -n \
 	    -e 's,.* cblink-build\$,cblink-build,p' -e 's,.*/lib/\\(lib[a-z]*\\) .*,\\1,p' \
 	    -e 's,.*/usr.sbin/arcana-agent .*,arcana-agent,p'"
-	# Sent back compressed: past max-binary, as a frame would not carry
-	# it as it is.
+	# Sent back compressed: past what a frame carries as it is.
 	dd if=/dev/zero of=zeros bs=1m count=7 2>/dev/null
 	cat "$JGD" zeros > big-agent
 	chmod +x big-agent
@@ -8999,11 +8999,12 @@ EOS
 	# What git would take as an option is not a repository.
 	atf_check -s exit:1 -e match:'not a repository' -o ignore \
 	    "$JGC" -c "$SOCK" agent-build -- --upload-pack=x
-	# A server that has much to say: all of it is told, and the daemon
-	# is there afterwards.
+	# A server that has much to say: the error what cblink's carries
+	# (CBL_ERRMSG_MAX), the trace all of it, and the daemon is there
+	# afterwards.
 	atf_check -s exit:1 -e match:'remote: line 1: remote: line 2' \
-	    -e match:'remote: line 400' -o ignore \
-	    "$JGC" -c "$SOCK" agent-build https://example.org/arcana.git chatty
+	    -o match:'remote: line 400' \
+	    "$JGC" -t -c "$SOCK" agent-build https://example.org/arcana.git chatty
 	atf_check -o match:'^Host:' "$JGC" -c "$SOCK" hello
 	# A key's path goes into a command the shell reads.
 	atf_check -s exit:1 -e match:'letters, digits and' -o ignore \
@@ -9156,7 +9157,7 @@ agent_update_gzip_body()
 	start_daemon
 	echo old > installed-agent
 	atf_check -o match:'gzip-update' "$JGC" --libxo json -c "$SOCK" hello
-	# Past max-binary, which a frame does not carry as it is: the real
+	# Past what a frame carries as it is: the real
 	# agent with 7 MiB of zeros after it still runs.
 	dd if=/dev/zero of=zeros bs=1m count=7 2>/dev/null
 	cat "$JGD" zeros > big-agent
@@ -9172,12 +9173,13 @@ agent_update_gzip_body()
 	atf_check -o inline:'old\n' cat installed-agent
 	atf_check test ! -e installed-agent.new
 	# An inflate bomb: 64 MiB of zeros said to be 1 KiB stops a byte
-	# past it; said to be more than max-program, it is not inflated.
+	# past it; said to be more than 32 MiB, the range of program-size, it
+	# is not taken.
 	dd if=/dev/zero bs=1m count=64 2>/dev/null | gzip -9 > bomb.gz
 	sha=$(sha256 -q bogus)
 	atf_check -s exit:1 -o match:'inflates past the size it came with' \
 	    "$(atf_get_srcdir)/zupdate" "$SOCK" bomb.gz 1024 "$sha"
-	atf_check -s exit:1 -o match:'past what this host takes' \
+	atf_check -s exit:1 -o match:'program-size: 33554433 out of range' \
 	    "$(atf_get_srcdir)/zupdate" "$SOCK" bomb.gz 33554433 "$sha"
 	# Not gzip, and gzip that ends short.
 	atf_check -s exit:1 -o match:'not gzip' \
@@ -9205,11 +9207,11 @@ atf_test_case agent_update_old cleanup
 agent_update_old_head()
 {
 	atf_set "descr" "An agent before compressed updates is sent the " \
-	    "program as it is, within max-binary"
+	    "program as it is, within a frame"
 }
 agent_update_old_body()
 {
-	# Without gzip-update in hello's features, as one before it.
+	# Without gzip-update in its features, as one before it.
 	DAEMON_ARGS="--features none"
 	start_daemon
 	echo old > installed-agent
@@ -9218,10 +9220,10 @@ agent_update_old_body()
 	atf_check -o match:'in place' -o not-match:'inflate' \
 	    "$JGC" -t -c "$SOCK" agent-update "$JGD"
 	atf_check cmp -s "$JGD" installed-agent
-	# One past max-binary is not sent: the agent is to be updated first.
+	# One past what a frame carries is not sent.
 	dd if=/dev/zero of=zeros bs=1m count=7 2>/dev/null
 	cat "$JGD" zeros > big-agent
-	atf_check -s exit:1 -e match:'update it to arcana-agent [0-9.]+ first' \
+	atf_check -s exit:1 -e match:'takes no compressed update' \
 	    "$JGC" -c "$SOCK" agent-update big-agent
 	# What it would not decode, it refuses.
 	gzip -9 < "$JGD" > agent.gz
@@ -9492,22 +9494,22 @@ EOS
 	# A bridge: its spanning tree, and each member's place in it; who
 	# is an access port and who a trunk; and a member's addresses.
 	atf_check -o save:br.json "$JGC" -c "$SOCK" net bridges
-	atf_check -o match:'"name":"bridge0","id":"58:9c:fc:10:ff:aa","priority":32768,"hellotime":2,"fwddelay":15' \
-	    -o match:'"proto":"rstp"' -o match:'"maxage":20' \
-	    -o match:'"root":"00:11:22:33:44:55","root_priority":4096,"root_cost":2000,"root_port":5' \
+	atf_check -o match:'"fwddelay":15,"hellotime":2,[^[]*"id":"58:9c:fc:10:ff:aa"' \
+	    -o match:'"name":"bridge0","priority":32768,"proto":"rstp","root":"00:11:22:33:44:55","root_cost":2000,"root_port":5,"root_priority":4096' \
+	    -o match:'"maxage":20' \
 	    -o match:'"vlanfilter":true' -o match:'"defuntagged":1' \
 	    -o match:'"is_root":false' cat br.json
 	# The addresses it has learned, and behind which member each is.
-	atf_check -o match:'"learned":\[\{"mac":"02:00:00:00:00:01","vlan":10,"member":"epair0a","expire":1193\},\{"mac":"02:00:00:00:00:02","vlan":1,"member":"em1","expire":0,"static":true\}\],"learned_total":2' \
+	atf_check -o match:'"learned":\[\{"expire":1193,"mac":"02:00:00:00:00:01","member":"epair0a","vlan":10\},\{"expire":0,"mac":"02:00:00:00:00:02","member":"em1","static":true,"vlan":1\}\],"learned_total":2' \
 	    cat br.json
-	atf_check -o match:'"name":"epair5a","stp":true,"flags":\[[^]]*"stp"[^]]*\],"port":5,"priority":128,"cost":2000,"proto":"rstp","role":"root","state":"forwarding","untagged":10,"mode":"access"' \
-	    -o match:'"name":"em1","stp":false,[^}]*"addresses":\["192.0.2.7"\],"port":6,[^}]*"vlanproto":"802.1q","untagged":1,"tagged":"10-20,30","mode":"trunk"' \
-	    -o match:'"name":"tap3",[^}]*"role":"alternate","state":"discarding"\}' \
+	atf_check -o match:'\{"cost":2000,"flags":\[[^]]*"stp"[^]]*\],"mode":"access","name":"epair5a","port":5,"priority":128,"proto":"rstp","role":"root","state":"forwarding","stp":true,"untagged":10\}' \
+	    -o match:'\{"addresses":\["192.0.2.7"\],"cost":20000,[^}]*"mode":"trunk","name":"em1","port":6,[^}]*"stp":false,"tagged":"10-20,30","untagged":1,"vlanproto":"802.1q"\}' \
+	    -o match:'"name":"tap3",[^}]*"role":"alternate","state":"discarding"' \
 	    cat br.json
 	# A geneve tunnel in each mode: one to a host, one to a group.
 	atf_check -o save:gn.json "$JGC" -c "$SOCK" net geneve
-	atf_check -o match:'"name":"geneve0","mode":"l2","id":100,"local":"198.51.100.10:6081","remote":"203.0.113.1:6081","portrange":"49152-65535","ttl":"64","df":"unset","dscpinherit":false,"external":false,"learn":true,"count":2,"maxaddr":2000,"timeout":1200,"up":true' \
-	    -o match:'"name":"geneve1","mode":"l3","id":42,"local":"\[3fff::1\]:6081","group":"\[ff08::db8:1\]:6081","dev":"em0",[^}]*"ttl":"inherit","df":"inherit","dscpinherit":true' \
+	atf_check -o match:'\{"count":2,"df":"unset","dscpinherit":false,"external":false,"id":100,"learn":true,"local":"198.51.100.10:6081","maxaddr":2000,"mode":"l2","name":"geneve0","portrange":"49152-65535","remote":"203.0.113.1:6081","timeout":1200,"ttl":"64","up":true\}' \
+	    -o match:'"dev":"em0","df":"inherit","dscpinherit":true,[^}]*"group":"\[ff08::db8:1\]:6081",[^}]*"id":42,[^}]*"local":"\[3fff::1\]:6081",[^}]*"mode":"l3","name":"geneve1",[^}]*"ttl":"inherit"' \
 	    cat gn.json
 
 	# An access port: in one VLAN untagged, and none tagged.
@@ -10031,6 +10033,7 @@ echo "ipfw \$*" >> $(pwd)/ipfw.log
 case "\$*" in
 "-S list 1000") echo "01000 set 0 allow tcp from table(lan) to me 80,443 in via vtnet0" ;;
 "-S list "*) echo "ipfw: rule \$3 does not exist" >&2 ;;
+"-S show") [ -f $(pwd)/live.rules ] && cat $(pwd)/live.rules ;;
 "-n /dev/stdin") sed -e 's/^add //' ;;
 "-q /dev/stdin") cat >> $(pwd)/ipfw.log ;;
 esac
@@ -10038,7 +10041,10 @@ exit 0
 EOS
 	chmod +x fake-ipfw
 	mkdir fw
-	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules"
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	: > root/etc/rc.conf
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules --root $(pwd)/root"
 	start_daemon
 
 	# An address list: a table of its name, now and kept.
@@ -10066,10 +10072,10 @@ EOS
 	    -o match:'^add 01000 allow tcp from table\(lan\) to me 80,443 in via vtnet0$' \
 	    cat fw/ipfw.rules
 	# Read back: the aliases, and the rule's own words beside it.
-	atf_check -o match:'"aliases":\[' \
-	    -o match:'\{"name":"lan","kind":"addr","value":"10.0.0.0/8 192.168.1.0/24"\}' \
-	    -o match:'\{"name":"web","kind":"ports","value":"80,443"\}' \
-	    -o match:'"num":1000,"text":"allow tcp from table\(lan\) to me 80,443 in via vtnet0","source":"allow tcp from \$lan to me \$web in via \$wan"' \
+	atf_check -o match:'"alias":\[' \
+	    -o match:'\{"kind":"addr","name":"lan","value":"10.0.0.0/8 192.168.1.0/24"\}' \
+	    -o match:'\{"kind":"ports","name":"web","value":"80,443"\}' \
+	    -o match:'"number":1000,"source":"allow tcp from \$lan to me \$web in via \$wan","text":"allow tcp from table\(lan\) to me 80,443 in via vtnet0"' \
 	    "$JGC" -c "$SOCK" net ipfw
 	# A port list changed: the rule written again, kept and now.
 	: > ipfw.log
@@ -10096,6 +10102,15 @@ EOS
 	    "$JGC" "$SOCK"
 	atf_check -s exit:1 -o match:'a port list is ports' \
 	    sh -c '"$0" -c "$1" ipfw alias web ports http 2>&1' "$JGC" "$SOCK"
+	# The first commit migrates: the kept rules are those loaded now
+	# (the kernel has rule 1000 as the aliases make it), its aliases and
+	# objects with them.
+	printf '01000 0 0 set 0 allow tcp from table(lan) to me 8080 in via vtnet0\n' > live.rules
+	atf_check -o save:mig.rules "$JGC" -c "$SOCK" ipfw rules -r
+	atf_check -o match:"Arcana's kept rules, those loaded now" \
+	    -o match:'^#arcana alias lan addr$' cat mig.rules
+	atf_check -o match:'in place' "$JGC" -c "$SOCK" ipfw rules \
+	    -a rc-conf-files -w mig.rules
 	# The kept rules as text: a rule written with aliases by hand is
 	# kept with its own words and as ipfw reads it.
 	"$JGC" -c "$SOCK" ipfw rules > text
@@ -10208,9 +10223,9 @@ EOF
 
 	# What Apply needs, read: states kept, always; tables a set each
 	# only for kept rules with a table, as NAT64's instances are a set
-	# each whatever tables_sets says.
-	atf_check -o match:'"tunables":\[\{"name":"net.inet.ip.fw.dyn_keep_states","value":0,"want":1,"needed":true,"why":"the old rules are deleted once' \
-	    -o match:'\{"name":"net.inet.ip.fw.tables_sets","value":0,"want":1,"needed":false,' \
+	# each whatever tables_sets says (arcana-firewall's state).
+	atf_check -o match:'"tunable":\[\{"name":"net.inet.ip.fw.dyn_keep_states","needed":true,"value":0,"want":1,"why":"the old rules are deleted once' \
+	    -o match:'\{"name":"net.inet.ip.fw.tables_sets","needed":false,"value":0,"want":1,' \
 	    "$JGC" -c "$SOCK" net ipfw
 	# Without dyn_keep_states: refused, saying why; ipfw is not run
 	# and nothing is written.
@@ -10226,7 +10241,7 @@ EOF
 	atf_check -s exit:1 -o match:'dyn_keep_states=1, and it is 0' \
 	    -o match:'Apply needs net.inet.ip.fw.tables_sets=1, and it is 0: the kept rules. tables are made in set 1' \
 	    -o match:'Set them at once' "$JGC" -c "$SOCK" ipfw apply
-	atf_check -o match:'"name":"net.inet.ip.fw.tables_sets","value":0,"want":1,"needed":true' \
+	atf_check -o match:'"name":"net.inet.ip.fw.tables_sets","needed":true,"value":0,"want":1' \
 	    "$JGC" -c "$SOCK" net ipfw
 	rm ipfw.log
 	fw_sysctl 1 0
@@ -10285,20 +10300,163 @@ EOF
 	atf_check -o empty cat set1.nat64lsn set1.nat64clat
 
 	# A table of another set (SD-WAN's) read in its own set.
-	atf_check -o match:'"tables":\[\{"name":"sw1_known","set":30,"type":"addr","entries":\[\{"key":"10.1.0.0/24","value":"0"\}\],"count":1\}\]' \
+	atf_check -o match:'"table":\[\{"count":1,"entry":\[\{"key":"10.1.0.0/24","value":"0"\}\],"name":"sw1_known","type":"addr","set":30\}\]' \
 	    "$JGC" -c "$SOCK" net ipfw
 
 	# NAT64 built into the kernel registers no module ipfw_nat64: its
 	# own sysctl says it is there.
 	if sysctl -n net.inet.ip.fw.nat64_direct_output >/dev/null 2>&1; then
-		atf_check -o match:'"modules":\{[^}]*"ipfw_nat64":true' \
+		atf_check -o match:'"modules":\{[^}]*"ipfw-nat64":true' \
 		    "$JGC" -c "$SOCK" net ipfw
 	elif ! kldstat -q -m ipfw_nat64; then
-		atf_check -o match:'"modules":\{[^}]*"ipfw_nat64":false' \
+		atf_check -o match:'"modules":\{[^}]*"ipfw-nat64":false' \
 		    "$JGC" -c "$SOCK" net ipfw
 	fi
 }
 firewall_apply_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case firewall_migrate cleanup
+firewall_migrate_head()
+{
+	atf_set "descr" "the kept rules' first commit moves the boot to" \
+	    "Arcana's script only when its rules are those loaded now:" \
+	    "migrated from a Handbook script, a firewall_type file and the" \
+	    "older persisted enable; refused, nothing written, when they" \
+	    "differ; a confirmed commit's time up puts every file back"
+}
+firewall_migrate_body()
+{
+	# The kernel's rules are live.rules; ipfw -n writes them back.
+	cat > fake-ipfw <<EOS
+#!/bin/sh
+echo "ipfw \$*" >> $(pwd)/ipfw.log
+case "\$*" in
+"-S show") sed -e 's/^\([0-9]*\) /\1 0 0 /' $(pwd)/live.rules
+	echo '65535 0 0 set 31 deny ip from any to any' ;;
+# ipfw's wording, as it writes rules back: all is ip.
+"-n /dev/stdin") sed -e 's/^add //' -e 's/ all / ip /g' ;;
+esac
+exit 0
+EOS
+	chmod +x fake-ipfw
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	# A Handbook script: its command in a variable, the interface too.
+	cat > hb.sh <<'EOS'
+#!/bin/sh
+ipfw -q -f flush
+cmd="ipfw -q add"
+pif="em0"
+$cmd 00010 allow all from any to any via lo0
+$cmd 00200 allow tcp from any to any 22 in via $pif setup keep-state
+$cmd 00999 deny log all from any to any
+EOS
+	cp hb.sh hb.before
+	printf '00010 set 0 allow ip from any to any via lo0\n00200 set 0 allow tcp from any to any 22 in via em0 setup keep-state\n00999 set 0 deny log ip from any to any\n' > live.rules
+	printf 'firewall_enable="YES"\nfirewall_script="%s/hb.sh"\n' \
+	    "$(pwd)" > root/etc/rc.conf
+	cp root/etc/rc.conf rc.conf.before
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules --root $(pwd)/root"
+	start_daemon
+	grep firewall root/etc/rc.conf >> rc.conf
+	atf_check cmp rc.conf.before root/etc/rc.conf
+	atf_check test ! -e fw
+
+	# Rules that differ from those loaded: refused, nothing written.
+	printf 'add 00010 allow ip from any to any via lo0\n' > one.rules
+	atf_check -s exit:1 -e match:'loaded now, not in the kept rules: 00200' \
+	    -o ignore "$JGC" -c "$SOCK" ipfw rules -a rc-conf-files \
+	    -a rc-conf-conflict -w one.rules
+	atf_check test ! -e fw/ipfw.rules
+	atf_check test ! -e fw/ipfw.sh
+	atf_check test ! -e root/usr/local/etc/rc.conf.d/arcana
+	atf_check cmp rc.conf.before root/etc/rc.conf
+	# The migration: the script's rules, its variables put in.
+	atf_check -o save:mig.rules "$JGC" -c "$SOCK" ipfw rules -r
+	atf_check -o match:"^# from $(pwd)/hb.sh$" \
+	    -o match:'^add 00200 allow tcp from any to any 22 in via em0 setup keep-state$' \
+	    -o not-match:"rc.firewall's own" cat mig.rules
+	# A confirmed commit whose time is up: every file as it was.
+	printf '{"arcana-firewall:firewall":{"kept":{"text":"%s"}}}\n' \
+	    "$(sed -e 's/"/\\"/g' mig.rules | awk '{ printf "%s\\n", $0 }')" \
+	    > mig.json
+	atf_check "$JGC" -c "$SOCK" edit firewall @mig.json
+	atf_check -o match:'confirm within' "$JGC" -c "$SOCK" commit -c 2 \
+	    -a rc-conf-files -a rc-conf-conflict
+	atf_check -o match:'^firewall_script=' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check test -e fw/ipfw.sh
+	for i in $(seq 1 60); do
+		[ -e fw/ipfw.sh ] || break
+		sleep 0.1
+	done
+	atf_check test ! -e fw/ipfw.sh
+	atf_check test ! -e fw/ipfw.rules
+	atf_check test ! -e root/usr/local/etc/rc.conf.d/arcana
+	atf_check cmp rc.conf.before root/etc/rc.conf
+	atf_check cmp hb.before hb.sh
+	# Committed for good: the host boots Arcana's script, the admin's
+	# own left as it is, its rc.conf line commented out, accepted.
+	atf_check -s exit:1 -e match:'rc-conf-files' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw rules -w mig.rules
+	atf_check -s exit:1 -e match:'firewall_script .*-a rc-conf-conflict' \
+	    -o ignore "$JGC" -c "$SOCK" ipfw rules -a rc-conf-files -w mig.rules
+	atf_check -o match:'in place' "$JGC" -c "$SOCK" ipfw rules \
+	    -a rc-conf-files -a rc-conf-conflict -w mig.rules
+	atf_check -o match:"^firewall_script=\"$(pwd)/fw/ipfw.sh\"$" \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^#firewall_script=.*taken by Arcana' \
+	    -o match:'^firewall_enable="YES"$' cat root/etc/rc.conf
+	atf_check cmp hb.before hb.sh
+	atf_check cmp mig.rules fw/ipfw.rules
+	# Nothing loaded by a commit: Apply does that.
+	atf_check -o not-match:'ipfw -q ' -o not-match:'swap' cat ipfw.log
+	stop_daemon
+
+	# A firewall_type file rc.firewall loads: its own rules (the
+	# loopback's) as the kernel has them, the file's after.
+	rm -rf fw root/usr/local/etc/rc.conf.d
+	printf 'add 00500 allow tcp from any to me 443 in\n' > t.rules
+	printf '00100 set 0 allow ip from any to any via lo0\n00500 set 0 allow tcp from any to me 443 in\n' > live.rules
+	printf 'firewall_enable="YES"\nfirewall_type="%s/t.rules"\n' "$(pwd)" \
+	    > root/etc/rc.conf
+	start_daemon
+	grep firewall root/etc/rc.conf >> rc.conf
+	atf_check -o save:t.mig "$JGC" -c "$SOCK" ipfw rules -r
+	atf_check -o match:"^# from $(pwd)/t.rules, with rc.firewall's own 1 rules" \
+	    -o match:'^add 00100 allow ip from any to any via lo0$' \
+	    -o match:'^add 00500 allow tcp from any to me 443 in$' cat t.mig
+	atf_check -o match:'in place' "$JGC" -c "$SOCK" ipfw rules \
+	    -a rc-conf-files -w t.mig
+	atf_check -o match:'^firewall_type=' cat root/etc/rc.conf
+	atf_check -o match:'^firewall_script=' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	stop_daemon
+
+	# The older persisted enable: firewall_type pointing at the kept
+	# file, which rc.firewall loads; kept until a commit moves it.
+	rm -rf fw root/usr/local/etc/rc.conf.d
+	mkdir fw
+	printf 'add 00700 allow ip from any to any\n' > fw/ipfw.rules
+	printf '00700 set 0 allow ip from any to any\n' > live.rules
+	printf 'firewall_enable="YES"\nfirewall_type="%s/fw/ipfw.rules"\n' \
+	    "$(pwd)" > root/etc/rc.conf
+	cp root/etc/rc.conf rc.conf.before
+	start_daemon
+	grep firewall root/etc/rc.conf >> rc.conf
+	atf_check cmp rc.conf.before root/etc/rc.conf
+	atf_check -o save:old.mig "$JGC" -c "$SOCK" ipfw rules -r
+	atf_check -o match:'which rc.firewall loads by firewall_type' \
+	    -o match:'^add 00700 allow ip from any to any$' cat old.mig
+	atf_check -o match:'in place' "$JGC" -c "$SOCK" ipfw rules \
+	    -a rc-conf-files -w old.mig
+	atf_check -o match:'^firewall_script=' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+}
+firewall_migrate_cleanup()
 {
 	stop_daemon
 }
@@ -10356,25 +10514,37 @@ esac
 exit 0
 EOS
 	chmod +x fake-ipfw
+	# Arcana's rc.conf file, which a commit of the kept rules writes.
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	: > root/etc/rc.conf
 	fw_sysctl 1 1
-	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules -Q $(pwd)/fake-sysctl"
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules -Q $(pwd)/fake-sysctl --root $(pwd)/root"
 	start_daemon
+	# An agent installed or updated changes no firewall variable,
+	# writes no firewall file and loads nothing.
+	atf_check -o empty cat root/etc/rc.conf
+	atf_check test ! -e root/usr/local/etc/rc.conf.d/arcana
+	atf_check test ! -e fw
+	atf_check -o not-match:'ipfw -q' -o not-match:'enable' \
+	    sh -c 'cat ipfw.log 2>/dev/null; true'
 
 	# What the firewall has: each rule with its set and counters, one
 	# of a disabled set marked so; no kept rules yet.
 	atf_check -o save:fw.json "$JGC" -c "$SOCK" net ipfw
 	atf_check -o match:'"loaded":true' \
-	    -o match:'\{"num":5,"pkts":12,"bytes":900,"set":0,"text":"skipto 500 ip from any to any out"\}' \
-	    -o match:'\{"num":1001,"pkts":0,"bytes":0,"set":1,"text":"allow tcp from any to me6 2222 in","disabled":true\}' \
-	    -o match:'"tables":\[\{"name":"T46","type":"addr","entries":\[\{"key":"10.0.0.0/8","value":"0"\},\{"key":"2001:db8::/32","value":"0"\}\],"count":2\}\]' \
+	    -o match:'\{"number":5,"octets":"900","packets":"12","set":0,"text":"skipto 500 ip from any to any out"\}' \
+	    -o match:'\{"disabled":true,"number":1001,"octets":"0","packets":"0","set":1,"text":"allow tcp from any to me6 2222 in"\}' \
+	    -o match:'"table":\[\{"count":2,"entry":\[\{"key":"10.0.0.0/8","value":"0"\},\{"key":"2001:db8::/32","value":"0"\}\],"name":"T46","type":"addr"\}\]' \
 	    -o match:'"pipes":\["00001:  10.000 Mbit/s    0 ms burst 0"\]' \
-	    -o match:'"kept":\[\]' \
-	    -o match:'"file":false' cat fw.json
+	    -o match:'"kept":\{"path":"[^"]*/fw/ipfw.rules","present":false' \
+	    -o not-match:'"kept":\{[^}]*"rule"' \
+	    cat fw.json
 	# The dynamic rules: the connections let through, each with its
 	# rule, its counters and how long it still lives.
-	atf_check -o match:'"dynamic_total":2,"dynamic":\[\{"num":1001,"pkts":7,"bytes":560,"ttl":298,"kind":"STATE","flow":"tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default"\}' \
-	    -o match:'\{"num":6101,"pkts":12,"bytes":1440,"ttl":3,"kind":"STATE","flow":"udp 10.0.0.5 5353 <-> 10.0.0.1 53 :default"\}' \
-	    cat fw.json
+	atf_check -o match:'"dynamic":\[\{"flow":"tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default","kind":"STATE","number":1001,"octets":"560","packets":"7","ttl":298\}' \
+	    -o match:'\{"flow":"udp 10.0.0.5 5353 <-> 10.0.0.1 53 :default","kind":"STATE","number":6101,"octets":"1440","packets":"12","ttl":3\}' \
+	    -o match:'"dynamic-total":2' cat fw.json
 
 	# A rule added now, and deleted now.
 	atf_check -o match:'done +ipfw add 1002 allow tcp from any to me6 80 in \(now\)' \
@@ -10474,8 +10644,8 @@ add 01001 allow tcp from any to me6 22 in
 	atf_check -o not-match:'01002' cat fw/ipfw.rules
 	# Each kept rule with ipfw's own wording beside, as the kernel's
 	# listing of it would say (all is ip).
-	atf_check -o match:'"kept":\[\{"num":5,"text":"skipto 500 all from any to any out","norm":"skipto 500 ip from any to any out"\},\{"num":200' \
-	    -o match:'"file":true' "$JGC" -c "$SOCK" net ipfw
+	atf_check -o match:'"rule":\[\{"number":5,"text":"skipto 500 all from any to any out","norm":"skipto 500 ip from any to any out"\},\{"number":200' \
+	    -o match:'"present":true' "$JGC" -c "$SOCK" net ipfw
 	# Kept rules renumbered with their place in the file.
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw keep renumber 999 998
 	atf_check -o match:'^add 00998 deny log all from any to any$' -o not-match:'00999' cat fw/ipfw.rules
@@ -10513,51 +10683,25 @@ ipfw -q set swap 0 1
 ipfw -q -f delete set 1
 ' sh -c 'grep -E "swap|delete set" ipfw.log'
 
-	# The kept file as a whole: read; replaced once ipfw has nothing
-	# against it, and not when it has.
-	atf_check -o match:'^add 00005 skipto' "$JGC" -c "$SOCK" ipfw rules
-	printf 'table T46 create type addr\nadd 00010 allow ip from table(T46) to any\n' > new.rules
-	atf_check -o match:'in place' "$JGC" -c "$SOCK" ipfw rules -w new.rules
-	atf_check -o file:new.rules cat fw/ipfw.rules
-	atf_check -o match:'^add 00005' cat fw/ipfw.rules.arcana-old
-	: > ipfw.log
-	atf_check -o ignore "$JGC" -c "$SOCK" ipfw apply
-	atf_check -o inline:'set 1 table T46 create type addr
-add 00010 set 1 allow ip from table(T46) to any
-' cat loaded.rules
-	printf 'add 00010 allow ip from any to any\nbogus\n' > bad.rules
-	atf_check -s exit:1 -e match:'bad command bogus' -o ignore \
-	    "$JGC" -c "$SOCK" ipfw rules -w bad.rules
-	printf 'add 00010 allow ip from any to any\nset swap 0 1\n' > bad.rules
-	atf_check -s exit:1 -e match:'line 2: the kept rules are what there is to be' \
-	    -o ignore "$JGC" -c "$SOCK" ipfw rules -w bad.rules
-	atf_check -o file:new.rules cat fw/ipfw.rules
-	# A kept rule written with a set of its own (a staging script's):
-	# loaded in set 1 once, not "set 1 set 1".
-	printf 'add 00010 set 1 allow ip from any to any\n' > set1.rules
-	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w set1.rules
-	atf_check -o ignore "$JGC" -c "$SOCK" ipfw apply
-	atf_check -o inline:'add 00010 set 1 allow ip from any to any\n' cat loaded.rules
-	atf_check -o match:'"kept":\[\{"num":10,"text":"allow ip from any to any"' "$JGC" -c "$SOCK" net ipfw
-	# What ipfw refuses of the load leaves set 0 alone.
-	printf 'add 00010 allow ip from any to fails\n' > f.rules
-	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w f.rules
-	: > ipfw.log
-	atf_check -s exit:1 -o match:'Invalid argument' "$JGC" -c "$SOCK" ipfw apply
-	atf_check -o not-match:'swap' cat ipfw.log
-
-	# The file the host loads now, as rc.conf names it, made into kept
-	# rules and not written: what applying does left as comments, the
-	# options before a command taken off.
-	atf_check -s exit:1 -e match:'sets no firewall_script of its own nor a firewall_type file' -o ignore \
+	# The migration's dry run (from-rc): what the host boots now, made
+	# into kept rules and not written: what applying does left as
+	# comments, the options before a command taken off; booted by
+	# rc.firewall, its own rules as the kernel has them before.
+	cp fw/ipfw.rules rc.before
+	atf_check -o match:'^# from nothing rc.conf loads \(rc.conf sets no firewall_script of its own nor a firewall_type file' \
+	    -o match:'^add 00005 skipto 500 ip from any to any out$' \
 	    "$JGC" -c "$SOCK" ipfw rules -r
 	printf 'firewall_type="open"\n' >> rc.conf
-	atf_check -s exit:1 -e match:"one of rc.firewall's own" -o ignore \
+	atf_check -o match:"one of rc.firewall's own" \
+	    -o match:'^add 01001 allow tcp from any to me6 22 in$' \
 	    "$JGC" -c "$SOCK" ipfw rules -r
 	printf '# the host'"'"'s own\n-f flush\nadd 100 allow ip from any to any via lo0\n-q add 200 deny ip from any to 127.0.0.0/8\ntable T9 create type addr\nset disable 3\n' > host.rules
 	sed -i '' -e '/^firewall_type=/d' rc.conf
 	printf 'firewall_type="%s/host.rules"\n' "$(pwd)" >> rc.conf
-	atf_check -o inline:"# from $(pwd)/host.rules
+	atf_check -o inline:"# from $(pwd)/host.rules, with rc.firewall's own 2 rules as the kernel has them
+# rc.firewall's own, as the kernel has them:
+add 00005 skipto 500 ip from any to any out
+add 01001 allow tcp from any to me6 22 in
 # the host's own
 # left out, applying does it: -f flush
 add 100 allow ip from any to any via lo0
@@ -10565,7 +10709,7 @@ add 200 deny ip from any to 127.0.0.0/8
 table T9 create type addr
 # left out, applying does it: set disable 3
 " "$JGC" -c "$SOCK" ipfw rules -r
-	atf_check -o file:f.rules cat fw/ipfw.rules
+	atf_check cmp rc.before fw/ipfw.rules
 	sed -i '' -e '/^firewall_type=/d' rc.conf
 	# A script of the host's own, as firewall_script names it: its ipfw
 	# commands (ipfw, its path, a variable holding it) taken out, a
@@ -10650,13 +10794,78 @@ add 00310 nat64lsn NAT64 ipv4 from any to 192.0.2.64/27 in
 " "$JGC" -c "$SOCK" ipfw rules -r
 	sed -i '' -e '/^firewall_type=/d' -e '/^firewall_script=/d' rc.conf
 
+	# The kept file as a whole: read; replaced once ipfw has nothing
+	# against it, and not when it has.
+	atf_check -o match:'^add 00005 skipto' "$JGC" -c "$SOCK" ipfw rules
+	printf 'table T46 create type addr\nadd 00010 allow ip from table(T46) to any\n' > new.rules
+	# The first commit moves the boot to Arcana's script: refused,
+	# nothing written, while the rules it would load are not those the
+	# kernel has now.
+	cp fw/ipfw.rules kept.before
+	atf_check -s exit:1 -e match:'not those loaded now: loaded now, not in the kept rules: 00005 skipto 500 ip from any to any out' \
+	    -o ignore "$JGC" -c "$SOCK" ipfw rules -a rc-conf-files -w new.rules
+	atf_check cmp kept.before fw/ipfw.rules
+	atf_check test ! -e fw/ipfw.sh
+	atf_check test ! -e root/usr/local/etc/rc.conf.d/arcana
+	# The migration, from-rc: what boots now (rc.firewall with no file
+	# of its own here: the kernel's set 0 rules as they are).
+	atf_check -o save:mig.rules "$JGC" -c "$SOCK" ipfw rules -r
+	atf_check -o match:"^# rc.firewall's own, as the kernel has them:$" \
+	    -o match:'^add 00005 skipto 500 ip from any to any out$' \
+	    -o match:'^add 00200 check-state :default$' \
+	    -o match:'^add 01001 allow tcp from any to me6 22 in$' \
+	    -o not-match:'2222' cat mig.rules
+	atf_check -s exit:1 -e match:'rc-conf-files' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw rules -w mig.rules
+	atf_check cmp kept.before fw/ipfw.rules
+	atf_check -o match:'in place' \
+	    "$JGC" -c "$SOCK" ipfw rules -a rc-conf-files -w mig.rules
+	atf_check -o match:"^firewall_script=\"$(pwd)/fw/ipfw.sh\"$" \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^700$' stat -f %Lp fw/ipfw.sh
+	atf_check -o match:"fake-ipfw -q $(pwd)/fw/ipfw.rules$" cat fw/ipfw.sh
+	# The admin's rc.conf: Arcana's file named, rc-conf-files accepted,
+	# and no firewall variable of theirs touched.
+	atf_check -o match:'^rc_conf_files=' -o not-match:'firewall' \
+	    cat root/etc/rc.conf
+	atf_check -o match:'^# from nothing rc.conf loads' cat fw/ipfw.rules
+	# Moved: what is committed from now on is the admin's to choose.
+	atf_check -o match:'in place' "$JGC" -c "$SOCK" ipfw rules -w new.rules
+	atf_check -o file:new.rules cat fw/ipfw.rules
+	atf_check -o match:'^add 00005' cat fw/ipfw.rules.arcana-old
+	: > ipfw.log
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw apply
+	atf_check -o inline:'set 1 table T46 create type addr
+add 00010 set 1 allow ip from table(T46) to any
+' cat loaded.rules
+	printf 'add 00010 allow ip from any to any\nbogus\n' > bad.rules
+	atf_check -s exit:1 -e match:'bad command bogus' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw rules -w bad.rules
+	printf 'add 00010 allow ip from any to any\nset swap 0 1\n' > bad.rules
+	atf_check -s exit:1 -e match:'line 2: the kept rules are what there is to be' \
+	    -o ignore "$JGC" -c "$SOCK" ipfw rules -w bad.rules
+	atf_check -o file:new.rules cat fw/ipfw.rules
+	# A kept rule written with a set of its own (a staging script's):
+	# loaded in set 1 once, not "set 1 set 1".
+	printf 'add 00010 set 1 allow ip from any to any\n' > set1.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w set1.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw apply
+	atf_check -o inline:'add 00010 set 1 allow ip from any to any\n' cat loaded.rules
+	atf_check -o match:'"rule":\[\{"number":10,"text":"allow ip from any to any"' "$JGC" -c "$SOCK" net ipfw
+	# What ipfw refuses of the load leaves set 0 alone.
+	printf 'add 00010 allow ip from any to fails\n' > f.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w f.rules
+	: > ipfw.log
+	atf_check -s exit:1 -o match:'Invalid argument' "$JGC" -c "$SOCK" ipfw apply
+	atf_check -o not-match:'swap' cat ipfw.log
+
 	# On and off, kept in rc.conf with where the rules are.
 	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw enable
 	atf_check -o match:'^ipfw -q enable firewall$' tail -1 ipfw.log
 	atf_check -o match:'^firewall_enable="YES"$' \
 	    -o match:'^firewall_type=".*/fw/ipfw.rules"$' cat rc.conf
-	atf_check -s exit:1 -e match:'already: the kept rules are what the firewall loads' \
-	    -o ignore "$JGC" -c "$SOCK" ipfw rules -r
+	atf_check -o match:"boots its firewall by Arcana's script already" \
+	    "$JGC" -c "$SOCK" ipfw rules -r
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw zero 5
 	atf_check -o match:'^ipfw -q zero 5$' tail -1 ipfw.log
 	# What a rule names and is not one: a table's entry, a NAT
@@ -10711,7 +10920,7 @@ add 00310 nat64lsn NAT64 ipv4 from any to 192.0.2.64/27 in
 	# reads: the agent feeds it as it reads back, and does not wait.
 	awk 'BEGIN { for (i = 1; i <= 6000; i++) printf "add %05d allow tcp from any to me %d in // a rule long enough to fill the pipes\n", i + 10000, i }' > big.rules
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w big.rules
-	atf_check -o match:'"num":16000,"text":"allow tcp from any to me 6000 in // a rule long enough to fill the pipes","norm":"allow tcp from any to me 6000 in' \
+	atf_check -o match:'"number":16000,"text":"allow tcp from any to me 6000 in // a rule long enough to fill the pipes","norm":"allow tcp from any to me 6000 in' \
 	    timeout 60 "$JGC" -c "$SOCK" net ipfw
 
 	# The first rule kept, no rule being kept yet: set 0's rules are
@@ -11562,10 +11771,10 @@ multicast_body()
 	DAEMON_ARGS="--ifmcstat $(pwd)/fake-ifmcstat"
 	start_daemon
 	atf_check -o save:m.json "$JGC" -c "$SOCK" net multicast
-	atf_check -o match:'"name":"vtnet0","groups":\[\{"family":"inet","group":"224.0.0.1","mode":"exclude","sources":\[\],"lladdr":"01:00:5e:00:00:01"\},\{"family":"inet","group":"232.1.1.1","mode":"include","sources":\["192.0.2.9"\],"lladdr":"01:00:5e:01:01:01"\},\{"family":"inet6","group":"ff02::1","mode":"exclude"' \
-	    -o match:'"igmp":\{"version":3,"rv":2,"qi":125,"qri":100,"uri":3\}' \
-	    -o match:'"mld":\{"version":2,"flags":"USEALLOW","rv":2,"qi":125,"qri":10000,"uri":3\}' \
-	    -o match:'"name":"lo0",.*"igmp":\{"version":2,' \
+	atf_check -o match:'\{"groups":\[\{"family":"inet","group":"224.0.0.1","lladdr":"01:00:5e:00:00:01","mode":"exclude"\},\{"family":"inet","group":"232.1.1.1","lladdr":"01:00:5e:01:01:01","mode":"include","sources":\["192.0.2.9"\]\},\{"family":"inet6","group":"ff02::1",[^}]*"mode":"exclude"\}\],' \
+	    -o match:'"igmp":\{"qi":125,"qri":100,"rv":2,"uri":3,"version":3\}' \
+	    -o match:'"mld":\{"flags":"USEALLOW","qi":125,"qri":10000,"rv":2,"uri":3,"version":2\},"name":"vtnet0"' \
+	    -o match:'"igmp":\{[^}]*"version":2\},"name":"lo0"' \
 	    -o match:'"settings":\[\{"name":"net.inet.igmp.default_version","value":"[123]"\}' \
 	    cat m.json
 	# And the host's own, as its ifmcstat says it.
@@ -11573,7 +11782,7 @@ multicast_body()
 	if [ -x /usr/sbin/ifmcstat ]; then
 		DAEMON_ARGS=""
 		start_daemon
-		atf_check -o match:'"interfaces":\[\{"name":"[a-z]+[0-9]*",' \
+		atf_check -o match:'"interfaces":\[\{' \
 		    -o match:'"group":"224.0.0.1"' "$JGC" -c "$SOCK" net multicast
 	fi
 }
@@ -11918,6 +12127,28 @@ EOT
 	atf_check -o not-match:'TrustedUserCAKeys' cat $R/etc/ssh/sshd_config
 }
 sshd_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case crashes cleanup
+crashes_head()
+{
+	atf_set "descr" "The cores the kernel dumped, through arcana-crashes: the list in the operation's shape, a core not in it refused"
+}
+crashes_body()
+{
+	start_daemon
+	# The list, read where kern.corefile and the usual places say;
+	# nothing is changed.
+	atf_check -o match:'^\{"corefile":"[^"]*",' -o match:'"cores":\[' \
+	    -o match:'"notes":\[' "$JGC" -c "$SOCK" crashes
+	# A backtrace is of a core the list has, by its name alone.
+	atf_check -s exit:1 -e match:'a core is named as the list has it|no directory of cores' \
+	    "$JGC" -c "$SOCK" crashes backtrace no-such-name
+	atf_check -s exit:2 -e match:'usage' "$JGC" -c "$SOCK" crashes nonsense
+}
+crashes_cleanup()
 {
 	stop_daemon
 }
@@ -13338,6 +13569,7 @@ atf_init_test_cases()
 	atf_add_test_case clamav
 	atf_add_test_case certs
 	atf_add_test_case sshd
+	atf_add_test_case crashes
 	atf_add_test_case capture
 	atf_add_test_case vpn
 	atf_add_test_case vnet
@@ -13347,6 +13579,7 @@ atf_init_test_cases()
 	atf_add_test_case fw_trace
 	atf_add_test_case firewall
 	atf_add_test_case firewall_apply
+	atf_add_test_case firewall_migrate
 	atf_add_test_case observe
 	atf_add_test_case storage
 	atf_add_test_case notify

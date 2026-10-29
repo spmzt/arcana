@@ -101,10 +101,6 @@ module: arcana-storage
      |  +--ro used?       bytes
      |  +--ro refer?      bytes
      |  +--ro creation?   int64
-     |  +---x send
-     |     +---w input
-     |        +---w from?        string
-     |        +---w recursive?   boolean
      +--ro mount*
      |  +--ro from?      string
      |  +--ro on?        string
@@ -264,8 +260,3 @@ module: arcana-storage
               +--ro device    string
               +--ro size?     bytes
               +--ro used?     bytes
-
-  rpcs:
-    +---x receive
-       +---w input
-          +---w dataset    string

@@ -62,7 +62,7 @@ cpu_pct(struct work *w)
 	long	now[CPUSTATES], total, idle;
 	int	i, step;
 
-	step = step_begin(w, ARC_STEP_KIND_LIB, "sysctlbyname(3)",
+	step = step_begin(w, STEP_LIB, "sysctlbyname(3)",
 	    "kern.cp_time, against the previous sample");
 	pthread_mutex_lock(&cpu_lock);
 	if (!cpu_have) {
@@ -141,7 +141,7 @@ resources_measure(struct work *w, struct host_stats *st)
 	/* Hundredths on the wire (decimal64, 2 digits), the loads too. */
 	st->cpu_pct = (int64_t)(cpu_pct(w) * 100.0);
 
-	step = step_begin(w, ARC_STEP_KIND_LIB, "sysctlbyname(3)",
+	step = step_begin(w, STEP_LIB, "sysctlbyname(3)",
 	    "vm.loadavg, vm.stats.vm.*");
 	len = sizeof(la);
 	if (sysctlbyname("vm.loadavg", &la, &len, NULL, 0) == 0 &&

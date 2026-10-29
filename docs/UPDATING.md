@@ -60,11 +60,12 @@ page, or **Update N agents** on the fleet page for every such host.
 Builds are told apart by the program's SHA-256, which each agent
 reports, so a rebuilt agent of the same version counts as another. The
 console sends the `arcana-agent` installed with it (`agent_binary` in
-`web.conf` names another). It sends the program compressed with gzip
-(the base system's zlib) to an agent that says, in its `hello`, that it
-takes it so (`gzip-update` in its features), and as it is to an agent
-before: a cblink frame carries at most 6 MiB (`max-binary`), which the
-agent has outgrown, and compressed it is a quarter of that. Each host
+`web.conf` names another), by arcana-agent's `update` action. It sends
+the program compressed with gzip (the base system's zlib) to an agent
+that says it takes it so (`gzip-update` in arcana-host's agent
+features), and as it is to an agent before: within the agent's cblink
+frame, 8 MiB less 64 KiB, which the agent (6.1 MB) fits, and compressed
+it is a quarter of that. Each host
 
 1. inflates a compressed program, to no more than the size sent with it
    and never past 32 MiB (`max-program`),
@@ -77,11 +78,40 @@ agent has outgrown, and compressed it is a quarter of that. Each host
 4. puts it in place of the installed one, which stays as
    `arcana-agent.old`.
 
-An agent older than compressed updates (before 0.235.0) takes the
-program as it is, within 6 MiB. Once the agent is bigger than that, such
-a host cannot be sent it: the console says to update it to
-arcana-agent 0.235.0 first, which fits and takes the next one
-compressed; `pkg upgrade arcana` there does it too.
+An agent with no features in arcana-host (0.236.0 and before) takes
+the program as it is, within its frame. Once the agent is bigger than
+that, such a host cannot be sent it, and the console says so; `pkg
+upgrade arcana` there updates it instead.
+
+### The switch to YANG alone
+
+Console 0.336.0 and agent 0.238.0 speak only cblink's YANG family
+(and the agent's own stream families): the interim protocol, the
+`arcana` family of `arcana.yaml`, is gone, and no release keeps it. A
+console of the switch reaches an agent before it (0.236.0, 0.237.x)
+for two things alone: its `hello` (a read of arcana-host's host, which
+those serve, with their version and build) and the update
+(arcana-agent's `update` action, which they serve: the program as it
+is, signed, within its frame). Everything else such an agent serves
+through the interim protocol alone fails against it until it is
+updated. So, on the flag day:
+
+1. Update the console first (**Update console** on its own host, or
+   `pkg upgrade arcana`, or the container image). The agent of the
+   console's host is updated with it.
+2. Then every other agent, from the console's **Devices** page:
+   **Update N agents**, with **Restart the agent now** on. The console
+   sends each the agent installed with it, as it is; each answers as
+   the new build once it has restarted, and from then on takes its
+   updates compressed.
+
+In between, a host whose agent is still of before shows only its hello
+(its version and build) and offers the update, and every other page of it (jails,
+services, networks, the firewall, SD-WAN, jobs) fails until that host
+is updated. `arcanactl` of the switch is the same: `hello` and
+`agent-update` reach an agent of before, nothing else. A host the console
+cannot send the agent to (another architecture, another FreeBSD
+version) is updated with `pkg upgrade arcana` on the host.
 
 With **Restart the agent now**, on by default, the host then restarts
 its `arcana_agent` service. The console watches for it to answer as the

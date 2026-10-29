@@ -1,0 +1,682 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-suricata",
+    "module-revision": "2026-10-29",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "85500",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-suricata",
+        "sid": "85500"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata",
+        "sid": "85501"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/command",
+        "sid": "85502"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/command/input",
+        "sid": "85503"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/command/input/command",
+        "sid": "85504"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/command/input/iface",
+        "sid": "85505"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/command/input/instance",
+        "sid": "85506"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/command/output",
+        "sid": "85507"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/command/output/answer",
+        "sid": "85508"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling",
+        "sid": "85509"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/input",
+        "sid": "85510"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/input/instance",
+        "sid": "85511"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output",
+        "sid": "85512"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/build",
+        "sid": "85513"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/build/locks",
+        "sid": "85514"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/build/packets",
+        "sid": "85515"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/build/rules",
+        "sid": "85516"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay",
+        "sid": "85517"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/keywords",
+        "sid": "85518"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/keywords/at",
+        "sid": "85519"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/keywords/text",
+        "sid": "85520"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/locks",
+        "sid": "85521"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/locks/at",
+        "sid": "85522"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/locks/text",
+        "sid": "85523"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets",
+        "sid": "85524"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/at",
+        "sid": "85525"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section",
+        "sid": "85526"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section/row",
+        "sid": "85527"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section/row/avg",
+        "sid": "85528"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section/row/cnt",
+        "sid": "85529"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section/row/ip",
+        "sid": "85530"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section/row/max",
+        "sid": "85531"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section/row/min",
+        "sid": "85532"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section/row/name",
+        "sid": "85533"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section/row/pct",
+        "sid": "85534"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section/row/proto",
+        "sid": "85535"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section/row/tot",
+        "sid": "85536"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/packets/section/title",
+        "sid": "85537"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/prefilter",
+        "sid": "85538"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/prefilter/at",
+        "sid": "85539"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/prefilter/text",
+        "sid": "85540"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/rulegroups",
+        "sid": "85541"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/rulegroups/at",
+        "sid": "85542"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/rulegroups/text",
+        "sid": "85543"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/rules",
+        "sid": "85544"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/rules/at",
+        "sid": "85545"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/replay/rules/document",
+        "sid": "85546"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running",
+        "sid": "85547"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/keywords",
+        "sid": "85548"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/keywords/at",
+        "sid": "85549"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/keywords/text",
+        "sid": "85550"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/locks",
+        "sid": "85551"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/locks/at",
+        "sid": "85552"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/locks/text",
+        "sid": "85553"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets",
+        "sid": "85554"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/at",
+        "sid": "85555"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section",
+        "sid": "85556"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section/row",
+        "sid": "85557"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section/row/avg",
+        "sid": "85558"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section/row/cnt",
+        "sid": "85559"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section/row/ip",
+        "sid": "85560"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section/row/max",
+        "sid": "85561"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section/row/min",
+        "sid": "85562"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section/row/name",
+        "sid": "85563"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section/row/pct",
+        "sid": "85564"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section/row/proto",
+        "sid": "85565"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section/row/tot",
+        "sid": "85566"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/packets/section/title",
+        "sid": "85567"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/prefilter",
+        "sid": "85568"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/prefilter/at",
+        "sid": "85569"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/prefilter/text",
+        "sid": "85570"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/rulegroups",
+        "sid": "85571"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/rulegroups/at",
+        "sid": "85572"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/rulegroups/text",
+        "sid": "85573"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/rules",
+        "sid": "85574"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/rules/at",
+        "sid": "85575"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-profiling/output/running/rules/document",
+        "sid": "85576"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules",
+        "sid": "85577"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/input",
+        "sid": "85578"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/input/classtype",
+        "sid": "85579"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/input/limit",
+        "sid": "85580"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/input/offset",
+        "sid": "85581"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/input/only",
+        "sid": "85582"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/input/q",
+        "sid": "85583"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/input/sid",
+        "sid": "85584"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output",
+        "sid": "85585"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/changed",
+        "sid": "85586"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/class",
+        "sid": "85587"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/class/classtype",
+        "sid": "85588"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/class/enabled",
+        "sid": "85589"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/class/rules",
+        "sid": "85590"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/enabled",
+        "sid": "85591"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/group",
+        "sid": "85592"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/group/match",
+        "sid": "85593"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/group/state",
+        "sid": "85594"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/limit",
+        "sid": "85595"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/matched",
+        "sid": "85596"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/modify",
+        "sid": "85597"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/offset",
+        "sid": "85598"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/page-rule",
+        "sid": "85599"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/page-rule/action",
+        "sid": "85600"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/page-rule/classtype",
+        "sid": "85601"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/page-rule/enabled",
+        "sid": "85602"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/page-rule/gid",
+        "sid": "85603"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/page-rule/msg",
+        "sid": "85604"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/page-rule/rev",
+        "sid": "85605"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/page-rule/rule",
+        "sid": "85606"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/page-rule/severity",
+        "sid": "85607"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/page-rule/sid",
+        "sid": "85608"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/page-rule/state",
+        "sid": "85609"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/ruleset",
+        "sid": "85610"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/ruleset/at",
+        "sid": "85611"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/ruleset/path",
+        "sid": "85612"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/ruleset/size",
+        "sid": "85613"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-rules/output/total",
+        "sid": "85614"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources",
+        "sid": "85615"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/input",
+        "sid": "85616"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output",
+        "sid": "85617"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/default-et-open",
+        "sid": "85618"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/index",
+        "sid": "85619"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source",
+        "sid": "85620"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source/deprecated",
+        "sid": "85621"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source/license",
+        "sid": "85622"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source/name",
+        "sid": "85623"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source/obsolete",
+        "sid": "85624"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source/parameters",
+        "sid": "85625"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source/replaces",
+        "sid": "85626"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source/state",
+        "sid": "85627"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source/subscription",
+        "sid": "85628"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source/summary",
+        "sid": "85629"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source/url",
+        "sid": "85630"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-suricata:suricata/read-sources/output/source/vendor",
+        "sid": "85631"
+      }
+    ]
+  }
+}

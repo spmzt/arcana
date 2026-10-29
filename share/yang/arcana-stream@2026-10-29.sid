@@ -1,0 +1,67 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-stream",
+    "module-revision": "2026-10-29",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-structure-ext",
+        "module-revision": "2020-06-17"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "85960",
+        "size": "40"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-stream",
+        "sid": "85960"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-stream:chunk",
+        "sid": "85961"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-stream:chunk/data",
+        "sid": "85962"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-stream:open",
+        "sid": "85963"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-stream:open/name",
+        "sid": "85964"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-stream:open/recursive",
+        "sid": "85965"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-stream:opened",
+        "sid": "85966"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-stream:opened/json",
+        "sid": "85967"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-stream:opened/ok",
+        "sid": "85968"
+      }
+    ]
+  }
+}

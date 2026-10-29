@@ -344,7 +344,7 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 			if (strcmp(ni[k].name, instances[i].name) == 0)
 				break;
 		if (k == n) {
-			step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+			step = step_begin(w, STEP_DAEMON, "arcana-agent",
 			    "bird %s%s%s stopped", instances[i].name, jail[0] !=
 			    '\0' ? " of " : "", jail);
 			inst_down(w, &instances[i]);
@@ -358,7 +358,7 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 		for (i = 0; i < ninstances; i++)
 			if (strcmp(ni[k].name, instances[i].name) == 0)
 				was = true;
-		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "bird "
+		step = step_begin(w, STEP_DAEMON, "arcana-agent", "bird "
 		    "%s in fib %d%s%s: %s", ni[k].name, ni[k].fib, jail[0] != '\0' ?
 		    " of " : "", jail, was ? "configured again" : "started");
 		e = NULL;

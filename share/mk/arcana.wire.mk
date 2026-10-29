@@ -1,12 +1,12 @@
-# The family on the wire, for a program that speaks it: the YANG module
-# written from share/arcana/arcana.yaml (share/yang/arcana@<rev>.yang,
-# its SIDs beside it), the structs and schema tables cblink-gen writes
-# from it (arcana_v2.h, arcana_v2_schema.c), the programs' names for
-# them (arcana.h) and the glue to cblink (arcana_wire.c), both
-# written by share/arcana/wire.awk.
+# What the programs keep for their own use (a jail, a service, a job
+# and its change): the YANG module written from share/arcana/arcana.yaml
+# (share/yang/arcana@<rev>.yang, its SIDs beside it), the structs and
+# schema tables cblink-gen writes from it (arcana_v2.h,
+# arcana_v2_schema.c) and the programs' names for them and the
+# definitions (arcana.h, written by share/arcana/wire.awk).  No family
+# of it is spoken: the agent's are YANG's and its own streams'.
 #
-#	ARC_WIRE=	server | client | both
-#	ARC_CLUSTER=	yes	the console's own family too (cluster.h,
+#	ARC_CLUSTER=	yes	the console's own family (cluster.h,
 #				cluster_wire.c, from cluster.yaml)
 #	.include "${.CURDIR}/../../share/mk/arcana.wire.mk"
 #
@@ -14,10 +14,6 @@
 
 .if !target(__<arcana.wire.mk>__)
 __<arcana.wire.mk>__:
-
-.if !defined(ARC_WIRE)
-.error ARC_WIRE is server, client or both
-.endif
 
 ARC_WIRE_AWK=	${ARC_TOP}/share/arcana/wire.awk
 ARC_CLUSTER_SPEC= ${ARC_TOP}/share/arcana/cluster.yaml
@@ -42,9 +38,8 @@ _arc_mods+=	${ARC_CLUSTER_YANG}
 _arc_sids+=	-s ${ARC_CLUSTER_SIDS}
 .endif
 
-SRCS+=		arcana_v2.h arcana_v2_schema.c arcana.h arcana_wire.c
-CLEANFILES+=	arcana_v2.h arcana_v2_schema.c arcana.h arcana.h.tmp \
-		arcana_wire.c arcana_wire.c.tmp
+SRCS+=		arcana_v2.h arcana_v2_schema.c arcana.h
+CLEANFILES+=	arcana_v2.h arcana_v2_schema.c arcana.h arcana.h.tmp
 # One generator run makes the header and the tables: the header stands
 # for both.
 arcana_v2_schema.c: arcana_v2.h
@@ -54,10 +49,6 @@ arcana_v2.h: ${_arc_mods} ${ARC_SIDS} ${CBLINK_GEN}
 arcana.h: ${ARC_SPEC} ${ARC_WIRE_AWK} arcana_v2.h
 	awk -v out=h -v base=arcana_v2 -f ${ARC_WIRE_AWK} ${ARC_SPEC} \
 	    > ${.TARGET}.tmp
-	mv ${.TARGET}.tmp ${.TARGET}
-arcana_wire.c: ${ARC_SPEC} ${ARC_WIRE_AWK} arcana.h
-	awk -v out=c -v side=${ARC_WIRE} -v hdrname=arcana -f ${ARC_WIRE_AWK} \
-	    ${ARC_SPEC} > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
 
 .if ${ARC_CLUSTER:Uno} == "yes"

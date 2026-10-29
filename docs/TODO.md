@@ -15,16 +15,10 @@
   2026-10-28 (in the plan, 2.3): 2.3.x (candidate and
   running), 2.3.5 the rc.conf.d
   fragments rendered (the agent edits rc.conf through sysrc(8)), the
-  running datastore's use of rtadvd.conf (2.5.1); NACM (3.3); 3.4's streams (the JSON stays on
-  the wire until then); RESTCONF (Y-4); and Y-3's conversions of the
-  interim module's operations onto the standard models, a module at a
-  time (3.1.6, arcana-sysctl and arcana-kernel, done: the first
-  operations retired from the interim module; 3.1.2, arcana-services,
-  done: its operations retired, the console's and the pages' enable,
-  disable and config writes a confirmed commit whose warnings the page
-  offers to accept).  Each operation
-  converted to YANG shows its YANG model beside
-  the CBOR schema in its task's { } Schema panel, in the same commit.
+  running datastore's use of rtadvd.conf (2.5.1); RESTCONF (Y-4).
+  The interim family is gone (3.8, 0.238.0/0.336.0): every operation
+  is a YANG module's, its task's { } Schema panel showing the
+  module's tree.
   For the user: the CORECONF draft's examples number some
   ietf-interfaces items otherwise than SIDS.md.
 - MEF 138's model, what stays undone and why (docs/PLAN-119-SASE.md,

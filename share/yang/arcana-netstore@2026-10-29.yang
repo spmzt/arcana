@@ -1,0 +1,262 @@
+module arcana-netstore {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-netstore";
+  prefix arcns;
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "A FreeBSD host's network storage services as the agent reads
+     them: the NFS server, NFSv4 alone (nfsd(8), mountd(8),
+     exports(5) with its V4: root, the datasets that share themselves
+     by sharenfs), iSCSI's target (ctld(8), ctl.conf(5), ctladm(8))
+     and HAST (hastd(8), hast.conf(5), hastctl(8)).  Changes are jobs
+     of kind netstore.  The netstore operation of arcana.yaml
+     converted (Y-3).";
+
+  revision 2026-10-29 {
+    description
+      "Initial revision.";
+  }
+
+  container netstore {
+    config false;
+    description
+      "The storage services, read when asked.";
+    action read {
+      description
+        "The services, or those named alone.";
+      input {
+        leaf-list name {
+          type enumeration {
+            enum nfs {
+              description
+                "The NFS server.";
+            }
+            enum iscsi {
+              description
+                "iSCSI's target.";
+            }
+            enum hast {
+              description
+                "HAST.";
+            }
+          }
+          description
+            "The services to read; none, all.";
+        }
+      }
+      output {
+        container nfs {
+          description
+            "The NFS server.";
+          leaf nfsd-enabled {
+            type boolean;
+            description
+              "rc.conf enables nfsd.";
+          }
+          leaf nfsd-running {
+            type boolean;
+            description
+              "nfsd runs.";
+          }
+          leaf mountd-enabled {
+            type boolean;
+            description
+              "rc.conf enables mountd.";
+          }
+          leaf mountd-running {
+            type boolean;
+            description
+              "mountd runs.";
+          }
+          leaf nfs-server-enable {
+            type string;
+            description
+              "rc.conf's.";
+          }
+          leaf nfsv4-server-enable {
+            type string;
+            description
+              "rc.conf's.";
+          }
+          leaf nfsv4-server-only {
+            type string;
+            description
+              "rc.conf's.";
+          }
+          leaf nfsuserd-enable {
+            type string;
+            description
+              "rc.conf's.";
+          }
+          leaf flags {
+            type string;
+            description
+              "nfs_server_flags.";
+          }
+          leaf threads {
+            type string;
+            description
+              "Its -n.";
+          }
+          leaf pnfs {
+            type string;
+            description
+              "Its -p, pNFS's data servers.";
+          }
+          leaf mirror {
+            type string;
+            description
+              "Its -m, the mirrors.";
+          }
+          leaf max-minorversion {
+            type int32;
+            description
+              "vfs.nfsd.server_max_minorversion.";
+          }
+          leaf exports-path {
+            type string;
+            description
+              "exports(5)'s file.";
+          }
+          leaf exports {
+            type string;
+            description
+              "Its text.";
+          }
+          leaf v4root {
+            type string;
+            description
+              "Its V4: line's root.";
+          }
+          leaf v4root-zfs {
+            type boolean;
+            description
+              "The root is a ZFS dataset's.";
+          }
+          leaf v4root-error {
+            type string;
+            description
+              "Why it is not.";
+          }
+          leaf zfs-exports {
+            type string;
+            description
+              "What zfs wrote for mountd (/etc/zfs/exports).";
+          }
+          list share {
+            key "dataset";
+            description
+              "The datasets that share themselves (sharenfs).";
+            leaf dataset {
+              type string;
+              description
+                "The dataset.";
+            }
+            leaf mountpoint {
+              type string;
+              description
+                "Where it is mounted.";
+            }
+            leaf sharenfs {
+              type string;
+              description
+                "Its sharenfs.";
+            }
+          }
+          leaf exported {
+            type string;
+            description
+              "showmount -e: what mountd exports now.";
+          }
+        }
+        container iscsi {
+          description
+            "iSCSI's target.";
+          leaf ctld-enabled {
+            type boolean;
+            description
+              "rc.conf enables ctld.";
+          }
+          leaf ctld-running {
+            type boolean;
+            description
+              "ctld runs.";
+          }
+          leaf iscsid-enabled {
+            type boolean;
+            description
+              "rc.conf enables iscsid.";
+          }
+          leaf iscsid-running {
+            type boolean;
+            description
+              "iscsid runs.";
+          }
+          leaf conf-path {
+            type string;
+            description
+              "ctl.conf(5).";
+          }
+          leaf conf {
+            type string;
+            description
+              "Its text.";
+          }
+          leaf luns {
+            type string;
+            description
+              "ctladm devlist.";
+          }
+          leaf sessions {
+            type string;
+            description
+              "ctladm islist.";
+          }
+          leaf ports {
+            type string;
+            description
+              "ctladm portlist -f iscsi.";
+          }
+        }
+        container hast {
+          description
+            "HAST.";
+          leaf hastd-enabled {
+            type boolean;
+            description
+              "rc.conf enables hastd.";
+          }
+          leaf hastd-running {
+            type boolean;
+            description
+              "hastd runs.";
+          }
+          leaf conf-path {
+            type string;
+            description
+              "hast.conf(5).";
+          }
+          leaf conf {
+            type string;
+            description
+              "Its text.";
+          }
+          leaf status {
+            type string;
+            description
+              "hastctl status.";
+          }
+          leaf resources {
+            type string;
+            description
+              "hastctl list.";
+          }
+        }
+      }
+    }
+  }
+}

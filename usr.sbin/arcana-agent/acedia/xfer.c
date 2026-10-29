@@ -35,6 +35,7 @@
 #include <unistd.h>
 
 #include "agent.h"
+#include "ystream.h"
 
 #define	XFER_MAX	4		/* at once, both ways */
 #define	XFER_CHUNK	(256 * 1024)	/* what is read from send at once */
@@ -272,7 +273,6 @@ static void *
 send_run(void *arg)
 {
 	struct xfer		*x = arg;
-	struct arc_chunk	 c;
 	unsigned char		*buf;
 	char			 why[XFER_ERR];
 	ssize_t			 n;
@@ -284,11 +284,7 @@ send_run(void *arg)
 	if ((buf = malloc(XFER_CHUNK)) == NULL)
 		error = ENOMEM;
 	while (error == 0 && (n = read(x->io, buf, XFER_CHUNK)) > 0) {
-		memset(&c, 0, sizeof(c));
-		c.data.p = buf;
-		c.data.len = (size_t)n;
-		while ((error = arc_zfs_send_server_send(x->s, &c)) ==
-		    EAGAIN) {
+		while ((error = ys_send(x->s, buf, (size_t)n)) == EAGAIN) {
 			pthread_mutex_lock(&x->lock);
 			while (!x->closed && cbl_stream_credit(x->s) == 0)
 				pthread_cond_wait(&x->wake, &x->lock);
@@ -315,7 +311,7 @@ send_run(void *arg)
 	return (NULL);
 }
 
-static const struct arc_zfs_send_server_cbs send_cbs = {
+static const struct ys_cbs send_cbs = {
 	.on_writable = xfer_writable,
 	.on_close = xfer_closed,
 };
@@ -387,16 +383,16 @@ recv_run(void *arg)
 static void
 recv_data(cbl_stream *s, cbl_msg *data, void *arg)
 {
-	struct xfer		*x = arg;
-	struct arc_chunk	 d;
-	struct chunk		*c;
-	cbl_yarena		*a;
+	struct xfer			*x = arg;
+	struct arcana_stream_chunk	 d;
+	struct chunk			*c;
+	cbl_yarena			*a;
 
 	if ((a = cbl_yarena_new()) == NULL) {
 		(void)cbl_stream_reset(s, ENOMEM);
 		return;
 	}
-	if (arcana_chunk_parse(data, &d, a, CBL_YD_STRICT, NULL, 0) != 0) {
+	if (ys_chunk(data, &d, a) != 0) {
 		cbl_yarena_free(a);
 		(void)cbl_stream_reset(s, EBADMSG);
 		return;
@@ -456,17 +452,17 @@ xfer_start(struct xfer *x, void *(*run)(void *))
 }
 
 int
-arc_zfs_send_stream_open(cbl_req *req, const struct arc_zfs_send_req *rq,
-    cbl_stream *s, void *arg __unused)
+zfs_send_open(cbl_req *req, const struct arcana_stream_open *rq,
+    cbl_stream *s)
 {
-	struct arc_zfs_send_rsp	 rsp;
-	struct xfer		*x;
-	size_t			 l0, l1, n;
+	struct arcana_stream_opened	 rsp;
+	struct xfer			*x;
+	size_t				 l0, l1, n;
 
-	if (rq->names.n < 1 || rq->names.n > 2 || !snapshot_name(
-	    rq->names.v[0], &l0) || (rq->names.n == 2 && (!snapshot_name(
-	    rq->names.v[1], &l1) || l1 != l0 || strncmp(rq->names.v[0],
-	    rq->names.v[1], l0) != 0))) {
+	if (rq->name.n < 1 || rq->name.n > 2 || !snapshot_name(
+	    rq->name.v[0], &l0) || (rq->name.n == 2 && (!snapshot_name(
+	    rq->name.v[1], &l1) || l1 != l0 || strncmp(rq->name.v[0],
+	    rq->name.v[1], l0) != 0))) {
 		(void)cbl_req_set_err(req, "a snapshot, dataset@name, and the "
 		    "one of the same dataset it is to be sent from, if any",
 		    NULL, 0, -1);
@@ -480,13 +476,13 @@ arc_zfs_send_stream_open(cbl_req *req, const struct arc_zfs_send_req *rq,
 	n = 0;
 	x->argv[n++] = strdup(opts.zfs_bin);
 	x->argv[n++] = strdup("send");
-	if (rq->zfs_recursive)
+	if (rq->has_recursive && rq->recursive)
 		x->argv[n++] = strdup("-R");
-	if (rq->names.n == 2) {
+	if (rq->name.n == 2) {
 		x->argv[n++] = strdup("-i");
-		x->argv[n++] = strdup(rq->names.v[1]);
+		x->argv[n++] = strdup(rq->name.v[1]);
 	}
-	x->argv[n++] = strdup(rq->names.v[0]);
+	x->argv[n++] = strdup(rq->name.v[0]);
 	if (xfer_spawn(x) == -1) {
 		(void)cbl_req_set_err(req, strerror(errno), NULL, 0, -1);
 		x->refs = 1;
@@ -496,7 +492,7 @@ arc_zfs_send_stream_open(cbl_req *req, const struct arc_zfs_send_req *rq,
 	memset(&rsp, 0, sizeof(rsp));
 	rsp.has_ok = true;
 	rsp.ok = true;
-	if (arc_zfs_send_accept(s, &rsp, &send_cbs, x) != 0) {
+	if (ys_accept(s, &rsp, &send_cbs, x) != 0) {
 		(void)kill(x->pid, SIGTERM);
 		(void)waitpid(x->pid, NULL, 0);
 		x->refs = 1;
@@ -508,16 +504,16 @@ arc_zfs_send_stream_open(cbl_req *req, const struct arc_zfs_send_req *rq,
 }
 
 int
-arc_zfs_receive_stream_open(cbl_req *req,
-    const struct arc_zfs_receive_req *rq, cbl_stream *s, void *arg __unused)
+zfs_receive_open(cbl_req *req, const struct arcana_stream_open *rq,
+    cbl_stream *s)
 {
-	struct arc_zfs_receive_rsp	 rsp;
+	struct arcana_stream_opened	 rsp;
 	struct xfer			*x;
 	cbl_msg				*msg;
 
 	/* Never into a pool's own dataset: a dataset under one. */
-	if (rq->names.n != 1 || !dataset_name(rq->names.v[0]) ||
-	    strchr(rq->names.v[0], '/') == NULL) {
+	if (rq->name.n != 1 || !dataset_name(rq->name.v[0]) ||
+	    strchr(rq->name.v[0], '/') == NULL) {
 		(void)cbl_req_set_err(req, "a dataset under a pool, pool/name, "
 		    "that is not there yet or is the one it is sent from",
 		    NULL, 0, -1);
@@ -531,7 +527,7 @@ arc_zfs_receive_stream_open(cbl_req *req,
 	x->argv[0] = strdup(opts.zfs_bin);
 	x->argv[1] = strdup("receive");
 	x->argv[2] = strdup("-u");
-	x->argv[3] = strdup(rq->names.v[0]);
+	x->argv[3] = strdup(rq->name.v[0]);
 	if (xfer_spawn(x) == -1) {
 		(void)cbl_req_set_err(req, strerror(errno), NULL, 0, -1);
 		x->refs = 1;
@@ -546,8 +542,8 @@ arc_zfs_receive_stream_open(cbl_req *req,
 	rsp.has_ok = true;
 	rsp.ok = true;
 	if (cbl_stream_msg_new(s, &msg) != 0 ||
-	    arc_zfs_receive_rsp_put_fields(msg, &rsp) != 0 ||
-	    cbl_msg_set_window(msg, 4194304) != 0 || cbl_stream_accept(s, msg,
+	    arcana_stream_opened_put(msg, &rsp) != 0 ||
+	    cbl_msg_set_window(msg, YS_WINDOW) != 0 || cbl_stream_accept(s, msg,
 	    CBL_SF_MANUAL_CREDIT, &recv_cbs, x) != 0) {
 		(void)kill(x->pid, SIGTERM);
 		(void)waitpid(x->pid, NULL, 0);

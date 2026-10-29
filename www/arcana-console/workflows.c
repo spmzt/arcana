@@ -2280,7 +2280,6 @@ sub_run(void *arg)
 {
 	struct watched		*x = arg;
 	struct hostref		 h;
-	struct arc_client	 cl;
 	struct pollfd		 pfd;
 	cbl_conn		*conn;
 	cbl_tls			*tls;
@@ -2292,21 +2291,21 @@ sub_run(void *arg)
 			sub_pause(x, SUB_RETRY_S);
 			continue;
 		}
-		if (hosts_connect(h.uri, h.peer, &conn, &tls, &cl) != NULL) {
+		if (hosts_connect(h.uri, h.peer, &conn, &tls) != NULL) {
 			sub_state(x, false);
 			sub_pause(x, SUB_RETRY_S);
 			continue;
 		}
 		if (cbl_subscribe(conn, "cblink.yang", "notify", sub_heard, x,
 		    &sub) != 0) {
-			hosts_release(h.uri, h.peer, conn, tls, &cl, false);
+			hosts_release(h.uri, h.peer, conn, tls, false);
 			sub_state(x, false);
 			sub_pause(x, SUB_RETRY_S);
 			continue;
 		}
 		/* Subscribed first, read after: nothing falls between. */
 		if (!sub_catch_up(x, &h)) {
-			hosts_release(h.uri, h.peer, conn, tls, &cl, false);
+			hosts_release(h.uri, h.peer, conn, tls, false);
 			sub_state(x, false);
 			sub_pause(x, SUB_RETRY_S);
 			continue;
@@ -2333,7 +2332,7 @@ sub_run(void *arg)
 		}
 		(void)sub_drain(x);
 		/* A connection with a subscription on it is no one else's. */
-		hosts_release(h.uri, h.peer, conn, tls, &cl, false);
+		hosts_release(h.uri, h.peer, conn, tls, false);
 		if (!atomic_load(&x->stop)) {
 			thread_log(LOG_NOTICE, "workflows: the events of %s "
 			    "stopped coming", x->sid);

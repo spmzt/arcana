@@ -44,7 +44,7 @@ has_feature(const char *name)
 
 /* Facts about this host, from uname(3) and sysctl(3). */
 void
-host_info(struct work *w, struct arc_host *h)
+host_info(struct work *w, struct host_facts *h)
 {
 	struct utsname	 u;
 	struct timeval	 boot;
@@ -55,7 +55,7 @@ host_info(struct work *w, struct arc_host *h)
 	int		 ncpu, securelevel, step;
 
 	memset(h, 0, sizeof(*h));
-	step = step_begin(w, ARC_STEP_KIND_LIB, "uname(3)", NULL);
+	step = step_begin(w, STEP_LIB, "uname(3)", NULL);
 	if (uname(&u) == 0) {
 		h->sysname = wtext(w, wstrdup(w, u.sysname));
 		h->release = wtext(w, wstrdup(w, u.release));
@@ -69,7 +69,7 @@ host_info(struct work *w, struct arc_host *h)
 	h->has_osreldate = true;
 	h->osreldate = (uint32_t)getosreldate();
 
-	step = step_begin(w, ARC_STEP_KIND_LIB, "sysctlbyname(3)",
+	step = step_begin(w, STEP_LIB, "sysctlbyname(3)",
 	    "hw.ncpu hw.physmem kern.boottime kern.securelevel");
 	len = sizeof(ncpu);
 	if (sysctlbyname("hw.ncpu", &ncpu, &len, NULL, 0) == 0) {

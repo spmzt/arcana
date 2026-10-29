@@ -61,10 +61,11 @@ module: arcana-agent
      |        +---w peer?          string
      +---x update
      |  +---w input
-     |  |  +---w binary       binary
-     |  |  +---w sha256       string
-     |  |  +---w restart?     boolean
-     |  |  +---w signature?   binary
+     |  |  +---w binary          binary
+     |  |  +---w sha256          string
+     |  |  +---w restart?        boolean
+     |  |  +---w signature?      binary
+     |  |  +---w program-size?   uint32
      |  +--ro output
      |     +--ro version?      string
      |     +--ro restarting?   boolean
@@ -74,14 +75,17 @@ module: arcana-agent
      |  |  +---w ref?         string
      |  |  +---w host-keys?   string
      |  |  +---w ssh-key?     string
+     |  |  +---w compress?    boolean
      |  +--ro output
-     |     +--ro binary?        binary
-     |     +--ro sha256?        string
-     |     +--ro version?       string
-     |     +--ro commit?        string
-     |     +--ro host-keys?     string
-     |     +--ro fingerprint*   string
-     |     +--ro deploy-key?    string
+     |     +--ro binary?         binary
+     |     +--ro sha256?         string
+     |     +--ro version?        string
+     |     +--ro commit?         string
+     |     +--ro host-keys?      string
+     |     +--ro fingerprint*    string
+     |     +--ro deploy-key?     string
+     |     +--ro refused?        string
+     |     +--ro program-size?   uint32
      +---x console-update
      |  +---w input
      |  |  +---w source       string
@@ -92,6 +96,8 @@ module: arcana-agent
      |     +--ro host-keys?     string
      |     +--ro fingerprint*   string
      |     +--ro deploy-key?    string
+     |     +--ro refused?       string
+     |     +--ro commit?        string
      +---x source-head
      |  +---w input
      |  |  +---w source       string
@@ -103,6 +109,7 @@ module: arcana-agent
      |     +--ro host-keys?     string
      |     +--ro fingerprint*   string
      |     +--ro deploy-key?    string
+     |     +--ro refused?       string
      +---x source-log
      |  +---w input
      |  |  +---w source       string
@@ -124,6 +131,7 @@ module: arcana-agent
      |     +--ro host-keys?     string
      |     +--ro fingerprint*   string
      |     +--ro deploy-key?    string
+     |     +--ro refused?       string
      +---x config-export
      |  +---w input
      |  |  +---w secrets?   boolean

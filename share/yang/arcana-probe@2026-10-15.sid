@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-probe",
     "module-revision": "2026-10-15",
-    "sid-file-version": 4,
+    "sid-file-version": 5,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 72 000, 100, and 80 300, 100.",
     "dependency-revision": [
       {
@@ -25,6 +25,10 @@
       },
       {
         "entry-point": "80300",
+        "size": "100"
+      },
+      {
+        "entry-point": "85100",
         "size": "100"
       }
     ],
@@ -849,6 +853,11 @@
         "namespace": "data",
         "identifier": "/arcana-probe:probes/read/output/time",
         "sid": "80363"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/input/monitors",
+        "sid": "85100"
       }
     ]
   }

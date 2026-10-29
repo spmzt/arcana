@@ -1415,6 +1415,24 @@ yang_event(const char *json)
 	cbl_yarena_free(a);
 }
 
+/*
+ * Step s of a request, told to the peer that made it alone (conn), as
+ * arcana-jobs' steps notification: the request's trace, heard while it
+ * runs.
+ */
+int
+yang_step(cbl_conn *conn, const struct arcana_jobs_step *s)
+{
+	struct arcana_jobs_steps	 n;
+	const struct cbl_ynode		*node;
+
+	if ((node = ynode_named("arcana-jobs", "steps")) == NULL)
+		return (ENOENT);
+	n.step.n = 1;
+	n.step.v = s;
+	return (cbl_ynotify_conn(conn, node, &n));
+}
+
 /* RFC 8530's bind-lne-name-failed: an interface bound to a logical
  * network element is not there, after the commit that bound it. */
 void

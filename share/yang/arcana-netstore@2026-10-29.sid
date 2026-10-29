@@ -1,0 +1,256 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-netstore",
+    "module-revision": "2026-10-29",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "assignment-range": [
+      {
+        "entry-point": "85400",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-netstore",
+        "sid": "85400"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore",
+        "sid": "85401"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read",
+        "sid": "85402"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/input",
+        "sid": "85403"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/input/name",
+        "sid": "85404"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output",
+        "sid": "85405"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/hast",
+        "sid": "85406"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/hast/conf",
+        "sid": "85407"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/hast/conf-path",
+        "sid": "85408"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/hast/hastd-enabled",
+        "sid": "85409"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/hast/hastd-running",
+        "sid": "85410"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/hast/resources",
+        "sid": "85411"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/hast/status",
+        "sid": "85412"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/iscsi",
+        "sid": "85413"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/iscsi/conf",
+        "sid": "85414"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/iscsi/conf-path",
+        "sid": "85415"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/iscsi/ctld-enabled",
+        "sid": "85416"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/iscsi/ctld-running",
+        "sid": "85417"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/iscsi/iscsid-enabled",
+        "sid": "85418"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/iscsi/iscsid-running",
+        "sid": "85419"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/iscsi/luns",
+        "sid": "85420"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/iscsi/ports",
+        "sid": "85421"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/iscsi/sessions",
+        "sid": "85422"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs",
+        "sid": "85423"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/exported",
+        "sid": "85424"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/exports",
+        "sid": "85425"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/exports-path",
+        "sid": "85426"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/flags",
+        "sid": "85427"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/max-minorversion",
+        "sid": "85428"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/mirror",
+        "sid": "85429"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/mountd-enabled",
+        "sid": "85430"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/mountd-running",
+        "sid": "85431"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/nfs-server-enable",
+        "sid": "85432"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/nfsd-enabled",
+        "sid": "85433"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/nfsd-running",
+        "sid": "85434"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/nfsuserd-enable",
+        "sid": "85435"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/nfsv4-server-enable",
+        "sid": "85436"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/nfsv4-server-only",
+        "sid": "85437"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/pnfs",
+        "sid": "85438"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/share",
+        "sid": "85439"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/share/dataset",
+        "sid": "85440"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/share/mountpoint",
+        "sid": "85441"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/share/sharenfs",
+        "sid": "85442"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/threads",
+        "sid": "85443"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/v4root",
+        "sid": "85444"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/v4root-error",
+        "sid": "85445"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/v4root-zfs",
+        "sid": "85446"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netstore:netstore/read/output/nfs/zfs-exports",
+        "sid": "85447"
+      }
+    ]
+  }
+}

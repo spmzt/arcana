@@ -304,7 +304,7 @@ kmsg_reply(struct work *w, const char *filter, bool from, uint64_t position,
 	size_t			 n, i;
 	int			 step;
 
-	step = step_begin(w, ARC_STEP_KIND_LIB, "kmsg", "the kernel's "
+	step = step_begin(w, STEP_LIB, "kmsg", "the kernel's "
 	    "messages followed%s", from ? ", after a number" : "");
 	if (!kmsg_lines(w, from ? position : 0, filter, max, &v, &n, &last)) {
 		step_end(w, step, false, "not followed");
@@ -357,7 +357,7 @@ special(struct work *w, const char *name, const char *filter, bool from,
 	if (max > LOG_LINES_MAX)
 		max = LOG_LINES_MAX;
 	if (strcmp(name, "@dmesg") == 0) {
-		step = step_begin(w, ARC_STEP_KIND_LIB, "sysctl(3)",
+		step = step_begin(w, STEP_LIB, "sysctl(3)",
 		    "kern.msgbuf");
 		if (w->jail != NULL) {
 			rsp->error = "the kernel's messages are the host's";
@@ -367,7 +367,7 @@ special(struct work *w, const char *name, const char *filter, bool from,
 		step_end(w, step, true, "followed as they come");
 		if (kmsg_reply(w, filter, from, position, max, rsp))
 			return (0);
-		step = step_begin(w, ARC_STEP_KIND_LIB, "sysctl(3)",
+		step = step_begin(w, STEP_LIB, "sysctl(3)",
 		    "kern.msgbuf");
 		len = 0;
 		if (sysctlbyname("kern.msgbuf", NULL, &len, NULL, 0) == -1) {
@@ -459,7 +459,7 @@ do_log(struct work *w, const char *name, const char *filter, bool from,
 		max = LOG_LINES;
 	if (max > LOG_LINES_MAX)
 		max = LOG_LINES_MAX;
-	step = step_begin(w, ARC_STEP_KIND_LIB, "read(2)", "%s/%s",
+	step = step_begin(w, STEP_LIB, "read(2)", "%s/%s",
 	    opts.log_dir, name);
 	if ((dfd = scope_dirfd(w, opts.log_dir)) == -1) {
 		rsp->error = wfmt(w, "%s: %s", opts.log_dir, strerror(errno));

@@ -1128,7 +1128,6 @@ host_tls(const char *uri, const char *peer, const char *verb,
     const char *cert, const char *ca, const char *mine, char *why,
     size_t wlen)
 {
-	struct arc_client	 cl;
 	ucl_object_t		*o;
 	cbl_conn		*conn;
 	cbl_tls			*tls;
@@ -1136,23 +1135,23 @@ host_tls(const char *uri, const char *peer, const char *verb,
 	char			*out, err[300];
 	int			 error;
 
-	if ((e = hosts_connect(uri, peer, &conn, &tls, &cl)) != NULL) {
+	if ((e = hosts_connect(uri, peer, &conn, &tls)) != NULL) {
 		snprintf(why, wlen, "%s", e);
 		return (NULL);
 	}
 	/* arcana-agent's tls (yhostjson.c). */
 	out = NULL;
-	if ((error = yh_tls(cl.conn, verb, cert, ca, mine, &o, err,
+	if ((error = yh_tls(conn, verb, cert, ca, mine, &o, err,
 	    sizeof(err))) != 0) {
 		snprintf(why, wlen, "%s", err[0] != '\0' ? err :
 		    strerror(error));
-		hosts_release(uri, peer, conn, tls, &cl, error == EIO);
+		hosts_release(uri, peer, conn, tls, error == EIO);
 		return (NULL);
 	}
 	if ((out = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT)) == NULL)
 		snprintf(why, wlen, "out of memory");
 	ucl_object_unref(o);
-	hosts_release(uri, peer, conn, tls, &cl, true);
+	hosts_release(uri, peer, conn, tls, true);
 	return (out);
 }
 

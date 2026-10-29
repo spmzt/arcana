@@ -350,7 +350,7 @@ hast_json(struct work *w)
 
 void
 do_netstore(struct work *w, const char *const *names, size_t n,
-    struct arc_netstore_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	ucl_object_t	*top;
 	char		*json;
@@ -775,7 +775,7 @@ do_netstore_job(struct work *w, const struct arc_job_spec *sp,
 			argv[2] = (char *)(uintptr_t)v;
 			argv[3] = NULL;
 		}
-		step = step_begin(w, ARC_STEP_KIND_EXEC, "hastctl", "%s %s",
+		step = step_begin(w, STEP_EXEC, "hastctl", "%s %s",
 		    sp->verb, v);
 		if (run_exec(w, argv, &res) != 0) {
 			*errp = wtext(w, exec_error(w, &res, "hastctl"));

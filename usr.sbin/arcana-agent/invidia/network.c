@@ -31,7 +31,7 @@ static int	run_kind(struct work *, uint8_t, uint8_t, uint32_t,
 static ucl_object_t *parse(const char *, size_t);
 static const char *array_path(uint8_t);
 static int	routes_scan(struct work *, uint8_t, const char *, uint32_t,
-		    uint32_t, struct arc_network_rsp *);
+		    uint32_t, struct net_rsp *);
 
 /* The program for kind, for one family (never ARC_NET_FAMILY_ALL). */
 static int
@@ -164,7 +164,7 @@ scan_line(const char *line, void *arg)
 
 static int
 routes_scan(struct work *w, uint8_t family, const char *filter, uint32_t fib,
-    uint32_t offset, struct arc_network_rsp *rsp)
+    uint32_t offset, struct net_rsp *rsp)
 {
 	struct scan	 sc;
 	const char	*words[4];
@@ -242,7 +242,7 @@ pcb_line(const char *line, void *arg)
  */
 static int
 pcb_scan(struct work *w, uint8_t kind, uint8_t family, const char *filter,
-    struct arc_network_rsp *rsp)
+    struct net_rsp *rsp)
 {
 	struct pscan	 ps;
 	const char	*words[2];
@@ -339,7 +339,7 @@ mcast_proto(ucl_object_t *o, const char *line, int skip)
 }
 
 static int
-do_multicast(struct work *w, struct arc_network_rsp *rsp)
+do_multicast(struct work *w, struct net_rsp *rsp)
 {
 	struct execres	 res;
 	ucl_object_t	*top, *ifs, *ifo, *groups, *g, *settings;
@@ -465,7 +465,7 @@ do_multicast(struct work *w, struct arc_network_rsp *rsp)
 
 int
 do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
-    uint32_t fib, uint32_t offset, struct arc_network_rsp *rsp)
+    uint32_t fib, uint32_t offset, struct net_rsp *rsp)
 {
 	struct execres		 res, res6;
 	ucl_object_t		*o, *o6, *dst, *e;
@@ -608,7 +608,7 @@ cand_line(const char *line, void *arg)
 
 int
 do_route_lookup(struct work *w, const char *address, uint32_t fib,
-    struct arc_route_lookup_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	struct cands	 cands;
 	char		*got;

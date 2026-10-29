@@ -1,0 +1,58 @@
+module: arcana-system
+  +--ro system
+     +---x read
+        +---w input
+        |  +---w name*   string
+        +--ro output
+           +--ro file* [name]
+           |  +--ro name       string
+           |  +--ro path?      string
+           |  +--ro text?      string
+           |  +--ro service?   string
+           |  +--ro enabled?   boolean
+           |  +--ro running?   boolean
+           |  +--ro shows?     string
+           +--ro host!
+              +--ro ntp
+              |  +--ro enabled?   boolean
+              |  +--ro running?   boolean
+              |  +--ro conf?      string
+              |  +--ro peers?     string
+              +--ro linux
+              |  +--ro enabled?   boolean
+              |  +--ro module* [name]
+              |     +--ro name      string
+              |     +--ro loaded?   boolean
+              +--ro securelevel
+              |  +--ro now?                       int32
+              |  +--ro kern-securelevel-enable?   string
+              |  +--ro kern-securelevel?          string
+              +--ro mac-module* [name]
+              |  +--ro name      string
+              |  +--ro loaded?   boolean
+              +--ro auditd
+              |  +--ro enabled?   boolean
+              |  +--ro running?   boolean
+              +--ro geom?          string
+              +--ro geli?          string
+              +--ro geom-class* [name]
+              |  +--ro name      string
+              |  +--ro status?   string
+              +--ro periodic* [name]
+              |  +--ro name             string
+              |  +--ro default-value?   string
+              |  +--ro value?           string
+              +--ro svcj* [name]
+              |  +--ro name     string
+              |  +--ro value?   string
+              +--ro racct?         int32
+              +--ro hardening* [name]
+              |  +--ro name     string
+              |  +--ro value?   int32
+              +--ro dma
+                 +--ro conf-path?      string
+                 +--ro smarthost?      string
+                 +--ro port?           string
+                 +--ro tls?            enumeration
+                 +--ro user?           string
+                 +--ro password-set?   boolean

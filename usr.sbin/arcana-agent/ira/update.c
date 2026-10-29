@@ -94,7 +94,7 @@ signed_by_ca(const uint8_t *data, size_t len, const uint8_t *sig,
 static int
 agent_install(struct work *w, const uint8_t *data, size_t len,
     const char *sha256, const uint8_t *sig, size_t siglen, bool local,
-    struct arc_agent_update_rsp *rsp)
+    struct build_rsp *rsp)
 {
 	struct execres	 res;
 	const char	*path, *nl;
@@ -114,7 +114,7 @@ agent_install(struct work *w, const uint8_t *data, size_t len,
 	if (!local) {
 		const char	*why;
 
-		s = step_begin(w, ARC_STEP_KIND_LIB, "signature", "%zu bytes by "
+		s = step_begin(w, STEP_LIB, "signature", "%zu bytes by "
 		    "the CA's key", siglen);
 		if (siglen == 0) {
 			step_end(w, s, false, "none");
@@ -129,7 +129,7 @@ agent_install(struct work *w, const uint8_t *data, size_t len,
 		}
 		step_end(w, s, true, "verified");
 	}
-	s = step_begin(w, ARC_STEP_KIND_LIB, "SHA-256", "%zu bytes", len);
+	s = step_begin(w, STEP_LIB, "SHA-256", "%zu bytes", len);
 	if (!sha256_is(data, len, sha256)) {
 		step_end(w, s, false, "not %s", sha256);
 		rsp->error = "the program does not match its SHA-256";
@@ -137,7 +137,7 @@ agent_install(struct work *w, const uint8_t *data, size_t len,
 	}
 	step_end(w, s, true, "%s", sha256);
 
-	s = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", new);
+	s = step_begin(w, STEP_FILE, "write", "%s", new);
 	(void)unlink(new);
 	if ((fd = open(new, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
 	    0555)) == -1) {
@@ -175,7 +175,7 @@ agent_install(struct work *w, const uint8_t *data, size_t len,
 	    (nl != NULL ? (size_t)(nl - res.out) : res.outlen) -
 	    strlen(VERSION_PREFIX));
 
-	s = step_begin(w, ARC_STEP_KIND_FILE, "replace", "%s", path);
+	s = step_begin(w, STEP_FILE, "replace", "%s", path);
 	(void)unlink(old);
 	if ((link(path, old) == -1 && errno != ENOENT) ||
 	    rename(new, path) == -1) {
@@ -196,7 +196,7 @@ agent_install(struct work *w, const uint8_t *data, size_t len,
 int
 do_agent_update(struct work *w, const uint8_t *data, size_t len,
     size_t size, const char *sha256, const uint8_t *sig, size_t siglen,
-    bool local, struct arc_agent_update_rsp *rsp)
+    bool local, struct build_rsp *rsp)
 {
 	const char	*why;
 	uint8_t		*prog;
@@ -207,9 +207,9 @@ do_agent_update(struct work *w, const uint8_t *data, size_t len,
 		    rsp));
 	rsp->has_ok = true;
 	rsp->ok = false;
-	s = step_begin(w, ARC_STEP_KIND_LIB, "inflate(3)", "%zu bytes of "
+	s = step_begin(w, STEP_LIB, "inflate(3)", "%zu bytes of "
 	    "gzip into %zu", len, size);
-	if ((why = zprog_inflate(data, len, size, ARC_MAX_PROGRAM,
+	if ((why = zprog_inflate(data, len, size, ZPROG_MAX_PROGRAM,
 	    &prog)) != NULL) {
 		step_end(w, s, false, "%s", why);
 		rsp->error = why;

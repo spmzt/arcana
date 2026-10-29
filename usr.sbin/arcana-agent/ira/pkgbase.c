@@ -203,7 +203,7 @@ repo_write(struct work *w, const char *root, const char *branch)
 	    "\"fingerprints\",\n  fingerprints: \"/usr/share/keys/pkg\",\n  "
 	    "enabled: yes\n}\n", branch);
 	len = strlen(text);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
+	step = step_begin(w, STEP_FILE, "write", "%s", path);
 	e = NULL;
 	rc = mkdirs(wfmt(w, "%s" REPO_FILE, root)) == -1 ? -1 : scope_replace(w,
 	    path, text, len, 0644, NULL);
@@ -457,7 +457,7 @@ keep_own(struct work *w, const char *root, const char *before)
 	}
 	if (done == NULL && e == NULL)
 		return (NULL);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "keep", "the jail's own files "
+	step = step_begin(w, STEP_FILE, "keep", "the jail's own files "
 	    "that pkg put aside");
 	ok = e == NULL;
 	if (ok && pw)
@@ -495,7 +495,7 @@ leftovers(struct work *w, const char *root)
 			*p = ' ';
 	if ((p = strrchr(list, '\n')) != NULL)
 		*p = '\0';
-	step = step_begin(w, ARC_STEP_KIND_FILE, "merge", "what pkg left beside "
+	step = step_begin(w, STEP_FILE, "merge", "what pkg left beside "
 	    "the files it kept");
 	step_end(w, step, true, "%s%s", list[0] != '\0' ? list : "none: restart "
 	    "the jail for the new base to run", list[0] != '\0' ? ": the "

@@ -1,0 +1,10 @@
+module: arcana-stream
+
+  structure open:
+    +-- recursive?   boolean
+    +-- name*        string
+  structure opened:
+    +-- ok?     boolean
+    +-- json?   string
+  structure chunk:
+    +-- data?   binary

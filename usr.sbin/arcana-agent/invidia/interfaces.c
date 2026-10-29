@@ -187,7 +187,7 @@ extras(int s4, int s6, const char *name, ucl_object_t *o)
  * "destination"}]}]}; family narrows the addresses.
  */
 int
-do_interfaces(struct work *w, uint8_t family, struct arc_network_rsp *rsp)
+do_interfaces(struct work *w, uint8_t family, struct net_rsp *rsp)
 {
 	struct ifaddrs		*ifap, *ifa;
 	const struct sockaddr_dl *sdl;
@@ -214,7 +214,7 @@ do_interfaces(struct work *w, uint8_t family, struct arc_network_rsp *rsp)
 		rsp->ok = true;
 		return (0);
 	}
-	step = step_begin(w, ARC_STEP_KIND_LIB, "getifaddrs(3)", NULL);
+	step = step_begin(w, STEP_LIB, "getifaddrs(3)", NULL);
 	if (getifaddrs(&ifap) == -1) {
 		step_end(w, step, false, "%s", strerror(errno));
 		rsp->error = wfmt(w, "getifaddrs: %s", strerror(errno));
@@ -903,7 +903,7 @@ if_addr_was(struct work *w, const char *ifname, bool persist,
 	all = addr_kept();
 	if ((k = ucl_object_lookup(all, addr_key(w, ifname))) == NULL) {
 		ucl_object_unref(all);
-		step = step_begin(w, ARC_STEP_KIND_FILE, "arcana-agent",
+		step = step_begin(w, STEP_FILE, "arcana-agent",
 		    "%s: its addressing before is not kept: left as it is",
 		    ifname);
 		step_end(w, step, true, NULL);
@@ -943,7 +943,7 @@ if_addr_was(struct work *w, const char *ifname, bool persist,
 			    wfmt(w, "inet6 %s", rest) : NULL;
 		}
 	}
-	step = step_begin(w, ARC_STEP_KIND_FILE, "arcana-agent",
+	step = step_begin(w, STEP_FILE, "arcana-agent",
 	    "%s: addressed as before: %s%s%s", ifname, a.dhcp ? "DHCP" :
 	    "static", a.slaac ? ", SLAAC" : "", a.rc != NULL ? wfmt(w,
 	    " (ifconfig_%s=\"%s\")", rc_ifname(w, ifname), a.rc) : "");
@@ -1525,7 +1525,7 @@ if_owning(const struct sockaddr *sa, char *ifname, size_t len)
 char *
 ifq_text(const char *what, const char *ifname, const char *arg)
 {
-	struct arc_network_rsp	 rsp;
+	struct net_rsp	 rsp;
 	struct work		 w;
 	const char		*s;
 	char			*out, descr[256];

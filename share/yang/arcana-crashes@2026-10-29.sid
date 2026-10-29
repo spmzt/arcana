@@ -1,0 +1,132 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-crashes",
+    "module-revision": "2026-10-29",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "85200",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-crashes",
+        "sid": "85200"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes",
+        "sid": "85201"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read",
+        "sid": "85202"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/input",
+        "sid": "85203"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/input/backtrace",
+        "sid": "85204"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/input/program",
+        "sid": "85205"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output",
+        "sid": "85206"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/backtrace",
+        "sid": "85207"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/core",
+        "sid": "85208"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/core-file",
+        "sid": "85209"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/core-file/directory",
+        "sid": "85210"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/core-file/name",
+        "sid": "85211"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/core-file/pid",
+        "sid": "85212"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/core-file/program",
+        "sid": "85213"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/core-file/size",
+        "sid": "85214"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/core-file/time",
+        "sid": "85215"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/corefile",
+        "sid": "85216"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/directory",
+        "sid": "85217"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/note",
+        "sid": "85218"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/other",
+        "sid": "85219"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/program",
+        "sid": "85220"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-crashes:crashes/read/output/truncated",
+        "sid": "85221"
+      }
+    ]
+  }
+}

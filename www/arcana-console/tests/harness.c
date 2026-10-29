@@ -38,6 +38,9 @@ int		 harness_port;
 char		 harness_webconf[1024];	/* appended to web.conf */
 char		 harness_server[1024];	/* and inside its server { } */
 static char	 console_path[MAXPATHLEN];
+/* The agent's command line and stand-ins, for agent_restart(). */
+static char	*agent_argv[140];
+static char	 agent_fjl[MAXPATHLEN], agent_fjf[MAXPATHLEN + 8];
 
 static void	 terminate(const char *);
 /* The console sends another build of arcana-agent than the host runs. */
@@ -1443,6 +1446,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	snprintf(fjf, sizeof(fjf), "%s/jails", cwd);
 	ATF_REQUIRE(setenv("FAKEJAIL", fjf, 1) == 0);
 	ATF_REQUIRE(setenv("LD_PRELOAD", fjl, 1) == 0);
+	for (int i = 0; i < 139 && argv[i] != NULL; i++) {
+		free(agent_argv[i]);
+		agent_argv[i] = strdup(argv[i]);
+		agent_argv[i + 1] = NULL;
+	}
+	snprintf(agent_fjl, sizeof(agent_fjl), "%s", fjl);
+	snprintf(agent_fjf, sizeof(agent_fjf), "%s", fjf);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE(unsetenv("LD_PRELOAD") == 0);
 	ATF_REQUIRE(unsetenv("FAKEJAIL") == 0);
@@ -1481,6 +1491,29 @@ restart_console(void)
 
 	console_stop();
 	console_start();
+}
+
+/*
+ * The agent stopped and started again as it was, as a restart of its
+ * service (or an update) does; the console stays.
+ */
+void
+agent_restart(void)
+{
+	FILE	*fp;
+	pid_t	 pid;
+
+	terminate("arcana-agent.pid");
+	(void)unlink("jgd.sock");
+	ATF_REQUIRE(setenv("FAKEJAIL", agent_fjf, 1) == 0);
+	ATF_REQUIRE(setenv("LD_PRELOAD", agent_fjl, 1) == 0);
+	pid = spawn_server(agent_argv, "arcana-agent.out");
+	ATF_REQUIRE(unsetenv("LD_PRELOAD") == 0);
+	ATF_REQUIRE(unsetenv("FAKEJAIL") == 0);
+	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);
+	fprintf(fp, "%d\n", (int)pid);
+	fclose(fp);
+	wait_for("jgd.sock");
 }
 
 /* The console alone stopped, the rest left as it is. */

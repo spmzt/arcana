@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-agent",
     "module-revision": "2026-10-15",
-    "sid-file-version": 6,
+    "sid-file-version": 7,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -21,6 +21,10 @@
       },
       {
         "entry-point": "82100",
+        "size": "100"
+      },
+      {
+        "entry-point": "83100",
         "size": "100"
       }
     ],
@@ -1060,6 +1064,46 @@
         "namespace": "data",
         "identifier": "/arcana-agent:agent/tls/certificate/intermediate/subject",
         "sid": "82106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/input/compress",
+        "sid": "83100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/output/program-size",
+        "sid": "83101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/output/refused",
+        "sid": "83102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update/output/commit",
+        "sid": "83103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update/output/refused",
+        "sid": "83104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head/output/refused",
+        "sid": "83105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/refused",
+        "sid": "83106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/update/input/program-size",
+        "sid": "83107"
       }
     ]
   }

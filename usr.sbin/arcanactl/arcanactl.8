@@ -87,6 +87,8 @@ to 3600 seconds, in place of the daemon's own
 .It Fl t
 Also print the trace: every library call, system call, file and
 program the daemon used, with the programs' output.
+It is heard while the request runs: arcana-jobs' steps notification,
+which the daemon tells the peer of the request alone.
 .It Fl u Ar user
 Ask as
 .Ar user ,
@@ -99,8 +101,8 @@ and from the console's certificate.
 The commands are:
 .Bl -tag -width Ds
 .It Cm hello
-Show the host, and the features of its agent: what it takes that an
-agent before it did not, as
+Show the host, and the features of its agent, a read of arcana-host's
+host: what it takes that an agent before it did not, as
 .Li gzip-update ,
 a program for
 .Cm agent-update
@@ -460,6 +462,7 @@ only showing what would change.
 names the interface for the alias when the jail has no
 .Va interface
 parameter.
+The address action arcana-network adds to arcana-jails' jail.
 .It Cm services
 The host's rc.d scripts: whether
 .Xr rc.conf 5
@@ -589,9 +592,10 @@ active connections
 .Pq Nm netstat Fl nW
 or open sockets
 .Pq Nm sockstat Fl w ,
-as the program printed them with
-.Fl -libxo Cm json ,
-for one address family or both.
+for one address family or both: arcana-network's read action of the
+kind, its output as RFC 7951's JSON, a leaf named as the program names
+it with
+.Fl -libxo Cm json .
 .Cm multicast
 is IGMP's and MLD's state as
 .Xr ifmcstat 8
@@ -739,6 +743,13 @@ for a
 .Li src=
 tree built here or a git or svn checkout.
 Each is a job.
+The list is a GET of arcana-builder's
+.Ic builder ,
+.Cm show-options
+its
+.Ic port-options
+action; each printed as the JSON the builder and builder-options
+operations gave.
 .It Cm crashes Op Cm backtrace Ar core Op Ar program
 The cores the kernel dumped where
 .Va kern.corefile
@@ -759,6 +770,9 @@ A SIGBUS whose code is
 .Dv BUS_OOMERR
 was a page fault the kernel found no memory for.
 Nothing is changed.
+arcana-crashes'
+.Ic read
+action, printed as the JSON the crashes operation gave.
 .It Cm clamav Cm mirrors Ar mirror ...
 ClamAV's
 .Xr freshclam 1 :
@@ -922,6 +936,20 @@ Eight are kept; a capture is 1 GiB at most.
 writes a file of the instance's pcap-log (the packets of its alerts,
 .Pa log.pcap
 and its rotations) to the standard output, a stream.
+.Cm rules
+is arcana-suricata's
+.Ic read-rules ,
+.Ic read-sources ,
+.Ic command
+or
+.Ic read-profiling
+action, as its words say, printed as the JSON the suricata-rules
+operation gave (Suricata's answer as Suricata wrote it);
+.Cm pcap-put
+and
+.Cm pcap-get
+are streams of the agent's own family,
+.Ql arcana-stream .
 .It Cm system Op Ar file | Cm host
 The system's own configuration, as JSON: each file of the
 .Cm sysfile
@@ -931,6 +959,9 @@ MAC modules, auditd, GEOM's tree
 .Pq Nm geom Fl t ,
 GELI's providers, periodic's variables and service jails.
 Nothing is changed.
+arcana-system's
+.Ic read
+action, printed as the JSON the system operation gave.
 .It Cm geom Ar class subcommand Oo Ar word ... Oc Op Fl P Ar passfile
 A GEOM class's command, as
 .Xr geom 8
@@ -1029,6 +1060,9 @@ what
 says of its status, counters and queue; its
 .Xr smtpd.conf 5 ,
 the form it was rendered from, and the tables the agent keeps.
+arcana-smtpd's
+.Ic read
+action, printed as the JSON the smtpd operation gave.
 .It Cm smtpd conf Ar form.json Op Cm replace
 .Xr smtpd.conf 5
 rendered on the host from the form (a JSON object: listeners,
@@ -1113,6 +1147,11 @@ its probes sent and answered, the sample in progress and the samples
 kept, each the one-way delay (half the mean round trip), the delay
 variation and the loss of one interval, with the least and the most.
 Nothing is changed.
+arcana-probe's
+.Ic read
+action with
+.Ic monitors ,
+printed as the JSON the monitors operation gave.
 .It Cm monitor set Cm name Ns = Ns Ar name Oo Ar key Ns = Ns Ar value ... Oc
 A tunnel measured from now on, by ICMP echo through its routing table,
 or a monitor of that name changed (its samples kept when it probes the
@@ -1190,6 +1229,9 @@ and
 .Va speederv2_flags ,
 read alone.
 Nothing is changed.
+arcana-speeder's
+.Ic read
+action, printed as the JSON the speeder operation gave.
 .It Cm speeder conf Ar name Ns = Ns Ar value ...
 The relay's flags written to
 .Va arcana_relay_flags :
@@ -1296,6 +1338,9 @@ and HAST
 .Xr hast.conf 5 ,
 .Xr hastctl 8 ) .
 Nothing is changed.
+arcana-netstore's
+.Ic read
+action, printed as the JSON the netstore operation gave.
 .It Cm nfs Cm exports Ar file | Cm share Cm dataset= Ns Ar name Cm sharenfs= Ns Ar value | Cm server Ar key Ns = Ns Ar value ...
 NFSv4 alone: no NFSv3, no rpcbind.
 .Cm exports
@@ -1463,6 +1508,9 @@ sets the CA keys whose user certificates it trusts.
 Each change is a job; with
 .Fl s
 it is undone unless confirmed.
+The list is arcana-sshd's
+.Ic read
+action, printed as the JSON the ssh operation gave.
 .It Cm neigh Cm add Ar address lladdr Oo Cm temp Oc | Cm delete Ar address
 An ARP or NDP neighbour set by hand, now; with
 .Fl p
@@ -1914,14 +1962,17 @@ in them alone, and with
 .Fl o
 read on after that many rows (a large table comes in pages).
 .It Cm net routes | connections | sockets Oo Fl 4 | Fl 6 Oc Cm parts Op Ar text
-The same table as a dump: in parts, each printed as an array of rows
-of its own when it comes, a route with its family in it; none is left
-out for size.
+The same table as a stream of the agent's arcana-parts family: in
+parts, each printed when it comes, arcana-network's network-part with
+its rows and the table's total, a route with its family in it; none is
+left out for size, and the agent sends a part only when there is room
+for it.
 .It Cm net bridges | geneve | ipfw
 The bridges with their spanning tree and their members' VLANs, the
 .Xr geneve 4
-tunnels, or the firewall's rules with their sets and counters and the
-kept ones.
+tunnels (arcana-network's), or the firewall's rules with their sets and
+counters and the kept ones: arcana-firewall's firewall, a vnet jail's
+by arcana-network's ipfw action.
 .It Cm bridge Ar name Cm access Ar member Ar vlan
 .It Cm bridge Ar name Cm trunk Ar member Ar vlan-list Op Ar untagged-vlan
 .It Cm bridge Ar name Cm vlanfilter on | off
@@ -2047,23 +2098,52 @@ With
 of that jail's own firewall, as every
 .Cm ipfw
 command is: ipfw is run in the jail.
-.It Cm ipfw rules Oo Fl r | Fl w Ar file Oo Fl n Oc Oc
+.It Cm ipfw rules Oo Fl r | Fl w Ar file Oo Fl n Oc Oc Oo Fl a Ar warning Oc ...
 The kept rules, a file of
 .Xr ipfw 8
-commands: printed, or with
+commands, arcana-firewall's
+.Pa kept/text
+(a vnet jail's, with
+.Fl j ,
+its
+.Pa jail
+entry's): printed, or with
 .Fl w
 replaced by
 .Ar file
-once ipfw has read it without doing it; with
+by a commit, once ipfw has read the whole of it without doing it
+(ipfw
+.Fl n ) ;
+nothing is loaded, Apply does that.
+With
 .Fl n
-only checked.
+only checked (the check action).
+The host's first commit moves its boot to Arcana's own script beside
+the kept file
+.Pq Pa ipfw.sh ,
+which
+.Va firewall_script
+in Arcana's
+.Xr rc.conf 5
+file names, the host's own script and
+.Pa /etc/rc.firewall
+left as they are: it is refused, nothing written, unless the rules of
+.Ar file
+are those the kernel's set 0 has now, as ipfw writes them back; the
+warnings rc.conf's files ask about are accepted with
+.Fl a .
 With
 .Fl r ,
-the file
-.Xr rc.conf 5 Ns 's
+the migration's dry run (the from-rc action): what the host boots now
+made into kept rules, nothing written: the script
+.Va firewall_script
+names when it is the host's own, its ipfw commands taken out of it;
+else the file
 .Va firewall_type
-names, which the firewall loads now, printed as kept rules: what
-applying does itself left in as comments, nothing written.
+names, or the kept file where it is what the kernel has, booted by
+.Pa /etc/rc.firewall
+with its own rules as the kernel has them before; what applying does
+itself left in as comments.
 .It Cm ipfw trace Ar address Op Ar seconds Op Ar packets
 Packets to or from
 .Ar address
@@ -2100,6 +2180,8 @@ not given as an argument, where
 would show it; the agent neither keeps nor logs it.
 .Ar chat
 is a number (negative for a group) or @ and a channel's name.
+arcana-notify's
+.Ic notify .
 .It Cm transport Oo Cm retry | Cm listen Ar uri | Cm unlisten Ar uri Oo Cm for Ar new Oo Cm keep Oc Oc Oc
 How the agent is reached: its listeners, each up or not and why not,
 whether the kernel has SCTP, and the connections open to the agent now.
@@ -2477,7 +2559,8 @@ The route the host would send a packet to
 by, as
 .Xr route 8
 get tells it, and the other routes of the table that cover the address,
-each with the length of its prefix: what is left when the best goes.
+each with the length of its prefix: what is left when the best goes;
+arcana-network's lookup action.
 .It Cm sdwan
 What the SD-WAN edge is doing and what the agent's probes of its
 tunnels have seen, as the JSON the retired sdwan operation gave:
@@ -2963,17 +3046,19 @@ Put
 .Ar program
 in place of the host's
 .Xr arcana-agent 8 .
-It is sent compressed with gzip
+It is sent by arcana-agent's
+.Ic update
+action, compressed with gzip
 .Pq Xr zlib 3
 to an agent whose
 .Cm hello
 has the feature
 .Li gzip-update ,
 which inflates it to no more than 32 MiB, and as it is, no bigger than
-6 MiB, to an agent before, or with
+8 MiB less 64 KiB (what the agent's frame carries with the rest of the
+request), to an agent before, or with
 .Fl p .
-A program bigger than that for an agent before is not sent: update that
-agent first to one that takes it compressed.
+A program bigger than that for an agent before is not sent.
 The host checks the program, inflated, against its SHA-256 and by
 running it with
 .Fl V

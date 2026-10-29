@@ -90,7 +90,6 @@ struct rch {
 	char			*peer;
 	cbl_conn		*conn;	/* NULL: not connected, or let go */
 	cbl_tls			*tls;
-	struct arc_client	 cl;
 	cbl_stream		*s;
 	bool			 closed;	/* its stream ended */
 	char			 why[200];	/* why */
@@ -325,8 +324,8 @@ rch_open(struct rch *h)
 	const char		*msg;
 	cbl_msg			*m;
 
-	if ((msg = hosts_connect(h->uri, h->peer, &h->conn, &h->tls,
-	    &h->cl)) != NULL) {
+	if ((msg = hosts_connect(h->uri, h->peer, &h->conn,
+	    &h->tls)) != NULL) {
 		h->conn = NULL;
 		snprintf(h->why, sizeof(h->why), "the host does not answer: %s",
 		    msg);
@@ -339,7 +338,7 @@ rch_open(struct rch *h)
 	    CBL_SF_PUSH, &rcs_cbs, h, &h->s) != 0) {
 		snprintf(h->why, sizeof(h->why), "the host's stream could not "
 		    "be opened");
-		hosts_release(h->uri, h->peer, h->conn, h->tls, &h->cl, false);
+		hosts_release(h->uri, h->peer, h->conn, h->tls, false);
 		h->conn = NULL;
 		return (false);
 	}
@@ -358,7 +357,7 @@ rch_done(struct rch *h, bool broken)
 		/* A connection with a stream on it is no one else's. */
 		if (!h->closed && !broken)
 			(void)cbl_stream_close(h->s, 0, NULL);
-		hosts_release(h->uri, h->peer, h->conn, h->tls, &h->cl, false);
+		hosts_release(h->uri, h->peer, h->conn, h->tls, false);
 		h->conn = NULL;
 	}
 	h->closed = true;

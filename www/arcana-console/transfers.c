@@ -38,11 +38,11 @@
 #include <time.h>
 
 #include "console.h"
+#include "ystream.h"
 
 #define	XF_FILE		"transfers.json"
 #define	XF_KEEP		32	/* the last of them listed */
 #define	XF_RUNNING_MAX	4
-#define	XF_WINDOW	(4 * 1024 * 1024)
 
 enum { XF_RUNNING, XF_DONE, XF_FAILED, XF_CANCELLED, XF_INTERRUPTED };
 static const char *const xf_states[] = { "running", "done", "failed",
@@ -219,16 +219,16 @@ side_writable(cbl_stream *s __unused, size_t credit __unused, void *arg)
 static void
 from_data(cbl_stream *s, cbl_msg *data, void *arg)
 {
-	struct xfside		*x = arg;
-	struct arc_chunk	 d;
-	struct xfchunk		*c;
-	cbl_yarena		*a;
+	struct xfside			*x = arg;
+	struct arcana_stream_chunk	 d;
+	struct xfchunk			*c;
+	cbl_yarena			*a;
 
 	if ((a = cbl_yarena_new()) == NULL) {
 		(void)cbl_stream_reset(s, ENOMEM);
 		return;
 	}
-	if (arcana_chunk_parse(data, &d, a, CBL_YD_STRICT, NULL, 0) != 0) {
+	if (ys_chunk(data, &d, a) != 0) {
 		cbl_yarena_free(a);
 		(void)cbl_stream_reset(s, EBADMSG);
 		return;
@@ -264,44 +264,30 @@ static const struct cbl_stream_cbs to_cbs = {
 	.on_writable = side_writable,
 };
 
-/* A stream opened on cl: the send's from, the receive's to. */
+/* A stream opened on conn: the send's from, the receive's to. */
 static int
-xf_open(struct relay *r, struct arc_client *cl, bool send)
+xf_open(struct relay *r, cbl_conn *conn, bool send)
 {
-	struct arc_zfs_send_req		 sq;
-	struct arc_zfs_receive_req	 rq;
+	struct arcana_stream_open	 rq;
 	const char			*names[2];
-	cbl_msg				*msg;
-	int				 error;
 
-	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), cl->family, send ?
-	    ARC_CMD_ZFS_SEND : ARC_CMD_ZFS_RECEIVE, CBL_F_REQUEST |
-	    CBL_F_S_OPEN, &msg)) != 0)
-		return (error);
+	memset(&rq, 0, sizeof(rq));
 	if (send) {
-		memset(&sq, 0, sizeof(sq));
 		names[0] = r->snapshot;
 		names[1] = r->since;
-		sq.names.v = names;
-		sq.names.n = r->since[0] != '\0' ? 2 : 1;
-		sq.zfs_recursive = r->recursive;
-		error = arc_zfs_send_req_put_fields(msg, &sq);
+		rq.name.v = names;
+		rq.name.n = r->since[0] != '\0' ? 2 : 1;
+		rq.has_recursive = true;
+		rq.recursive = r->recursive;
 	} else {
-		memset(&rq, 0, sizeof(rq));
 		names[0] = r->dataset;
-		rq.names.v = names;
-		rq.names.n = 1;
-		error = arc_zfs_receive_req_put_fields(msg, &rq);
+		rq.name.v = names;
+		rq.name.n = 1;
 	}
-	if (error != 0) {
-		cbl_msg_free(msg);
-		return (error);
-	}
-	(void)cbl_msg_set_window(msg, XF_WINDOW);
 	/* The sender's room comes back by hand, as the receiver takes. */
-	return (cbl_stream_open(cl->conn, msg, send ? CBL_SF_MANUAL_CREDIT : 0,
-	    send ? &from_cbs : &to_cbs, send ? (void *)&r->from :
-	    (void *)&r->to, send ? &r->from.s : &r->to.s));
+	return (ys_open(conn, send ? YS_ZFS_SEND : YS_ZFS_RECEIVE, &rq,
+	    YS_WINDOW, send ? CBL_SF_MANUAL_CREDIT : 0, send ? &from_cbs : &to_cbs, send ?
+	    (void *)&r->from : (void *)&r->to, send ? &r->from.s : &r->to.s));
 }
 
 /* Did another worker ask for a stop?  Looked at once in a while. */
@@ -319,8 +305,6 @@ static void *
 xf_run(void *arg)
 {
 	struct relay		*r = arg;
-	struct arc_client	 fcl, tcl;
-	struct arc_chunk	 c;
 	struct xfchunk		*q;
 	struct timespec		 until;
 	cbl_conn		*fconn, *tconn;
@@ -332,13 +316,13 @@ xf_run(void *arg)
 	why[0] = '\0';
 	state = XF_FAILED;
 	if (hosts_shared(r->from_uri, r->from_peer[0] != '\0' ? r->from_peer :
-	    NULL, &fconn, &fcl) != NULL) {
+	    NULL, &fconn) != NULL) {
 		snprintf(why, sizeof(why), "the sending host does not answer");
 		fconn = NULL;
 		goto out;
 	}
 	if (hosts_shared(r->to_uri, r->to_peer[0] != '\0' ? r->to_peer : NULL,
-	    &tconn, &tcl) != NULL) {
+	    &tconn) != NULL) {
 		snprintf(why, sizeof(why), "the receiving host does not "
 		    "answer");
 		tconn = NULL;
@@ -346,7 +330,7 @@ xf_run(void *arg)
 	}
 	/* The receiver first: what is sent has somewhere to go. */
 	pthread_mutex_lock(&r->lock);
-	if (xf_open(r, &tcl, false) != 0) {
+	if (xf_open(r, tconn, false) != 0) {
 		pthread_mutex_unlock(&r->lock);
 		snprintf(why, sizeof(why), "the receiving host refused");
 		goto out;
@@ -359,7 +343,7 @@ xf_run(void *arg)
 		pthread_mutex_unlock(&r->lock);
 		goto out;
 	}
-	if (xf_open(r, &fcl, true) != 0) {
+	if (xf_open(r, fconn, true) != 0) {
 		pthread_mutex_unlock(&r->lock);
 		snprintf(why, sizeof(why), "the sending host refused");
 		goto out;
@@ -411,10 +395,7 @@ xf_run(void *arg)
 		}
 		STAILQ_REMOVE_HEAD(&r->chunks, next);
 		pthread_mutex_unlock(&r->lock);
-		memset(&c, 0, sizeof(c));
-		c.data.p = q->p;
-		c.data.len = q->len;
-		while ((error = arc_zfs_receive_send(r->to.s, &c)) == EAGAIN) {
+		while ((error = ys_send(r->to.s, q->p, q->len)) == EAGAIN) {
 			pthread_mutex_lock(&r->lock);
 			while (!r->to.closed && cbl_stream_credit(r->to.s) == 0)
 				pthread_cond_wait(&r->wake, &r->lock);

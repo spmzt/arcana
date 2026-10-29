@@ -645,7 +645,7 @@ run_start(struct work *w, char *const argv[], const char *title, long *idp,
 			close(logfd);
 		return (-1);
 	}
-	step = step_begin(w, ARC_STEP_KIND_EXEC, argv[0], "run %ld: %s", id,
+	step = step_begin(w, STEP_EXEC, argv[0], "run %ld: %s", id,
 	    title);
 	sigemptyset(&none);
 	memset(&sa, 0, sizeof(sa));
@@ -737,7 +737,7 @@ run_stop(struct work *w, const char *ids, const char **errp)
 		    id, x) : wfmt(w, "run %ld is not running", id);
 		return (-1);
 	}
-	step = step_begin(w, ARC_STEP_KIND_SYSCALL, "kill(2)",
+	step = step_begin(w, STEP_SYSCALL, "kill(2)",
 	    "SIGINT to run %ld's process group %d", id, (int)pid);
 	if (kill(-pid, SIGINT) == -1) {
 		*errp = wfmt(w, "kill: %s", strerror(errno));
@@ -763,14 +763,14 @@ make_conf(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	    pd_dir(w), name) : wfmt(w, "%s/make.conf", pd_dir(w));
 	if (sp->text == NULL || sp->text[strspn(sp->text, " \t\r\n")] ==
 	    '\0') {
-		step = step_begin(w, ARC_STEP_KIND_FILE, path, "taken away");
+		step = step_begin(w, STEP_FILE, path, "taken away");
 		ok = unlink(path) == 0 || errno == ENOENT;
 		if (!ok)
 			*errp = wfmt(w, "%s: %s", path, strerror(errno));
 		step_end(w, step, ok, ok ? NULL : "%s", *errp);
 		return (ok ? 0 : -1);
 	}
-	step = step_begin(w, ARC_STEP_KIND_FILE, path, "written, %zu bytes",
+	step = step_begin(w, STEP_FILE, path, "written, %zu bytes",
 	    strlen(sp->text));
 	(void)mkdir(pd_dir(w), 0755);
 	tmp = wfmt(w, "%s.arcana-new", path);
@@ -1414,7 +1414,7 @@ runs(struct work *w)
 }
 
 void
-do_builder(struct work *w, struct arc_builder_rsp *rsp)
+do_builder(struct work *w, struct json_rsp *rsp)
 {
 	ucl_object_t		*top, *conf;
 	const ucl_object_t	*v;
@@ -1644,7 +1644,7 @@ in_list(const char *list, const char *name)
 
 void
 do_builder_options(struct work *w, const struct arc_job_spec *sp,
-    struct arc_builder_options_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	static const char *const what[] = { "showconfig", NULL };
 	struct execres	 res;
@@ -1764,7 +1764,7 @@ options_set(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	    optdir, origin, &pkgname, &file, &all, errp) != 0)
 		return (-1);
 	if ((v = arg(sp, "reset", 0)) != NULL && strcmp(v, "yes") == 0) {
-		step = step_begin(w, ARC_STEP_KIND_FILE, file, "taken away: "
+		step = step_begin(w, STEP_FILE, file, "taken away: "
 		    "the port's defaults");
 		ok = unlink(file) == 0 || errno == ENOENT;
 		if (!ok)
@@ -1787,7 +1787,7 @@ options_set(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			*errp = wfmt(w, "%s has no option %s", pkgname, v);
 			return (-1);
 		}
-	step = step_begin(w, ARC_STEP_KIND_FILE, file, "%s's options%s",
+	step = step_begin(w, STEP_FILE, file, "%s's options%s",
 	    pkgname, exists ? "" : wfmt(w, ", in %s, made", optdir));
 	dir = wstrdup(w, file);
 	*strrchr(dir, '/') = '\0';

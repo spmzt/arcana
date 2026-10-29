@@ -9,6 +9,7 @@ module: arcana-firewall
      |  |  +--ro number?   rule-number
      |  |  +--ro text?     string
      |  |  +--ro source?   string
+     |  |  +--ro norm?     string
      |  +--rw other*     string
      |  +--rw alias* [name]
      |     +--rw name     string
@@ -39,12 +40,25 @@ module: arcana-firewall
      |  |  +--ro flow?      string
      |  +--ro table* [name]
      |  |  +--ro name     string
+     |  |  +--ro set?     uint8
      |  |  +--ro type?    string
      |  |  +--ro count?   uint32
      |  |  +--ro entry* [key]
      |  |     +--ro key      string
      |  |     +--ro value?   string
      |  +--ro nat*             string
+     |  +--ro tunable* [name]
+     |  |  +--ro name      string
+     |  |  +--ro value?    int32
+     |  |  +--ro want?     int32
+     |  |  +--ro needed?   boolean
+     |  |  +--ro why?      string
+     |  +--ro modules
+     |  |  +--ro ipfw-nat?     boolean
+     |  |  +--ro ipfw-nat64?   boolean
+     |  |  +--ro ipfw-nptv6?   boolean
+     |  |  +--ro dummynet?     boolean
+     |  +--ro pipes*           string
      |  +--ro dummynet
      |     +--ro pipe* [number]
      |     |  +--ro number       uint16
@@ -90,6 +104,21 @@ module: arcana-firewall
      |        +--ro bytes?      uint32
      |        +--ro plr?        decimal64
      |        +--ro red?        string
+     +--rw jail* [name]
+     |  +--rw name      string
+     |  +--rw text?     string
+     |  +--ro sha256?   string
+     +---x check
+     |  +---w input
+     |     +---w jail?   string
+     |     +---w text    string
+     +---x from-rc
+     |  +---w input
+     |  |  +---w jail?   string
+     |  +--ro output
+     |     +--ro text?      string
+     |     +--ro rc-file?   string
+     |     +--ro sha256?    string
      +---x trace
         +---w input
         |  +---w address    inet:ip-address-no-zone

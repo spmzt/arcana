@@ -1,0 +1,574 @@
+module arcana-suricata {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-suricata";
+  prefix arcsuri;
+
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "Suricata's rules and its own answers on a FreeBSD host
+     (security/suricata): suricata.rules as suricata-update wrote it,
+     searched a page at a time, with the rules the admin set by sid or
+     by matcher kept across updates; suricata-update's rule sources;
+     what an instance answers on its unix command socket; and what
+     its profiling wrote.  The instances themselves are arcana-sdwan's
+     (the IDS and the Security section's).  Nothing is changed:
+     changes are jobs of kind suricata.  The suricata-rules operation
+     of arcana.yaml converted (Y-3).";
+
+  revision 2026-10-29 {
+    description
+      "Initial revision.";
+  }
+
+  typedef instance-name {
+    type string {
+      length "1..63";
+      pattern '[A-Za-z0-9_.-]+';
+    }
+    description
+      "An instance's name.";
+  }
+
+  grouping logged {
+    description
+      "A text a profiling log ends with.";
+    leaf text {
+      type string;
+      description
+        "Its last lines, 32 KiB at most.";
+    }
+    leaf at {
+      type yang:date-and-time;
+      description
+        "When it was written.";
+    }
+  }
+
+  grouping profiled {
+    description
+      "What profiling wrote into a log directory.";
+    container packets {
+      description
+        "packet_stats.log's last dump.";
+      list section {
+        description
+          "A table of it: ticks per protocol and per stage.";
+        leaf title {
+          type string;
+          description
+            "Its title.";
+        }
+        list row {
+          description
+            "A row.";
+          leaf name {
+            type string;
+            description
+              "What it counts.";
+          }
+          leaf ip {
+            type string;
+            description
+              "IPv4 or IPv6.";
+          }
+          leaf proto {
+            type int64;
+            description
+              "The IP protocol.";
+          }
+          leaf cnt {
+            type int64;
+            description
+              "Packets.";
+          }
+          leaf min {
+            type int64;
+            description
+              "Ticks, the least.";
+          }
+          leaf max {
+            type int64;
+            description
+              "Ticks, the most.";
+          }
+          leaf avg {
+            type int64;
+            description
+              "Ticks, on average.";
+          }
+          leaf tot {
+            type string;
+            description
+              "Ticks in all, as Suricata says them (12.3m).";
+          }
+          leaf pct {
+            type decimal64 {
+              fraction-digits 3;
+            }
+            units "percent";
+            description
+              "Its share.";
+          }
+        }
+      }
+      leaf at {
+        type yang:date-and-time;
+        description
+          "When it was written.";
+      }
+    }
+    container rules {
+      description
+        "rule_perf.log's last dump.";
+      leaf document {
+        type string;
+        description
+          "Suricata's own JSON, as it wrote it.";
+      }
+      leaf at {
+        type yang:date-and-time;
+        description
+          "When it was written.";
+      }
+    }
+    container keywords {
+      description
+        "keyword_perf.log.";
+      uses logged;
+    }
+    container prefilter {
+      description
+        "prefilter_perf.log.";
+      uses logged;
+    }
+    container rulegroups {
+      description
+        "rule_group_perf.log.";
+      uses logged;
+    }
+    container locks {
+      description
+        "lock_stats.log.";
+      uses logged;
+    }
+  }
+
+  container suricata {
+    config false;
+    description
+      "Suricata's rules and answers, read when asked.";
+    action read-rules {
+      description
+        "A page of the ruleset's rules, those the words match.";
+      input {
+        leaf q {
+          type string;
+          description
+            "Text in the rule, of any case.";
+        }
+        leaf sid {
+          type uint32 {
+            range "1..max";
+          }
+          description
+            "The rule of this sid alone.";
+        }
+        leaf only {
+          type enumeration {
+            enum enabled {
+              description
+                "Those on.";
+            }
+            enum disabled {
+              description
+                "Those off.";
+            }
+            enum changed {
+              description
+                "Those the admin set.";
+            }
+          }
+          description
+            "Which rules.";
+        }
+        leaf classtype {
+          type string;
+          description
+            "Those of this classtype.";
+        }
+        leaf offset {
+          type uint32 {
+            range "0..1000000";
+          }
+          description
+            "The matches to pass over.";
+        }
+        leaf limit {
+          type uint16 {
+            range "1..500";
+          }
+          description
+            "The rules at most; 100 unless given.";
+        }
+      }
+      output {
+        leaf changed {
+          type uint32;
+          description
+            "The rules the admin set by sid: on, off or drop.";
+        }
+        container ruleset {
+          description
+            "suricata.rules.";
+          leaf path {
+            type string;
+            description
+              "Where it is.";
+          }
+          leaf at {
+            type yang:date-and-time;
+            description
+              "When it was written.";
+          }
+          leaf size {
+            type uint64;
+            units "bytes";
+            description
+              "Its size.";
+          }
+        }
+        leaf total {
+          type uint32;
+          description
+            "Its rules.";
+        }
+        leaf enabled {
+          type uint32;
+          description
+            "Those on.";
+        }
+        leaf matched {
+          type uint32;
+          description
+            "Those the words matched.";
+        }
+        leaf offset {
+          type uint32;
+          description
+            "The matches passed over.";
+        }
+        leaf limit {
+          type uint32;
+          description
+            "The page's size.";
+        }
+        list page-rule {
+          description
+            "The page's rules.";
+          leaf sid {
+            type uint32;
+            description
+              "Its sid.";
+          }
+          leaf gid {
+            type uint32;
+            description
+              "Its gid.";
+          }
+          leaf rev {
+            type uint32;
+            description
+              "Its revision.";
+          }
+          leaf action {
+            type string;
+            description
+              "alert, drop ...";
+          }
+          leaf msg {
+            type string;
+            description
+              "Its message.";
+          }
+          leaf classtype {
+            type string;
+            description
+              "Its classtype.";
+          }
+          leaf severity {
+            type string;
+            description
+              "Its metadata's signature_severity.";
+          }
+          leaf enabled {
+            type boolean;
+            description
+              "It is on.";
+          }
+          leaf state {
+            type string;
+            description
+              "What the admin set of it: on, off or drop.";
+          }
+          leaf rule {
+            type string;
+            description
+              "The rule's text.";
+          }
+        }
+        list group {
+          key "match";
+          description
+            "The rules the admin set by a matcher.";
+          leaf match {
+            type string;
+            description
+              "The matcher, as suricata-update takes it.";
+          }
+          leaf state {
+            type string;
+            description
+              "on, off or drop.";
+          }
+        }
+        list class {
+          key "classtype";
+          description
+            "Each classtype with its rules.";
+          leaf classtype {
+            type string;
+            description
+              "The classtype.";
+          }
+          leaf rules {
+            type uint32;
+            description
+              "Its rules.";
+          }
+          leaf enabled {
+            type uint32;
+            description
+              "Those on.";
+          }
+        }
+        leaf modify {
+          type string;
+          description
+            "The matchers and replacements kept for modify.conf, the
+             JSON the job keeps.";
+        }
+      }
+    }
+    action read-sources {
+      description
+        "suricata-update's rule sources and their state here.";
+      output {
+        leaf index {
+          type boolean;
+          description
+            "suricata-update's index of them is fetched.";
+        }
+        list source {
+          key "name";
+          description
+            "The sources, the index's and those added by address.";
+          leaf name {
+            type string;
+            description
+              "Its name.";
+          }
+          leaf vendor {
+            type string;
+            description
+              "Its vendor.";
+          }
+          leaf summary {
+            type string;
+            description
+              "What it is.";
+          }
+          leaf license {
+            type string;
+            description
+              "Its license.";
+          }
+          leaf parameters {
+            type string;
+            description
+              "What it takes (a secret code).";
+          }
+          leaf subscription {
+            type string;
+            description
+              "Where one subscribes.";
+          }
+          leaf replaces {
+            type string;
+            description
+              "What it replaces.";
+          }
+          leaf deprecated {
+            type string;
+            description
+              "Why it is deprecated.";
+          }
+          leaf obsolete {
+            type string;
+            description
+              "Why it is obsolete.";
+          }
+          leaf url {
+            type string;
+            description
+              "Where it is fetched from, for one added by address.";
+          }
+          leaf state {
+            type string;
+            description
+              "enabled or disabled here; none, neither.";
+          }
+        }
+        leaf default-et-open {
+          type boolean;
+          description
+            "None is enabled: suricata-update fetches Emerging
+             Threats Open.";
+        }
+      }
+    }
+    action command {
+      description
+        "An instance's own answer on its unix command socket, one of
+         the commands that read.";
+      input {
+        leaf instance {
+          type instance-name;
+          mandatory true;
+          description
+            "The instance.";
+        }
+        leaf command {
+          type enumeration {
+            enum uptime {
+              description
+                "uptime.";
+            }
+            enum version {
+              description
+                "version.";
+            }
+            enum running-mode {
+              description
+                "running-mode.";
+            }
+            enum capture-mode {
+              description
+                "capture-mode.";
+            }
+            enum memcap-list {
+              description
+                "memcap-list.";
+            }
+            enum ruleset-stats {
+              description
+                "ruleset-stats.";
+            }
+            enum ruleset-failed-rules {
+              description
+                "ruleset-failed-rules.";
+            }
+            enum ruleset-profile {
+              description
+                "ruleset-profile.";
+            }
+            enum iface-list {
+              description
+                "iface-list.";
+            }
+            enum iface-stat {
+              description
+                "iface-stat, of iface.";
+            }
+            enum dump-counters {
+              description
+                "dump-counters.";
+            }
+          }
+          mandatory true;
+          description
+            "The command.";
+        }
+        leaf iface {
+          type string {
+            length "1..16";
+            pattern '[A-Za-z0-9._^]+';
+          }
+          description
+            "iface-stat's interface.";
+        }
+      }
+      output {
+        leaf answer {
+          type string;
+          description
+            "Suricata's answer, its own JSON as it wrote it.";
+        }
+      }
+    }
+    action read-profiling {
+      description
+        "Whether Suricata profiles, and what an instance's profiling
+         wrote, running (its log directory, written as it stops) and
+         of its last replay.";
+      input {
+        leaf instance {
+          type instance-name;
+          mandatory true;
+          description
+            "The instance.";
+        }
+      }
+      output {
+        container build {
+          description
+            "What Suricata was built to profile
+             (--enable-profiling).";
+          leaf packets {
+            type boolean;
+            description
+              "Packets.";
+          }
+          leaf rules {
+            type boolean;
+            description
+              "Rules.";
+          }
+          leaf locks {
+            type boolean;
+            description
+              "Locks.";
+          }
+        }
+        container running {
+          description
+            "Its log directory's.";
+          uses profiled;
+        }
+        container replay {
+          description
+            "Its last replay's.";
+          uses profiled;
+        }
+      }
+    }
+  }
+}

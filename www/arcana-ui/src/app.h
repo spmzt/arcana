@@ -551,13 +551,9 @@ struct app {
 	ucl_object_t	*build_reply;	/* a build that needs the user: host keys */
 	char		 build_sid[9];	/* and the host it was asked of */
 	bool		 build_console;	/* it was the console's own update */
-	ucl_object_t	*schema;	/* the family's, from schema.json */
-	bool		 schema_loading;
-	bool		 schema_failed;
 	ucl_object_t	*yang;		/* the operations' YANG, yang.json */
 	bool		 yang_loading;
 	bool		 yang_failed;
-	bool		 schema_yang;	/* its YANG tab, not its CBOR one */
 	bool		 trace_schema;	/* shown beside the operation */
 	int		 jail_sort;	/* JAIL_SORT_*: running first at start */
 	bool		 jail_sort_desc;

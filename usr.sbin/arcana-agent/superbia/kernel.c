@@ -212,7 +212,7 @@ do_kernel(struct work *w, const char **errp)
 	loaded = wcalloc(w, 1024, sizeof(*loaded));
 	nloaded = 0;
 	sum = 0;
-	step = step_begin(w, ARC_STEP_KIND_LIB, "kldstat(2)",
+	step = step_begin(w, STEP_LIB, "kldstat(2)",
 	    "every file linked into the kernel, and the modules of each");
 	for (id = kldnext(0); id > 0; id = kldnext(id)) {
 		memset(&st, 0, sizeof(st));
@@ -292,7 +292,7 @@ do_kernel(struct work *w, const char **errp)
 		    0) == 0)
 			putn(mem, ctl[k], ul);
 	}
-	step = step_begin(w, ARC_STEP_KIND_LIB, "memstat(3)",
+	step = step_begin(w, STEP_LIB, "memstat(3)",
 	    "the kernel's malloc(9) types and uma(9) zones");
 	arr = memory_of(w, false, &total);
 	putn(mem, "malloc_total", total);

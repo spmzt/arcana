@@ -925,7 +925,7 @@ do_sdwan_steer(struct work *w, const char *json, const char **errp)
 	ed->routes = rv;
 	ed->nroutes = nr;
 	ed->routed = false;
-	step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "steer%s%s: "
+	step = step_begin(w, STEP_DAEMON, "arcana-agent", "steer%s%s: "
 	    "%d prefix%s%s%s", jail[0] != '\0' ? " of " : "", jail, n, n == 1 ?
 	    "" : "es", nr > 0 ? ", the breakout's default route" : "", nr > 1 ?
 	    "s" : "");
@@ -1214,7 +1214,7 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		goto bad;
 	}
 	if (kept != NULL && tables_only(ed, top, kept)) {
-		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "set %jd: "
+		step = step_begin(w, STEP_DAEMON, "arcana-agent", "set %jd: "
 		    "the tables' entries swapped in, the rules as they are",
 		    (intmax_t)s);
 		ok = true;
@@ -1368,7 +1368,7 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	}
 	pthread_mutex_lock(&lock);
 	/* The old set and tables go, the new ones come, while disabled. */
-	step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "set %s: %d "
+	step = step_begin(w, STEP_DAEMON, "arcana-agent", "set %s: %d "
 	    "table%s, %d rule%s, %d object%s", num, n, n == 1 ? "" : "s", nr,
 	    nr == 1 ? "" : "s", nob, nob == 1 ? "" : "s");
 	if (ed->set != 0)

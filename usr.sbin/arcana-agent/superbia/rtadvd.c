@@ -121,7 +121,7 @@ do_rtadvd(struct work *w, const char *ifname, const char *const *names,
 			    "server", names[i]);
 			return (-1);
 		}
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", opts.rtadvd_conf);
+	step = step_begin(w, STEP_FILE, "write", "%s", opts.rtadvd_conf);
 	if ((old = scope_slurp(w, opts.rtadvd_conf, &len)) == NULL) {
 		if (errno != ENOENT) {
 			step_end(w, step, false, "%s", strerror(errno));

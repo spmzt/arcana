@@ -1,0 +1,131 @@
+module: arcana-suricata
+  +--ro suricata
+     +---x read-rules
+     |  +---w input
+     |  |  +---w q?           string
+     |  |  +---w sid?         uint32
+     |  |  +---w only?        enumeration
+     |  |  +---w classtype?   string
+     |  |  +---w offset?      uint32
+     |  |  +---w limit?       uint16
+     |  +--ro output
+     |     +--ro changed?     uint32
+     |     +--ro ruleset
+     |     |  +--ro path?   string
+     |     |  +--ro at?     yang:date-and-time
+     |     |  +--ro size?   uint64
+     |     +--ro total?       uint32
+     |     +--ro enabled?     uint32
+     |     +--ro matched?     uint32
+     |     +--ro offset?      uint32
+     |     +--ro limit?       uint32
+     |     +--ro page-rule*
+     |     |  +--ro sid?         uint32
+     |     |  +--ro gid?         uint32
+     |     |  +--ro rev?         uint32
+     |     |  +--ro action?      string
+     |     |  +--ro msg?         string
+     |     |  +--ro classtype?   string
+     |     |  +--ro severity?    string
+     |     |  +--ro enabled?     boolean
+     |     |  +--ro state?       string
+     |     |  +--ro rule?        string
+     |     +--ro group* [match]
+     |     |  +--ro match    string
+     |     |  +--ro state?   string
+     |     +--ro class* [classtype]
+     |     |  +--ro classtype    string
+     |     |  +--ro rules?       uint32
+     |     |  +--ro enabled?     uint32
+     |     +--ro modify?      string
+     +---x read-sources
+     |  +--ro output
+     |     +--ro index?             boolean
+     |     +--ro source* [name]
+     |     |  +--ro name            string
+     |     |  +--ro vendor?         string
+     |     |  +--ro summary?        string
+     |     |  +--ro license?        string
+     |     |  +--ro parameters?     string
+     |     |  +--ro subscription?   string
+     |     |  +--ro replaces?       string
+     |     |  +--ro deprecated?     string
+     |     |  +--ro obsolete?       string
+     |     |  +--ro url?            string
+     |     |  +--ro state?          string
+     |     +--ro default-et-open?   boolean
+     +---x command
+     |  +---w input
+     |  |  +---w instance    instance-name
+     |  |  +---w command     enumeration
+     |  |  +---w iface?      string
+     |  +--ro output
+     |     +--ro answer?   string
+     +---x read-profiling
+        +---w input
+        |  +---w instance    instance-name
+        +--ro output
+           +--ro build
+           |  +--ro packets?   boolean
+           |  +--ro rules?     boolean
+           |  +--ro locks?     boolean
+           +--ro running
+           |  +--ro packets
+           |  |  +--ro section*
+           |  |  |  +--ro title?   string
+           |  |  |  +--ro row*
+           |  |  |     +--ro name?    string
+           |  |  |     +--ro ip?      string
+           |  |  |     +--ro proto?   int64
+           |  |  |     +--ro cnt?     int64
+           |  |  |     +--ro min?     int64
+           |  |  |     +--ro max?     int64
+           |  |  |     +--ro avg?     int64
+           |  |  |     +--ro tot?     string
+           |  |  |     +--ro pct?     decimal64
+           |  |  +--ro at?        yang:date-and-time
+           |  +--ro rules
+           |  |  +--ro document?   string
+           |  |  +--ro at?         yang:date-and-time
+           |  +--ro keywords
+           |  |  +--ro text?   string
+           |  |  +--ro at?     yang:date-and-time
+           |  +--ro prefilter
+           |  |  +--ro text?   string
+           |  |  +--ro at?     yang:date-and-time
+           |  +--ro rulegroups
+           |  |  +--ro text?   string
+           |  |  +--ro at?     yang:date-and-time
+           |  +--ro locks
+           |     +--ro text?   string
+           |     +--ro at?     yang:date-and-time
+           +--ro replay
+              +--ro packets
+              |  +--ro section*
+              |  |  +--ro title?   string
+              |  |  +--ro row*
+              |  |     +--ro name?    string
+              |  |     +--ro ip?      string
+              |  |     +--ro proto?   int64
+              |  |     +--ro cnt?     int64
+              |  |     +--ro min?     int64
+              |  |     +--ro max?     int64
+              |  |     +--ro avg?     int64
+              |  |     +--ro tot?     string
+              |  |     +--ro pct?     decimal64
+              |  +--ro at?        yang:date-and-time
+              +--ro rules
+              |  +--ro document?   string
+              |  +--ro at?         yang:date-and-time
+              +--ro keywords
+              |  +--ro text?   string
+              |  +--ro at?     yang:date-and-time
+              +--ro prefilter
+              |  +--ro text?   string
+              |  +--ro at?     yang:date-and-time
+              +--ro rulegroups
+              |  +--ro text?   string
+              |  +--ro at?     yang:date-and-time
+              +--ro locks
+                 +--ro text?   string
+                 +--ro at?     yang:date-and-time

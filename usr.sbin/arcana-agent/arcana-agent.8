@@ -76,12 +76,52 @@
 .Fl V
 .Sh DESCRIPTION
 .Nm
-serves the
-.Ql arcana
-cblink family: it reports the jails of this host and changes them for
-clients such as the arcana web console and
+serves this host's YANG models (RFC 7950) on cblink's YANG family,
+YANG-CBOR (RFC 9254) over TLS 1.3, DTLS on SCTP, or a local socket: it
+reports the jails, the network, the storage, the services and the rest
+of this host and changes them for clients such as the arcana web
+console and
 .Xr arcanactl 8 .
 It is the only privileged part of arcana.
+.Pp
+What it reads of the host's daemons and files, each when asked, are
+actions of their modules by cblink's YANG family:
+.Xr sshd 8 ,
+of the host or of a jail (arcana-sshd's
+.Ic read ) ;
+.Xr poudriere 8
+(arcana-builder's
+.Ic builder
+and its
+.Ic port-options ) ;
+the cores dumped (arcana-crashes); the system's own files and settings
+(arcana-system); the NFS server, iSCSI's target and HAST
+(arcana-netstore); Suricata's rules, its rule sources, an instance's
+answers and its profiling (arcana-suricata); OpenSMTPD (arcana-smtpd)
+and UDPspeeder's relays (arcana-speeder), of the host or of a jail; the
+admin's monitors (arcana-probe's
+.Ic read
+with
+.Ic monitors ) .
+A Telegram message is arcana-notify's
+.Ic notify .
+.Pp
+Beside them it serves
+.Ql arcana-stream ,
+a cblink family of its own whose commands open streams with
+credit-based flow control: a snapshot sent
+.Pq Ic zfs-send
+and one received
+.Pq Ic zfs-receive
+by
+.Xr zfs 8 ,
+a capture put for a Suricata instance to replay
+.Pq Ic suricata-pcap-put
+and a file of its pcap-log got
+.Pq Ic suricata-pcap-get ;
+its bodies are arcana-stream's structures.
+They are the console's alone, as every request is, and refused unless
+NACM permits them.
 .Pp
 Running jails are read with
 .Xr jail_getv 3
@@ -223,9 +263,69 @@ and packets taken with
 by its
 .Ic capture
 (without an interface, the sources there are).
+The network tables are arcana-network's read actions, the host's or a
+running vnet jail's, read from the host: the routes through
+.Xr netlink 4
+(2000 at most, those with a text, read on from an offset), the nexthops
+and nexthop groups as
+.Xr netstat 1
+prints them, the connections and sockets from the kernel's control
+block lists, the interfaces by
+.Xr getifaddrs 3
+with their
+.Xr carp 4
+hosts, the bridges and
+.Xr geneve 4
+tunnels by
+.Xr ifconfig 8 ,
+the neighbours, IGMP's and MLD's state by
+.Xr ifmcstat 8 ,
+the static routes
+.Xr rc.conf 5
+keeps, strongSwan's IPsec by
+.Xr swanctl 8 ,
+a vnet jail's firewall, and the route to an address; a leaf named as
+the program names the value.
+The routes, connections and sockets also come in parts as a stream of
+the agent's own family, arcana-parts, a part sent only when its reader
+has room for it.
+A jail's address is arcana-jails' jail's
+.Ic address
+action (arcana-network's).
 .Pp
-Every reply carries a trace: the library calls, system calls, files and
-programs the request used, with the output of every program.
+The kept rules of the firewall
+.Pq Fl J
+are arcana-firewall's
+.Pa kept/text ,
+written by a commit, read by ipfw
+.Fl n
+first, loading nothing.
+Installing or updating the agent changes no firewall variable and
+writes no firewall file.
+The host's first commit moves its boot to Arcana's own script beside
+the kept file,
+.Pa ipfw.sh
+(0700, the file loaded by ipfw
+.Fl q ) ,
+which
+.Va firewall_script
+names in Arcana's
+.Xr rc.conf 5
+file; the host's own firewall script and
+.Pa /etc/rc.firewall
+are never edited.
+That commit is a migration: refused, nothing written, unless the rules
+it would load are those the kernel's set 0 has now, as ipfw writes
+them back; arcana-firewall's
+.Ic from-rc
+makes them of what the host boots now.
+A confirmed commit whose time is up puts every file it changed back.
+.Pp
+Every request has a trace: the library calls, system calls, files and
+programs it used, with the output of every program, told to the peer
+that asked as it runs (arcana-jobs'
+.Ic steps
+notification), a job's kept with it.
 Changes are made one at a time; reading is not held up by them.
 Jobs of pkg in jails are the exception: those at the head of the queue,
 each in a jail of its own, run up to four at once, a jail's own one
@@ -470,9 +570,8 @@ An rpc or action of Arcana's modules that changes the host is
 .Ic nacm:default-deny-all :
 run only by a rule that permits it.
 .It Fl -features Ar list
-Of the features
-.Ic hello
-names, what this agent takes that one before it did not, only those in
+Of the features arcana-host's agent names, what this agent takes that
+one before it did not, only those in
 .Ar list ,
 separated by commas; one left out is refused as an agent before it
 refuses it.
@@ -480,11 +579,14 @@ All of them by default.
 It stands in for an older agent, for a test of what a client sends one.
 The only feature is
 .Li gzip-update :
-a program for
-.Cm agent-update
-compressed, and
-.Cm agent-build Ns 's
-sent back so.
+a program for arcana-agent's
+.Ic update
+action compressed
+.Pq Ic program-size ,
+and its
+.Ic build Ns 's
+sent back so
+.Pq Ic compress .
 .It Fl -subscriptions Ar file
 Where the configured subscriptions are kept (RFC 8639 section 2.5):
 ietf-subscribed-notifications' subscriptions container, as YANG-CBOR,
@@ -1124,19 +1226,24 @@ service is restarted after the reply.
 That is how a console updates itself, through the agent of its host.
 .Sh UPDATES
 A client may send a new
-.Nm :
-the console does, and
+.Nm
+by arcana-agent's
+.Ic update
+action: the console does, and
 .Xr arcanactl 8
 with
 .Cm agent-update .
-A frame carries at most 6 MiB of it; a client that sees
+A frame of 8 MiB carries the program as it is, with the rest of the
+request; a client that sees
 .Li gzip-update
-in
-.Ic hello Ns 's
-features sends it compressed with gzip
+in arcana-host's agent features sends it compressed with gzip
 .Pq Xr zlib 3 ,
-with the size it inflates to, and the daemon inflates it first: to no
-more than that size, nor than 32 MiB, stopping a byte past it.
+with the size it inflates to
+.Pq Ic program-size ,
+and the daemon inflates it first: to no more than that size, nor than
+32 MiB, stopping a byte past it.
+An agent before has no features there and is sent the program as it
+is.
 The program, inflated, is checked against its signature by the
 console's CA key (asked of every client but the local socket's) and
 the SHA-256 sent with it, written beside

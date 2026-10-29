@@ -1,0 +1,642 @@
+module: arcana-network
+  +--ro network
+     +---x routes
+     |  +---w input
+     |  |  +---w jail?     string
+     |  |  +---w family?   family
+     |  |  +---w filter?   string
+     |  |  +---w fib?      uint32
+     |  |  +---w offset?   uint32
+     |  +--ro output
+     |     +--ro total?       uint64
+     |     +--ro truncated?   boolean
+     |     +--ro rt-family*
+     |        +--ro address-family?   string
+     |        +--ro rt-entry*
+     |           +--ro destination?      string
+     |           +--ro gateway?          string
+     |           +--ro flags?            string
+     |           +--ro nhop?             uint32
+     |           +--ro mtu?              uint32
+     |           +--ro interface-name?   string
+     |           +--ro metric?           uint32
+     |           +--ro weight?           uint32
+     |           +--ro fib?              uint32
+     |           +--ro prefixlen?        uint32
+     |           +--ro source?           string
+     |           +--ro path?             uint32
+     |           +--ro paths?            uint32
+     |           +--ro expire-time?      string
+     +---x nexthops
+     |  +---w input
+     |  |  +---w jail?     string
+     |  |  +---w family?   family
+     |  |  +---w fib?      uint32
+     |  +--ro output
+     |     +--ro fib?         uint32
+     |     +--ro rt-family*
+     |        +--ro address-family?   string
+     |        +--ro nh-entry*
+     |           +--ro index?                    uint32
+     |           +--ro type_str?                 string
+     |           +--ro ifa?                      string
+     |           +--ro gateway?                  string
+     |           +--ro flags?                    string
+     |           +--ro rt_flags_pretty*          string
+     |           +--ro nh_flags_pretty*          string
+     |           +--ro use?                      uint64
+     |           +--ro mtu?                      uint32
+     |           +--ro interface-name?           string
+     |           +--ro address-interface-name?   string
+     |           +--ro refcount?                 uint64
+     |           +--ro nhop-prepend?             string
+     +---x nhgroups
+     |  +---w input
+     |  |  +---w jail?     string
+     |  |  +---w family?   family
+     |  |  +---w fib?      uint32
+     |  +--ro output
+     |     +--ro fib?         uint32
+     |     +--ro rt-family*
+     |        +--ro address-family?   string
+     |        +--ro nhgrp-entry*
+     |           +--ro nhgrp-index?    uint32
+     |           +--ro nhg-refcnt?     uint64
+     |           +--ro nhop-weights*
+     |              +--ro nh-index?       uint32
+     |              +--ro nh-weight?      uint32
+     |              +--ro nh-slots?       uint32
+     |              +--ro nh-gw?          string
+     |              +--ro nh-interface?   string
+     +---x connections
+     |  +---w input
+     |  |  +---w jail?     string
+     |  |  +---w family?   family
+     |  +--ro output
+     |     +--ro socket*
+     |        +--ro protocol?                string
+     |        +--ro receive-bytes-waiting?   uint32
+     |        +--ro send-bytes-waiting?      uint32
+     |        +--ro local
+     |        |  +--ro address?   string
+     |        |  +--ro port?      string
+     |        +--ro remote
+     |        |  +--ro address?   string
+     |        |  +--ro port?      string
+     |        +--ro tcp-state?               string
+     +---x sockets
+     |  +---w input
+     |  |  +---w jail?     string
+     |  |  +---w family?   family
+     |  +--ro output
+     |     +--ro socket*
+     |        +--ro user?      string
+     |        +--ro command?   string
+     |        +--ro pid?       int32
+     |        +--ro fd?        int32
+     |        +--ro proto?     string
+     |        +--ro local
+     |        |  +--ro address?   string
+     |        |  +--ro port?      uint32
+     |        +--ro foreign
+     |           +--ro address?   string
+     |           +--ro port?      uint32
+     +---x interfaces
+     |  +---w input
+     |  |  +---w jail?     string
+     |  |  +---w family?   family
+     |  +--ro output
+     |     +--ro time?         int64
+     |     +--ro carp?         boolean
+     |     +--ro interfaces*
+     |        +--ro name?          string
+     |        +--ro up?            boolean
+     |        +--ro flags*         string
+     |        +--ro link?          string
+     |        +--ro mtu?           uint32
+     |        +--ro ether?         string
+     |        +--ro description?   string
+     |        +--ro fib?           uint32
+     |        +--ro tunnelfib?     uint32
+     |        +--ro tunnel
+     |        |  +--ro local?    string
+     |        |  +--ro remote?   string
+     |        +--ro ipackets?      uint64
+     |        +--ro opackets?      uint64
+     |        +--ro ibytes?        uint64
+     |        +--ro obytes?        uint64
+     |        +--ro ierrors?       uint64
+     |        +--ro oerrors?       uint64
+     |        +--ro addresses*
+     |        |  +--ro family?        string
+     |        |  +--ro address?       string
+     |        |  +--ro prefixlen?     uint32
+     |        |  +--ro broadcast?     string
+     |        |  +--ro destination?   string
+     |        |  +--ro vhid?          uint32
+     |        +--ro carp*
+     |           +--ro vhid?       uint32
+     |           +--ro state?      string
+     |           +--ro version?    uint32
+     |           +--ro advbase?    uint32
+     |           +--ro advskew?    uint32
+     |           +--ro prio?       uint32
+     |           +--ro interval?   uint32
+     |           +--ro peer?       string
+     |           +--ro peer6?      string
+     +---x bridges
+     |  +---w input
+     |  |  +---w jail?   string
+     |  +--ro output
+     |     +--ro bridges*
+     |        +--ro name?            string
+     |        +--ro id?              string
+     |        +--ro priority?        uint32
+     |        +--ro hellotime?       uint32
+     |        +--ro fwddelay?        uint32
+     |        +--ro maxage?          uint32
+     |        +--ro holdcnt?         uint32
+     |        +--ro proto?           string
+     |        +--ro maxaddr?         uint32
+     |        +--ro timeout?         uint32
+     |        +--ro root?            string
+     |        +--ro root_priority?   uint32
+     |        +--ro root_cost?       uint32
+     |        +--ro root_port?       uint32
+     |        +--ro is_root?         boolean
+     |        +--ro vlanfilter?      boolean
+     |        +--ro defqinq?         boolean
+     |        +--ro defuntagged?     uint32
+     |        +--ro members*
+     |        |  +--ro name?        string
+     |        |  +--ro stp?         boolean
+     |        |  +--ro flags*       string
+     |        |  +--ro addresses*   string
+     |        |  +--ro port?        uint32
+     |        |  +--ro priority?    uint32
+     |        |  +--ro cost?        uint32
+     |        |  +--ro proto?       string
+     |        |  +--ro role?        string
+     |        |  +--ro state?       string
+     |        |  +--ro maxaddr?     uint32
+     |        |  +--ro vlanproto?   string
+     |        |  +--ro untagged?    uint32
+     |        |  +--ro tagged?      string
+     |        |  +--ro mode?        string
+     |        +--ro learned*
+     |        |  +--ro mac?      string
+     |        |  +--ro vlan?     uint32
+     |        |  +--ro member?   string
+     |        |  +--ro expire?   uint32
+     |        |  +--ro static?   boolean
+     |        |  +--ro sticky?   boolean
+     |        +--ro learned_total?   uint32
+     +---x geneve
+     |  +---w input
+     |  |  +---w jail?   string
+     |  +--ro output
+     |     +--ro geneves*
+     |        +--ro name?          string
+     |        +--ro mode?          string
+     |        +--ro id?            uint32
+     |        +--ro local?         string
+     |        +--ro remote?        string
+     |        +--ro group?         string
+     |        +--ro dev?           string
+     |        +--ro portrange?     string
+     |        +--ro ttl?           string
+     |        +--ro df?            string
+     |        +--ro dscpinherit?   boolean
+     |        +--ro external?      boolean
+     |        +--ro learn?         boolean
+     |        +--ro count?         uint32
+     |        +--ro maxaddr?       uint32
+     |        +--ro timeout?       uint32
+     |        +--ro up?            boolean
+     +---x neighbours
+     |  +---w input
+     |  |  +---w jail?     string
+     |  |  +---w family?   family
+     |  |  +---w filter?   string
+     |  +--ro output
+     |     +--ro total?        uint64
+     |     +--ro neighbours*
+     |        +--ro family?           string
+     |        +--ro address?          string
+     |        +--ro lladdr?           string
+     |        +--ro interface-name?   string
+     |        +--ro state?            string
+     |        +--ro router?           boolean
+     |        +--ro next?             uint32
+     +---x multicast
+     |  +---w input
+     |  |  +---w jail?   string
+     |  +--ro output
+     |     +--ro interfaces*
+     |     |  +--ro name?     string
+     |     |  +--ro igmp
+     |     |  |  +--ro version?   uint32
+     |     |  |  +--ro flags?     string
+     |     |  |  +--ro rv?        uint32
+     |     |  |  +--ro qi?        uint32
+     |     |  |  +--ro qri?       uint32
+     |     |  |  +--ro uri?       uint32
+     |     |  +--ro mld
+     |     |  |  +--ro version?   uint32
+     |     |  |  +--ro flags?     string
+     |     |  |  +--ro rv?        uint32
+     |     |  |  +--ro qi?        uint32
+     |     |  |  +--ro qri?       uint32
+     |     |  |  +--ro uri?       uint32
+     |     |  +--ro groups*
+     |     |     +--ro family?    string
+     |     |     +--ro group?     string
+     |     |     +--ro mode?      string
+     |     |     +--ro lladdr?    string
+     |     |     +--ro sources*   string
+     |     +--ro settings*
+     |        +--ro name?    string
+     |        +--ro value?   string
+     +---x kept-routes
+     |  +---w input
+     |  |  +---w jail?   string
+     |  +--ro output
+     |     +--ro routes*
+     |     |  +--ro name?          string
+     |     |  +--ro family?        string
+     |     |  +--ro list?          string
+     |     |  +--ro variable?      string
+     |     |  +--ro value?         string
+     |     |  +--ro destination?   string
+     |     |  +--ro gateway?       string
+     |     |  +--ro kind?          string
+     |     |  +--ro fib?           uint32
+     |     |  +--ro listed?        boolean
+     |     |  +--ro missing?       boolean
+     |     +--ro defaults*
+     |        +--ro variable?   string
+     |        +--ro family?     string
+     |        +--ro fib?        uint32
+     |        +--ro gateway?    string
+     +---x ipsec
+     |  +---w input
+     |  |  +---w jail?   string
+     |  +--ro output
+     |     +--ro running?        boolean
+     |     +--ro kernel?         boolean
+     |     +--ro public-key?     string
+     |     +--ro now?            int64
+     |     +--ro certificates*
+     |     |  +--ro file?          string
+     |     |  +--ro where?         string
+     |     |  +--ro error?         string
+     |     |  +--ro subject?       string
+     |     |  +--ro issuer?        string
+     |     |  +--ro not_before?    int64
+     |     |  +--ro not_after?     int64
+     |     |  +--ro ca?            boolean
+     |     |  +--ro self_signed?   boolean
+     |     |  +--ro names*         string
+     |     |  +--ro sha256?        string
+     |     +--ro connections*
+     |     |  +--ro name?           string
+     |     |  +--ro version?        string
+     |     |  +--ro local_addrs*    string
+     |     |  +--ro remote_addrs*   string
+     |     |  +--ro local_port?     uint32
+     |     |  +--ro remote_port?    uint32
+     |     |  +--ro reauth_time?    uint64
+     |     |  +--ro rekey_time?     uint64
+     |     |  +--ro unique?         string
+     |     |  +--ro dpd_delay?      uint64
+     |     |  +--ro dpd_timeout?    uint64
+     |     |  +--ro local-id?       string
+     |     |  +--ro remote-id?      string
+     |     |  +--ro arcana?         boolean
+     |     |  +--ro local-1
+     |     |  |  +--ro class?         string
+     |     |  |  +--ro id?            string
+     |     |  |  +--ro eap_id?        string
+     |     |  |  +--ro xauth_id?      string
+     |     |  |  +--ro aaa_id?        string
+     |     |  |  +--ro groups*        string
+     |     |  |  +--ro cert_policy*   string
+     |     |  |  +--ro certs*         string
+     |     |  |  +--ro cacerts*       string
+     |     |  |  +--ro pubkeys*       string
+     |     |  +--ro local-2
+     |     |  |  +--ro class?         string
+     |     |  |  +--ro id?            string
+     |     |  |  +--ro eap_id?        string
+     |     |  |  +--ro xauth_id?      string
+     |     |  |  +--ro aaa_id?        string
+     |     |  |  +--ro groups*        string
+     |     |  |  +--ro cert_policy*   string
+     |     |  |  +--ro certs*         string
+     |     |  |  +--ro cacerts*       string
+     |     |  |  +--ro pubkeys*       string
+     |     |  +--ro remote-1
+     |     |  |  +--ro class?         string
+     |     |  |  +--ro id?            string
+     |     |  |  +--ro eap_id?        string
+     |     |  |  +--ro xauth_id?      string
+     |     |  |  +--ro aaa_id?        string
+     |     |  |  +--ro groups*        string
+     |     |  |  +--ro cert_policy*   string
+     |     |  |  +--ro certs*         string
+     |     |  |  +--ro cacerts*       string
+     |     |  |  +--ro pubkeys*       string
+     |     |  +--ro remote-2
+     |     |  |  +--ro class?         string
+     |     |  |  +--ro id?            string
+     |     |  |  +--ro eap_id?        string
+     |     |  |  +--ro xauth_id?      string
+     |     |  |  +--ro aaa_id?        string
+     |     |  |  +--ro groups*        string
+     |     |  |  +--ro cert_policy*   string
+     |     |  |  +--ro certs*         string
+     |     |  |  +--ro cacerts*       string
+     |     |  |  +--ro pubkeys*       string
+     |     |  +--ro children*
+     |     |  |  +--ro name?            string
+     |     |  |  +--ro mode?            string
+     |     |  |  +--ro label?           string
+     |     |  |  +--ro rekey_time?      uint64
+     |     |  |  +--ro rekey_bytes?     uint64
+     |     |  |  +--ro rekey_packets?   uint64
+     |     |  |  +--ro dpd_action?      string
+     |     |  |  +--ro close_action?    string
+     |     |  |  +--ro interface?       string
+     |     |  |  +--ro priority?        uint64
+     |     |  |  +--ro local-ts*        string
+     |     |  |  +--ro remote-ts*       string
+     |     |  +--ro model
+     |     |     +--ro local_id?      string
+     |     |     +--ro remote_id?     string
+     |     |     +--ro local_cert?    string
+     |     |     +--ro remote_cert?   string
+     |     |     +--ro remote_ca?     string
+     |     |     +--ro pubkey?        boolean
+     |     |     +--ro children* [name]
+     |     |        +--ro name         string
+     |     |        +--ro mode?        string
+     |     |        +--ro local_ts?    string
+     |     |        +--ro remote_ts?   string
+     |     |        +--ro reqid?       uint32
+     |     |        +--ro start?       string
+     |     +--ro sas*
+     |        +--ro name?            string
+     |        +--ro uniqueid?        uint64
+     |        +--ro state?           string
+     |        +--ro encr-alg?        string
+     |        +--ro encr-keysize?    uint32
+     |        +--ro integ-alg?       string
+     |        +--ro integ-keysize?   uint32
+     |        +--ro prf-alg?         string
+     |        +--ro dh-group?        string
+     |        +--ro rekey-time?      uint64
+     |        +--ro version?         uint32
+     |        +--ro local-host?      string
+     |        +--ro local-port?      uint32
+     |        +--ro local-id?        string
+     |        +--ro remote-host?     string
+     |        +--ro remote-port?     uint32
+     |        +--ro remote-id?       string
+     |        +--ro initiator?       string
+     |        +--ro initiator-spi?   string
+     |        +--ro responder-spi?   string
+     |        +--ro nat-local?       string
+     |        +--ro nat-remote?      string
+     |        +--ro established?     uint64
+     |        +--ro reauth-time?     uint64
+     |        +--ro local-vips*      string
+     |        +--ro remote-vips*     string
+     |        +--ro children*
+     |           +--ro name?            string
+     |           +--ro uniqueid?        uint64
+     |           +--ro state?           string
+     |           +--ro encr-alg?        string
+     |           +--ro encr-keysize?    uint32
+     |           +--ro integ-alg?       string
+     |           +--ro integ-keysize?   uint32
+     |           +--ro prf-alg?         string
+     |           +--ro dh-group?        string
+     |           +--ro rekey-time?      uint64
+     |           +--ro reqid?           uint32
+     |           +--ro mode?            string
+     |           +--ro protocol?        string
+     |           +--ro encap?           string
+     |           +--ro spi-in?          string
+     |           +--ro spi-out?         string
+     |           +--ro bytes-in?        uint64
+     |           +--ro packets-in?      uint64
+     |           +--ro use-in?          uint64
+     |           +--ro bytes-out?       uint64
+     |           +--ro packets-out?     uint64
+     |           +--ro use-out?         uint64
+     |           +--ro life-time?       uint64
+     |           +--ro install-time?    uint64
+     |           +--ro local-ts*        string
+     |           +--ro remote-ts*       string
+     +---x ipfw
+     |  +---w input
+     |  |  +---w jail?   string
+     |  +--ro output
+     |     +--ro firewall
+     |        +--ro kept
+     |        |  +--ro path?      string
+     |        |  +--ro present?   boolean
+     |        |  +--ro sha256?    string
+     |        |  +--ro text?      string
+     |        |  +--ro rule*
+     |        |  |  +--ro number?   rule-number
+     |        |  |  +--ro text?     string
+     |        |  |  +--ro source?   string
+     |        |  |  +--ro norm?     string
+     |        |  +--ro other*     string
+     |        |  +--ro alias* [name]
+     |        |     +--ro name     string
+     |        |     +--ro kind?    enumeration
+     |        |     +--ro value?   string
+     |        +--ro rc
+     |        |  +--ro firewall-enable?   string
+     |        |  +--ro firewall-type?     string
+     |        |  +--ro firewall-script?   string
+     |        +--ro state
+     |           +--ro loaded?          boolean
+     |           +--ro enabled?         boolean
+     |           +--ro verbose?         boolean
+     |           +--ro rule*
+     |           |  +--ro number?     rule-number
+     |           |  +--ro set?        uint8
+     |           |  +--ro packets?    uint64
+     |           |  +--ro octets?     uint64
+     |           |  +--ro text?       string
+     |           |  +--ro disabled?   boolean
+     |           +--ro dynamic-total?   uint32
+     |           +--ro dynamic*
+     |           |  +--ro number?    rule-number
+     |           |  +--ro packets?   uint64
+     |           |  +--ro octets?    uint64
+     |           |  +--ro ttl?       uint32
+     |           |  +--ro kind?      string
+     |           |  +--ro flow?      string
+     |           +--ro table* [name]
+     |           |  +--ro name     string
+     |           |  +--ro set?     uint8
+     |           |  +--ro type?    string
+     |           |  +--ro count?   uint32
+     |           |  +--ro entry* [key]
+     |           |     +--ro key      string
+     |           |     +--ro value?   string
+     |           +--ro nat*             string
+     |           +--ro tunable* [name]
+     |           |  +--ro name      string
+     |           |  +--ro value?    int32
+     |           |  +--ro want?     int32
+     |           |  +--ro needed?   boolean
+     |           |  +--ro why?      string
+     |           +--ro modules
+     |           |  +--ro ipfw-nat?     boolean
+     |           |  +--ro ipfw-nat64?   boolean
+     |           |  +--ro ipfw-nptv6?   boolean
+     |           |  +--ro dummynet?     boolean
+     |           +--ro pipes*           string
+     |           +--ro dummynet
+     |              +--ro pipe* [number]
+     |              |  +--ro number       uint16
+     |              |  +--ro bandwidth?   uint64
+     |              |  +--ro delay?       uint32
+     |              |  +--ro burst?       uint64
+     |              |  +--ro mask
+     |              |  |  +--ro src?        uint8
+     |              |  |  +--ro dst?        uint8
+     |              |  |  +--ro src-port?   uint16
+     |              |  |  +--ro dst-port?   uint16
+     |              |  |  +--ro proto?      uint8
+     |              |  +--ro slots?       uint32
+     |              |  +--ro bytes?       uint32
+     |              |  +--ro plr?         decimal64
+     |              |  +--ro red?         string
+     |              +--ro sched* [number]
+     |              |  +--ro number       uint16
+     |              |  +--ro bandwidth?   uint64
+     |              |  +--ro delay?       uint32
+     |              |  +--ro burst?       uint64
+     |              |  +--ro mask
+     |              |  |  +--ro src?        uint8
+     |              |  |  +--ro dst?        uint8
+     |              |  |  +--ro src-port?   uint16
+     |              |  |  +--ro dst-port?   uint16
+     |              |  |  +--ro proto?      uint8
+     |              |  +--ro type?        string
+     |              |  +--ro queue*       uint16
+     |              |  +--ro params?      string
+     |              +--ro queue* [number]
+     |                 +--ro number      uint16
+     |                 +--ro sched?      uint16
+     |                 +--ro weight?     uint16
+     |                 +--ro priority?   uint8
+     |                 +--ro mask
+     |                 |  +--ro src?        uint8
+     |                 |  +--ro dst?        uint8
+     |                 |  +--ro src-port?   uint16
+     |                 |  +--ro dst-port?   uint16
+     |                 |  +--ro proto?      uint8
+     |                 +--ro slots?      uint32
+     |                 +--ro bytes?      uint32
+     |                 +--ro plr?        decimal64
+     |                 +--ro red?        string
+     +---x lookup
+        +---w input
+        |  +---w jail?      string
+        |  +---w address    string
+        |  +---w fib?       uint32
+        +--ro output
+           +--ro address?      string
+           +--ro family?       string
+           +--ro fib?          uint32
+           +--ro best
+           |  +--ro to?            string
+           |  +--ro destination?   string
+           |  +--ro prefixlen?     uint32
+           |  +--ro gateway?       string
+           |  +--ro fib?           string
+           |  +--ro interface?     string
+           |  +--ro flags?         string
+           |  +--ro metric?        uint32
+           |  +--ro weight?        uint32
+           +--ro candidates*
+              +--ro destination?      string
+              +--ro gateway?          string
+              +--ro flags?            string
+              +--ro nhop?             uint32
+              +--ro mtu?              uint32
+              +--ro interface-name?   string
+              +--ro metric?           uint32
+              +--ro weight?           uint32
+              +--ro fib?              uint32
+              +--ro prefixlen?        uint32
+              +--ro source?           string
+              +--ro path?             uint32
+              +--ro paths?            uint32
+              +--ro expire-time?      string
+
+  augment /arcj:jails/arcj:jail:
+    +---x address
+       +---w input
+       |  +---w address      string
+       |  +---w interface?   string
+       |  +---w remove?      boolean
+       |  +---w live?        boolean
+       |  +---w persist?     boolean
+       |  +---w dry-run?     boolean
+       +--ro output
+          +--ro diff?   string
+
+  structure network-part:
+    +-- kind?         enumeration
+    +-- family?       family
+    +-- filter?       string
+    +-- fib?          uint32
+    +-- total?        uint64
+    +-- route*
+    |  +-- family?           string
+    |  +-- destination?      string
+    |  +-- gateway?          string
+    |  +-- flags?            string
+    |  +-- nhop?             uint32
+    |  +-- mtu?              uint32
+    |  +-- interface-name?   string
+    |  +-- metric?           uint32
+    |  +-- weight?           uint32
+    |  +-- fib?              uint32
+    |  +-- prefixlen?        uint32
+    |  +-- source?           string
+    |  +-- path?             uint32
+    |  +-- paths?            uint32
+    |  +-- expire-time?      string
+    +-- connection*
+    |  +-- protocol?                string
+    |  +-- receive-bytes-waiting?   uint32
+    |  +-- send-bytes-waiting?      uint32
+    |  +-- local
+    |  |  +-- address?   string
+    |  |  +-- port?      string
+    |  +-- remote
+    |  |  +-- address?   string
+    |  |  +-- port?      string
+    |  +-- tcp-state?               string
+    +-- socket*
+    |  +-- user?      string
+    |  +-- command?   string
+    |  +-- pid?       int32
+    |  +-- fd?        int32
+    |  +-- proto?     string
+    |  +-- local
+    |  |  +-- address?   string
+    |  |  +-- port?      uint32
+    |  +-- foreign
+    |     +-- address?   string
+    |     +-- port?      uint32
+    +-- jail?         string

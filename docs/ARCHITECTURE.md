@@ -10,7 +10,7 @@ Each program does one thing.  There is one daemon per role.
 
 | Program | Runs on | Does |
 |---|---|---|
-| `arcana-agent(8)` | every host, as root | Serves the `arcana` cblink family: reports jails and changes them. The only privileged component. |
+| `arcana-agent(8)` | every host, as root | Serves the host's YANG models over cblink's YANG family: reports jails and the rest and changes them. The only privileged component. |
 | `arcana-console(8)` | the console host, unprivileged | Its own HTTP server on libwebsockets: serves the PWA and its JSON API, authenticates you with WebAuthn, talks to `arcana-agent` instances as a cblink client. |
 | PWA (C → wasm) | the browser | The console. |
 | `jailconf(8)` | anywhere | Adds or removes a value of one jail's parameter in jail.conf, in place, like sysrc(8) does for rc.conf. |
@@ -25,47 +25,64 @@ Each program does one thing.  There is one daemon per role.
 │          │ ◀─────── │ server registry      │ ◀────────── │ jail(8) -e / -c / -r │
 └──────────┘  cookie  └──────────────────────┘    CBOR     │ libjailconf          │
                                                            └──────────────────────┘
-                                         arcanactl ─────▶ (same family, for admins and tests)
+                                         arcanactl ─────▶ (the same models, for admins and tests)
 ```
 
 When the console host also has jails it runs both: the web-facing
 process stays unprivileged and reaches the local `arcana-agent` over an
 AF_UNIX socket.
 
-## The arcana family
+## The wire: YANG
 
-`share/arcana/arcana.yaml` is the contract between `arcana-agent` and
-its clients.  `share/arcana/wire.awk` writes its wire, the YANG module
-`share/yang/arcana@<rev>.yang`, from it (an rpc an operation, a
-structure an event or a stream's payload, the SIDs in
-`arcana@<rev>.sid`); cblink-gen(1) generates the C structures and the
-schema tables from the module, and wire.awk writes the header that
-names those structures as the programs call them and the glue to
-cblink (the handlers' trampolines, the replies, the client calls).
+The contract between `arcana-agent` and its clients is its YANG models
+(`share/yang`): the standard ones (RFC 8343's interfaces, RFC 8349's
+routing, RFC 8341's NACM...) with Arcana's augments, and a module of
+Arcana's where none exists, each with its SIDs (RFC 9595,
+`share/yang/SIDS.md`).  They travel as YANG-CBOR (RFC 9254) on cblink's
+YANG family: GET of a datastore, EDIT of the candidate and a confirmed
+commit, an rpc or an action, RFC 8639 subscriptions; cblink-gen(1)
+writes the C structures, the schema tables and the server's
+trampolines from the modules (`share/mk/arcana.yang.mk`).  Beside it
+the agent has two families of its own, for streams alone: `arcana-
+stream` (a snapshot sent or received, a capture put or a pcap-log
+file got) and `arcana-parts` (a network table in parts).  The steps a
+request takes are told to its peer as it runs, arcana-jobs' `steps`
+notification.
+
+`share/arcana/arcana.yaml` is no family any more: what the programs
+keep for their own use (a jail, a service, a job and the change it
+makes, the kinds of job), from which `share/arcana/wire.awk` writes the
+module `arcana@<rev>` of structures alone and the header that names
+them (`arcana.h`); `share/arcana/jobs.awk` makes arcana-jobs' kinds of
+it and `jobs.yaml`.  The consoles' own family, `cluster.yaml`, is a
+family as it was.
 
 The core operations, and what each runs on the host (the rest are in
-`arcana.yaml`):
+`share/arcana/yang-ops`, each with its module):
 
 | Operation | Does | Mechanism in `arcana-agent` |
 |---|---|---|
-| `hello` | host facts | uname(3), sysctl(3) |
-| `list` | running and configured jails | jail_getv(3), procstat_getprocs(3), `jail -f scope -e sep` |
-| `action` | start, stop, restart, kill | jail(8) `-c`, `-r`, `-rc`; jail_remove(2) for kill |
-| `address` | add or remove an IP, live and/or persistent | jail_setv(3), SIOCAIFADDR ioctls, libjailconf |
+| arcana-host `host` | host facts, the agent's features | uname(3), sysctl(3) |
+| arcana-jails `jails` | running and configured jails | jail_getv(3), procstat_getprocs(3), `jail -f scope -e sep` |
+| arcana-jails' `start`, `stop`, `restart`, `kill` | a jail's actions | jail(8) `-c`, `-r`, `-rc`; jail_remove(2) for kill |
+| arcana-network's `address` | add or remove an IP, live and/or persistent | jail_setv(3), SIOCAIFADDR ioctls, libjailconf |
 | arcana-services `services` | the host's rc.d scripts, enabled and running; in running, each one's rcvar and variables | the rc.d directories, `<name>_enable` in `sysrc -A`, `service <name> status`; the files rc(8) reads (libvarconf) |
 | arcana-services' `start`, `stop`, `restart`, `reload`, `read` | a service's actions; one read as it is now | `service <name> <verb>`; `service <name> enabled`, `describe`, `extracommands` |
 | arcana-services, committed | enabled or not, its rc.conf variables | Arcana's rc.conf file (`/usr/local/etc/rc.conf.d/arcana`), yours commented out where accepted |
-| `network` | routes, nexthops, connections, sockets | `netstat --libxo json -rnW / -onW / -nW -f <family>`, `sockstat --libxo json -w -4/-6`; one run per family, joined |
-| `stats` | CPU, load, memory, swap, ZFS pools | `kern.cp_time` between requests, `vm.loadavg`, `vm.stats.vm.*`, `swapinfo -k`, `zpool list -Hp` |
-| `packages` | pending upgrades of the host or a running jail | `pkg [-j jail] update -q`, `pkg [-j jail] version -vRl '<'` |
-| `pkg-upgrade` | upgrade all or named packages, or show what would be | `pkg [-j jail] upgrade -y|-n [names]`, then `pkg version` again |
+| arcana-network's read actions | routes, nexthops, connections, sockets | `netstat --libxo json -rnW / -onW / -nW -f <family>`, `sockstat --libxo json -w -4/-6`; one run per family, joined |
+| arcana-host `stats` | CPU, load, memory, swap, ZFS pools | `kern.cp_time` between requests, `vm.loadavg`, `vm.stats.vm.*`, `swapinfo -k`, `zpool list -Hp` |
+| arcana-packages `packages` | pending upgrades of the host or a running jail | `pkg [-j jail] update -q`, `pkg [-j jail] version -vRl '<'` |
+| arcana-packages' `upgrade` | upgrade all or named packages, or show what would be | `pkg [-j jail] upgrade -y|-n [names]`, then `pkg version` again |
 | arcana-jobs `submit` | queue a batch of changes | the job queue, below |
 | arcana-jobs `jobs`, its `read`, `cancel`, `confirm` | list jobs, read one with its trace so far, take a queued one back, keep a safe change | the job queue |
 
-Every operation requires an authenticated peer: a client certificate
-from the arcana CA over TCP, or access to the 0600 AF_UNIX socket.
-Replies carry `ok`, `error` and a `trace`, so a failed jail(8) run still
-comes back with its output.
+Every request requires an authenticated peer: a client certificate
+from the arcana CA over TCP, or access to the 0600 AF_UNIX socket; a
+host's certificate (urn:arcana:role:agent) asks nothing.  What it may
+do is NACM's (RFC 8341): what changes the host, or gives out what
+should stay on it, is `nacm:default-deny-all`, run only by a rule that
+permits it.  A refusal comes back with its words, and the steps told
+while it ran, so a failed jail(8) run still comes back with its output.
 
 Reading configuration goes through jail(8) itself (`-e`), so variables,
 includes, `*` blocks and per-jail `jail.conf.d/<name>.conf` files mean
@@ -157,8 +174,8 @@ API, session check and cblink request steps above them.
 ```
 POST /api/servers/s1/jails/web/restart          api
 ├─ session check                                auth
-└─ cblink arcana.action tcp://host:4310       lib   libcblink, mTLS
-   └─ arcana-agent action restart web              daemon
+└─ libcblink YANG action tcp://host:4310      lib   libcblink, mTLS
+   └─ arcana-agent jail web restart               daemon
       ├─ /usr/sbin/jail -f … -e \037            exec  (read configuration)
       ├─ jail_getid(3)                          lib
       ├─ /usr/sbin/jail -f … -rc web            exec  (the restart)
@@ -197,6 +214,44 @@ the entry says so and keeps trying, and shows the outcome when the host
 is back. With **Queue** on, changes are held in the browser and sent
 together as one batch. Reads (lists, tables, dry runs, previews) stay
 direct calls.
+
+## What the console holds by subscription
+
+Beside the pool of connections its requests take (over SCTP one
+association every request shares), the console keeps one more
+connection to each agent a page reads from, on a thread of its own
+(`watch.c`), for RFC 8639's dynamic subscriptions over cblink's
+SUBSCRIBE streams.  A topic is subscribed the first time a read of it
+is asked, for the user it is asked for, whose access rules (NACM, RFC
+8341) the agent holds the subscription to, and let go when no read
+asked for it for two minutes:
+
+| Topic | Subscription | Answers |
+|-------|--------------|---------|
+| jobs | arcana-jobs, on-change (the agent tells each job's change; RFC 8641) | `GET jobs`; a job's read while it is queued |
+| stats | arcana-host's stats, periodic, 5 s | `GET stats` |
+| jails | arcana-jails, periodic, 5 s | `GET jails` (the host by its hello, asked each time) |
+| sdwan | arcana-sdwan, periodic, 2 s; arcana-probe read by the thread at that period, as the user | `GET sdwan?after=` (subscribed for those alone; the samples after a time held, ten minutes of them) |
+| events | the NETCONF stream | every page following the host's events |
+
+A push-update is the whole of a topic, a push-change-update a YANG
+Patch applied to a copy of the last; each is made the module's struct
+the read's JSON is built from, so a read answered from what is held has
+the shape the host's own answer has, its trace saying how old it is.
+The first read of a topic, a read a page asks with its steps shown, and
+every read while nothing is held go to the host as before; a change the
+console makes to a host, or a job's there, lets go of what is pushed
+periodically until its next push, so a read after a change is never
+answered with the state before it.  A running
+job's trace is its read action's alone: the console reads it at most
+once a second whatever number of pages poll it, and keeps a finished
+job's read.  The connection lost, what is held goes with it; it is made
+again one second on, doubling to a minute, and the topics still asked
+for are subscribed anew.  An agent that has no such subscription (one
+of the release before) refuses it, and its reads, and the pages that
+follow its events, go to it as they did.  `GET
+/api/servers/<id>/watch` says the connection's state, each topic's,
+and how often the console went to the agents and answered without them.
 
 ## Services
 
@@ -250,7 +305,7 @@ is not, and reconnects by itself.
 
 ```
 cblink/                 the transport, a submodule
-share/arcana/           the cblink family specs, wire.awk
+share/arcana/           the kept structures, the jobs, the cluster's family
 share/mk/               build settings shared by every Makefile
 share/yang/             the YANG modules and their SIDs
 lib/libjailconf/        in-place jail.conf editing

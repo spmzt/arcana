@@ -238,7 +238,7 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	for (i = 1; argv[i] != NULL; i++)
 		cmdline = wfmt(w, "%s %s", cmdline, wvis(w, argv[i]));
 	cmdline = traced(w, cmdline);
-	step = step_begin(w, ARC_STEP_KIND_EXEC, cmdline,
+	step = step_begin(w, STEP_EXEC, cmdline,
 	    "posix_spawn(3), no shell");
 
 	memset(&out, 0, sizeof(out));
@@ -466,7 +466,7 @@ run_exec_lines(struct work *w, char *const argv[],
 	for (i = 1; argv[i] != NULL; i++)
 		cmdline = wfmt(w, "%s %s", cmdline, wvis(w, argv[i]));
 	cmdline = traced(w, cmdline);
-	step = step_begin(w, ARC_STEP_KIND_EXEC, cmdline,
+	step = step_begin(w, STEP_EXEC, cmdline,
 	    "posix_spawn(3), no shell; read line by line");
 	if (pipe2(op, O_CLOEXEC) == -1)
 		err(1, "pipe2");

@@ -330,7 +330,7 @@ geneve_of(struct work *w, const char *name, const char *block)
  * in the jail whose network is asked for when one is.
  */
 int
-do_l2(struct work *w, bool geneve, struct arc_network_rsp *rsp)
+do_l2(struct work *w, bool geneve, struct net_rsp *rsp)
 {
 	struct execres	 res;
 	ucl_object_t	*top, *arr, *addrs, *list, *o;
@@ -420,7 +420,7 @@ do_l2(struct work *w, bool geneve, struct arc_network_rsp *rsp)
 const char *
 bridge_holding(struct work *w, const char *ifname)
 {
-	struct arc_network_rsp	 rsp;
+	struct net_rsp	 rsp;
 	struct ucl_parser	*p;
 	const ucl_object_t	*b, *m;
 	ucl_object_t		*o;

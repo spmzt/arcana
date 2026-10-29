@@ -59,7 +59,9 @@
 #include <string.h>
 
 #include "console.h"
+#include "ynet.h"
 #include "ytrans.h"
+#include "ymodel.h"
 
 #define	STREAMS_MAX	16		/* at once, on all sockets */
 #define	STREAM_PART	(1024 * 1024)	/* one part's text, at most */
@@ -107,74 +109,6 @@ say(struct task *t, const char *fmt, ...)
 	free(s);
 }
 
-/* A text as a JSON string; what JSON would escape is left out. */
-static void
-route_str(FILE *fp, const char *key, const char *v, bool *first)
-{
-
-	if (v == NULL)
-		return;
-	fprintf(fp, "%s\"%s\":\"", *first ? "" : ",", key);
-	for (; *v != '\0'; v++)
-		if (*v != '"' && *v != '\\' && (unsigned char)*v >= 0x20)
-			fputc(*v, fp);
-	fputc('"', fp);
-	*first = false;
-}
-
-static void
-route_num(FILE *fp, const char *key, bool has, uint32_t v, bool *first)
-{
-
-	if (!has)
-		return;
-	fprintf(fp, "%s\"%s\":%u", *first ? "" : ",", key, v);
-	*first = false;
-}
-
-/* The typed routes of a part, as the rows of a table: a JSON array. */
-static char *
-routes_json(const struct arc_route *v, size_t n)
-{
-	FILE	*fp;
-	char	*json;
-	size_t	 len, i;
-	bool	 first;
-
-	json = NULL;
-	if ((fp = open_memstream(&json, &len)) == NULL)
-		return (NULL);
-	fputc('[', fp);
-	for (i = 0; i < n; i++) {
-		fprintf(fp, "%s{", i > 0 ? "," : "");
-		first = true;
-		route_str(fp, "family", v[i].family, &first);
-		route_str(fp, "destination", v[i].destination, &first);
-		route_str(fp, "gateway", v[i].gateway, &first);
-		route_str(fp, "flags", v[i].flags, &first);
-		route_num(fp, "nhop", v[i].has_nhop, v[i].nhop, &first);
-		route_num(fp, "mtu", v[i].has_mtu, v[i].mtu, &first);
-		route_str(fp, "interface-name", v[i].interface_name, &first);
-		route_num(fp, "metric", v[i].has_metric, v[i].metric, &first);
-		route_num(fp, "weight", v[i].has_weight, v[i].weight, &first);
-		route_num(fp, "fib", v[i].has_fib, v[i].fib, &first);
-		route_num(fp, "prefixlen", v[i].has_prefixlen, v[i].prefixlen,
-		    &first);
-		route_str(fp, "source", v[i].source, &first);
-		route_num(fp, "path", v[i].has_path, v[i].path, &first);
-		route_num(fp, "paths", v[i].has_paths, v[i].paths, &first);
-		route_num(fp, "expire-time", v[i].has_expire_time,
-		    v[i].expire_time, &first);
-		fputc('}', fp);
-	}
-	fputc(']', fp);
-	if (fclose(fp) != 0) {
-		free(json);
-		return (NULL);
-	}
-	return (json);
-}
-
 /*
  * The parts as they come, from the loop that runs the shared connection
  * (hosts_shared()): each queued as the text for the page, with what it
@@ -219,28 +153,35 @@ r_open(cbl_stream *st __unused, cbl_msg *accept __unused, int error,
 static void
 r_data(cbl_stream *st, cbl_msg *data, void *arg)
 {
-	struct reader	*r = arg;
-	struct arc_part	 d;
-	struct qpart	*q;
-	char		*rows, *text;
-	cbl_yarena	*a;
+	struct reader				*r = arg;
+	struct arcana_network_network_part	 d;
+	struct qpart				*q;
+	ucl_object_t				*o;
+	const ucl_object_t			*list;
+	char					*rows, *text;
+	cbl_yarena				*a;
 
 	if ((a = cbl_yarena_new()) == NULL) {
 		(void)cbl_stream_reset(st, ENOMEM);
 		return;
 	}
-	if (arcana_part_parse(data, &d, a, CBL_YD_STRICT, NULL, 0) != 0) {
+	memset(&d, 0, sizeof(d));
+	if (arcana_network_network_part_parse(data, &d, a, CBL_YD_STRICT,
+	    NULL, 0) != 0) {
 		cbl_yarena_free(a);
 		(void)cbl_stream_reset(st, EBADMSG);
 		return;
 	}
+	/* The rows typed, as the tools wrote them (ynet.c). */
 	rows = NULL;
-	/* The host's JSON is passed on as it is; the routes come typed. */
-	if (d.json != NULL && d.json[0] == '[' && d.json[1] != ']' &&
-	    strlen(d.json) < STREAM_PART - 64)
-		rows = strdup(d.json);
-	else if (d.routes.n > 0)
-		rows = routes_json(d.routes.v, d.routes.n);
+	if ((o = ynet_part_json(&d)) != NULL) {
+		list = ucl_object_lookup(o, d.route.n > 0 ? "route" :
+		    d.connection.n > 0 ? "connection" : "socket");
+		if (ucl_array_size(list) > 0)
+			rows = (char *)ucl_object_emit(list,
+			    UCL_EMIT_JSON_COMPACT);
+		ucl_object_unref(o);
+	}
 	text = NULL;
 	if (rows != NULL && strlen(rows) < STREAM_PART - 64 && asprintf(&text,
 	    "{\"id\":%ju,\"rows\":%s}", (uintmax_t)r->id, rows) == -1)
@@ -299,31 +240,44 @@ static const struct cbl_stream_cbs reader_cbs = {
 
 /* The stream asked for, with the room given back by hand. */
 static int
-open_parts(struct stream *s, struct arc_client *cl, struct reader *r,
+open_parts(struct stream *s, cbl_conn *conn, struct reader *r,
     cbl_stream **sp)
 {
-	struct arc_network_parts_req	 nq;
-	cbl_msg				*msg;
-	int				 error;
+	struct arcana_network_network_part	 nq;
+	cbl_family_info				*info;
+	cbl_msg					*msg;
+	uint16_t				 fam;
+	int					 error;
 
-	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), cl->family,
-	    ARC_CMD_NETWORK_PARTS, CBL_F_REQUEST | CBL_F_S_OPEN, &msg)) != 0)
+	/* The agent's arcana-parts family, its network-parts stream. */
+	if ((error = cbl_resolve(conn, YNET_PARTS_FAMILY, &info)) != 0)
+		return (error);
+	fam = cbl_family_info_id(info);
+	cbl_family_info_free(info);
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), fam,
+	    YNET_PARTS_NETWORK, CBL_F_REQUEST | CBL_F_S_OPEN, &msg)) != 0)
 		return (error);
 	memset(&nq, 0, sizeof(nq));
-	nq.has_net_kind = true;
-	nq.net_kind = s->kind;
-	nq.has_net_family = true;
-	nq.net_family = s->family;
-	nq.has_net_fib = s->fib != 0;
-	nq.net_fib = s->fib;
+	nq.has_kind = true;
+	nq.kind = s->kind == ARC_NET_KIND_CONNECTIONS ?
+	    ARCANA_NETWORK_NETWORK_PART_KIND_CONNECTIONS : s->kind ==
+	    ARC_NET_KIND_SOCKETS ? ARCANA_NETWORK_NETWORK_PART_KIND_SOCKETS :
+	    ARCANA_NETWORK_NETWORK_PART_KIND_ROUTES;
+	nq.has_family = true;
+	nq.family = s->family == ARC_NET_FAMILY_INET ?
+	    ARCANA_NETWORK_NETWORK_PART_FAMILY_INET : s->family ==
+	    ARC_NET_FAMILY_INET6 ? ARCANA_NETWORK_NETWORK_PART_FAMILY_INET6 :
+	    ARCANA_NETWORK_NETWORK_PART_FAMILY_ALL;
+	nq.has_fib = s->fib != 0;
+	nq.fib = s->fib;
 	nq.jail = s->jail[0] != '\0' ? s->jail : NULL;
-	nq.net_filter = s->filter[0] != '\0' ? s->filter : NULL;
-	if ((error = arc_network_parts_req_put_fields(msg, &nq)) != 0) {
+	nq.filter = s->filter[0] != '\0' ? s->filter : NULL;
+	if ((error = arcana_network_network_part_put(msg, &nq)) != 0) {
 		cbl_msg_free(msg);
 		return (error);
 	}
 	(void)cbl_msg_set_window(msg, STREAM_WINDOW);
-	return (cbl_stream_open(cl->conn, msg, CBL_SF_MANUAL_CREDIT,
+	return (cbl_stream_open(conn, msg, CBL_SF_MANUAL_CREDIT,
 	    &reader_cbs, r, sp));
 }
 
@@ -372,7 +326,6 @@ static int
 sysctl_run(struct task *t)
 {
 	struct stream		*s;
-	struct arc_client	 cl;
 	ucl_object_t		*rows;
 	cbl_conn		*conn;
 	const char		*msg;
@@ -382,7 +335,7 @@ sysctl_run(struct task *t)
 	int			 error = 0;
 
 	s = (struct stream *)t;
-	if ((msg = hosts_shared(s->uri, s->peer, &conn, &cl)) != NULL) {
+	if ((msg = hosts_shared(s->uri, s->peer, &conn)) != NULL) {
 		say(t, "{\"id\":%ju,\"error\":\"the host does not answer\"}",
 		    (uintmax_t)s->id);
 		log_msg(LOG_NOTICE, "stream %s: %s", s->sid, msg);
@@ -426,7 +379,6 @@ static int
 stream_run(struct task *t)
 {
 	struct stream		*s;
-	struct arc_client	 cl;
 	struct reader		 r;
 	struct qpart		*q;
 	cbl_conn		*conn;
@@ -436,7 +388,7 @@ stream_run(struct task *t)
 	bool			 good;
 
 	s = (struct stream *)t;
-	if ((msg = hosts_shared(s->uri, s->peer, &conn, &cl)) != NULL) {
+	if ((msg = hosts_shared(s->uri, s->peer, &conn)) != NULL) {
 		say(t, "{\"id\":%ju,\"error\":\"the host does not answer\"}",
 		    (uintmax_t)s->id);
 		log_msg(LOG_NOTICE, "stream %s: %s", s->sid, msg);
@@ -449,7 +401,7 @@ stream_run(struct task *t)
 	r.id = s->id;
 	st = NULL;
 	pthread_mutex_lock(&r.lock);
-	if (open_parts(s, &cl, &r, &st) != 0) {
+	if (open_parts(s, conn, &r, &st) != 0) {
 		pthread_mutex_unlock(&r.lock);
 		say(t, "{\"id\":%ju,\"error\":\"the host refused\"}",
 		    (uintmax_t)s->id);

@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana",
     "module-revision": "2026-10-22",
-    "sid-file-version": 9,
+    "sid-file-version": 11,
     "description": "Arcana's SIDs for arcana (RFC 9595's experimental range; share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -291,501 +291,601 @@
       {
         "namespace": "data",
         "identifier": "/arcana:address",
+        "status": "obsolete",
         "sid": "73044"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/input",
+        "status": "obsolete",
         "sid": "73045"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/input/address",
+        "status": "obsolete",
         "sid": "73046"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/input/dry-run",
+        "status": "obsolete",
         "sid": "73047"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/input/interface",
+        "status": "obsolete",
         "sid": "73048"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/input/jail",
+        "status": "obsolete",
         "sid": "73049"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/input/live",
+        "status": "obsolete",
         "sid": "73050"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/input/persist",
+        "status": "obsolete",
         "sid": "73051"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/input/remove",
+        "status": "obsolete",
         "sid": "73052"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output",
+        "status": "obsolete",
         "sid": "73053"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/diff",
+        "status": "obsolete",
         "sid": "73054"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/error",
+        "status": "obsolete",
         "sid": "73055"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/ok",
+        "status": "obsolete",
         "sid": "73056"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result",
+        "status": "obsolete",
         "sid": "73057"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/children",
+        "status": "obsolete",
         "sid": "73058"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/configured",
+        "status": "obsolete",
         "sid": "73059"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/cpu-pct",
+        "status": "obsolete",
         "sid": "73060"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/hostname",
+        "status": "obsolete",
         "sid": "73061"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/interface",
+        "status": "obsolete",
         "sid": "73062"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/ip4",
+        "status": "obsolete",
         "sid": "73063"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/ip6",
+        "status": "obsolete",
         "sid": "73064"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/jid",
+        "status": "obsolete",
         "sid": "73065"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/name",
+        "status": "obsolete",
         "sid": "73066"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/nproc",
+        "status": "obsolete",
         "sid": "73067"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/osrelease",
+        "status": "obsolete",
         "sid": "73068"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/params",
+        "status": "obsolete",
         "sid": "73069"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/params/key",
+        "status": "obsolete",
         "sid": "73070"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/params/values",
+        "status": "obsolete",
         "sid": "73071"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/parent",
+        "status": "obsolete",
         "sid": "73072"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/path",
+        "status": "obsolete",
         "sid": "73073"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/persist",
+        "status": "obsolete",
         "sid": "73074"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/plugins",
+        "status": "obsolete",
         "sid": "73075"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/rss-kb",
+        "status": "obsolete",
         "sid": "73076"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/scope",
+        "status": "obsolete",
         "sid": "73077"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/securelevel",
+        "status": "obsolete",
         "sid": "73078"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/state",
+        "status": "obsolete",
         "sid": "73079"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/vnet",
+        "status": "obsolete",
         "sid": "73080"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace",
+        "status": "obsolete",
         "sid": "73081"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace/argv",
+        "status": "obsolete",
         "sid": "73082"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace/detail",
+        "status": "obsolete",
         "sid": "73083"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "73084"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace/error-output",
+        "status": "obsolete",
         "sid": "73085"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace/exit",
+        "status": "obsolete",
         "sid": "73086"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace/id",
+        "status": "obsolete",
         "sid": "73087"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace/kind",
+        "status": "obsolete",
         "sid": "73088"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace/label",
+        "status": "obsolete",
         "sid": "73089"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace/output",
+        "status": "obsolete",
         "sid": "73090"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace/parent",
+        "status": "obsolete",
         "sid": "73091"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/trace/status",
+        "status": "obsolete",
         "sid": "73092"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build",
+        "status": "obsolete",
         "sid": "73093"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/input",
+        "status": "obsolete",
         "sid": "73094"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/input/host-keys",
+        "status": "obsolete",
         "sid": "73095"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/input/ref",
+        "status": "obsolete",
         "sid": "73096"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/input/source",
+        "status": "obsolete",
         "sid": "73097"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/input/ssh-key",
+        "status": "obsolete",
         "sid": "73098"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output",
+        "status": "obsolete",
         "sid": "73099"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/agent-version",
+        "status": "obsolete",
         "sid": "73100"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/binary",
+        "status": "obsolete",
         "sid": "73101"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/commit",
+        "status": "obsolete",
         "sid": "73102"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/deploy-key",
+        "status": "obsolete",
         "sid": "73103"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/error",
+        "status": "obsolete",
         "sid": "73104"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/fingerprints",
+        "status": "obsolete",
         "sid": "73105"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/host-keys",
+        "status": "obsolete",
         "sid": "73106"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/ok",
+        "status": "obsolete",
         "sid": "73107"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/sha256",
+        "status": "obsolete",
         "sid": "73108"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace",
+        "status": "obsolete",
         "sid": "73109"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace/argv",
+        "status": "obsolete",
         "sid": "73110"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace/detail",
+        "status": "obsolete",
         "sid": "73111"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "73112"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace/error-output",
+        "status": "obsolete",
         "sid": "73113"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace/exit",
+        "status": "obsolete",
         "sid": "73114"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace/id",
+        "status": "obsolete",
         "sid": "73115"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace/kind",
+        "status": "obsolete",
         "sid": "73116"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace/label",
+        "status": "obsolete",
         "sid": "73117"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace/output",
+        "status": "obsolete",
         "sid": "73118"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace/parent",
+        "status": "obsolete",
         "sid": "73119"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/trace/status",
+        "status": "obsolete",
         "sid": "73120"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update",
+        "status": "obsolete",
         "sid": "73121"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/input",
+        "status": "obsolete",
         "sid": "73122"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/input/binary",
+        "status": "obsolete",
         "sid": "73123"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/input/restart",
+        "status": "obsolete",
         "sid": "73124"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/input/sha256",
+        "status": "obsolete",
         "sid": "73125"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/input/signature",
+        "status": "obsolete",
         "sid": "73126"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output",
+        "status": "obsolete",
         "sid": "73127"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/agent-version",
+        "status": "obsolete",
         "sid": "73128"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/error",
+        "status": "obsolete",
         "sid": "73129"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/ok",
+        "status": "obsolete",
         "sid": "73130"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/restarting",
+        "status": "obsolete",
         "sid": "73131"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace",
+        "status": "obsolete",
         "sid": "73132"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace/argv",
+        "status": "obsolete",
         "sid": "73133"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace/detail",
+        "status": "obsolete",
         "sid": "73134"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "73135"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace/error-output",
+        "status": "obsolete",
         "sid": "73136"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace/exit",
+        "status": "obsolete",
         "sid": "73137"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace/id",
+        "status": "obsolete",
         "sid": "73138"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace/kind",
+        "status": "obsolete",
         "sid": "73139"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace/label",
+        "status": "obsolete",
         "sid": "73140"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace/output",
+        "status": "obsolete",
         "sid": "73141"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace/parent",
+        "status": "obsolete",
         "sid": "73142"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/output/trace/status",
+        "status": "obsolete",
         "sid": "73143"
       },
       {
@@ -971,186 +1071,223 @@
       {
         "namespace": "data",
         "identifier": "/arcana:builder",
+        "status": "obsolete",
         "sid": "73174"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options",
+        "status": "obsolete",
         "sid": "73175"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/input",
+        "status": "obsolete",
         "sid": "73176"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/input/names",
+        "status": "obsolete",
         "sid": "73177"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output",
+        "status": "obsolete",
         "sid": "73178"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/error",
+        "status": "obsolete",
         "sid": "73179"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/json",
+        "status": "obsolete",
         "sid": "73180"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/ok",
+        "status": "obsolete",
         "sid": "73181"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace",
+        "status": "obsolete",
         "sid": "73182"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace/argv",
+        "status": "obsolete",
         "sid": "73183"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace/detail",
+        "status": "obsolete",
         "sid": "73184"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "73185"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace/error-output",
+        "status": "obsolete",
         "sid": "73186"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace/exit",
+        "status": "obsolete",
         "sid": "73187"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace/id",
+        "status": "obsolete",
         "sid": "73188"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace/kind",
+        "status": "obsolete",
         "sid": "73189"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace/label",
+        "status": "obsolete",
         "sid": "73190"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace/output",
+        "status": "obsolete",
         "sid": "73191"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace/parent",
+        "status": "obsolete",
         "sid": "73192"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder-options/output/trace/status",
+        "status": "obsolete",
         "sid": "73193"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/input",
+        "status": "obsolete",
         "sid": "73194"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output",
+        "status": "obsolete",
         "sid": "73195"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/error",
+        "status": "obsolete",
         "sid": "73196"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/json",
+        "status": "obsolete",
         "sid": "73197"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/ok",
+        "status": "obsolete",
         "sid": "73198"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace",
+        "status": "obsolete",
         "sid": "73199"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace/argv",
+        "status": "obsolete",
         "sid": "73200"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace/detail",
+        "status": "obsolete",
         "sid": "73201"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "73202"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace/error-output",
+        "status": "obsolete",
         "sid": "73203"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace/exit",
+        "status": "obsolete",
         "sid": "73204"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace/id",
+        "status": "obsolete",
         "sid": "73205"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace/kind",
+        "status": "obsolete",
         "sid": "73206"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace/label",
+        "status": "obsolete",
         "sid": "73207"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace/output",
+        "status": "obsolete",
         "sid": "73208"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace/parent",
+        "status": "obsolete",
         "sid": "73209"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:builder/output/trace/status",
+        "status": "obsolete",
         "sid": "73210"
       },
       {
@@ -1408,11 +1545,13 @@
       {
         "namespace": "data",
         "identifier": "/arcana:chunk",
+        "status": "obsolete",
         "sid": "73253"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:chunk/data",
+        "status": "obsolete",
         "sid": "73254"
       },
       {
@@ -1664,226 +1803,271 @@
       {
         "namespace": "data",
         "identifier": "/arcana:console-update",
+        "status": "obsolete",
         "sid": "73296"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/input",
+        "status": "obsolete",
         "sid": "73297"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/input/host-keys",
+        "status": "obsolete",
         "sid": "73298"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/input/ref",
+        "status": "obsolete",
         "sid": "73299"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/input/source",
+        "status": "obsolete",
         "sid": "73300"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/input/ssh-key",
+        "status": "obsolete",
         "sid": "73301"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output",
+        "status": "obsolete",
         "sid": "73302"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/commit",
+        "status": "obsolete",
         "sid": "73303"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/deploy-key",
+        "status": "obsolete",
         "sid": "73304"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/error",
+        "status": "obsolete",
         "sid": "73305"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/fingerprints",
+        "status": "obsolete",
         "sid": "73306"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/host-keys",
+        "status": "obsolete",
         "sid": "73307"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/ok",
+        "status": "obsolete",
         "sid": "73308"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/restarting",
+        "status": "obsolete",
         "sid": "73309"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace",
+        "status": "obsolete",
         "sid": "73310"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace/argv",
+        "status": "obsolete",
         "sid": "73311"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace/detail",
+        "status": "obsolete",
         "sid": "73312"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "73313"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace/error-output",
+        "status": "obsolete",
         "sid": "73314"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace/exit",
+        "status": "obsolete",
         "sid": "73315"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace/id",
+        "status": "obsolete",
         "sid": "73316"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace/kind",
+        "status": "obsolete",
         "sid": "73317"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace/label",
+        "status": "obsolete",
         "sid": "73318"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace/output",
+        "status": "obsolete",
         "sid": "73319"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace/parent",
+        "status": "obsolete",
         "sid": "73320"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:console-update/output/trace/status",
+        "status": "obsolete",
         "sid": "73321"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes",
+        "status": "obsolete",
         "sid": "73322"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/input",
+        "status": "obsolete",
         "sid": "73323"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/input/names",
+        "status": "obsolete",
         "sid": "73324"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output",
+        "status": "obsolete",
         "sid": "73325"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/error",
+        "status": "obsolete",
         "sid": "73326"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/json",
+        "status": "obsolete",
         "sid": "73327"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/ok",
+        "status": "obsolete",
         "sid": "73328"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace",
+        "status": "obsolete",
         "sid": "73329"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace/argv",
+        "status": "obsolete",
         "sid": "73330"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace/detail",
+        "status": "obsolete",
         "sid": "73331"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "73332"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace/error-output",
+        "status": "obsolete",
         "sid": "73333"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace/exit",
+        "status": "obsolete",
         "sid": "73334"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace/id",
+        "status": "obsolete",
         "sid": "73335"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace/kind",
+        "status": "obsolete",
         "sid": "73336"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace/label",
+        "status": "obsolete",
         "sid": "73337"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace/output",
+        "status": "obsolete",
         "sid": "73338"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace/parent",
+        "status": "obsolete",
         "sid": "73339"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:crashes/output/trace/status",
+        "status": "obsolete",
         "sid": "73340"
       },
       {
@@ -2279,96 +2463,115 @@
       {
         "namespace": "data",
         "identifier": "/arcana:hello",
+        "status": "obsolete",
         "sid": "73406"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/input",
+        "status": "obsolete",
         "sid": "73407"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output",
+        "status": "obsolete",
         "sid": "73408"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host",
+        "status": "obsolete",
         "sid": "73409"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/boottime",
+        "status": "obsolete",
         "sid": "73410"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/build",
+        "status": "obsolete",
         "sid": "73411"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/hostname",
+        "status": "obsolete",
         "sid": "73412"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/machine",
+        "status": "obsolete",
         "sid": "73413"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/ncpu",
+        "status": "obsolete",
         "sid": "73414"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/osreldate",
+        "status": "obsolete",
         "sid": "73415"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/physmem",
+        "status": "obsolete",
         "sid": "73416"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/plugins",
+        "status": "obsolete",
         "sid": "73417"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/privileged",
+        "status": "obsolete",
         "sid": "73418"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/release",
+        "status": "obsolete",
         "sid": "73419"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/safe-wait",
+        "status": "obsolete",
         "sid": "73420"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/securelevel",
+        "status": "obsolete",
         "sid": "73421"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/sysname",
+        "status": "obsolete",
         "sid": "73422"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/time",
+        "status": "obsolete",
         "sid": "73423"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/version",
+        "status": "obsolete",
         "sid": "73424"
       },
       {
@@ -2530,126 +2733,151 @@
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules",
+        "status": "obsolete",
         "sid": "73451"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/input",
+        "status": "obsolete",
         "sid": "73452"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/input/conf-text",
+        "status": "obsolete",
         "sid": "73453"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/input/dry-run",
+        "status": "obsolete",
         "sid": "73454"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/input/from-rc",
+        "status": "obsolete",
         "sid": "73455"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/input/jail",
+        "status": "obsolete",
         "sid": "73456"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/input/sha256",
+        "status": "obsolete",
         "sid": "73457"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output",
+        "status": "obsolete",
         "sid": "73458"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/conf-text",
+        "status": "obsolete",
         "sid": "73459"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/error",
+        "status": "obsolete",
         "sid": "73460"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/ok",
+        "status": "obsolete",
         "sid": "73461"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/rc-file",
+        "status": "obsolete",
         "sid": "73462"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/sha256",
+        "status": "obsolete",
         "sid": "73463"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace",
+        "status": "obsolete",
         "sid": "73464"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace/argv",
+        "status": "obsolete",
         "sid": "73465"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace/detail",
+        "status": "obsolete",
         "sid": "73466"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "73467"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace/error-output",
+        "status": "obsolete",
         "sid": "73468"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace/exit",
+        "status": "obsolete",
         "sid": "73469"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace/id",
+        "status": "obsolete",
         "sid": "73470"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace/kind",
+        "status": "obsolete",
         "sid": "73471"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace/label",
+        "status": "obsolete",
         "sid": "73472"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace/output",
+        "status": "obsolete",
         "sid": "73473"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace/parent",
+        "status": "obsolete",
         "sid": "73474"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ipfw-rules/output/trace/status",
+        "status": "obsolete",
         "sid": "73475"
       },
       {
@@ -4731,501 +4959,601 @@
       {
         "namespace": "data",
         "identifier": "/arcana:netstore",
+        "status": "obsolete",
         "sid": "73822"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/input",
+        "status": "obsolete",
         "sid": "73823"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/input/names",
+        "status": "obsolete",
         "sid": "73824"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output",
+        "status": "obsolete",
         "sid": "73825"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/error",
+        "status": "obsolete",
         "sid": "73826"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/json",
+        "status": "obsolete",
         "sid": "73827"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/ok",
+        "status": "obsolete",
         "sid": "73828"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace",
+        "status": "obsolete",
         "sid": "73829"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace/argv",
+        "status": "obsolete",
         "sid": "73830"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace/detail",
+        "status": "obsolete",
         "sid": "73831"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "73832"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace/error-output",
+        "status": "obsolete",
         "sid": "73833"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace/exit",
+        "status": "obsolete",
         "sid": "73834"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace/id",
+        "status": "obsolete",
         "sid": "73835"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace/kind",
+        "status": "obsolete",
         "sid": "73836"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace/label",
+        "status": "obsolete",
         "sid": "73837"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace/output",
+        "status": "obsolete",
         "sid": "73838"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace/parent",
+        "status": "obsolete",
         "sid": "73839"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:netstore/output/trace/status",
+        "status": "obsolete",
         "sid": "73840"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network",
+        "status": "obsolete",
         "sid": "73841"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump",
+        "status": "obsolete",
         "sid": "73842"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/input",
+        "status": "obsolete",
         "sid": "73843"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/input/jail",
+        "status": "obsolete",
         "sid": "73844"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/input/net-family",
+        "status": "obsolete",
         "sid": "73845"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/input/net-fib",
+        "status": "obsolete",
         "sid": "73846"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/input/net-filter",
+        "status": "obsolete",
         "sid": "73847"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/input/net-kind",
+        "status": "obsolete",
         "sid": "73848"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output",
+        "status": "obsolete",
         "sid": "73849"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/json",
+        "status": "obsolete",
         "sid": "73850"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes",
+        "status": "obsolete",
         "sid": "73851"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/destination",
+        "status": "obsolete",
         "sid": "73852"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/expire-time",
+        "status": "obsolete",
         "sid": "73853"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/family",
+        "status": "obsolete",
         "sid": "73854"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/fib",
+        "status": "obsolete",
         "sid": "73855"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/flags",
+        "status": "obsolete",
         "sid": "73856"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/gateway",
+        "status": "obsolete",
         "sid": "73857"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/interface-name",
+        "status": "obsolete",
         "sid": "73858"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/metric",
+        "status": "obsolete",
         "sid": "73859"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/mtu",
+        "status": "obsolete",
         "sid": "73860"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/nhop",
+        "status": "obsolete",
         "sid": "73861"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/path",
+        "status": "obsolete",
         "sid": "73862"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/paths",
+        "status": "obsolete",
         "sid": "73863"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/prefixlen",
+        "status": "obsolete",
         "sid": "73864"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/source",
+        "status": "obsolete",
         "sid": "73865"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/routes/weight",
+        "status": "obsolete",
         "sid": "73866"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-dump/output/total",
+        "status": "obsolete",
         "sid": "73867"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-parts",
+        "status": "obsolete",
         "sid": "73868"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-parts/input",
+        "status": "obsolete",
         "sid": "73869"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-parts/input/jail",
+        "status": "obsolete",
         "sid": "73870"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-parts/input/net-family",
+        "status": "obsolete",
         "sid": "73871"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-parts/input/net-fib",
+        "status": "obsolete",
         "sid": "73872"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-parts/input/net-filter",
+        "status": "obsolete",
         "sid": "73873"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-parts/input/net-kind",
+        "status": "obsolete",
         "sid": "73874"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-parts/output",
+        "status": "obsolete",
         "sid": "73875"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network-parts/output/ok",
+        "status": "obsolete",
         "sid": "73876"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/input",
+        "status": "obsolete",
         "sid": "73877"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/input/jail",
+        "status": "obsolete",
         "sid": "73878"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/input/net-family",
+        "status": "obsolete",
         "sid": "73879"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/input/net-fib",
+        "status": "obsolete",
         "sid": "73880"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/input/net-filter",
+        "status": "obsolete",
         "sid": "73881"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/input/net-kind",
+        "status": "obsolete",
         "sid": "73882"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/input/offset",
+        "status": "obsolete",
         "sid": "73883"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output",
+        "status": "obsolete",
         "sid": "73884"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/error",
+        "status": "obsolete",
         "sid": "73885"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/json",
+        "status": "obsolete",
         "sid": "73886"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/ok",
+        "status": "obsolete",
         "sid": "73887"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/total",
+        "status": "obsolete",
         "sid": "73888"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace",
+        "status": "obsolete",
         "sid": "73889"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace/argv",
+        "status": "obsolete",
         "sid": "73890"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace/detail",
+        "status": "obsolete",
         "sid": "73891"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "73892"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace/error-output",
+        "status": "obsolete",
         "sid": "73893"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace/exit",
+        "status": "obsolete",
         "sid": "73894"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace/id",
+        "status": "obsolete",
         "sid": "73895"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace/kind",
+        "status": "obsolete",
         "sid": "73896"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace/label",
+        "status": "obsolete",
         "sid": "73897"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace/output",
+        "status": "obsolete",
         "sid": "73898"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace/parent",
+        "status": "obsolete",
         "sid": "73899"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/trace/status",
+        "status": "obsolete",
         "sid": "73900"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:network/output/truncated",
+        "status": "obsolete",
         "sid": "73901"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify",
+        "status": "obsolete",
         "sid": "73902"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/input",
+        "status": "obsolete",
         "sid": "73903"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/input/notify-chat",
+        "status": "obsolete",
         "sid": "73904"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/input/notify-text",
+        "status": "obsolete",
         "sid": "73905"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/input/notify-token",
+        "status": "obsolete",
         "sid": "73906"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output",
+        "status": "obsolete",
         "sid": "73907"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/error",
+        "status": "obsolete",
         "sid": "73908"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/ok",
+        "status": "obsolete",
         "sid": "73909"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace",
+        "status": "obsolete",
         "sid": "73910"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace/argv",
+        "status": "obsolete",
         "sid": "73911"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace/detail",
+        "status": "obsolete",
         "sid": "73912"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "73913"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace/error-output",
+        "status": "obsolete",
         "sid": "73914"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace/exit",
+        "status": "obsolete",
         "sid": "73915"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace/id",
+        "status": "obsolete",
         "sid": "73916"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace/kind",
+        "status": "obsolete",
         "sid": "73917"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace/label",
+        "status": "obsolete",
         "sid": "73918"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace/output",
+        "status": "obsolete",
         "sid": "73919"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace/parent",
+        "status": "obsolete",
         "sid": "73920"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:notify/output/trace/status",
+        "status": "obsolete",
         "sid": "73921"
       },
       {
@@ -5423,96 +5751,115 @@
       {
         "namespace": "data",
         "identifier": "/arcana:part",
+        "status": "obsolete",
         "sid": "73954"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/json",
+        "status": "obsolete",
         "sid": "73955"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes",
+        "status": "obsolete",
         "sid": "73956"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/destination",
+        "status": "obsolete",
         "sid": "73957"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/expire-time",
+        "status": "obsolete",
         "sid": "73958"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/family",
+        "status": "obsolete",
         "sid": "73959"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/fib",
+        "status": "obsolete",
         "sid": "73960"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/flags",
+        "status": "obsolete",
         "sid": "73961"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/gateway",
+        "status": "obsolete",
         "sid": "73962"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/interface-name",
+        "status": "obsolete",
         "sid": "73963"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/metric",
+        "status": "obsolete",
         "sid": "73964"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/mtu",
+        "status": "obsolete",
         "sid": "73965"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/nhop",
+        "status": "obsolete",
         "sid": "73966"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/path",
+        "status": "obsolete",
         "sid": "73967"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/paths",
+        "status": "obsolete",
         "sid": "73968"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/prefixlen",
+        "status": "obsolete",
         "sid": "73969"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/source",
+        "status": "obsolete",
         "sid": "73970"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/routes/weight",
+        "status": "obsolete",
         "sid": "73971"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:part/total",
+        "status": "obsolete",
         "sid": "73972"
       },
       {
@@ -5986,106 +6333,127 @@
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup",
+        "status": "obsolete",
         "sid": "74051"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/input",
+        "status": "obsolete",
         "sid": "74052"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/input/jail",
+        "status": "obsolete",
         "sid": "74053"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/input/lookup",
+        "status": "obsolete",
         "sid": "74054"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/input/net-fib",
+        "status": "obsolete",
         "sid": "74055"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output",
+        "status": "obsolete",
         "sid": "74056"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/error",
+        "status": "obsolete",
         "sid": "74057"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/json",
+        "status": "obsolete",
         "sid": "74058"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/ok",
+        "status": "obsolete",
         "sid": "74059"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace",
+        "status": "obsolete",
         "sid": "74060"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace/argv",
+        "status": "obsolete",
         "sid": "74061"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace/detail",
+        "status": "obsolete",
         "sid": "74062"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "74063"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace/error-output",
+        "status": "obsolete",
         "sid": "74064"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace/exit",
+        "status": "obsolete",
         "sid": "74065"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace/id",
+        "status": "obsolete",
         "sid": "74066"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace/kind",
+        "status": "obsolete",
         "sid": "74067"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace/label",
+        "status": "obsolete",
         "sid": "74068"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace/output",
+        "status": "obsolete",
         "sid": "74069"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace/parent",
+        "status": "obsolete",
         "sid": "74070"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:route-lookup/output/trace/status",
+        "status": "obsolete",
         "sid": "74071"
       },
       {
@@ -7597,226 +7965,271 @@
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd",
+        "status": "obsolete",
         "sid": "74323"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/input",
+        "status": "obsolete",
         "sid": "74324"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/input/jail",
+        "status": "obsolete",
         "sid": "74325"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/input/names",
+        "status": "obsolete",
         "sid": "74326"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output",
+        "status": "obsolete",
         "sid": "74327"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/error",
+        "status": "obsolete",
         "sid": "74328"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/json",
+        "status": "obsolete",
         "sid": "74329"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/ok",
+        "status": "obsolete",
         "sid": "74330"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace",
+        "status": "obsolete",
         "sid": "74331"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace/argv",
+        "status": "obsolete",
         "sid": "74332"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace/detail",
+        "status": "obsolete",
         "sid": "74333"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "74334"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace/error-output",
+        "status": "obsolete",
         "sid": "74335"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace/exit",
+        "status": "obsolete",
         "sid": "74336"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace/id",
+        "status": "obsolete",
         "sid": "74337"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace/kind",
+        "status": "obsolete",
         "sid": "74338"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace/label",
+        "status": "obsolete",
         "sid": "74339"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace/output",
+        "status": "obsolete",
         "sid": "74340"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace/parent",
+        "status": "obsolete",
         "sid": "74341"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:smtpd/output/trace/status",
+        "status": "obsolete",
         "sid": "74342"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head",
+        "status": "obsolete",
         "sid": "74343"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/input",
+        "status": "obsolete",
         "sid": "74344"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/input/host-keys",
+        "status": "obsolete",
         "sid": "74345"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/input/ref",
+        "status": "obsolete",
         "sid": "74346"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/input/source",
+        "status": "obsolete",
         "sid": "74347"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/input/ssh-key",
+        "status": "obsolete",
         "sid": "74348"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output",
+        "status": "obsolete",
         "sid": "74349"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/commit",
+        "status": "obsolete",
         "sid": "74350"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/deploy-key",
+        "status": "obsolete",
         "sid": "74351"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/error",
+        "status": "obsolete",
         "sid": "74352"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/fingerprints",
+        "status": "obsolete",
         "sid": "74353"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/host-keys",
+        "status": "obsolete",
         "sid": "74354"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/ok",
+        "status": "obsolete",
         "sid": "74355"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace",
+        "status": "obsolete",
         "sid": "74356"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace/argv",
+        "status": "obsolete",
         "sid": "74357"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace/detail",
+        "status": "obsolete",
         "sid": "74358"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "74359"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace/error-output",
+        "status": "obsolete",
         "sid": "74360"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace/exit",
+        "status": "obsolete",
         "sid": "74361"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace/id",
+        "status": "obsolete",
         "sid": "74362"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace/kind",
+        "status": "obsolete",
         "sid": "74363"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace/label",
+        "status": "obsolete",
         "sid": "74364"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace/output",
+        "status": "obsolete",
         "sid": "74365"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace/parent",
+        "status": "obsolete",
         "sid": "74366"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:source-head/output/trace/status",
+        "status": "obsolete",
         "sid": "74367"
       },
       {
@@ -7990,96 +8403,115 @@
       {
         "namespace": "data",
         "identifier": "/arcana:ssh",
+        "status": "obsolete",
         "sid": "74396"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/input",
+        "status": "obsolete",
         "sid": "74397"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/input/jail",
+        "status": "obsolete",
         "sid": "74398"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output",
+        "status": "obsolete",
         "sid": "74399"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/error",
+        "status": "obsolete",
         "sid": "74400"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/json",
+        "status": "obsolete",
         "sid": "74401"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/ok",
+        "status": "obsolete",
         "sid": "74402"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace",
+        "status": "obsolete",
         "sid": "74403"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace/argv",
+        "status": "obsolete",
         "sid": "74404"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace/detail",
+        "status": "obsolete",
         "sid": "74405"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "74406"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace/error-output",
+        "status": "obsolete",
         "sid": "74407"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace/exit",
+        "status": "obsolete",
         "sid": "74408"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace/id",
+        "status": "obsolete",
         "sid": "74409"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace/kind",
+        "status": "obsolete",
         "sid": "74410"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace/label",
+        "status": "obsolete",
         "sid": "74411"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace/output",
+        "status": "obsolete",
         "sid": "74412"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace/parent",
+        "status": "obsolete",
         "sid": "74413"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:ssh/output/trace/status",
+        "status": "obsolete",
         "sid": "74414"
       },
       {
@@ -8289,66 +8721,79 @@
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf",
+        "status": "obsolete",
         "sid": "74449"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace",
+        "status": "obsolete",
         "sid": "74450"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace/argv",
+        "status": "obsolete",
         "sid": "74451"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace/detail",
+        "status": "obsolete",
         "sid": "74452"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace/duration-us",
+        "status": "obsolete",
         "sid": "74453"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace/error-output",
+        "status": "obsolete",
         "sid": "74454"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace/exit",
+        "status": "obsolete",
         "sid": "74455"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace/id",
+        "status": "obsolete",
         "sid": "74456"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace/kind",
+        "status": "obsolete",
         "sid": "74457"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace/label",
+        "status": "obsolete",
         "sid": "74458"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace/output",
+        "status": "obsolete",
         "sid": "74459"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace/parent",
+        "status": "obsolete",
         "sid": "74460"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:step-ntf/trace/status",
+        "status": "obsolete",
         "sid": "74461"
       },
       {
@@ -8492,96 +8937,115 @@
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules",
+        "status": "obsolete",
         "sid": "74485"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/input",
+        "status": "obsolete",
         "sid": "74486"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/input/names",
+        "status": "obsolete",
         "sid": "74487"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output",
+        "status": "obsolete",
         "sid": "74488"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/error",
+        "status": "obsolete",
         "sid": "74489"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/json",
+        "status": "obsolete",
         "sid": "74490"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/ok",
+        "status": "obsolete",
         "sid": "74491"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace",
+        "status": "obsolete",
         "sid": "74492"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace/argv",
+        "status": "obsolete",
         "sid": "74493"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace/detail",
+        "status": "obsolete",
         "sid": "74494"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "74495"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace/error-output",
+        "status": "obsolete",
         "sid": "74496"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace/exit",
+        "status": "obsolete",
         "sid": "74497"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace/id",
+        "status": "obsolete",
         "sid": "74498"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace/kind",
+        "status": "obsolete",
         "sid": "74499"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace/label",
+        "status": "obsolete",
         "sid": "74500"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace/output",
+        "status": "obsolete",
         "sid": "74501"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace/parent",
+        "status": "obsolete",
         "sid": "74502"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-rules/output/trace/status",
+        "status": "obsolete",
         "sid": "74503"
       },
       {
@@ -8785,96 +9249,115 @@
       {
         "namespace": "data",
         "identifier": "/arcana:system",
+        "status": "obsolete",
         "sid": "74537"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/input",
+        "status": "obsolete",
         "sid": "74538"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/input/names",
+        "status": "obsolete",
         "sid": "74539"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output",
+        "status": "obsolete",
         "sid": "74540"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/error",
+        "status": "obsolete",
         "sid": "74541"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/json",
+        "status": "obsolete",
         "sid": "74542"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/ok",
+        "status": "obsolete",
         "sid": "74543"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace",
+        "status": "obsolete",
         "sid": "74544"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace/argv",
+        "status": "obsolete",
         "sid": "74545"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace/detail",
+        "status": "obsolete",
         "sid": "74546"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "74547"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace/error-output",
+        "status": "obsolete",
         "sid": "74548"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace/exit",
+        "status": "obsolete",
         "sid": "74549"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace/id",
+        "status": "obsolete",
         "sid": "74550"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace/kind",
+        "status": "obsolete",
         "sid": "74551"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace/label",
+        "status": "obsolete",
         "sid": "74552"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace/output",
+        "status": "obsolete",
         "sid": "74553"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace/parent",
+        "status": "obsolete",
         "sid": "74554"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:system/output/trace/status",
+        "status": "obsolete",
         "sid": "74555"
       },
       {
@@ -9390,56 +9873,67 @@
       {
         "namespace": "data",
         "identifier": "/arcana:zfs-receive",
+        "status": "obsolete",
         "sid": "74641"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:zfs-receive/input",
+        "status": "obsolete",
         "sid": "74642"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:zfs-receive/input/names",
+        "status": "obsolete",
         "sid": "74643"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:zfs-receive/output",
+        "status": "obsolete",
         "sid": "74644"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:zfs-receive/output/ok",
+        "status": "obsolete",
         "sid": "74645"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:zfs-send",
+        "status": "obsolete",
         "sid": "74646"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:zfs-send/input",
+        "status": "obsolete",
         "sid": "74647"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:zfs-send/input/names",
+        "status": "obsolete",
         "sid": "74648"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:zfs-send/input/zfs-recursive",
+        "status": "obsolete",
         "sid": "74649"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:zfs-send/output",
+        "status": "obsolete",
         "sid": "74650"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:zfs-send/output/ok",
+        "status": "obsolete",
         "sid": "74651"
       },
       {
@@ -9451,6 +9945,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/allow",
+        "status": "obsolete",
         "sid": "74653"
       },
       {
@@ -9468,6 +9963,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana:address/output/result/boot",
+        "status": "obsolete",
         "sid": "74656"
       },
       {
@@ -9479,256 +9975,307 @@
       {
         "namespace": "data",
         "identifier": "/arcana:speeder",
+        "status": "obsolete",
         "sid": "74658"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/input",
+        "status": "obsolete",
         "sid": "74659"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/input/jail",
+        "status": "obsolete",
         "sid": "74660"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/input/names",
+        "status": "obsolete",
         "sid": "74661"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output",
+        "status": "obsolete",
         "sid": "74662"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/error",
+        "status": "obsolete",
         "sid": "74663"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/json",
+        "status": "obsolete",
         "sid": "74664"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/ok",
+        "status": "obsolete",
         "sid": "74665"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace",
+        "status": "obsolete",
         "sid": "74666"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace/argv",
+        "status": "obsolete",
         "sid": "74667"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace/detail",
+        "status": "obsolete",
         "sid": "74668"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "74669"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace/error-output",
+        "status": "obsolete",
         "sid": "74670"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace/exit",
+        "status": "obsolete",
         "sid": "74671"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace/id",
+        "status": "obsolete",
         "sid": "74672"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace/kind",
+        "status": "obsolete",
         "sid": "74673"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace/label",
+        "status": "obsolete",
         "sid": "74674"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace/output",
+        "status": "obsolete",
         "sid": "74675"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace/parent",
+        "status": "obsolete",
         "sid": "74676"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:speeder/output/trace/status",
+        "status": "obsolete",
         "sid": "74677"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors",
+        "status": "obsolete",
         "sid": "74678"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/input",
+        "status": "obsolete",
         "sid": "74679"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/input/after",
+        "status": "obsolete",
         "sid": "74680"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output",
+        "status": "obsolete",
         "sid": "74681"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/error",
+        "status": "obsolete",
         "sid": "74682"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/json",
+        "status": "obsolete",
         "sid": "74683"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/ok",
+        "status": "obsolete",
         "sid": "74684"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace",
+        "status": "obsolete",
         "sid": "74685"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/argv",
+        "status": "obsolete",
         "sid": "74686"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/detail",
+        "status": "obsolete",
         "sid": "74687"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/duration-us",
+        "status": "obsolete",
         "sid": "74688"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/error-output",
+        "status": "obsolete",
         "sid": "74689"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/exit",
+        "status": "obsolete",
         "sid": "74690"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/id",
+        "status": "obsolete",
         "sid": "74691"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/kind",
+        "status": "obsolete",
         "sid": "74692"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/label",
+        "status": "obsolete",
         "sid": "74693"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/output",
+        "status": "obsolete",
         "sid": "74694"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/parent",
+        "status": "obsolete",
         "sid": "74695"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/status",
+        "status": "obsolete",
         "sid": "74696"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-get",
+        "status": "obsolete",
         "sid": "74697"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-get/input",
+        "status": "obsolete",
         "sid": "74698"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-get/input/names",
+        "status": "obsolete",
         "sid": "74699"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-get/output",
+        "status": "obsolete",
         "sid": "74700"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-get/output/json",
+        "status": "obsolete",
         "sid": "74701"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-get/output/ok",
+        "status": "obsolete",
         "sid": "74702"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-put",
+        "status": "obsolete",
         "sid": "74703"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-put/input",
+        "status": "obsolete",
         "sid": "74704"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-put/input/names",
+        "status": "obsolete",
         "sid": "74705"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-put/output",
+        "status": "obsolete",
         "sid": "74706"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-put/output/json",
+        "status": "obsolete",
         "sid": "74707"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:suricata-pcap-put/output/ok",
+        "status": "obsolete",
         "sid": "74708"
       },
       {
@@ -10124,61 +10671,73 @@
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace",
+        "status": "obsolete",
         "sid": "74787"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace/argv",
+        "status": "obsolete",
         "sid": "74788"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace/detail",
+        "status": "obsolete",
         "sid": "74789"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace/duration-us",
+        "status": "obsolete",
         "sid": "74790"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace/error-output",
+        "status": "obsolete",
         "sid": "74791"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace/exit",
+        "status": "obsolete",
         "sid": "74792"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace/id",
+        "status": "obsolete",
         "sid": "74793"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace/kind",
+        "status": "obsolete",
         "sid": "74794"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace/label",
+        "status": "obsolete",
         "sid": "74795"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace/output",
+        "status": "obsolete",
         "sid": "74796"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace/parent",
+        "status": "obsolete",
         "sid": "74797"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job/trace/status",
+        "status": "obsolete",
         "sid": "74798"
       },
       {
@@ -10224,27 +10783,161 @@
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/input/compress",
+        "status": "obsolete",
         "sid": "74807"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-build/output/program-size",
+        "status": "obsolete",
         "sid": "74808"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:agent-update/input/program-size",
+        "status": "obsolete",
         "sid": "74809"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:hello/output/host/features",
+        "status": "obsolete",
         "sid": "74810"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:job-spec/accept",
         "sid": "74811"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail",
+        "sid": "74812"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/allow",
+        "sid": "74813"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/boot",
+        "sid": "74814"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/children",
+        "sid": "74815"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/configured",
+        "sid": "74816"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/cpu-pct",
+        "sid": "74817"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/hostname",
+        "sid": "74818"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/interface",
+        "sid": "74819"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/ip4",
+        "sid": "74820"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/ip6",
+        "sid": "74821"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/jid",
+        "sid": "74822"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/name",
+        "sid": "74823"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/nproc",
+        "sid": "74824"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/osrelease",
+        "sid": "74825"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/params",
+        "sid": "74826"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/params/key",
+        "sid": "74827"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/params/values",
+        "sid": "74828"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/parent",
+        "sid": "74829"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/path",
+        "sid": "74830"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/persist",
+        "sid": "74831"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/plugins",
+        "sid": "74832"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/rss-kb",
+        "sid": "74833"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/scope",
+        "sid": "74834"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/securelevel",
+        "sid": "74835"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/state",
+        "sid": "74836"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:jail/vnet",
+        "sid": "74837"
       }
     ]
   }

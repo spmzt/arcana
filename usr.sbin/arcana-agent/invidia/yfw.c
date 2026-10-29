@@ -116,6 +116,7 @@ kept_lists(cbl_yarena *a, const ucl_object_t *top, ykept *k)
 		r[n].number = (uint32_t)num;
 		r[n].text = yj_str(a, e, "text");
 		r[n].source = yj_str(a, e, "source");
+		r[n].norm = yj_str(a, e, "norm");
 		n++;
 	}
 	k->rule.n = n;
@@ -244,6 +245,8 @@ yfw_from_json(const char *json, cbl_yarena *a, yfw *out)
 	struct arcana_firewall_firewall_state_rule	*r;
 	struct arcana_firewall_firewall_state_dynamic	*dy;
 	struct arcana_firewall_firewall_state_table	*t;
+	struct arcana_firewall_firewall_state_tunable	*tu;
+	struct arcana_firewall_firewall_state_modules	*mo;
 	const ucl_object_t				*e, *ee, *ro;
 	ucl_object_iter_t				 it, eit;
 	ucl_object_t					*top;
@@ -332,6 +335,10 @@ yfw_from_json(const char *json, cbl_yarena *a, yfw *out)
 		memset(&t[n], 0, sizeof(t[n]));
 		if ((t[n].name = yj_str(a, e, "name")) == NULL)
 			continue;
+		if (yj_num(e, "set", &num) && num > 0 && num < 32) {
+			t[n].has_set = true;
+			t[n].set = (uint8_t)num;
+		}
 		t[n].type = yj_str(a, e, "type");
 		YJ_NUM(e, "count", &t[n], count);
 		if ((en = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(e,
@@ -351,11 +358,40 @@ yfw_from_json(const char *json, cbl_yarena *a, yfw *out)
 	st->table.n = n;
 	st->table.v = t;
 	if (yj_strs(a, ucl_object_lookup(top, "nat"), &st->nat.n, &st->nat.v)
-	    != 0)
+	    != 0 || yj_strs(a, ucl_object_lookup(top, "pipes"), &st->pipes.n,
+	    &st->pipes.v) != 0)
 		goto out;
 	if ((error = dummynet_of(a, ucl_object_lookup(top, "qos"),
 	    &st->dummynet)) != 0)
 		goto out;
+	/* What Apply needs of the kernel, and the objects' modules. */
+	error = ENOMEM;
+	if ((tu = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top,
+	    "tunables")) + 1) * sizeof(*tu))) == NULL)
+		goto out;
+	n = 0;
+	YJ_EACH(ucl_object_lookup(top, "tunables"), it, e) {
+		memset(&tu[n], 0, sizeof(tu[n]));
+		if ((tu[n].name = yj_str(a, e, "name")) == NULL)
+			continue;
+		YJ_NUM(e, "value", &tu[n], value);
+		YJ_NUM(e, "want", &tu[n], want);
+		tu[n].needed = yj_yes(e, "needed", &tu[n].has_needed);
+		tu[n].why = yj_str(a, e, "why");
+		n++;
+	}
+	st->tunable.n = n;
+	st->tunable.v = tu;
+	if ((ro = ucl_object_lookup(top, "modules")) != NULL) {
+		if ((mo = cbl_yarena_alloc(a, sizeof(*mo))) == NULL)
+			goto out;
+		memset(mo, 0, sizeof(*mo));
+		mo->ipfw_nat = yj_yes(ro, "ipfw_nat", &mo->has_ipfw_nat);
+		mo->ipfw_nat64 = yj_yes(ro, "ipfw_nat64", &mo->has_ipfw_nat64);
+		mo->ipfw_nptv6 = yj_yes(ro, "ipfw_nptv6", &mo->has_ipfw_nptv6);
+		mo->dummynet = yj_yes(ro, "dummynet", &mo->has_dummynet);
+		st->modules = mo;
+	}
 	out->kept = k;
 	out->rc = rc;
 	out->state = st;

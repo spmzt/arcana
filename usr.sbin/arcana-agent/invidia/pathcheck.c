@@ -617,7 +617,7 @@ path_check(struct work *w, const char *srcs, const char *dsts,
 		if (!has_fib)
 			fib = fib_of(&c, iface);
 	} else if (!src_local) {
-		step = step_begin(w, ARC_STEP_KIND_SYSCALL, "netlink(4)",
+		step = step_begin(w, STEP_SYSCALL, "netlink(4)",
 		    "RTM_GETROUTE %s, FIB %d: where it comes in", srcs, fib);
 		if ((back = route(&c, srcs, fib)) != NULL) {
 			ingress = wstrdup(w, str(back, "interface"));
@@ -643,7 +643,7 @@ path_check(struct work *w, const char *srcs, const char *dsts,
 	fw_on = (c.af == AF_INET ? c.fw4 : c.fw6) > 0;
 	/* Off, its ruleset is still walked, for what it would do turned
 	 * on: said as such, and no finding of its is bad. */
-	step = step_begin(w, ARC_STEP_KIND_EXEC, "ipfw", "list, and the "
+	step = step_begin(w, STEP_EXEC, "ipfw", "list, and the "
 	    "tables: the ruleset to walk%s", fw_on ? "" : " (the firewall "
 	    "is off)");
 	have_fw = ruleset(&c, &set);
@@ -716,7 +716,7 @@ path_check(struct work *w, const char *srcs, const char *dsts,
 		finding(&c, "ok", "%s is this host's own: the packet ends here",
 		    dsts);
 	} else {
-		step = step_begin(w, ARC_STEP_KIND_SYSCALL, "netlink(4)",
+		step = step_begin(w, STEP_SYSCALL, "netlink(4)",
 		    "RTM_GETROUTE %s, FIB %d: the send route", dsts, fib);
 		best = route(&c, dsts, fib);
 		step_end(w, step, best != NULL, NULL);

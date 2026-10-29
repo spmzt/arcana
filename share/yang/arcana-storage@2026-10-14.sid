@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-storage",
     "module-revision": "2026-10-14",
-    "sid-file-version": 3,
+    "sid-file-version": 4,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 63 400, 200, and 79 600, 200.",
     "dependency-revision": [
       {
@@ -33,21 +33,25 @@
       {
         "namespace": "data",
         "identifier": "/arcana-storage:receive",
+        "status": "obsolete",
         "sid": "63401"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-storage:receive/input",
+        "status": "obsolete",
         "sid": "63402"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-storage:receive/input/dataset",
+        "status": "obsolete",
         "sid": "63403"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-storage:receive/output",
+        "status": "obsolete",
         "sid": "63404"
       },
       {
@@ -693,26 +697,31 @@
       {
         "namespace": "data",
         "identifier": "/arcana-storage:storage/snapshot/send",
+        "status": "obsolete",
         "sid": "63533"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-storage:storage/snapshot/send/input",
+        "status": "obsolete",
         "sid": "63534"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-storage:storage/snapshot/send/input/from",
+        "status": "obsolete",
         "sid": "63535"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-storage:storage/snapshot/send/input/recursive",
+        "status": "obsolete",
         "sid": "63536"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-storage:storage/snapshot/send/output",
+        "status": "obsolete",
         "sid": "63537"
       },
       {

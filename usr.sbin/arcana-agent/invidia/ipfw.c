@@ -52,6 +52,7 @@
 #include <openssl/evp.h>
 
 #include "agent.h"
+#include "collect.h"
 
 #define	IPFW_FILE_MAX	(1024 * 1024)
 #define	IPFW_RULES_MAX	20000
@@ -744,7 +745,7 @@ dn_read(struct work *w)
 
 /* {"loaded","enabled","rules":[...],"tables","nat","kept","other",...} */
 int
-do_ipfw(struct work *w, struct arc_network_rsp *rsp)
+do_ipfw(struct work *w, struct net_rsp *rsp)
 {
 	struct execres	 res;
 	ucl_object_t	*top, *rules, *o, *kept, *other, *arr, *rc;
@@ -1423,7 +1424,7 @@ rc_ruleset(struct work *w, const char **pathp, const char **errp)
 		    file);
 		return (NULL);
 	}
-	step = step_begin(w, ARC_STEP_KIND_FILE, "read", "%s", file);
+	step = step_begin(w, STEP_FILE, "read", "%s", file);
 	text = scope_slurp(w, file, &len);
 	e = errno;
 	step_end(w, step, text != NULL, text != NULL ? NULL : "%s",
@@ -1591,8 +1592,8 @@ rc_ruleset(struct work *w, const char **pathp, const char **errp)
 
 /* The kept rules read, or put in place: as fstab is. */
 int
-do_ipfw_rules(struct work *w, const struct arc_ipfw_rules_req *rq,
-    struct arc_ipfw_rules_rsp *rsp)
+do_ipfw_rules(struct work *w, const struct ipfw_rules_req *rq,
+    struct ipfw_rules_rsp *rsp)
 {
 	const char	*sha, *bad, *e, *rq_text;
 	char		*old, *copy, *p, *line;
@@ -1603,7 +1604,7 @@ do_ipfw_rules(struct work *w, const struct arc_ipfw_rules_req *rq,
 	rsp->ok = false;
 	rq_text = rq->conf_text;
 	pthread_mutex_lock(&file_lock);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "read", "%s", opts.ipfw_rules);
+	step = step_begin(w, STEP_FILE, "read", "%s", opts.ipfw_rules);
 	old = file_read(w, &oldlen);
 	step_end(w, step, old != NULL || errno == ENOENT, old != NULL ? NULL :
 	    "%s", strerror(errno));
@@ -1686,7 +1687,7 @@ do_ipfw_rules(struct work *w, const struct arc_ipfw_rules_req *rq,
 		rsp->ok = true;
 		goto out;
 	}
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s",
+	step = step_begin(w, STEP_FILE, "write", "%s",
 	    opts.ipfw_rules);
 	e = NULL;
 	if (file_write(w, rq_text, len, &e) != 0) {
@@ -2899,7 +2900,7 @@ set1_clean(struct work *w, struct kept_obj *kept, size_t max)
 	g = ms_close(w, &gone, NULL);
 	s = ms_close(w, &stay, NULL);
 	if (ngone > 0 || n > 0) {
-		step = step_begin(w, ARC_STEP_KIND_DAEMON, "set 1's objects",
+		step = step_begin(w, STEP_DAEMON, "set 1's objects",
 		    NULL);
 		step_end(w, step, true, "%s%s%s%s%s", ngone > 0 ? "destroyed " :
 		    "", ngone > 0 && g != NULL ? g : "", ngone > 0 && n > 0 ?
@@ -2998,7 +2999,7 @@ apply(struct work *w, bool hold, const char **errp)
 			return (-1);
 		}
 	tmp = wfmt(w, "%s.arcana-load", opts.ipfw_rules);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", tmp);
+	step = step_begin(w, STEP_FILE, "write", "%s", tmp);
 	if (w->jail != NULL) {
 		if (scope_replace(w, tmp, load, n, 0600, NULL) != 0) {
 			*errp = wfmt(w, "%s: %s", tmp, strerror(errno));
@@ -3952,4 +3953,477 @@ do_fw_trace(struct work *w, const char *address, uint32_t seconds,
 	rsp->json = wtext(w, wadopt(w, json));
 	rsp->ok = true;
 	return (0);
+}
+
+/*
+ * The kept rules by a commit of arcana-firewall (Y-3): the host boots
+ * them by Arcana's own script beside them (firewall_script, through
+ * Arcana's rc.conf file), never by the admin's, which stays as it is.
+ * The first commit is a migration: what it writes must load what the
+ * kernel has now, rule for rule.  A commit loads nothing: Apply does.
+ */
+
+/* Arcana's boot script: the kept file's name, .sh for .rules. */
+const char *
+ipfw_boot_script(struct work *w)
+{
+	const char	*r = opts.ipfw_rules;
+	size_t		 n = strlen(r);
+
+	if (n > 6 && strcmp(r + n - 6, ".rules") == 0)
+		return (wfmt(w, "%.*s.sh", (int)(n - 6), r));
+	return (wfmt(w, "%s.sh", r));
+}
+
+/*
+ * Does rc.conf boot the firewall by Arcana's script already?  As rc(8)
+ * reads it, Arcana's rc.conf file with the others (a jail's: its own).
+ */
+bool
+ipfw_on_script(struct work *w)
+{
+	struct rca	 x;
+	const char	*v;
+	char		 err[128];
+	bool		 on;
+
+	if (w->jail != NULL)
+		return (strcmp(rc_value(w, "firewall_script"),
+		    ipfw_boot_script(w)) == 0);
+	if (rca_open(&x, "ipfw", err, sizeof(err)) != 0)
+		return (false);
+	on = (v = rca_get(&x, "firewall_script")) != NULL && strcmp(v,
+	    ipfw_boot_script(w)) == 0;
+	rca_close(&x);
+	return (on);
+}
+
+/*
+ * The kernel's set 0 rules but its last (65535): numbers and words as
+ * ipfw -S show writes them; how many, or -1 and why.
+ */
+static int
+kernel_rules(struct work *w, long **nump, const char ***textp,
+    const char **errp)
+{
+	struct net_rsp		 r;
+	struct ucl_parser	*p;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*top;
+	const char		**t;
+	long			*nv;
+	int			 n;
+
+	memset(&r, 0, sizeof(r));
+	(void)do_ipfw(w, &r);
+	if (!r.ok) {
+		*errp = r.error != NULL ? r.error : "ipfw said nothing";
+		return (-1);
+	}
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+	top = ucl_parser_add_string(p, r.json, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	if (top == NULL) {
+		*errp = "ipfw's rules could not be read";
+		return (-1);
+	}
+	n = (int)ucl_array_size(ucl_object_lookup(top, "rules"));
+	nv = wcalloc(w, (size_t)n + 1, sizeof(*nv));
+	t = wcalloc(w, (size_t)n + 1, sizeof(*t));
+	n = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(top, "rules"), &it,
+	    true)) != NULL) {
+		if (ucl_object_toint(ucl_object_lookup(e, "set")) != 0 ||
+		    ucl_object_toint(ucl_object_lookup(e, "num")) >= 65535 ||
+		    ucl_object_tostring(ucl_object_lookup(e, "text")) == NULL)
+			continue;
+		nv[n] = (long)ucl_object_toint(ucl_object_lookup(e, "num"));
+		t[n++] = wstrdup(w, ucl_object_tostring(ucl_object_lookup(e,
+		    "text")));
+	}
+	ucl_object_unref(top);
+	*nump = nv;
+	*textp = t;
+	return (n);
+}
+
+/* The add lines of text, its aliases put in: numbers and words. */
+static int
+text_rules(struct work *w, const char *text, long **nump,
+    const char ***textp, const char **errp)
+{
+	const char	**t, *rest;
+	char		*x, *copy, *line;
+	long		*nv, num;
+	int		 n, max;
+
+	if ((x = text_expand(w, text, errp)) == NULL)
+		return (-1);
+	max = 1;
+	for (const char *c = x; *c != '\0'; c++)
+		if (*c == '\n')
+			max++;
+	nv = wcalloc(w, (size_t)max, sizeof(*nv));
+	t = wcalloc(w, (size_t)max, sizeof(*t));
+	n = 0;
+	copy = wstrdup(w, x);
+	while ((line = strsep(&copy, "\n")) != NULL)
+		if (line[0] != '#' && kept_rule(line, &num, &rest) &&
+		    n < max) {
+			nv[n] = num;
+			t[n++] = rest;
+		}
+	*nump = nv;
+	*textp = t;
+	return (n);
+}
+
+static int
+strpcmp(const void *a, const void *b)
+{
+
+	return (strcmp(*(const char *const *)a, *(const char *const *)b));
+}
+
+/* Each rule as "number words", ipfw -n's wording, sorted. */
+static const char **
+normed(struct work *w, int n, const long *nums, const char *const *texts,
+    const char **errp)
+{
+	const char	**out, **v;
+
+	out = wcalloc(w, (size_t)n + 1, sizeof(*out));
+	v = wcalloc(w, (size_t)n + 1, sizeof(*v));
+	if (n > 0 && ipfw_norm(w, n, nums, texts, out, errp) != 0)
+		return (NULL);
+	for (int i = 0; i < n; i++)
+		v[i] = wfmt(w, "%05ld %s", nums[i], out[i] != NULL ? out[i] :
+		    texts[i]);
+	qsort(v, (size_t)n, sizeof(*v), strpcmp);
+	return (v);
+}
+
+/*
+ * What differs between the rules text would load and the kernel's set
+ * 0 now, by ipfw -n's wording: NULL when they are the same (or could
+ * not be told: *errp says why), else what is in one alone.
+ */
+const char *
+ipfw_differs(struct work *w, const char *text, const char **errp)
+{
+	const char	**kt, **ft, **kv, **fv;
+	long		*kn, *fn;
+	struct ms	 m;
+	int		 nk, nf, i, j, c, said;
+
+	*errp = NULL;
+	if ((nk = kernel_rules(w, &kn, &kt, errp)) < 0 ||
+	    (nf = text_rules(w, text, &fn, &ft, errp)) < 0)
+		return (NULL);
+	if ((kv = normed(w, nk, kn, kt, errp)) == NULL ||
+	    (fv = normed(w, nf, fn, ft, errp)) == NULL)
+		return (NULL);
+	if (!ms_open(&m)) {
+		*errp = "out of memory";
+		return (NULL);
+	}
+	said = 0;
+	for (i = j = 0; i < nk || j < nf; ) {
+		c = i == nk ? 1 : j == nf ? -1 : strcmp(kv[i], fv[j]);
+		if (c == 0) {
+			i++;
+			j++;
+			continue;
+		}
+		if (said++ < 8)
+			fprintf(m.fp, "%s%s %s", said > 1 ? "; " : "", c < 0 ?
+			    "loaded now, not in the kept rules:" :
+			    "in the kept rules, not loaded now:", c < 0 ?
+			    kv[i] : fv[j]);
+		if (c < 0)
+			i++;
+		else
+			j++;
+	}
+	if (said > 8)
+		fprintf(m.fp, "; and %d more", said - 8);
+	if (said == 0) {
+		(void)ms_close(w, &m, NULL);
+		return (NULL);
+	}
+	return (ms_close(w, &m, NULL));
+}
+
+/*
+ * The migration (its dry run, from-rc's): the kept rules made of what
+ * the host boots now, *fromp where from.  The admin's own script
+ * (firewall_script, not rc.firewall) or the file rc.firewall loads
+ * (firewall_type), or the kept file where an older Arcana pointed
+ * firewall_type at it; booted by rc.firewall, its own rules (the
+ * loopback's, IPv6's) as the kernel has them before.
+ */
+int
+ipfw_migration(struct work *w, const char **textp, const char **fromp,
+    const char **errp)
+{
+	const char	*src, *path, *e, *script, **kt, *rest;
+	struct ms	 m;
+	char		*x, *copy, *line;
+	long		*kn, num;
+	size_t		 len;
+	int		 nk, added;
+	bool		*have;
+
+	*fromp = NULL;
+	if (ipfw_on_script(w)) {
+		pthread_mutex_lock(&file_lock);
+		x = file_read(w, &len);
+		pthread_mutex_unlock(&file_lock);
+		*textp = x != NULL ? x : "";
+		*fromp = wfmt(w, "%s: the host boots its firewall by Arcana's "
+		    "script already", opts.ipfw_rules);
+		return (0);
+	}
+	path = NULL;
+	e = NULL;
+	if ((src = rc_ruleset(w, &path, &e)) != NULL)
+		*fromp = path;
+	else if (strcmp(rc_value(w, "firewall_type"), opts.ipfw_rules) == 0) {
+		pthread_mutex_lock(&file_lock);
+		x = file_read(w, &len);
+		pthread_mutex_unlock(&file_lock);
+		src = x != NULL ? x : "";
+		*fromp = wfmt(w, "%s, which rc.firewall loads by firewall_type",
+		    opts.ipfw_rules);
+	} else {
+		/*
+		 * rc.conf loads no file: Arcana's kept rules, what jobs kept
+		 * with its aliases and objects, where they are those loaded
+		 * now; else the kernel's alone.
+		 */
+		const char	*d, *de = NULL;
+
+		pthread_mutex_lock(&file_lock);
+		x = file_read(w, &len);
+		pthread_mutex_unlock(&file_lock);
+		if (x != NULL && len > 0 && (d = ipfw_differs(w, x, &de)) ==
+		    NULL && de == NULL) {
+			src = x;
+			*fromp = wfmt(w, "%s, Arcana's kept rules, those loaded "
+			    "now (rc.conf loads nothing of its own: %s)",
+			    opts.ipfw_rules, e != NULL ? e : "no file");
+		} else {
+			src = "";
+			*fromp = wfmt(w, "nothing rc.conf loads (%s)", e != NULL ?
+			    e : "no file");
+		}
+	}
+	script = rc_value(w, "firewall_script");
+	if (script[0] != '\0' && strcmp(script, "/etc/rc.firewall") != 0) {
+		*textp = src;
+		return (0);
+	}
+	/* rc.firewall's own: the kernel's rules the file has not. */
+	if ((nk = kernel_rules(w, &kn, &kt, errp)) < 0)
+		return (-1);
+	have = wcalloc(w, (size_t)nk + 1, sizeof(*have));
+	copy = wstrdup(w, src);
+	while ((line = strsep(&copy, "\n")) != NULL)
+		if (kept_rule(line, &num, &rest))
+			for (int i = 0; i < nk; i++)
+				if (kn[i] == num)
+					have[i] = true;
+	if (!ms_open(&m)) {
+		*errp = "out of memory";
+		return (-1);
+	}
+	added = 0;
+	for (int i = 0; i < nk; i++) {
+		if (have[i])
+			continue;
+		if (added++ == 0)
+			fprintf(m.fp, "# rc.firewall's own, as the kernel has "
+			    "them:\n");
+		fprintf(m.fp, "add %05ld %s\n", kn[i], kt[i]);
+	}
+	fputs(src, m.fp);
+	if (src[0] != '\0' && src[strlen(src) - 1] != '\n')
+		fputc('\n', m.fp);
+	if ((*textp = ms_close(w, &m, NULL)) == NULL) {
+		*errp = "out of memory";
+		return (-1);
+	}
+	if (added > 0)
+		*fromp = wfmt(w, "%s, with rc.firewall's own %d rules as the "
+		    "kernel has them", *fromp, added);
+	return (0);
+}
+
+/* What a confirmed commit's undo puts back: every file as it was. */
+static struct rca	fw_undo;
+static bool		fw_undo_set;
+
+/*
+ * text checked by ipfw -n and put in place of the kept rules, nothing
+ * loaded; the host's first commit moves its boot to Arcana's script
+ * (firewall_script by rca_*), refused, nothing written, unless text
+ * loads the rules the kernel has now.  *notep what was migrated, when
+ * it was.  0; -1 and *errp; 1, rca's refusal said on req.
+ */
+int
+ipfw_kept_commit(struct work *w, cbl_req *req, const char *text,
+    const char **notep, const char **errp)
+{
+	struct ipfw_rules_req	 rq;
+	struct ipfw_rules_rsp	 rsp;
+	struct rca		 rc;
+	const char		*sha, *bad, *diff, *script, *from, *mt, *x;
+	char			 err[256], *body;
+	size_t			 len;
+	bool			 migrate;
+	int			 fd, rcerr;
+
+	*notep = NULL;
+	*errp = NULL;
+	migrate = w->jail == NULL && !ipfw_on_script(w);
+	/*
+	 * Set 0's alone: a rule's own set (a staging script's) is taken
+	 * off as Apply loads it (kept_rule()), and set, flush and delete
+	 * lines are refused by do_ipfw_rules().  ipfw -n of the whole file
+	 * before anything is written.
+	 */
+	if ((x = text_expand(w, text, errp)) == NULL)
+		return (-1);
+	if ((bad = file_wrong(w, x, strlen(x))) != NULL) {
+		*errp = bad;
+		return (-1);
+	}
+	from = NULL;
+	if (migrate) {
+		if ((diff = ipfw_differs(w, text, errp)) != NULL) {
+			*errp = wfmt(w, "the first commit moves the host's boot "
+			    "to Arcana's script, and the rules it would load "
+			    "are not those loaded now: %s.  Read from-rc, the "
+			    "migration, and commit what it says", diff);
+			return (-1);
+		}
+		if (*errp != NULL)
+			return (-1);
+		if (ipfw_migration(w, &mt, &from, errp) != 0)
+			return (-1);
+	}
+	memset(&rc, 0, sizeof(rc));
+	script = ipfw_boot_script(w);
+	if (w->jail == NULL) {
+		err[0] = '\0';
+		if ((rcerr = rca_open(&rc, "ipfw", err, sizeof(err))) != 0) {
+			*errp = wfmt(w, "rc.conf: %s", err[0] != '\0' ? err :
+			    strerror(rcerr));
+			return (-1);
+		}
+		if (rca_keep(&rc, opts.ipfw_rules) != 0 || (migrate &&
+		    rca_keep(&rc, script) != 0)) {
+			rca_close(&rc);
+			*errp = "out of memory";
+			return (-1);
+		}
+	}
+	/* Its sha256 what it is made from: the file as it is now. */
+	pthread_mutex_lock(&file_lock);
+	body = file_read(w, &len);
+	sha = sha_hex(w, body != NULL ? body : "", body != NULL ? len : 0);
+	pthread_mutex_unlock(&file_lock);
+	memset(&rq, 0, sizeof(rq));
+	memset(&rsp, 0, sizeof(rsp));
+	rq.conf_text = text;
+	rq.sha256 = sha;
+	(void)do_ipfw_rules(w, &rq, &rsp);
+	if (!rsp.ok) {
+		if (w->jail == NULL)
+			rca_close(&rc);
+		*errp = rsp.error;
+		return (-1);
+	}
+	if (migrate) {
+		const char	*sh;
+
+		sh = wfmt(w, "#!/bin/sh\n# Written by arcana-agent: rc.d/ipfw "
+		    "runs it at boot (firewall_script) to load\n# the kept "
+		    "rules.  The host's own firewall script is left as it "
+		    "was.\n%s -q -f flush\n%s -q %s\n", opts.ipfw_bin,
+		    opts.ipfw_bin, opts.ipfw_rules);
+		if ((fd = open(script, O_WRONLY | O_CREAT | O_TRUNC |
+		    O_CLOEXEC | O_NOFOLLOW, 0700)) == -1 || write(fd, sh,
+		    strlen(sh)) != (ssize_t)strlen(sh) || fchmod(fd, 0700) ==
+		    -1) {
+			*errp = wfmt(w, "%s: %s", script, strerror(errno));
+			if (fd != -1)
+				close(fd);
+			rca_undo(&rc);
+			rca_close(&rc);
+			return (-1);
+		}
+		close(fd);
+		err[0] = '\0';
+		if ((rcerr = rca_set(&rc, "firewall_script", script, err,
+		    sizeof(err))) != 0 || (rcerr = rca_write(&rc, req, err,
+		    sizeof(err))) != 0) {
+			rca_undo(&rc);
+			rca_close(&rc);
+			if (rcerr == EEXIST)
+				return (1);
+			*errp = wfmt(w, "rc.conf: %s", err[0] != '\0' ? err :
+			    strerror(rcerr));
+			return (-1);
+		}
+		*notep = wfmt(w, "migrated from %s: the host boots the kept "
+		    "rules by %s (firewall_script) from now on; its own "
+		    "firewall files are as they were", from != NULL ? from :
+		    "?", script);
+	}
+	if (w->jail == NULL) {
+		if (fw_undo_set)
+			rca_close(&fw_undo);
+		fw_undo = rc;
+		fw_undo_set = true;
+	}
+	return (0);
+}
+
+/*
+ * A confirmed commit's undo (its time up, or cancelled): every file it
+ * changed as it was, the kept rules, Arcana's script and rc.conf's;
+ * was, the kept rules before, for a jail's.  It loaded nothing.
+ */
+int
+ipfw_kept_undo(struct work *w, const char *was, const char **errp)
+{
+	struct ipfw_rules_req	 rq;
+	struct ipfw_rules_rsp	 rsp;
+	char			*body;
+	size_t			 len;
+
+	if (w->jail == NULL && fw_undo_set) {
+		pthread_mutex_lock(&file_lock);
+		rca_undo(&fw_undo);
+		pthread_mutex_unlock(&file_lock);
+		rca_close(&fw_undo);
+		fw_undo_set = false;
+		return (0);
+	}
+	pthread_mutex_lock(&file_lock);
+	body = file_read(w, &len);
+	pthread_mutex_unlock(&file_lock);
+	memset(&rq, 0, sizeof(rq));
+	memset(&rsp, 0, sizeof(rsp));
+	rq.conf_text = was != NULL ? was : "";
+	rq.sha256 = sha_hex(w, body != NULL ? body : "", body != NULL ? len :
+	    0);
+	(void)do_ipfw_rules(w, &rq, &rsp);
+	if (!rsp.ok)
+		*errp = rsp.error;
+	return (rsp.ok ? 0 : -1);
 }

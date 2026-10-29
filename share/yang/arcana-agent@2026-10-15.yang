@@ -85,6 +85,14 @@ module arcana-agent {
         "The public key this host shows the server, to be given
          access.";
     }
+    leaf refused {
+      type string;
+      description
+        "Why the repository was not fetched, where its server is to be
+         confirmed (host-keys) or is to give this host access
+         (deploy-key): the action answers with these alone, for a
+         person to act on and ask again.";
+    }
   }
 
   grouping cert {
@@ -552,6 +560,18 @@ module arcana-agent {
             "The program's signature by the console's CA key; one sent
              over the local socket is taken without.";
         }
+        leaf program-size {
+          type uint32 {
+            range "1..33554432";
+          }
+          units "bytes";
+          description
+            "binary is the program compressed with gzip (RFC 1952),
+             which inflates to this many bytes; sha256 and signature
+             are the program's, inflated.  Sent to an agent whose
+             host's agent feature has gzip-update; one before takes
+             the program as it is.";
+        }
       }
       output {
         leaf version {
@@ -573,6 +593,13 @@ module arcana-agent {
          give the program back; nothing installed.";
       input {
         uses repository;
+        leaf compress {
+          type boolean;
+          default "false";
+          description
+            "Send the program back compressed with gzip, with
+             program-size.";
+        }
       }
       output {
         leaf binary {
@@ -596,6 +623,14 @@ module arcana-agent {
             "The commit built.";
         }
         uses fetched;
+        leaf program-size {
+          type uint32;
+          units "bytes";
+          description
+            "With compress: binary is the program compressed with
+             gzip, which inflates to this many bytes; sha256 is the
+             program's.";
+        }
       }
     }
     action console-update {
@@ -609,6 +644,11 @@ module arcana-agent {
       }
       output {
         uses fetched;
+        leaf commit {
+          type string;
+          description
+            "The commit installed.";
+        }
       }
     }
     action source-head {

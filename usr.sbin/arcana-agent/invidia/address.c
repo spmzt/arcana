@@ -62,7 +62,7 @@ ifaddr_change_peer(struct work *w, const char *ifname, int af,
 	struct sockaddr_in	*sin;
 	int			 s, rc, i, step;
 
-	step = step_begin(w, ARC_STEP_KIND_SYSCALL, af == AF_INET ?
+	step = step_begin(w, STEP_SYSCALL, af == AF_INET ?
 	    (add ? "ioctl(SIOCAIFADDR)" : "ioctl(SIOCDIFADDR)") :
 	    (add ? "ioctl(SIOCAIFADDR_IN6)" : "ioctl(SIOCDIFADDR_IN6)"),
 	    "%s alias on %s", add ? "add" : "remove", ifname);
@@ -149,8 +149,8 @@ ifaddr_change_peer(struct work *w, const char *ifname, int af,
  * jail(8) does not read it as intended.
  */
 int
-do_address(struct work *w, const struct arc_address_req *rq,
-    struct arc_address_rsp *rsp)
+do_address(struct work *w, const struct address_req *rq,
+    struct address_rsp *rsp)
 {
 	struct jailparam	 jp[3];
 	struct jc_conf		 jc;
@@ -216,7 +216,7 @@ do_address(struct work *w, const struct arc_address_req *rq,
 			    "any jail.conf; nothing to persist to", name);
 			goto out;
 		}
-		step = step_begin(w, ARC_STEP_KIND_LIB, "jc_load(3)",
+		step = step_begin(w, STEP_LIB, "jc_load(3)",
 		    "libjailconf: %s and its includes", cj->scope);
 		if (jc_load(&jc, cj->scope) == -1 ||
 		    (b = jc_find(&jc, name, &f)) == NULL) {
@@ -234,7 +234,7 @@ do_address(struct work *w, const struct arc_address_req *rq,
 		    cjail_param(cj, "interface") == NULL ?
 		    wfmt(w, "%s|%s", rq->interface, rq->address) :
 		    rq->address;
-		step = step_begin(w, ARC_STEP_KIND_LIB, "jc_edit(3)",
+		step = step_begin(w, STEP_LIB, "jc_edit(3)",
 		    "%s %s %s %s", key, add ? "+=" : "-=", confval, f->path);
 		{
 			char ebuf[512];
@@ -252,7 +252,7 @@ do_address(struct work *w, const struct arc_address_req *rq,
 		}
 		wadopt(w, newbuf);
 		step_end(w, step, true, "%zu -> %zu bytes", f->len, newlen);
-		step = step_begin(w, ARC_STEP_KIND_LIB, "jc_verify(3)",
+		step = step_begin(w, STEP_LIB, "jc_verify(3)",
 		    "re-parse; block '%s' %s %s", name,
 		    add ? "has" : "lacks", bare);
 		if (!jc_verify(f->path, newbuf, newlen, name, key, confval,
@@ -274,7 +274,7 @@ do_address(struct work *w, const struct arc_address_req *rq,
 		goto out;
 	}
 	if (rq->live && running) {
-		step = step_begin(w, ARC_STEP_KIND_LIB, "jailparam_get(3)",
+		step = step_begin(w, STEP_LIB, "jailparam_get(3)",
 		    "jid %d: %s, vnet", jid, key);
 		have_jp = true;
 		if (jailparam_init(&jp[0], "jid") == -1 ||
@@ -308,7 +308,7 @@ do_address(struct work *w, const struct arc_address_req *rq,
 		}
 		nlist = list_edit(w, key, cur, bare, add);
 		if (rq->dry_run) {
-			step = step_begin(w, ARC_STEP_KIND_LIB,
+			step = step_begin(w, STEP_LIB,
 			    "jailparam_set(3)", "dry run: would set %s = %s",
 			    key, *nlist != '\0' ? nlist : "(none)");
 			step_end(w, step, true, NULL);
@@ -319,7 +319,7 @@ do_address(struct work *w, const struct arc_address_req *rq,
 					goto out;
 				aliased = true;
 			}
-			step = step_begin(w, ARC_STEP_KIND_LIB,
+			step = step_begin(w, STEP_LIB,
 			    "jailparam_set(3)", "JAIL_UPDATE %s = %s", key,
 			    *nlist != '\0' ? nlist : "(none)");
 			/* jailparam_import(3) does not free what
@@ -344,13 +344,13 @@ do_address(struct work *w, const struct arc_address_req *rq,
 				    false, &e);
 		}
 		if (ifname == NULL) {
-			step = step_begin(w, ARC_STEP_KIND_LIB,
+			step = step_begin(w, STEP_LIB,
 			    "interface alias", "skipped: no interface= for "
 			    "this jail and none given");
 			step_end(w, step, true, NULL);
 		}
 	} else if (rq->live) {
-		step = step_begin(w, ARC_STEP_KIND_LIB, "live change",
+		step = step_begin(w, STEP_LIB, "live change",
 		    "skipped: jail is not running");
 		step_end(w, step, true, NULL);
 	}
@@ -359,7 +359,7 @@ do_address(struct work *w, const struct arc_address_req *rq,
 		if (write_backup(w, f->path, f->buf, f->len,
 		    &rsp->error) == -1)
 			goto undo;
-		step = step_begin(w, ARC_STEP_KIND_LIB, "jc_write(3)",
+		step = step_begin(w, STEP_LIB, "jc_write(3)",
 		    "%s: mkstemp, fsync, rename(2)", f->path);
 		{
 			char ebuf[512];
@@ -374,7 +374,7 @@ do_address(struct work *w, const struct arc_address_req *rq,
 			/* jail(8) has the last word on what it now means. */
 			if (!verify_jail8(w, cj->scope, name, key,
 			    rq->address, add)) {
-				step = step_begin(w, ARC_STEP_KIND_LIB,
+				step = step_begin(w, STEP_LIB,
 				    "jc_write(3)", "%s: restore the previous "
 				    "version", f->path);
 				if (jc_write(f->path, f->buf, f->len, ebuf,
@@ -397,7 +397,7 @@ do_address(struct work *w, const struct arc_address_req *rq,
 undo:
 	/* The file is as it was: take the live change back as well. */
 	if (live_done) {
-		step = step_begin(w, ARC_STEP_KIND_LIB, "jailparam_set(3)",
+		step = step_begin(w, STEP_LIB, "jailparam_set(3)",
 		    "undo: JAIL_UPDATE %s = %s", key, *cur != '\0' ? cur :
 		    "(none)");
 		free(jp[1].jp_value);

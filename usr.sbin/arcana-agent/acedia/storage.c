@@ -190,7 +190,7 @@ disks(struct work *w, struct storage_rsp *rsp)
 	const char	*v;
 	int		 step, nmnt, i;
 
-	step = step_begin(w, ARC_STEP_KIND_LIB, "geom_gettree(3)",
+	step = step_begin(w, STEP_LIB, "geom_gettree(3)",
 	    "the DISK and PART classes of GEOM");
 	if (geom_gettree(&mesh) != 0) {
 		rsp->error = wfmt(w, "geom_gettree: %s", strerror(errno));
@@ -715,7 +715,7 @@ mounts(struct work *w, struct storage_rsp *rsp)
 	int		 n, i, step;
 	bool		 mounted;
 
-	step = step_begin(w, ARC_STEP_KIND_LIB, "getfsstat(2)", NULL);
+	step = step_begin(w, STEP_LIB, "getfsstat(2)", NULL);
 	n = mnts(w, &mnt);
 	step_end(w, step, n > 0, "%d mounted", n);
 	top = ucl_object_typed_new(UCL_OBJECT);
@@ -1802,7 +1802,7 @@ do_fstab(struct work *w, const struct fstab_req *rq,
 	rsp->ok = false;
 	path = opts.fstab_path;
 	oldlen = 0;
-	step = step_begin(w, ARC_STEP_KIND_FILE, "read", "%s", path);
+	step = step_begin(w, STEP_FILE, "read", "%s", path);
 	old = slurp(w, path, &oldlen);
 	step_end(w, step, old != NULL || errno == ENOENT, old != NULL ? NULL :
 	    "%s", strerror(errno));
@@ -1840,7 +1840,7 @@ do_fstab(struct work *w, const struct fstab_req *rq,
 	}
 	tmp = wfmt(w, "%s.arcana-new", path);
 	bak = wfmt(w, "%s.arcana-old", path);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
+	step = step_begin(w, STEP_FILE, "write", "%s", path);
 	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC |
 	    O_NOFOLLOW, 0644)) == -1 || write(fd, rq->conf_text, len) !=
 	    (ssize_t)len || fsync(fd) == -1) {

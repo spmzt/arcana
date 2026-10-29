@@ -202,7 +202,7 @@ do_action(struct work *w, const char *name, uint8_t action,
 			    name);
 			goto out;
 		}
-		step = step_begin(w, ARC_STEP_KIND_SYSCALL, "jail_remove(2)",
+		step = step_begin(w, STEP_SYSCALL, "jail_remove(2)",
 		    "jid %d", jid);
 		if (jail_remove(jid) == -1) {
 			rsp->error = wfmt(w, "jail_remove: %s",

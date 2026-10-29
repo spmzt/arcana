@@ -53,7 +53,11 @@ ARC_YMODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		ietf-defaults@2024-04-03 ietf-yang-schema-mount@2019-01-14 \
 		ietf-subscribed-notif-receivers@2026-06-30 \
 		ietf-https-notif-transport@2026-06-30 arcana-notif@2026-10-28 \
-		arcana-ra@2026-10-28
+		arcana-ra@2026-10-28 arcana-crashes@2026-10-29 \
+		arcana-system@2026-10-29 arcana-netstore@2026-10-29 \
+		arcana-suricata@2026-10-29 arcana-smtpd@2026-10-29 \
+		arcana-speeder@2026-10-29 arcana-stream@2026-10-29 \
+		arcana-network@2026-10-29
 # Modules only imported whose identities are used: their .sid files
 # alone (a VLAN tag's types, the PHY types, the port algorithms; the
 # routing protocols', whose identities name a route's origin).

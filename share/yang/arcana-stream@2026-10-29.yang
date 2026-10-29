@@ -1,0 +1,82 @@
+module arcana-stream {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-stream";
+  prefix arcstr;
+
+  import ietf-yang-structure-ext {
+    prefix sx;
+    reference
+      "RFC 8791: YANG Data Structure Extensions";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "What Arcana's own cblink family, arcana-stream, carries: bytes on
+     a stream with credit-based flow control, which cblink's YANG
+     family has no operation for (cblink's FAMILIES.md: a family of
+     its own is for a stream).  Its commands, each opening a
+     bidirectional stream: zfs-send (1), a snapshot as zfs send(8)
+     writes it, of the first of the names, with a second only what
+     changed since that one (-i), with recursive the datasets under it
+     (-R), the host half-closing it once send ended well; zfs-receive
+     (2), zfs receive -u into the dataset the name names, given to it
+     only as fast as it reads, never over a dataset (no -F) nor into a
+     pool's own; suricata-pcap-put (3), a capture for a Suricata
+     instance to replay, the names instance=, file=, offset= and
+     last=1; suricata-pcap-get (4), a file of what an instance logged
+     for its alerts, the names instance= and file=.  Each opened by an
+     open structure, accepted by an opened, each data message a chunk.
+     The zfs-send, zfs-receive, suricata-pcap-put and suricata-pcap-get
+     operations of arcana.yaml, moved off the interim family (Y-3).";
+
+  revision 2026-10-29 {
+    description
+      "Initial revision.";
+  }
+
+  sx:structure open {
+    description
+      "A stream's opening request.";
+    leaf-list name {
+      type string;
+      ordered-by user;
+      description
+        "What to send or receive, as the command takes it.";
+    }
+    leaf recursive {
+      type boolean;
+      description
+        "zfs-send: the datasets under the snapshot's too (-R).";
+    }
+  }
+
+  sx:structure opened {
+    description
+      "A stream's acceptance.";
+    leaf ok {
+      type boolean;
+      description
+        "It was opened.";
+    }
+    leaf json {
+      type string;
+      description
+        "What the command says of it, as JSON: a capture's path, a
+         file's path and size.";
+    }
+  }
+
+  sx:structure chunk {
+    description
+      "A data message: the next bytes.";
+    leaf data {
+      type binary;
+      description
+        "The next bytes of what zfs send wrote, or receive is to read;
+         of a capture, or of a pcap-log file.";
+    }
+  }
+}

@@ -1,0 +1,68 @@
+module: arcana-smtpd
+  +--ro smtpd
+     +---x read
+        +---w input
+        |  +---w jail?   string
+        +--ro output
+           +--ro installed?   boolean
+           +--ro enabled?     boolean
+           +--ro running?     boolean
+           +--ro smtpctl!
+           |  +--ro status* [process]
+           |  |  +--ro process    string
+           |  |  +--ro state?     string
+           |  +--ro stat* [name]
+           |  |  +--ro name     string
+           |  |  +--ro count?   string
+           |  +--ro envelope*
+           |  |  +--ro evpid?     string
+           |  |  +--ro source?    string
+           |  |  +--ro type?      string
+           |  |  +--ro flags?     string
+           |  |  +--ro from?      string
+           |  |  +--ro to?        string
+           |  |  +--ro dest?      string
+           |  |  +--ro created?   string
+           |  |  +--ro expires?   string
+           |  |  +--ro retries?   string
+           |  |  +--ro lasttry?   string
+           |  |  +--ro state?     string
+           |  |  +--ro next?      string
+           |  |  +--ro error?     string
+           |  +--ro queued?     int64
+           +--ro config!
+           |  +--ro conf?          string
+           |  +--ro conf-arcana?   boolean
+           |  +--ro conf-table* [name]
+           |     +--ro name        string
+           |     +--ro backend?    string
+           |     +--ro path?       string
+           |     +--ro kind?       string
+           |     +--ro secret?     boolean
+           |     +--ro editable?   boolean
+           |     +--ro source?     string
+           |     +--ro error?      string
+           |     +--ro entry*
+           |        +--ro entry-key?   string
+           |        +--ro value?       string
+           +--ro conf-path?   string
+           +--ro sample* [time]
+           |  +--ro time        yang:date-and-time
+           |  +--ro queued?     int64
+           |  +--ro ok?         int64
+           |  +--ro tempfail?   int64
+           |  +--ro permfail?   int64
+           |  +--ro sessions?   int64
+           +--ro queue-max?   int64
+           +--ro spec?        string
+           +--ro table* [name]
+           |  +--ro name    string
+           |  +--ro text?   string
+           |  +--ro user*   string
+           +--ro filter*      string
+           +--ro mailer?      string
+           +--ro pki?         boolean
+           +--ro pki-cert
+           |  +--ro not-before?   yang:date-and-time
+           |  +--ro not-after?    yang:date-and-time
+           +--ro jail?        string

@@ -18,6 +18,10 @@
       {
         "entry-point": "62400",
         "size": "1000"
+      },
+      {
+        "entry-point": "83200",
+        "size": "100"
       }
     ],
     "item": [
@@ -1999,6 +2003,71 @@
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/service-config/accept",
         "sid": "62788"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps",
+        "sid": "83200"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step",
+        "sid": "83201"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step/argv",
+        "sid": "83202"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step/detail",
+        "sid": "83203"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step/duration",
+        "sid": "83204"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step/error-output",
+        "sid": "83205"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step/exit",
+        "sid": "83206"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step/id",
+        "sid": "83207"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step/kind",
+        "sid": "83208"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step/label",
+        "sid": "83209"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step/output",
+        "sid": "83210"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step/parent",
+        "sid": "83211"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:steps/step/status",
+        "sid": "83212"
       }
     ]
   }

@@ -948,9 +948,7 @@ int
 ytrans_jails(cbl_conn *conn, bool config_only, ucl_object_t *top, char *err,
     size_t errlen)
 {
-	const struct arcana_jails_jails	*js;
 	struct arcana_jails		 d;
-	ucl_object_t			*rows, *errs, *e;
 	cbl_yarena			*a;
 	int				 error;
 
@@ -961,9 +959,22 @@ ytrans_jails(cbl_conn *conn, bool config_only, ucl_object_t *top, char *err,
 		cbl_yarena_free(a);
 		return (error);
 	}
+	ytrans_jails_of(&d, config_only, top);
+	cbl_yarena_free(a);
+	return (0);
+}
+
+/* The same of arcana-jails' data as it is held (watch.c). */
+void
+ytrans_jails_of(const struct arcana_jails *d, bool config_only,
+    ucl_object_t *top)
+{
+	const struct arcana_jails_jails	*js;
+	ucl_object_t			*rows, *errs, *e;
+
 	rows = ucl_object_typed_new(UCL_ARRAY);
 	errs = ucl_object_typed_new(UCL_ARRAY);
-	if ((js = d.jails) != NULL) {
+	if ((js = d->jails) != NULL) {
 		for (size_t i = 0; i < js->jail.n; i++)
 			if (!config_only || js->jail.v[i].configured)
 				ucl_array_append(rows, jail_row(&js->jail.v[i]));
@@ -978,8 +989,6 @@ ytrans_jails(cbl_conn *conn, bool config_only, ucl_object_t *top, char *err,
 	put(top, "scopes", js != NULL ? strings(js->scope.n, js->scope.v) :
 	    ucl_object_typed_new(UCL_ARRAY));
 	put(top, "conf_errors", errs);
-	cbl_yarena_free(a);
-	return (0);
 }
 
 ucl_object_t *

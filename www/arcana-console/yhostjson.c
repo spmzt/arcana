@@ -30,8 +30,11 @@
 #include "ymodel.h"
 #include "yhostjson.h"
 #include "yqueue.h"
+#include "zprog.h"
 
 typedef struct arcana_host_host_read_certificates_output_trusted ycert;
+
+static ucl_object_t	*strs_of(const char *const *, size_t);
 
 static void
 put(ucl_object_t *o, const char *key, ucl_object_t *v)
@@ -61,12 +64,85 @@ epoch_of(const char *s)
 }
 
 int
+yh_hello(cbl_conn *conn, ucl_object_t **data, char *err, size_t errlen)
+{
+	const struct arcana_host_host	*h;
+	const struct cbl_yident		*id;
+	struct arcana_host		 d;
+	const struct cbl_ynode		*n;
+	ucl_object_t			*o, *arr;
+	cbl_yarena			*a;
+	int				 error;
+
+	*data = NULL;
+	err[0] = '\0';
+	if ((n = yq_top("arcana-host", "host")) == NULL) {
+		snprintf(err, errlen, "arcana-host has no host");
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&d, 0, sizeof(d));
+	if ((error = yq_get(conn, n, -1, &d, a, err, errlen)) != 0) {
+		cbl_yarena_free(a);
+		return (error);
+	}
+	if ((h = d.host) == NULL) {
+		cbl_yarena_free(a);
+		snprintf(err, errlen, "the agent tells no host");
+		return (ENOENT);
+	}
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put_str(o, "hostname", h->hostname);
+	put_str(o, "sysname", h->sysname);
+	put_str(o, "release", h->release);
+	put_str(o, "machine", h->machine);
+	put(o, "ncpu", ucl_object_fromint(h->ncpu));
+	put(o, "physmem", ucl_object_fromint((int64_t)h->physmem));
+	put(o, "boottime", ucl_object_fromint(epoch_of(h->boot_time)));
+	put(o, "time", ucl_object_fromint(epoch_of(h->time)));
+	put(o, "securelevel", ucl_object_fromint(h->securelevel));
+	put(o, "privileged", ucl_object_frombool(h->privileged));
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (size_t i = 0; i < h->plugin.n; i++)
+		if ((id = cbl_yschema_ident(&ymodel_schema, h->plugin.v[i])) !=
+		    NULL)
+			ucl_array_append(arr, ucl_object_fromstring(id->name));
+	if (h->agent != NULL) {
+		put_str(o, "version", h->agent->version);
+		put_str(o, "build", h->agent->build);
+		if (h->agent->has_safe_wait)
+			put(o, "safe_wait", ucl_object_fromint(
+			    h->agent->safe_wait));
+		if (h->agent->feature.n > 0)
+			put(o, "features", strs_of(h->agent->feature.v,
+			    h->agent->feature.n));
+	}
+	put(o, "plugins", arr);
+	*data = o;
+	cbl_yarena_free(a);
+	return (0);
+}
+
+bool
+yh_takes_gzip(const ucl_object_t *host)
+{
+	const ucl_object_t	*f, *e;
+	ucl_object_iter_t	 it = NULL;
+
+	f = host != NULL ? ucl_object_lookup(host, "features") : NULL;
+	while (f != NULL && (e = ucl_object_iterate(f, &it, true)) != NULL)
+		if (ucl_object_tostring(e) != NULL &&
+		    strcmp(ucl_object_tostring(e), ZPROG_FEATURE) == 0)
+			return (true);
+	return (false);
+}
+
+int
 yh_stats(cbl_conn *conn, ucl_object_t **data, char *err, size_t errlen)
 {
-	const struct arcana_host_host_stats	*s;
 	struct arcana_host			 d;
 	const struct cbl_ynode			*n;
-	ucl_object_t				*o, *pl, *po;
 	cbl_yarena				*a;
 	int					 error;
 
@@ -83,8 +159,20 @@ yh_stats(cbl_conn *conn, ucl_object_t **data, char *err, size_t errlen)
 		cbl_yarena_free(a);
 		return (error);
 	}
+	*data = yh_stats_of(&d);
+	cbl_yarena_free(a);
+	return (0);
+}
+
+/* The same of arcana-host's data as it is held (watch.c). */
+ucl_object_t *
+yh_stats_of(const struct arcana_host *d)
+{
+	const struct arcana_host_host_stats	*s;
+	ucl_object_t				*o, *pl, *po;
+
 	o = ucl_object_typed_new(UCL_OBJECT);
-	if (d.host != NULL && (s = d.host->stats) != NULL) {
+	if (d->host != NULL && (s = d->host->stats) != NULL) {
 		/* The module's CPU in tenths, its loads in hundredths. */
 		put(o, "cpu_pct", ucl_object_fromdouble((double)s->cpu / 10));
 		put(o, "load1", ucl_object_fromdouble((double)s->load1 / 100));
@@ -115,9 +203,7 @@ yh_stats(cbl_conn *conn, ucl_object_t **data, char *err, size_t errlen)
 		}
 		put(o, "pools", pl);
 	}
-	*data = o;
-	cbl_yarena_free(a);
-	return (0);
+	return (o);
 }
 
 static ucl_object_t *
@@ -257,6 +343,21 @@ yh_jail_files(cbl_conn *conn, ucl_object_t **data, char *err, size_t errlen)
 	return (error);
 }
 
+/* What a fetch the server refused tells, for a person to act on. */
+static ucl_object_t *
+fetched_of(const char *keys, const char *const *fpv, size_t fpn,
+    const char *deploy)
+{
+	ucl_object_t	*o;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put_str(o, "host_keys", keys);
+	if (fpn > 0)
+		put(o, "fingerprints", strs_of(fpv, fpn));
+	put_str(o, "deploy_key", deploy);
+	return (o);
+}
+
 int
 yh_source_log(cbl_conn *conn, const char *source, const char *ref,
     const char *host_keys, const char *ssh_key, uint32_t count,
@@ -287,7 +388,12 @@ yh_source_log(cbl_conn *conn, const char *source, const char *ref,
 		return (ENOMEM);
 	memset(&out, 0, sizeof(out));
 	if ((error = yq_call(conn, n, NULL, act, &in, &out, a, err,
-	    errlen)) == 0) {
+	    errlen)) == 0 && out.refused != NULL) {
+		snprintf(err, errlen, "%s", out.refused);
+		*data = fetched_of(out.host_keys, out.fingerprint.v,
+		    out.fingerprint.n, out.deploy_key);
+		error = EPERM;
+	} else if (error == 0) {
 		/* In the order build.c put them. */
 		top = ucl_object_typed_new(UCL_OBJECT);
 		put_str(top, "commit", out.commit);
@@ -913,4 +1019,248 @@ yh_tls(cbl_conn *conn, const char *verb, const char *cert, const char *ca,
 	*data = top;
 	cbl_yarena_free(a);
 	return (0);
+}
+
+/* An action of arcana-agent's agent container: refused or not, as said. */
+static int
+agent_do(cbl_conn *conn, const char *name, const void *in, void *out,
+    cbl_yarena *a, int ms, char *err, size_t errlen)
+{
+	const struct cbl_ynode	*n, *act;
+
+	if ((n = yq_top("arcana-agent", "agent")) == NULL ||
+	    (act = yq_child(n, name)) == NULL) {
+		snprintf(err, errlen, "arcana-agent has no %s", name);
+		return (ENOENT);
+	}
+	return (yq_call_wait(conn, n, NULL, act, in, out, a, ms, err,
+	    errlen));
+}
+
+int
+yh_source_head(cbl_conn *conn, const char *source, const char *ref,
+    const char *host_keys, const char *ssh_key, ucl_object_t **data,
+    char *err, size_t errlen)
+{
+	struct arcana_agent_agent_source_head_input	 in;
+	struct arcana_agent_agent_source_head_output	 out;
+	cbl_yarena					*a;
+	int						 error;
+
+	*data = NULL;
+	err[0] = '\0';
+	memset(&in, 0, sizeof(in));
+	in.source = source;
+	in.ref = ref != NULL && ref[0] != '\0' ? ref : NULL;
+	in.host_keys = host_keys;
+	in.ssh_key = ssh_key;
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&out, 0, sizeof(out));
+	if ((error = agent_do(conn, "source-head", &in, &out, a, -1, err,
+	    errlen)) == 0 && out.refused != NULL) {
+		snprintf(err, errlen, "%s", out.refused);
+		*data = fetched_of(out.host_keys, out.fingerprint.v,
+		    out.fingerprint.n, out.deploy_key);
+		error = EPERM;
+	} else if (error == 0) {
+		*data = ucl_object_typed_new(UCL_OBJECT);
+		put_str(*data, "commit", out.commit);
+	}
+	cbl_yarena_free(a);
+	return (error);
+}
+
+int
+yh_console_update(cbl_conn *conn, const char *source, const char *ref,
+    const char *host_keys, const char *ssh_key, ucl_object_t **data,
+    char *err, size_t errlen)
+{
+	struct arcana_agent_agent_console_update_input	 in;
+	struct arcana_agent_agent_console_update_output	 out;
+	cbl_yarena					*a;
+	int						 error;
+
+	*data = NULL;
+	err[0] = '\0';
+	memset(&in, 0, sizeof(in));
+	in.source = source;
+	in.ref = ref != NULL && ref[0] != '\0' ? ref : NULL;
+	in.host_keys = host_keys;
+	in.ssh_key = ssh_key;
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&out, 0, sizeof(out));
+	if ((error = agent_do(conn, "console-update", &in, &out, a, -1, err,
+	    errlen)) == 0 && out.refused != NULL) {
+		snprintf(err, errlen, "%s", out.refused);
+		*data = fetched_of(out.host_keys, out.fingerprint.v,
+		    out.fingerprint.n, out.deploy_key);
+		error = EPERM;
+	} else if (error == 0) {
+		/* Installed, the console and the agent restart (yarcana.c). */
+		*data = ucl_object_typed_new(UCL_OBJECT);
+		put_str(*data, "commit", out.commit);
+		put(*data, "restarting", ucl_object_frombool(true));
+	}
+	cbl_yarena_free(a);
+	return (error);
+}
+
+int
+yh_agent_build(cbl_conn *conn, const char *source, const char *ref,
+    const char *host_keys, const char *ssh_key, bool compress,
+    ucl_object_t **data, uint8_t **progp, size_t *lenp, char *err,
+    size_t errlen)
+{
+	struct arcana_agent_agent_build_input	 in;
+	struct arcana_agent_agent_build_output	 out;
+	const char				*why;
+	cbl_yarena				*a;
+	uint8_t					*prog;
+	int					 error;
+
+	*data = NULL;
+	*progp = NULL;
+	*lenp = 0;
+	err[0] = '\0';
+	memset(&in, 0, sizeof(in));
+	in.source = source;
+	in.ref = ref != NULL && ref[0] != '\0' ? ref : NULL;
+	in.host_keys = host_keys;
+	in.ssh_key = ssh_key;
+	/* Not said to an agent before compressed updates, which has no
+	 * compress. */
+	in.has_compress = compress;
+	in.compress = compress;
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&out, 0, sizeof(out));
+	if ((error = agent_do(conn, "build", &in, &out, a, -1, err,
+	    errlen)) == 0 && out.refused != NULL) {
+		snprintf(err, errlen, "%s", out.refused);
+		*data = fetched_of(out.host_keys, out.fingerprint.v,
+		    out.fingerprint.n, out.deploy_key);
+		error = EPERM;
+	} else if (error == 0 && (out.binary.len == 0 || out.sha256 ==
+	    NULL)) {
+		snprintf(err, errlen, "the host sent no program");
+		error = EINVAL;
+	} else if (error == 0) {
+		/* Compressed, inflated: the SHA-256 is the program's. */
+		if (out.has_program_size) {
+			if ((why = zprog_inflate(out.binary.p, out.binary.len,
+			    out.program_size, ZPROG_MAX_PROGRAM, &prog)) !=
+			    NULL) {
+				snprintf(err, errlen, "%s", why);
+				cbl_yarena_free(a);
+				return (EINVAL);
+			}
+			*lenp = out.program_size;
+		} else {
+			if ((prog = malloc(out.binary.len)) == NULL) {
+				cbl_yarena_free(a);
+				return (ENOMEM);
+			}
+			memcpy(prog, out.binary.p, out.binary.len);
+			*lenp = out.binary.len;
+		}
+		*progp = prog;
+		*data = ucl_object_typed_new(UCL_OBJECT);
+		put_str(*data, "version", out.version);
+		put_str(*data, "sha256", out.sha256);
+		put_str(*data, "commit", out.commit);
+	}
+	cbl_yarena_free(a);
+	return (error);
+}
+
+int
+yh_agent_update(cbl_conn *conn, const uint8_t *prog, size_t len,
+    const char *sha256, const uint8_t *sig, size_t siglen, bool restart,
+    bool gzip, int timeout_ms, ucl_object_t **data, char *err,
+    size_t errlen)
+{
+	struct arcana_agent_agent_update_input	 in;
+	struct arcana_agent_agent_update_output	 out;
+	cbl_yarena				*a;
+	uint8_t					*z;
+	size_t					 zlen;
+	int					 error;
+
+	*data = NULL;
+	err[0] = '\0';
+	z = NULL;
+	memset(&in, 0, sizeof(in));
+	/*
+	 * Compressed to an agent that takes it so; as it is to one before,
+	 * which has no program-size and takes no more than a frame holds.
+	 * The signature and the SHA-256 are the program's either way.
+	 */
+	if (gzip) {
+		if ((error = zprog_deflate(prog, len, &z, &zlen)) != 0) {
+			snprintf(err, errlen, "the program cannot be "
+			    "compressed: %s", strerror(error));
+			return (error);
+		}
+		if (zlen > ZPROG_MAX_BINARY) {
+			free(z);
+			snprintf(err, errlen, "the program, %zu bytes "
+			    "compressed, does not fit in an update (%d at "
+			    "most)", zlen, ZPROG_MAX_BINARY);
+			return (EFBIG);
+		}
+		in.binary.p = z;
+		in.binary.len = zlen;
+		in.has_program_size = true;
+		in.program_size = (uint32_t)len;
+	} else if (len > ZPROG_MAX_BINARY) {
+		snprintf(err, errlen, "this host's arcana-agent takes no "
+		    "compressed update, and the program, %zu bytes, is more "
+		    "than one carries as it is (%d)", len, ZPROG_MAX_BINARY);
+		return (EFBIG);
+	} else {
+		in.binary.p = prog;
+		in.binary.len = len;
+	}
+	in.sha256 = sha256;
+	in.signature.p = sig;
+	in.signature.len = sig != NULL ? siglen : 0;
+	/* Not said when not asked: an agent before takes it so too. */
+	in.has_restart = restart;
+	in.restart = restart;
+	if ((a = cbl_yarena_new()) == NULL) {
+		free(z);
+		return (ENOMEM);
+	}
+	memset(&out, 0, sizeof(out));
+	if ((error = agent_do(conn, "update", &in, &out, a, timeout_ms, err,
+	    errlen)) == 0) {
+		*data = ucl_object_typed_new(UCL_OBJECT);
+		put_str(*data, "version", out.version);
+		put(*data, "restarting", ucl_object_frombool(
+		    out.has_restarting && out.restarting));
+	}
+	cbl_yarena_free(a);
+	free(z);
+	return (error);
+}
+
+const struct arcana_jobs_step *
+yh_steps_of(const cbl_msg *msg, cbl_yarena *a, size_t *np)
+{
+	struct arcana_jobs_steps	*s;
+	const struct cbl_ynode		*n;
+	struct cbl_ynotif		 nt;
+
+	*np = 0;
+	if ((n = yq_top("arcana-jobs", "steps")) == NULL ||
+	    cbl_msg_ynotif(msg, &nt, a) != 0 || nt.sid != n->sid ||
+	    (s = cbl_yarena_alloc(a, sizeof(*s))) == NULL)
+		return (NULL);
+	memset(s, 0, sizeof(*s));
+	if (cbl_ydecode(n, nt.content, nt.len, s, a, 0, NULL, 0) != 0)
+		return (NULL);
+	*np = s->step.n;
+	return (s->step.v);
 }

@@ -420,7 +420,7 @@ yprobe_state_from_json(const char *json, cbl_yarena *a,
 {
 	struct arcana_probe_target_state		*v;
 	struct arcana_probe_target_state_now	*nw;
-	const ucl_object_t				*e, *o;
+	const ucl_object_t				*e, *o, *list;
 	ucl_object_iter_t				 it;
 	ucl_object_t					*top;
 	const char					*s;
@@ -434,12 +434,15 @@ yprobe_state_from_json(const char *json, cbl_yarena *a,
 	out->probing = yj_yes(top, "probing", &out->has_probing);
 	if (yj_num(top, "time", &n))
 		out->time = datetime(a, n);
-	if ((v = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top,
-	    "targets")) + 1) * sizeof(*v))) == NULL) {
+	/* SD-WAN's targets, or the admin's monitors (do_monitors()). */
+	if ((list = ucl_object_lookup(top, "targets")) == NULL)
+		list = ucl_object_lookup(top, "monitors");
+	if ((v = cbl_yarena_alloc(a, (yj_count(list) + 1) * sizeof(*v))) ==
+	    NULL) {
 		ucl_object_unref(top);
 		return (ENOMEM);
 	}
-	YJ_EACH(ucl_object_lookup(top, "targets"), it, e) {
+	YJ_EACH(list, it, e) {
 		memset(&v[k], 0, sizeof(v[k]));
 		if ((v[k].id = yj_str(a, e, "id")) == NULL)
 			continue;

@@ -1,0 +1,337 @@
+module arcana-speeder {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-speeder";
+  prefix arcspeed;
+
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "UDPspeeder's FEC relays (net/udpspeeder, speederv2) on a FreeBSD
+     host, or in a jail of it, as the agent reads them: Arcana's own rc
+     service, arcana_relay, and its profiles, each relay's flags read
+     (the key never shown), its service jail (rc.subr's svcj), the
+     groups and counters it logged and the intervals between its
+     reports; and the port's own relay, speederv2, read alone.  Changes
+     are jobs of kind speeder.  The speeder operation of arcana.yaml
+     converted (Y-3).";
+
+  revision 2026-10-29 {
+    description
+      "Initial revision.";
+  }
+
+  typedef rate {
+    type decimal64 {
+      fraction-digits 2;
+    }
+    description
+      "A number of two decimals: a share in per cent, bytes a
+       second.";
+  }
+
+  grouping way {
+    description
+      "One way's counters, as the relay logged them with --report.";
+    leaf plain-packets {
+      type int64;
+      description
+        "Plain packets taken in.";
+    }
+    leaf plain-bytes {
+      type int64;
+      units "bytes";
+      description
+        "Plain bytes taken in.";
+    }
+    leaf fec-packets {
+      type int64;
+      description
+        "Packets sent, the FEC's included.";
+    }
+    leaf fec-bytes {
+      type int64;
+      units "bytes";
+      description
+        "Bytes sent.";
+    }
+    leaf overhead {
+      type rate;
+      units "percent";
+      description
+        "What the FEC added, in all.";
+    }
+    leaf overhead-now {
+      type rate;
+      units "percent";
+      description
+        "Over the last interval.";
+    }
+    leaf plain-rate {
+      type rate;
+      units "bytes per second";
+      description
+        "Plain bytes a second over the last interval.";
+    }
+    leaf fec-rate {
+      type rate;
+      units "bytes per second";
+      description
+        "Bytes sent a second over the last interval.";
+    }
+  }
+
+  grouping relay {
+    description
+      "A relay: its flags as rc.conf has them, read, and what it
+       logged.";
+    leaf flags {
+      type string;
+      description
+        "Its flags, the key left out.";
+    }
+    leaf role {
+      type string;
+      description
+        "client or server.";
+    }
+    leaf listen {
+      type string;
+      description
+        "Where it listens.";
+    }
+    leaf remote {
+      type string;
+      description
+        "Where it sends.";
+    }
+    leaf fec {
+      type string;
+      description
+        "Its ratios, as given.";
+    }
+    leaf fifo {
+      type string;
+      description
+        "Its control fifo.";
+    }
+    leaf mode {
+      type int32;
+      description
+        "Its FEC mode.";
+    }
+    leaf mtu {
+      type int32;
+      description
+        "Its MTU.";
+    }
+    leaf timeout {
+      type int32;
+      description
+        "Its timeout.";
+    }
+    leaf report-every {
+      type int32;
+      units "seconds";
+      description
+        "How often it reports.";
+    }
+    leaf key {
+      type boolean;
+      description
+        "A key is set; never what.";
+    }
+    leaf extra {
+      type string;
+      description
+        "The words not understood.";
+    }
+    leaf svcj {
+      type boolean;
+      description
+        "It runs in rc.subr's service jail.";
+    }
+    leaf svcj-options {
+      type string;
+      description
+        "Its options.";
+    }
+    leaf svcj-ipaddrs {
+      type string;
+      description
+        "Its addresses.";
+    }
+    list fec-group {
+      key "size";
+      description
+        "The redundant packets it adds for each group size, as it
+         logged them at its start.";
+      leaf size {
+        type int32;
+        description
+          "The group's packets.";
+      }
+      leaf redundant {
+        type int32;
+        description
+          "The packets it adds.";
+      }
+    }
+    list period {
+      key "time";
+      description
+        "Each interval between two reports since its last start, the
+         oldest first.";
+      leaf time {
+        type yang:date-and-time;
+        description
+          "When it ended.";
+      }
+      leaf to-server {
+        type rate;
+        units "percent";
+        description
+          "The overhead to the server; below -100 with nothing
+           plain.";
+      }
+      leaf to-client {
+        type rate;
+        units "percent";
+        description
+          "The overhead to the client.";
+      }
+      leaf plain-to-server {
+        type rate;
+        units "bytes per second";
+        description
+          "The plain rate to the server.";
+      }
+      leaf plain-to-client {
+        type rate;
+        units "bytes per second";
+        description
+          "The plain rate to the client.";
+      }
+    }
+    container report {
+      description
+        "The last counters it logged with --report.";
+      leaf time {
+        type yang:date-and-time;
+        description
+          "When.";
+      }
+      leaf interval {
+        type rate;
+        units "seconds";
+        description
+          "Since the report before.";
+      }
+      container client-to-server {
+        description
+          "To the server.";
+        uses way;
+      }
+      container server-to-client {
+        description
+          "To the client.";
+        uses way;
+      }
+    }
+    leaf-list log {
+      type string;
+      description
+        "Its last lines.";
+    }
+  }
+
+  container speeder {
+    config false;
+    description
+      "UDPspeeder's relays, read when asked.";
+    action read {
+      description
+        "The relays, of the host or of a jail.";
+      input {
+        leaf jail {
+          type string;
+          description
+            "A running jail's (one with or without a network of its
+             own); none, the host's.";
+        }
+      }
+      output {
+        leaf installed {
+          type boolean;
+          description
+            "speederv2 is there.";
+        }
+        leaf enabled {
+          type boolean;
+          description
+            "arcana_relay_enable.";
+        }
+        leaf profiles-supported {
+          type boolean;
+          description
+            "Arcana's rc script runs several relays.";
+        }
+        leaf running {
+          type boolean;
+          description
+            "The relay runs (while no profile is listed).";
+        }
+        uses relay;
+        list profile {
+          key "name";
+          description
+            "Each relay of arcana_relay_profiles.";
+          leaf name {
+            type string;
+            description
+              "The profile.";
+          }
+          leaf running {
+            type boolean;
+            description
+              "It runs.";
+          }
+          uses relay;
+        }
+        container speederv2 {
+          description
+            "The port's own relay, where its rc script is installed,
+             read alone.";
+          leaf enabled {
+            type boolean;
+            description
+              "speederv2_enable.";
+          }
+          leaf running {
+            type boolean;
+            description
+              "It runs.";
+          }
+          uses relay;
+        }
+        leaf log-path {
+          type string;
+          description
+            "The log it is read from.";
+        }
+        leaf jail {
+          type string;
+          description
+            "The jail read.";
+        }
+      }
+    }
+  }
+}

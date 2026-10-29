@@ -1,0 +1,362 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-smtpd",
+    "module-revision": "2026-10-29",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "85700",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-smtpd",
+        "sid": "85700"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd",
+        "sid": "85701"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read",
+        "sid": "85702"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/input",
+        "sid": "85703"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/input/jail",
+        "sid": "85704"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output",
+        "sid": "85705"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/conf-path",
+        "sid": "85706"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config",
+        "sid": "85707"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf",
+        "sid": "85708"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-arcana",
+        "sid": "85709"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table",
+        "sid": "85710"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table/backend",
+        "sid": "85711"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table/editable",
+        "sid": "85712"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table/entry",
+        "sid": "85713"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table/entry/entry-key",
+        "sid": "85714"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table/entry/value",
+        "sid": "85715"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table/error",
+        "sid": "85716"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table/kind",
+        "sid": "85717"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table/name",
+        "sid": "85718"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table/path",
+        "sid": "85719"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table/secret",
+        "sid": "85720"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/config/conf-table/source",
+        "sid": "85721"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/enabled",
+        "sid": "85722"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/filter",
+        "sid": "85723"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/installed",
+        "sid": "85724"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/jail",
+        "sid": "85725"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/mailer",
+        "sid": "85726"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/pki",
+        "sid": "85727"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/pki-cert",
+        "sid": "85728"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/pki-cert/not-after",
+        "sid": "85729"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/pki-cert/not-before",
+        "sid": "85730"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/queue-max",
+        "sid": "85731"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/running",
+        "sid": "85732"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/sample",
+        "sid": "85733"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/sample/ok",
+        "sid": "85734"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/sample/permfail",
+        "sid": "85735"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/sample/queued",
+        "sid": "85736"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/sample/sessions",
+        "sid": "85737"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/sample/tempfail",
+        "sid": "85738"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/sample/time",
+        "sid": "85739"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl",
+        "sid": "85740"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope",
+        "sid": "85741"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/created",
+        "sid": "85742"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/dest",
+        "sid": "85743"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/error",
+        "sid": "85744"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/evpid",
+        "sid": "85745"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/expires",
+        "sid": "85746"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/flags",
+        "sid": "85747"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/from",
+        "sid": "85748"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/lasttry",
+        "sid": "85749"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/next",
+        "sid": "85750"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/retries",
+        "sid": "85751"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/source",
+        "sid": "85752"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/state",
+        "sid": "85753"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/to",
+        "sid": "85754"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/envelope/type",
+        "sid": "85755"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/queued",
+        "sid": "85756"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/stat",
+        "sid": "85757"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/stat/count",
+        "sid": "85758"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/stat/name",
+        "sid": "85759"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/status",
+        "sid": "85760"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/status/process",
+        "sid": "85761"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/smtpctl/status/state",
+        "sid": "85762"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/spec",
+        "sid": "85763"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/table",
+        "sid": "85764"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/table/name",
+        "sid": "85765"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/table/text",
+        "sid": "85766"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-smtpd:smtpd/read/output/table/user",
+        "sid": "85767"
+      }
+    ]
+  }
+}

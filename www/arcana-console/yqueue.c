@@ -55,14 +55,18 @@ yq_child(const struct cbl_ynode *n, const char *name)
 	return (NULL);
 }
 
-/* req asked, freed; *rep the answer, else err says why. */
+/*
+ * req asked, freed, waited for no longer than ms (-1: the connection's
+ * longest); *rep the answer, else err says why.
+ */
 static int
-ask(cbl_conn *conn, cbl_msg *req, cbl_msg **rep, char *err, size_t errlen)
+ask_wait(cbl_conn *conn, cbl_msg *req, cbl_msg **rep, int ms, char *err,
+    size_t errlen)
 {
 	int	error;
 
 	*rep = NULL;
-	if ((error = cbl_request(conn, req, rep, -1)) != 0) {
+	if ((error = cbl_request(conn, req, rep, ms)) != 0) {
 		snprintf(err, errlen, "%s", *rep != NULL &&
 		    cbl_msg_err_str(*rep) != NULL ? cbl_msg_err_str(*rep) :
 		    strerror(error));
@@ -70,6 +74,13 @@ ask(cbl_conn *conn, cbl_msg *req, cbl_msg **rep, char *err, size_t errlen)
 		*rep = NULL;
 	}
 	return (error);
+}
+
+static int
+ask(cbl_conn *conn, cbl_msg *req, cbl_msg **rep, char *err, size_t errlen)
+{
+
+	return (ask_wait(conn, req, rep, -1, err, errlen));
 }
 
 int
@@ -102,6 +113,16 @@ int
 yq_call(cbl_conn *conn, const struct cbl_ynode *list, const void *key,
     const struct cbl_ynode *act, const void *in, void *out, cbl_yarena *a,
     char *err, size_t errlen)
+{
+
+	return (yq_call_wait(conn, list, key, act, in, out, a, -1, err,
+	    errlen));
+}
+
+int
+yq_call_wait(cbl_conn *conn, const struct cbl_ynode *list, const void *key,
+    const struct cbl_ynode *act, const void *in, void *out, cbl_yarena *a,
+    int timeout_ms, char *err, size_t errlen)
 {
 	const struct cbl_ynode	*inode, *onode;
 	struct cbl_ybuf		 t = { NULL, 0, 0 };
@@ -139,7 +160,7 @@ yq_call(cbl_conn *conn, const struct cbl_ynode *list, const void *key,
 		snprintf(err, errlen, "%s", strerror(error));
 		return (error);
 	}
-	if ((error = ask(conn, req, &rep, err, errlen)) != 0)
+	if ((error = ask_wait(conn, req, &rep, timeout_ms, err, errlen)) != 0)
 		return (error);
 	error = out != NULL ? cbl_msg_ydecode(rep, onode, out, a, 0, err,
 	    errlen) : 0;
@@ -187,10 +208,8 @@ int
 yq_list(cbl_conn *conn, cbl_yarena *a, struct yq_jobs *out, char *err,
     size_t errlen)
 {
-	const struct arcana_jobs_jobs	*js;
 	const struct cbl_ynode		*n;
 	struct arcana_jobs		 d;
-	struct arc_job			*v = NULL;
 	int				 error;
 
 	memset(out, 0, sizeof(*out));
@@ -201,7 +220,18 @@ yq_list(cbl_conn *conn, cbl_yarena *a, struct yq_jobs *out, char *err,
 	memset(&d, 0, sizeof(d));
 	if ((error = yq_get(conn, n, -1, &d, a, err, errlen)) != 0)
 		return (error);
-	if ((js = d.jobs) == NULL)
+	return (yq_list_of(&d, a, out));
+}
+
+/* The same of arcana-jobs' data as it is held (watch.c). */
+int
+yq_list_of(const struct arcana_jobs *d, cbl_yarena *a, struct yq_jobs *out)
+{
+	const struct arcana_jobs_jobs	*js;
+	struct arc_job			*v = NULL;
+
+	memset(out, 0, sizeof(*out));
+	if ((js = d->jobs) == NULL)
 		return (0);
 	if (js->job.n > 0 && (v = cbl_yarena_alloc(a, js->job.n *
 	    sizeof(*v))) == NULL)
@@ -295,14 +325,16 @@ yq_submit(cbl_conn *conn, const struct arc_job_spec *v, size_t n,
 
 int
 yq_job(cbl_conn *conn, uint64_t id, cbl_yarena *a, struct arc_job *j,
-    char *err, size_t errlen)
+    const struct arcana_jobs_step **steps, size_t *nsteps, char *err,
+    size_t errlen)
 {
 	struct arcana_jobs_jobs_job_read_output	 out;
 	const struct cbl_ynode			*act;
-	struct arc_step				*s = NULL;
 	int					 error;
 
 	memset(j, 0, sizeof(*j));
+	*steps = NULL;
+	*nsteps = 0;
 	if ((act = job_action("read")) == NULL) {
 		snprintf(err, errlen, "arcana-jobs has no read");
 		return (ENOENT);
@@ -314,34 +346,8 @@ yq_job(cbl_conn *conn, uint64_t id, cbl_yarena *a, struct arc_job *j,
 	j->has_id = true;
 	j->id = id;
 	JOB_INFO(j, &out);
-	if (out.step.n > 0 && (s = cbl_yarena_alloc(a, out.step.n *
-	    sizeof(*s))) == NULL)
-		return (ENOMEM);
-	for (size_t i = 0; i < out.step.n; i++) {
-		const struct arcana_jobs_step *t = &out.step.v[i];
-
-		memset(&s[i], 0, sizeof(s[i]));
-		s[i].has_id = true;
-		s[i].id = t->id;
-		if ((s[i].has_parent = t->has_parent))
-			s[i].parent = t->parent;
-		if ((s[i].has_kind = t->has_kind))
-			s[i].kind = (uint8_t)t->kind;
-		s[i].label = t->label;
-		s[i].detail = t->detail;
-		if ((s[i].has_status = t->has_status))
-			s[i].status = (uint8_t)t->status;
-		if ((s[i].has_duration_us = t->has_duration))
-			s[i].duration_us = t->duration;
-		s[i].argv.n = t->argv.n;
-		s[i].argv.v = t->argv.v;
-		if ((s[i].has_exit = t->has_exit))
-			s[i].exit = t->exit;
-		s[i].output = t->output;
-		s[i].error_output = t->error_output;
-	}
-	j->trace.n = out.step.n;
-	j->trace.v = s;
+	*steps = out.step.v;
+	*nsteps = out.step.n;
 	return (0);
 }
 

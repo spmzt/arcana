@@ -1,13 +1,15 @@
-# A family spec (arcana.yaml, cluster.yaml) as its wire on cblink: the
-# YANG module whose rpcs mirror the operations (out=yang), the C header
-# that names the structs cblink-gen writes from that module as the
-# programs call them (out=h), and the C glue between the programs'
-# handlers and cblink (out=c).
+# A family spec (cluster.yaml) as its wire on cblink: the YANG module
+# whose rpcs mirror the operations (out=yang), the C header that names
+# the structs cblink-gen writes from that module as the programs call
+# them (out=h), and the C glue between the programs' handlers and
+# cblink (out=c).  A spec without operations (arcana.yaml) is no family:
+# its module has the structures alone, its header their names and the
+# definitions, and there is no glue.
 #
-#	awk -v out=yang -v rev=2026-10-22 -f wire.awk arcana.yaml > \
-#	    arcana@2026-10-22.yang
-#	awk -v out=h -v base=arcana_v2 -f wire.awk arcana.yaml > arcana.h
-#	awk -v out=c -v side=server -f wire.awk arcana.yaml > arcana_wire.c
+#	awk -v out=yang -v rev=2026-10-22 -f wire.awk cluster.yaml > \
+#	    arcana-cluster@2026-10-22.yang
+#	awk -v out=h -v base=arcana_v2 -f wire.awk cluster.yaml > cluster.h
+#	awk -v out=c -v side=both -f wire.awk cluster.yaml > cluster_wire.c
 #
 # side is server, client or both (out=c); base the name cblink-gen wrote
 # the module's header and tables under (out=h, out=c: base.h).  The
@@ -20,8 +22,9 @@
 # attributes one grouping each; a dump's forms are an rpc of their own;
 # an event is a structure of its multicast group; a stream's payload is
 # a structure, and so is a set with "structure: true" that no operation
-# carries any more, kept for the programs' own use (the agent's jobs).  Enums travel as uint8 with their names in the
-# description, so that the C member stays a uint8_t.
+# carries, kept for the programs' own use (the agent's jobs).  Enums
+# travel as uint8 with their names in the description, so that the C
+# member stays a uint8_t.
 
 function die(msg) {
 	printf "wire.awk: %s\n", msg > "/dev/stderr"
@@ -447,15 +450,19 @@ function out_yang(    i, j, s, op, famset, st, cmd) {
 	printf "  prefix %s;\n\n", pfx
 	printf "  import cblink-gen {\n    prefix cg;\n  }\n"
 	printf "  import ietf-yang-structure-ext {\n    prefix sx;\n  }\n"
-	printf "  import arcana-family {\n    prefix fam;\n  }\n\n"
+	if (nop > 0)
+		printf "  import arcana-family {\n    prefix fam;\n  }\n"
+	printf "\n"
 	printf "  organization\n    \"Arcana\";\n"
 	printf "  contact\n    \"Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>\";\n"
 	ydesc(docs["spec"] "\nWritten by share/arcana/wire.awk from share/arcana/" \
-	    spec ".yaml: the operations of the family spec as rpcs, on wire " \
-	    "version 2.  Do not edit.", "  ")
+	    spec ".yaml: " (nop > 0 ? "the operations of the family spec as " \
+	    "rpcs, on wire version 2" : "the structures the programs keep") \
+	    ".  Do not edit.", "  ")
 	printf "\n  revision %s {\n    description\n      \"From the spec as of this day.\";\n  }\n\n",
 	    rev
-	printf "  fam:family %s;\n  fam:version 2;\n\n", ystr(spec)
+	if (nop > 0)
+		printf "  fam:family %s;\n  fam:version 2;\n\n", ystr(spec)
 	# The consts, said.
 	for (i = 1; i <= ndef; i++)
 		if (deftype[defname[i]] == "const")
@@ -474,7 +481,7 @@ function out_yang(    i, j, s, op, famset, st, cmd) {
 	for (i = 1; i <= nop; i++)
 		if (opset[opname[i]] != "")
 			famset = opset[opname[i]]
-	if (famset == "")
+	if (famset == "" && nop > 0)
 		die("no family set: no operation names an attribute set")
 	for (j = 1; j <= nattr[famset]; j++) {
 		printf "  grouping attr-%s {\n", attr[famset, j]
@@ -560,8 +567,9 @@ function out_h(    i, j, s, op, e, u, d, famset, st) {
 	    spec, base
 	printf "#ifndef _%s_WIRE_H_\n#define\t_%s_WIRE_H_\n\n", u, u
 	printf "#include <cbl_schema.h>\n#include <cblink.h>\n\n#include \"%s.h\"\n\n", base
-	printf "#define\t%s_FAMILY_NAME\t%s\n#define\t%s_FAMILY_VERSION\t2\n\n",
-	    u, ystr(spec), u
+	if (nop > 0)
+		printf "#define\t%s_FAMILY_NAME\t%s\n#define\t%s_FAMILY_VERSION\t2\n\n",
+		    u, ystr(spec), u
 	for (i = 1; i <= ndef; i++) {
 		d = defname[i]
 		if (deftype[d] == "const")
@@ -578,18 +586,20 @@ function out_h(    i, j, s, op, e, u, d, famset, st) {
 			    j - 1
 		printf "#define\t%s_%s_COUNT\t%d\n\n", u, uname(d), nent[d]
 	}
-	printf "/* The commands, as the frames carry them; an event's is its\n * notification's. */\n"
-	for (i = 1; i <= nop; i++) {
-		op = opname[i]
-		if (opretired[op])
-			continue
-		printf "#define\t%s_CMD_%s\t%d\n", u, uname(op), cmd_of(op)
+	if (nop > 0) {
+		printf "/* The commands, as the frames carry them; an event's is its\n * notification's. */\n"
+		for (i = 1; i <= nop; i++) {
+			op = opname[i]
+			if (opretired[op])
+				continue
+			printf "#define\t%s_CMD_%s\t%d\n", u, uname(op), cmd_of(op)
+		}
+		printf "\n/* The multicast groups, by their place in the family. */\n"
+		printf "enum {\n"
+		for (i = 1; i <= ngrp; i++)
+			printf "\t%s_MCGRP_%s%s,\n", u, uname(grpname[i]), (i == 1 ? " = 0" : "")
+		printf "\t%s_MCGRP_COUNT\n};\n\n", u
 	}
-	printf "\n/* The multicast groups, by their place in the family. */\n"
-	printf "enum {\n"
-	for (i = 1; i <= ngrp; i++)
-		printf "\t%s_MCGRP_%s%s,\n", u, uname(grpname[i]), (i == 1 ? " = 0" : "")
-	printf "\t%s_MCGRP_COUNT\n};\n\n", u
 	printf "/* The structs, by the programs' names. */\n"
 	for (i = 1; i <= nset; i++) {
 		s = setname[i]
@@ -629,6 +639,10 @@ function out_h(    i, j, s, op, e, u, d, famset, st) {
 			printf "#define\t%s_%s_dump_rsp\t%s_%s_dump_output\n", pfx,
 			    cname(op), cname(spec), cname(op)
 		}
+	}
+	if (nop == 0) {
+		printf "\n#endif /* !_%s_WIRE_H_ */\n", u
+		return
 	}
 	printf "\n/* ---- The server: the handlers the program defines, the replies ---- */\n\n"
 	printf "extern const struct cbl_family_def %s_family_def;\n", pfx
@@ -968,6 +982,8 @@ function out_c_dumps(    u) {
 }
 
 function out_c(    hdr) {
+	if (nop == 0)
+		die("no operations: no family, no glue")
 	mark_structs()
 	hdr = base == "" ? spec : base
 	printf "/*\n * Written by share/arcana/wire.awk from share/arcana/%s.yaml: the glue\n * between the program and cblink for the family, over the structs\n * cblink-gen writes from the module.  Do not edit.\n */\n\n",
@@ -995,10 +1011,8 @@ END {
 		out_h()
 	else if (out == "c")
 		out_c()
-	else if (out == "schema")
-		out_schema()
 	else
-		die("out is yang, h, c or schema")
+		die("out is yang, h or c")
 }
 
 BEGIN {
@@ -1009,121 +1023,4 @@ BEGIN {
 		side = "both"
 	if (hdrname == "")
 		hdrname = "arcana"
-}
-
-# ---- out=schema: the reference the console's Schema panel shows ------
-#
-# The JSON: the sets' attributes (id, name, type, checks, doc) and the
-# operations (cmd, set, doc, request, reply), with the SIDs of the
-# module beside them (the rpc's, and each attribute's under it) read
-# from the .sid file named by sids, so that the panel can say what keys
-# the CBOR carries.
-
-function jstr(s) {
-	gsub(/\\/, "\\\\", s)
-	gsub(/"/, "\\\"", s)
-	gsub(/\t/, " ", s)
-	gsub(/\n/, " ", s)
-	return "\"" s "\""
-}
-
-function read_sids(file,    line, id, s) {
-	if (file == "")
-		return
-	id = ""
-	while ((getline line < file) > 0) {
-		if (line ~ /"identifier":/) {
-			id = line
-			sub(/.*"identifier": *"/, "", id)
-			sub(/".*/, "", id)
-		} else if (line ~ /"sid":/ && id != "") {
-			s = line
-			sub(/.*"sid": *"/, "", s)
-			sub(/".*/, "", s)
-			sid[id] = s
-			id = ""
-		}
-	}
-	close(file)
-}
-
-function checks_text(ak,    out, k, n, i, keys) {
-	out = ""
-	n = split("min-len max-len min max min-count max-count", keys, " ")
-	for (i = 1; i <= n; i++)
-		if ((ak, keys[i]) in achk)
-			out = out (out == "" ? "" : ", ") keys[i] " " achk[ak, keys[i]]
-	return out
-}
-
-function jio(op, form, dir,    k, rk, i, j, a, req, out, path, s) {
-	k = op ":" form ":" dir ":attrs"
-	rk = op ":" form ":" dir ":req"
-	out = ""
-	for (i = 1; i <= opn[k]; i++) {
-		a = opa[k, i]
-		req = 0
-		for (j = 1; j <= opn[rk]; j++)
-			if (opa[rk, j] == a)
-				req = 1
-		path = "/" spec ":" op (form == "dump" ? "-dump" : "") "/" \
-		    (dir == "request" ? "input" : "output") "/" a
-		s = (path in sid) ? sid[path] : ""
-		out = out (out == "" ? "" : ",") "{\"name\":" jstr(a) ",\"required\":" \
-		    (req ? "true" : "false") (s != "" ? ",\"sid\":" s : "") "}"
-	}
-	return "[" out "]"
-}
-
-function out_schema(    i, j, s, op, ak, sets, ops, rows, t, path, cmd, form) {
-	read_sids(sids)
-	sets = ""
-	for (i = 1; i <= nset; i++) {
-		s = setname[i]
-		rows = ""
-		for (j = 1; j <= nattr[s]; j++) {
-			ak = s ":" attr[s, j]
-			t = atype[ak]
-			if (t == "nest")
-				t = (amulti[ak] ? "nest[] " : "nest ") anest[ak]
-			else if (aenum[ak] != "")
-				t = t " " aenum[ak]
-			else if (amulti[ak])
-				t = t "[]"
-			rows = rows (rows == "" ? "" : ",") "{\"id\":" j ",\"name\":" \
-			    jstr(attr[s, j]) ",\"type\":" jstr(t) ",\"checks\":" \
-			    jstr(checks_text(ak)) ",\"doc\":" jstr(docs["attr:" ak]) "}"
-		}
-		sets = sets (sets == "" ? "" : ",") jstr(s) ":[" rows "]"
-	}
-	ops = ""
-	for (i = 1; i <= nop; i++) {
-		op = opname[i]
-		if (opretired[op])
-			continue
-		cmd = cmd_of(op)
-		if (opforms[op, "event"]) {
-			path = "/" spec ":" op "-ntf"
-			ops = ops (ops == "" ? "" : ",") jstr(op) ":{\"cmd\":" cmd \
-			    ",\"set\":" jstr(opset[op]) ",\"doc\":" jstr(docs["op:" op]) \
-			    ",\"event\":" jio(op, "event", "event") \
-			    ((path in sid) ? ",\"sid\":" sid[path] : "") "}"
-			continue
-		}
-		form = opforms[op, "do"] ? "do" : "dump"
-		path = "/" spec ":" op (form == "dump" ? "-dump" : "")
-		ops = ops (ops == "" ? "" : ",") jstr(op) ":{\"cmd\":" cmd ",\"set\":" \
-		    jstr(opset[op]) ",\"doc\":" jstr(docs["op:" op]) ",\"request\":" \
-		    jio(op, form, "request") ",\"reply\":" jio(op, form, "reply") \
-		    ((path in sid) ? ",\"sid\":" sid[path] : "")
-		if (opforms[op, "dump"] && opforms[op, "do"]) {
-			path = "/" spec ":" op "-dump"
-			ops = ops ",\"dump\":{\"request\":" jio(op, "dump", "request") \
-			    ",\"reply\":" jio(op, "dump", "reply") \
-			    ((path in sid) ? ",\"sid\":" sid[path] : "") "}"
-		}
-		ops = ops "}"
-	}
-	printf "{\"family\":%s,\"version\":2,\"sets\":{%s},\"ops\":{%s}}\n",
-	    jstr(spec), sets, ops
 }

@@ -121,7 +121,7 @@ do_notify(struct work *w, const char *token, const char *chat,
 		*errp = "the Bot API's address is not one";
 		return (-1);
 	}
-	step = step_begin(w, ARC_STEP_KIND_LIB, "libfetch fetchReqHTTP()",
+	step = step_begin(w, STEP_LIB, "libfetch fetchReqHTTP()",
 	    "Telegram sendMessage to chat %s, %zu characters", chat,
 	    strlen(text));
 	pthread_mutex_lock(&tg_lock);

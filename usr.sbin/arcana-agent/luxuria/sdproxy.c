@@ -756,7 +756,7 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 			if (strcmp(ni[k].name, instances[i].name) == 0)
 				break;
 		if (k == n) {
-			step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+			step = step_begin(w, STEP_DAEMON, "arcana-agent",
 			    "squid %s stopped", instances[i].name);
 			inst_down(w, instances[i].name);
 			step_end(w, step, true, NULL);
@@ -768,7 +768,7 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		in = ucl_object_iterate(ucl_object_lookup(top, "instances"), &it,
 		    true);
 		was = inst_pid(w, ni[k].name) != 0;
-		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		step = step_begin(w, STEP_DAEMON, "arcana-agent",
 		    "squid %s in fib %d, %s: %s", ni[k].name, ni[k].fib, ni[k].mode,
 		    was ? "reconfigured" : "started");
 		e = NULL;

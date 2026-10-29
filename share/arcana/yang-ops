@@ -1,7 +1,7 @@
-# The operations of arcana.yaml converted to YANG (PLAN-SDN-YANG Y-3),
-# and the module each is now: an operation's task shows the module's
-# tree (RFC 8340) beside its CBOR schema.  One a line: operation, then
-# module@revision, a module of share/yang.
+# The console's operations, by the names its traces give them
+# ("libcblink YANG <operation>"), and the module each is: an operation's
+# task shows the module's tree (RFC 8340) beside it.  One a line:
+# operation, then module@revision, a module of share/yang.
 list	arcana-jails@2026-10-14
 action	arcana-jails@2026-10-14
 services	arcana-services@2026-10-14
@@ -17,14 +17,16 @@ job-confirm	arcana-jobs@2026-10-14
 jobs-set	arcana-jobs@2026-10-14
 storage	arcana-storage@2026-10-14
 fstab	arcana-storage@2026-10-14
-zfs-send	arcana-storage@2026-10-14
-zfs-receive	arcana-storage@2026-10-14
+zfs-send	arcana-stream@2026-10-29
+zfs-receive	arcana-stream@2026-10-29
 zfs-key	arcana-storage@2026-10-14
 sysctl	arcana-sysctl@2026-10-14
 sysctl-parts	arcana-sysctl@2026-10-14
 kernel	arcana-kernel@2026-10-14
 processes	arcana-processes@2026-10-14
 log	arcana-log@2026-10-14
+# ipfw-rules: firewall/kept/text (a vnet jail's in firewall/jail) by a
+# commit, the host's first a migration; check and from-rc its actions.
 ipfw-rules	arcana-firewall@2026-10-15
 fw-trace	arcana-firewall@2026-10-15
 path-check	arcana-troubleshoot@2026-10-15
@@ -34,16 +36,17 @@ history	arcana-history@2026-10-15
 events	arcana-events@2026-10-15
 event	arcana-events@2026-10-15
 bird-config	arcana-bird@2026-10-15
-# hello stays an operation (how a console reaches an agent of an
-# earlier release); its host and the stats are arcana-host's host, the
-# certs its read-certificates action.
+# step: arcana-jobs' steps notification, a request's trace as it runs.
+step	arcana-jobs@2026-10-14
+# hello and the stats are a read of arcana-host's host (the agent's
+# version, build and features in it), the certs its read-certificates
+# action.
 hello	arcana-host@2026-10-15
 stats	arcana-host@2026-10-15
 certs	arcana-host@2026-10-15
-# agent-update, agent-build, console-update and source-head stay
-# operations (the fleet's update); source-log, config-export and
-# config-apply are arcana-agent's actions, transport and tls its state
-# with their actions.
+# agent-update, agent-build, console-update, source-head, source-log,
+# config-export and config-apply are arcana-agent's actions, transport
+# and tls its state with their actions.
 agent-update	arcana-agent@2026-10-15
 agent-build	arcana-agent@2026-10-15
 console-update	arcana-agent@2026-10-15
@@ -67,16 +70,35 @@ sdwan-dhcp	arcana-sdwan@2026-10-15
 sdwan-dns	arcana-sdwan@2026-10-15
 sdwan-proxy	arcana-sdwan@2026-10-15
 sdwan-ids	arcana-sdwan@2026-10-15
-address	ietf-ip@2018-02-22
-# network's interfaces; its netgraph, wireguard and bird kinds the read
-# actions of arcana-netgraph, arcana-wireguard and arcana-bird, its
-# bird-routes and bird-ospf kinds arcana-bird's routes and ospf.
-network	arcana-interfaces@2026-10-14
-network-parts	arcana-network-instance@2026-10-14
-route-lookup	ietf-routing@2018-03-13
+# address: the address action arcana-network adds to arcana-jails' jail.
+address	arcana-network@2026-10-29
+# network's kinds the read actions of arcana-network's network (the
+# host's interfaces ietf-interfaces' too, its ipfw kind arcana-firewall's
+# state, a vnet jail's by the ipfw action); its netgraph, wireguard and
+# bird kinds those of arcana-netgraph, arcana-wireguard and arcana-bird.
+# network-parts: the arcana-parts family's stream, every message
+# arcana-network's network-part; route-lookup its lookup action
+# (ietf-routing's active-route the best route alone).
+network	arcana-network@2026-10-29
+network-parts	arcana-network@2026-10-29
+route-lookup	arcana-network@2026-10-29
 step	arcana-jobs@2026-10-14
 steps	arcana-jobs@2026-10-14
 ssh	arcana-sshd@2026-10-15
 builder	arcana-builder@2026-10-17
 builder-options	arcana-builder@2026-10-17
 notify	arcana-notify@2026-10-17
+# monitors: arcana-probe's read of the admin's monitors; the reads below
+# each an action of a module of their own, its nodes named as the
+# JSON's keys (yflat.c).
+monitors	arcana-probe@2026-10-15
+crashes	arcana-crashes@2026-10-29
+system	arcana-system@2026-10-29
+netstore	arcana-netstore@2026-10-29
+suricata-rules	arcana-suricata@2026-10-29
+smtpd	arcana-smtpd@2026-10-29
+speeder	arcana-speeder@2026-10-29
+# suricata-pcap-put and -get, as zfs-send and zfs-receive: streams of
+# arcana-stream, Arcana's own family, its structures their bodies.
+suricata-pcap-put	arcana-stream@2026-10-29
+suricata-pcap-get	arcana-stream@2026-10-29

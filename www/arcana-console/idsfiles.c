@@ -39,6 +39,7 @@
 #include <time.h>
 
 #include "console.h"
+#include "ystream.h"
 
 #define	PUT_CHUNK	(128 * 1024)
 #define	DL_WINDOW	(4 * 1024 * 1024)
@@ -111,9 +112,9 @@ struct put {
 static void
 put_open(cbl_stream *s __unused, cbl_msg *accept, int error, void *arg)
 {
-	struct arc_suricata_pcap_put_rsp	 o;
-	struct put				*p = arg;
-	cbl_yarena				*a;
+	struct arcana_stream_opened	 o;
+	struct put			*p = arg;
+	cbl_yarena			*a;
 	ucl_object_t				*j;
 	const char				*v;
 
@@ -126,9 +127,7 @@ put_open(cbl_stream *s __unused, cbl_msg *accept, int error, void *arg)
 		    cbl_msg_err_str(accept) != NULL ? cbl_msg_err_str(accept) :
 		    strerror(error));
 	} else if (accept != NULL && (a = cbl_yarena_new()) != NULL) {
-		memset(&o, 0, sizeof(o));
-		if (arcana_suricata_pcap_put_output_parse(accept, &o, a,
-		    CBL_YD_STRICT, NULL, 0) == 0 && o.json != NULL &&
+		if (ys_opened(accept, &o, a) == 0 && o.json != NULL &&
 		    (j = json_parse_text(o.json)) != NULL) {
 			if ((v = ucl_str(j, "path")) != NULL)
 				snprintf(p->path, sizeof(p->path), "%s", v);
@@ -178,31 +177,26 @@ static int
 put_run(struct task *t)
 {
 	struct put			*p = (struct put *)t;
-	struct arc_suricata_pcap_put_req rq;
-	struct arc_client		 cl;
-	struct arc_chunk		 c;
+	struct arcana_stream_open	 rq;
 	struct timespec			 until;
 	cbl_conn			*conn;
-	cbl_msg				*m;
 	const char			*msg;
 	size_t				 off, n;
 	int				 error;
 
 	p->rc = -1;
 	if ((msg = hosts_shared(p->uri, p->peer[0] != '\0' ? p->peer : NULL,
-	    &conn, &cl)) != NULL) {
+	    &conn)) != NULL) {
 		snprintf(p->why, sizeof(p->why), "the host does not answer: %s",
 		    msg);
 		return (WEB_OK);
 	}
 	memset(&rq, 0, sizeof(rq));
-	rq.names.v = p->names;
-	rq.names.n = p->nnames;
+	rq.name.v = p->names;
+	rq.name.n = p->nnames;
 	pthread_mutex_lock(&p->lock);
-	if ((error = cbl_msg_new(cbl_conn_ctx(conn), cl.family,
-	    ARC_CMD_SURICATA_PCAP_PUT, CBL_F_REQUEST | CBL_F_S_OPEN, &m)) != 0 ||
-	    (error = arc_suricata_pcap_put_req_put_fields(m, &rq)) != 0 ||
-	    (error = cbl_stream_open(conn, m, 0, &put_cbs, p, &p->s)) != 0) {
+	if ((error = ys_open(conn, YS_PCAP_PUT, &rq, 0, 0, &put_cbs, p,
+	    &p->s)) != 0) {
 		pthread_mutex_unlock(&p->lock);
 		snprintf(p->why, sizeof(p->why), "the host's stream could not "
 		    "be opened: %s", strerror(error));
@@ -215,11 +209,8 @@ put_run(struct task *t)
 	error = 0;
 	for (off = 0; !p->closed && off < p->len; off += n) {
 		n = MIN(PUT_CHUNK, p->len - off);
-		memset(&c, 0, sizeof(c));
-		c.data.p = p->data + off;
-		c.data.len = n;
 		pthread_mutex_unlock(&p->lock);
-		error = arc_suricata_pcap_put_send(p->s, &c);
+		error = ys_send(p->s, p->data + off, n);
 		pthread_mutex_lock(&p->lock);
 		if (error == EAGAIN) {
 			/* No room: the host's, back as it writes. */
@@ -370,9 +361,9 @@ static struct timer	*dl_ticker;
 static void
 dl_open(cbl_stream *s __unused, cbl_msg *accept, int error, void *arg)
 {
-	struct arc_suricata_pcap_get_rsp	 o;
-	struct dl				*d = arg;
-	cbl_yarena				*a;
+	struct arcana_stream_opened	 o;
+	struct dl			*d = arg;
+	cbl_yarena			*a;
 	ucl_object_t				*j;
 
 	pthread_mutex_lock(&d->lock);
@@ -384,9 +375,7 @@ dl_open(cbl_stream *s __unused, cbl_msg *accept, int error, void *arg)
 		    cbl_msg_err_str(accept) != NULL ? cbl_msg_err_str(accept) :
 		    strerror(error));
 	} else if (accept != NULL && (a = cbl_yarena_new()) != NULL) {
-		memset(&o, 0, sizeof(o));
-		if (arcana_suricata_pcap_get_output_parse(accept, &o, a,
-		    CBL_YD_STRICT, NULL, 0) == 0 && o.json != NULL &&
+		if (ys_opened(accept, &o, a) == 0 && o.json != NULL &&
 		    (j = json_parse_text(o.json)) != NULL) {
 			d->size = ucl_object_toint(ucl_object_lookup(j, "size"));
 			ucl_object_unref(j);
@@ -400,15 +389,15 @@ dl_open(cbl_stream *s __unused, cbl_msg *accept, int error, void *arg)
 static void
 dl_data(cbl_stream *s, cbl_msg *data, void *arg)
 {
-	struct dl		*d = arg;
-	struct arc_chunk	 c;
-	cbl_yarena		*a;
+	struct dl			*d = arg;
+	struct arcana_stream_chunk	 c;
+	cbl_yarena			*a;
 
 	if ((a = cbl_yarena_new()) == NULL) {
 		(void)cbl_stream_reset(s, ENOMEM);
 		return;
 	}
-	if (arcana_chunk_parse(data, &c, a, CBL_YD_STRICT, NULL, 0) != 0) {
+	if (ys_chunk(data, &c, a) != 0) {
 		cbl_yarena_free(a);
 		(void)cbl_stream_reset(s, EBADMSG);
 		return;
@@ -465,17 +454,15 @@ static void *
 dl_run(void *arg)
 {
 	struct dl			*d = arg;
-	struct arc_suricata_pcap_get_req rq;
-	struct arc_client		 cl;
+	struct arcana_stream_open	 rq;
 	struct timespec			 until;
 	cbl_conn			*conn;
-	cbl_msg				*m;
 	const char			*msg, *names[2];
 	size_t				 give;
 	int				 error;
 
 	if ((msg = hosts_shared(d->uri, d->peer[0] != '\0' ? d->peer : NULL,
-	    &conn, &cl)) != NULL) {
+	    &conn)) != NULL) {
 		pthread_mutex_lock(&d->lock);
 		d->opened = d->failed = true;
 		snprintf(d->why, sizeof(d->why), "the host does not answer: %s",
@@ -487,15 +474,11 @@ dl_run(void *arg)
 	memset(&rq, 0, sizeof(rq));
 	names[0] = d->words[0];
 	names[1] = d->words[1];
-	rq.names.v = names;
-	rq.names.n = 2;
+	rq.name.v = names;
+	rq.name.n = 2;
 	pthread_mutex_lock(&d->lock);
-	if ((error = cbl_msg_new(cbl_conn_ctx(conn), cl.family,
-	    ARC_CMD_SURICATA_PCAP_GET, CBL_F_REQUEST | CBL_F_S_OPEN, &m)) != 0 ||
-	    (error = arc_suricata_pcap_get_req_put_fields(m, &rq)) != 0 ||
-	    (error = cbl_msg_set_window(m, DL_WINDOW)) != 0 ||
-	    (error = cbl_stream_open(conn, m, CBL_SF_MANUAL_CREDIT, &dl_cbs, d,
-	    &d->s)) != 0) {
+	if ((error = ys_open(conn, YS_PCAP_GET, &rq, DL_WINDOW,
+	    CBL_SF_MANUAL_CREDIT, &dl_cbs, d, &d->s)) != 0) {
 		d->opened = d->failed = true;
 		snprintf(d->why, sizeof(d->why), "the host's stream could not "
 		    "be opened: %s", strerror(error));

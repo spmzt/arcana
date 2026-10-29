@@ -3,7 +3,8 @@
 
 PROG=		arcana-console
 SRCS=		web.c keymgr.c routes.c api.c auth.c config.c hosts.c pki.c push.c servers.c settings.c security.c troubleshoot.c \
-		stream.c follow.c tokens.c transfers.c workflows.c sdwan.c sdwan_edge.c \
+		stream.c follow.c watch.c tokens.c transfers.c workflows.c sdwan.c \
+		sdwan_edge.c \
 		store.c update.c webpush.c audit.c sen.c mail.c templates.c ldap.c labels.c notif.c prefixlists.c users.c \
 		craft.c nodes.c ytrans.c yjsonin.c restconf.c rcstream.c idsfiles.c drift.c
 # A program compressed for agent-update, and one agent-build sent so:
@@ -16,8 +17,7 @@ MAN=		arcana-console.8
 .include "${.CURDIR}/../../share/mk/arcana.mk"
 
 # The consoles of a cluster to each other: a family served and asked
-# both, apart from arcana.yaml's, of which the console is a client.
-ARC_WIRE=	client
+# both.
 ARC_CLUSTER=	yes
 .include "${.CURDIR}/../../share/mk/arcana.wire.mk"
 # The standard models, asked of the agents by cblink's YANG family: the
@@ -78,9 +78,12 @@ hosts.o: jobs_spec.h
 # operation's kinds as the pages read them (yplug.c); an SD-WAN edge's
 # probes in arcana-probe's candidate (yprobes.c), its other parts in
 # arcana-sdwan's and the sdwan read made of both (ysdwan.c); the host and
-# its agent through arcana-host (yhostjson.c).  arcanactl builds the same.
+# its agent through arcana-host (yhostjson.c); sshd, poudriere and the
+# notices through their modules (yreads.c); the network through
+# arcana-network (ynet.c).  arcanactl builds the same.
 SRCS+=		yqueue.c ychange.c ystore.c ygula.c yevjson.c ytshoot.c \
-		ytsjson.c yplug.c yprobes.c yhostjson.c ysdwan.c
+		ytsjson.c yplug.c yprobes.c yhostjson.c ysdwan.c yreads.c \
+		yflat.c ystream.c ynet.c
 CFLAGS.ychange.c+= -I${.CURDIR}
 CLEANFILES+=	ychange.c ychange.c.tmp
 ychange.c: ${ARC_TOP}/share/arcana/jobs.awk ${ARC_TOP}/share/arcana/jobs.yaml \

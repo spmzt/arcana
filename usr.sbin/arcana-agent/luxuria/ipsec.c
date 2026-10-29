@@ -450,7 +450,7 @@ in_kernel(void)
  * "children": [{"name", "state", "mode", "reqid", "bytes-in", ...}]}]}
  */
 int
-do_ipsec(struct work *w, struct arc_network_rsp *rsp)
+do_ipsec(struct work *w, struct net_rsp *rsp)
 {
 	struct execres		 res;
 	ucl_object_t		*top, *conns, *sas, *certs;
@@ -684,7 +684,7 @@ own_key(struct work *w, const char **errp)
 			return (-1);
 		}
 	} else {
-		step = step_begin(w, ARC_STEP_KIND_FILE, "private key", "made %s, "
+		step = step_begin(w, STEP_FILE, "private key", "made %s, "
 		    "ECDSA P-256", w->jail != NULL ? "in the jail" :
 		    "on this host");
 		k = EVP_PKEY_Q_keygen(NULL, NULL, "EC", "P-256");
@@ -940,7 +940,7 @@ model_write(struct work *w, const char *conn, const ucl_object_t *m,
 	json = sw_path(w, wfmt(w, "conf.d/arcana-%s.json", conn));
 	had_conf = scope_slurp(w, conf, NULL) != NULL;
 	had_json = scope_slurp(w, json, NULL) != NULL;
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", conf);
+	step = step_begin(w, STEP_FILE, "write", "%s", conf);
 	emitted = ucl_object_emit(m, UCL_EMIT_JSON_COMPACT);
 	text = emitted != NULL ? wtext(w, wadopt(w, emitted)) : "{}";
 	if (scope_replace(w, json, text, strlen(text), 0644, wfmt(w,
@@ -1076,7 +1076,7 @@ do_unconn(struct work *w, const char *conn, const char **errp)
 	    NULL);
 	conf = sw_path(w, wfmt(w, "conf.d/arcana-%s.conf", conn));
 	pub = sw_path(w, wfmt(w, "pubkey/arcana-%s.pub", conn));
-	step = step_begin(w, ARC_STEP_KIND_FILE, "remove", "%s, %s", conf,
+	step = step_begin(w, STEP_FILE, "remove", "%s, %s", conf,
 	    pub);
 	ok = (scope_rename(w, conf, strrchr(conf, '/') + 1, NULL) == 0 ||
 	    errno == ENOENT);

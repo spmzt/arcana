@@ -412,7 +412,7 @@ git_ssh(struct work *w, const char *source, const char *accepted,
 			fclose(fp);
 		}
 		if (accepted != NULL && accepted[0] != '\0') {
-			s = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", kh);
+			s = step_begin(w, STEP_FILE, "write", "%s", kh);
 			if (!valid_host_keys(accepted, name) || write_text(kh,
 			    accepted) == -1) {
 				step_end(w, s, false, "not host keys of %s",
@@ -473,7 +473,7 @@ fetch_ready(struct work *w, const char *source, const char *ref,
 		rsp->error = "not a branch or tag name";
 		return (false);
 	}
-	s = step_begin(w, ARC_STEP_KIND_FILE, "mkdir", "%s", opts.build_dir);
+	s = step_begin(w, STEP_FILE, "mkdir", "%s", opts.build_dir);
 	if (mkdir(opts.build_dir, 0755) == -1 && errno != EEXIST) {
 		step_end(w, s, false, "%s", strerror(errno));
 		rsp->error = wfmt(w, "%s: %s", opts.build_dir, strerror(errno));
@@ -626,7 +626,7 @@ tree_fetch(struct work *w, const char *source, const char *ref,
 static int
 agent_build(struct work *w, const char *source, const char *ref,
     const char *accepted, const char *sshkey, bool compress,
-    struct arc_agent_build_rsp *rsp)
+    struct build_rsp *rsp)
 {
 	struct fetched	 f;
 	struct execres	 res;
@@ -706,10 +706,10 @@ agent_build(struct work *w, const char *source, const char *ref,
 	    res.outlen);
 	prog = wfmt(w, "%s/arcana-agent", objdir);
 
-	s = step_begin(w, ARC_STEP_KIND_FILE, "read", "%s", prog);
+	s = step_begin(w, STEP_FILE, "read", "%s", prog);
 	if ((fd = open(prog, O_RDONLY | O_CLOEXEC)) == -1 || fstat(fd,
 	    &sb) == -1 || sb.st_size == 0 || sb.st_size > (compress ?
-	    ARC_MAX_PROGRAM : ARC_MAX_BINARY)) {
+	    ZPROG_MAX_PROGRAM : ZPROG_MAX_BINARY)) {
 		step_end(w, s, false, "%s", fd == -1 ? strerror(errno) :
 		    "not a program an update can carry");
 		rsp->error = wfmt(w, "%s: no program to send back", prog);
@@ -750,7 +750,7 @@ agent_build(struct work *w, const char *source, const char *ref,
 	rsp->binary.p = bin;
 	rsp->binary.len = off;
 	if (compress) {
-		s = step_begin(w, ARC_STEP_KIND_LIB, "deflate(3)", "%zu bytes "
+		s = step_begin(w, STEP_LIB, "deflate(3)", "%zu bytes "
 		    "to gzip", off);
 		if (zprog_deflate(bin, off, &z, &zlen) != 0) {
 			step_end(w, s, false, "failed");
@@ -758,9 +758,9 @@ agent_build(struct work *w, const char *source, const char *ref,
 			return (0);
 		}
 		wadopt(w, z);
-		if (zlen > ARC_MAX_BINARY) {
-			step_end(w, s, false, "%zu bytes, past max-binary",
-			    zlen);
+		if (zlen > ZPROG_MAX_BINARY) {
+			step_end(w, s, false, "%zu bytes, past what an update "
+			    "carries", zlen);
 			rsp->error = "the program does not compress into what "
 			    "an update carries";
 			return (0);
@@ -786,7 +786,7 @@ agent_build(struct work *w, const char *source, const char *ref,
 static int
 console_update(struct work *w, const char *source, const char *ref,
     const char *accepted, const char *sshkey,
-    struct arc_console_update_rsp *rsp)
+    struct build_rsp *rsp)
 {
 	struct fetched	 f;
 	struct execres	 res;
@@ -834,7 +834,7 @@ console_update(struct work *w, const char *source, const char *ref,
 static int
 source_head(struct work *w, const char *source, const char *ref,
     const char *accepted, const char *sshkey,
-    struct arc_source_head_rsp *rsp)
+    struct build_rsp *rsp)
 {
 	struct fetched	 f;
 	struct gitssh	 g;
@@ -1075,7 +1075,7 @@ source_log(struct work *w, const char *source, const char *ref,
 int
 do_agent_build(struct work *w, const char *source, const char *ref,
     const char *accepted, const char *sshkey, bool compress,
-    struct arc_agent_build_rsp *rsp)
+    struct build_rsp *rsp)
 {
 	int	rc;
 
@@ -1087,7 +1087,7 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 
 int
 do_source_head(struct work *w, const char *source, const char *ref,
-    const char *accepted, const char *sshkey, struct arc_source_head_rsp *rsp)
+    const char *accepted, const char *sshkey, struct build_rsp *rsp)
 {
 	int	rc;
 
@@ -1113,7 +1113,7 @@ do_source_log(struct work *w, const char *source, const char *ref,
 int
 do_console_update(struct work *w, const char *source, const char *ref,
     const char *accepted, const char *sshkey,
-    struct arc_console_update_rsp *rsp)
+    struct build_rsp *rsp)
 {
 	int	rc;
 

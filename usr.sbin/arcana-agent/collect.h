@@ -301,7 +301,8 @@ struct arc_job_spec;
 int	yjobs_from(const struct arc_job *v, size_t n, const char *activity,
 	    int64_t since, bool stopping, int lanes, cbl_yarena *a,
 	    struct arcana_jobs *out);
-int	yjobs_read(const struct arc_job *j, cbl_yarena *a,
+void	yjobs_read(const struct arc_job *j,
+	    const struct arcana_jobs_step *steps, size_t nsteps,
 	    struct arcana_jobs_jobs_job_read_output *out);
 /* A submit's change made a job-spec (yjobs_spec.c, jobs.awk's), and
  * all of them (*bad, the one refused). */
@@ -470,11 +471,11 @@ int	yng_from_json(const char *json, cbl_yarena *a, size_t *np,
  * stats (st NULL: none), and the trust store's JSON as the
  * read-certificates action's output (yhost_certs_from_json()).
  */
-struct arc_host;
+struct host_facts;
 struct host_stats;
 int	yhost_certs_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_host_host_read_certificates_output *out);
-int	yhost_from(const struct arc_host *h, const struct host_stats *st,
+int	yhost_from(const struct host_facts *h, const struct host_stats *st,
 	    cbl_yarena *a, struct arcana_host_host *out);
 
 /*
@@ -570,5 +571,20 @@ int	yang_serve(cbl_ctx *);
 struct work *ywork(cbl_yarena *a);
 struct work *ywork_told(cbl_req *req, cbl_yarena *a, const char *what,
 	    int *root);
+
+/*
+ * arcana-network (invidia/ynet.c): ynet_node(), node path ("a/b", or
+ * NULL) under module mod's top-level node top; ynet_decode(), JSON v
+ * made the struct out of node on (an output, a structure), a's, what
+ * the model has no node or type for left out.
+ */
+struct ucl_object_s;
+const struct cbl_ynode *ynet_node(const char *mod, const char *top,
+	    const char *path);
+/* arcana-firewall's firewall where w is (yarcana.c): EIO and *errp, ipfw's. */
+int	yfw_read(struct work *w, cbl_yarena *a,
+	    struct arcana_firewall_firewall **op, const char **errp);
+int	ynet_decode(const struct cbl_ynode *on, const struct ucl_object_s *v,
+	    void *out, cbl_yarena *a);
 
 #endif	/* !_ARCANA_COLLECT_H_ */

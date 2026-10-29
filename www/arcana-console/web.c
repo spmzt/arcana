@@ -2156,6 +2156,7 @@ worker(void)
 	while (!quit)
 		if (lws_service(ctx, 0) < 0)
 			break;
+	hosts_tally_log();
 	lws_context_destroy(ctx);
 	_exit(0);
 }

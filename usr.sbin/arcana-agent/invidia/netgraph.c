@@ -83,7 +83,7 @@ ng_line(const char *line, void *arg)
 
 /* {"nodes": [{"name", "type", "id", "hooks": [{"hook", "peer", ...}]}]} */
 int
-do_netgraph(struct work *w, struct arc_network_rsp *rsp)
+do_netgraph(struct work *w, struct net_rsp *rsp)
 {
 	struct nglist	 l;
 	struct execres	 res;

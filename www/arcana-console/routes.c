@@ -165,6 +165,8 @@ const struct route routes[] = {
 	    NULL, HTTP_METHOD_POST },
 	{ "^/api/servers/[0-9a-f]{1,16}/notifications$", api_notifications,
 	    NULL, HTTP_METHOD_GET },
+	{ "^/api/servers/[0-9a-f]{1,16}/watch$", api_watch, NULL,
+	    HTTP_METHOD_GET },
 	{ "^/api/servers/[0-9a-f]{1,16}/subscription$", api_subscription,
 	    NULL, HTTP_METHOD_GET },
 	{ "^/api/servers/[0-9a-f]{1,16}/subscription/token$",

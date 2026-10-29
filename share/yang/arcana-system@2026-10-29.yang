@@ -1,0 +1,316 @@
+module arcana-system {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-system";
+  prefix arcsys;
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "A FreeBSD host's own configuration as the agent reads it: the
+     files of the sysfile job's table (devfs.rules(5), devd's,
+     syslog.conf(5), newsyslog.conf(5), periodic.conf(5), the audit
+     files, krb5.conf(5), ipsec.conf, rctl.conf(5), a loader.conf.d
+     file) with the daemon that reads each and what shows it at work;
+     and the host's settings beside them: ntpd(8), the Linux ABI,
+     securelevel(7), the MAC modules (mac(4)), auditd(8), GEOM's
+     tree and classes, GELI, periodic(8)'s variables, rc.conf's
+     service jails, racct, the hardening sysctls and dma(8)'s smart
+     host.  Changes are jobs of kind sysfile and geom.  The system
+     operation of arcana.yaml converted (Y-3); ietf-ntp (RFC 9249)
+     is what NTP's part would be once ntp.conf is written from a
+     model.";
+
+  revision 2026-10-29 {
+    description
+      "Initial revision.";
+  }
+
+  grouping service {
+    description
+      "A daemon's state.";
+    leaf enabled {
+      type boolean;
+      description
+        "rc.conf enables it.";
+    }
+    leaf running {
+      type boolean;
+      description
+        "It runs.";
+    }
+  }
+
+  container system {
+    config false;
+    description
+      "The system's own configuration, read when asked.";
+    action read {
+      description
+        "The system's files, and the host's settings, or those named
+         alone.";
+      input {
+        leaf-list name {
+          type string;
+          description
+            "The files by name, and host for the host's settings;
+             none, all.";
+        }
+      }
+      output {
+        list file {
+          key "name";
+          description
+            "The files of the sysfile job's table.";
+          leaf name {
+            type string;
+            description
+              "Its name in the table.";
+          }
+          leaf path {
+            type string;
+            description
+              "Where it is.";
+          }
+          leaf text {
+            type string;
+            description
+              "Its text, 256 KiB at most; none when it is not there.";
+          }
+          leaf service {
+            type string;
+            description
+              "The daemon that reads it, told after a write.";
+          }
+          uses service;
+          leaf shows {
+            type string;
+            description
+              "What shows it at work: devfs rule showsets, setkey
+               -DP, rctl.";
+          }
+        }
+        container host {
+          presence
+            "The host's settings were read.";
+          description
+            "The host's settings beside the files, read with host or
+             with no name.";
+          container ntp {
+            description
+              "ntpd(8).";
+            uses service;
+            leaf conf {
+              type string;
+              description
+                "ntp.conf's text.";
+            }
+            leaf peers {
+              type string;
+              description
+                "ntpq -pn's peers.";
+            }
+          }
+          container linux {
+            description
+              "The Linux ABI (linux(4)).";
+            leaf enabled {
+              type boolean;
+              description
+                "rc.conf's linux_enable.";
+            }
+            list module {
+              key "name";
+              description
+                "Its kernel modules.";
+              leaf name {
+                type string;
+                description
+                  "The module.";
+              }
+              leaf loaded {
+                type boolean;
+                description
+                  "It is loaded.";
+              }
+            }
+          }
+          container securelevel {
+            description
+              "securelevel(7).";
+            leaf now {
+              type int32;
+              description
+                "kern.securelevel.";
+            }
+            leaf kern-securelevel-enable {
+              type string;
+              description
+                "rc.conf's.";
+            }
+            leaf kern-securelevel {
+              type string;
+              description
+                "rc.conf's.";
+            }
+          }
+          list mac-module {
+            key "name";
+            description
+              "The MAC policy modules (mac(4)).";
+            leaf name {
+              type string;
+              description
+                "The module.";
+            }
+            leaf loaded {
+              type boolean;
+              description
+                "It is loaded.";
+            }
+          }
+          container auditd {
+            description
+              "auditd(8).";
+            uses service;
+          }
+          leaf geom {
+            type string;
+            description
+              "geom -t, GEOM's tree.";
+          }
+          leaf geli {
+            type string;
+            description
+              "geli list.";
+          }
+          list geom-class {
+            key "name";
+            description
+              "Each GEOM class loaded.";
+            leaf name {
+              type string;
+              description
+                "The class.";
+            }
+            leaf status {
+              type string;
+              description
+                "geom CLASS status -s.";
+            }
+          }
+          list periodic {
+            key "name";
+            description
+              "periodic(8)'s _enable variables.";
+            leaf name {
+              type string;
+              description
+                "The variable.";
+            }
+            leaf default-value {
+              type string;
+              description
+                "/etc/defaults/periodic.conf's value.";
+            }
+            leaf value {
+              type string;
+              description
+                "periodic.conf's, the last line that sets it; none when
+                 it does not.";
+            }
+          }
+          list svcj {
+            key "name";
+            description
+              "rc.conf's service jails' variables (rc.conf(5),
+               _svcj).";
+            leaf name {
+              type string;
+              description
+                "The variable.";
+            }
+            leaf value {
+              type string;
+              description
+                "Its value.";
+            }
+          }
+          leaf racct {
+            type int32;
+            description
+              "kern.racct.enable, what rctl(8) needs.";
+          }
+          list hardening {
+            key "name";
+            description
+              "The hardening sysctls this kernel has, as they are now.";
+            leaf name {
+              type string;
+              description
+                "The sysctl.";
+            }
+            leaf value {
+              type int32;
+              description
+                "Its value.";
+            }
+          }
+          container dma {
+            description
+              "dma(8)'s smart host, as dma.conf and auth.conf say; never
+               the password.";
+            leaf conf-path {
+              type string;
+              description
+                "dma.conf.";
+            }
+            leaf smarthost {
+              type string;
+              description
+                "SMARTHOST.";
+            }
+            leaf port {
+              type string;
+              description
+                "PORT.";
+            }
+            leaf tls {
+              type enumeration {
+                enum none {
+                  description
+                    "Plain.";
+                }
+                enum tls {
+                  description
+                    "SECURETRANSFER.";
+                }
+                enum starttls {
+                  description
+                    "STARTTLS.";
+                }
+                enum opportunistic {
+                  description
+                    "OPPORTUNISTIC_TLS.";
+                }
+              }
+              description
+                "How it secures the relay.";
+            }
+            leaf user {
+              type string;
+              description
+                "Who it signs in as.";
+            }
+            leaf password-set {
+              type boolean;
+              description
+                "auth.conf has a password for it.";
+            }
+          }
+        }
+      }
+    }
+  }
+}

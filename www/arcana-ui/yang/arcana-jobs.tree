@@ -404,3 +404,18 @@ module: arcana-jobs
        |     +---w safe-wait?   uint32
        +--ro output
           +--ro id*   uint64
+
+  notifications:
+    +---n steps
+       +---- step* [id]
+          +---- id              uint32
+          +---- parent?         int32
+          +---- kind?           enumeration
+          +---- label?          string
+          +---- detail?         string
+          +---- status?         enumeration
+          +---- duration?       uint64
+          +---- argv*           string
+          +---- exit?           int32
+          +---- output?         binary
+          +---- error-output?   binary

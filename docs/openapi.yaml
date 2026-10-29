@@ -1223,10 +1223,12 @@ paths:
         sha256 of it. The rules themselves, with their sets and
         counters, are read with net/ipfw; a rule is added or deleted,
         the kept rules applied and the firewall turned on or off by
-        jobs of kind ipfw. With from=rc, text is instead the file
-        rc.conf's firewall_type names (rc_file), which the firewall
-        loads now, made into kept rules and not written; sha256 is
-        still the kept file's, for a change made from it.
+        jobs of kind ipfw. With from=rc, text is instead what the host
+        boots now (its own firewall_script, the file firewall_type
+        names, or the kept file; under rc.firewall its own rules as the
+        kernel has them first) made into kept rules and not written, the
+        migration's dry run, rc_file saying from where; sha256 is still
+        the kept file's, for a change made from it.
       parameters:
         - $ref: "#/components/parameters/server"
         - name: jail
@@ -1244,11 +1246,19 @@ paths:
       description: With text and the sha256 of what it was made from;
         check true has ipfw read it without doing it and keeps nothing.
         A line may not name a set, flush or delete, which applying does.
+        Kept by a commit of arcana-firewall, nothing loaded. The host's
+        first moves its boot to Arcana's own script (firewall_script in
+        Arcana's rc.conf file, the host's own files as they were) and
+        is refused, nothing written, unless the rules are those the
+        kernel has now; accept lists the warnings it takes
+        (rc-conf-files, rc-conf-conflict), a refusal's error_tag naming
+        the one to accept; migrated says from where.
       parameters:
         - $ref: "#/components/parameters/server"
       responses:
         "200":
-          description: ok, text and sha256, or error
+          description: ok, text and sha256 (and migrated), or error and
+            error_tag
         "400": { $ref: "#/components/responses/Error" }
   /api/servers/{server}/processes:
     get:

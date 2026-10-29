@@ -6,18 +6,18 @@ SRCS=		main.c handlers.c work.c
 SRCS+=		yjson.c
 # Superbia: identity, configuration, what is true of the host.
 SRCS+=		admit.c ynacm.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c bundle.c l2.c ipfw.c netstore.c sysfiles.c geomjob.c \
-		yagent.c yhost.c yhw.c ysshd.c ysystem.c ysysedit.c
+		yagent.c yhost.c yhw.c ysshd.c ysystem.c ysysedit.c yreads.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwmatch.c pathcheck.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		routes.c rtimes.c scope.c sdwan.c vnet.c wireguard.c \
 		yif.c yip.c yni.c yrt.c rcroutes.c rcarcana.c ynetconf.c yifedit.c rtadv.c ylne.c lneroot.c yfw.c yng.c ysd.c \
-		yts.c ywg.c yserve.c yarcana.c ynotif.c
+		yts.c ywg.c yserve.c yarcana.c ynotif.c ynet.c
 # Luxuria: what is not FreeBSD's own, the plugins.
 SRCS+=		bird.c birdwatch.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdconf.c sdids.c idsconf.c idsfiles.c surules.c smtpd.c speeder.c telegram.c poudriere.c clamav.c \
 		ybird.c ybuilder.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c jailallow.c packages.c pkgbase.c \
-		services.c update.c zprog.c yjailedit.c yjails.c yjf.c yjobs.c \
+		services.c update.c zprog.c yflat.c ystream.c yjailedit.c yjails.c yjf.c yjobs.c \
 		ypackages.c yservices.c ysvcedit.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
 SRCS+=		record.c \
@@ -34,7 +34,6 @@ MAN=		arcana-agent.8
 CBLINK_STATIC=	yes
 .include "${.CURDIR}/../../share/mk/arcana.mk"
 
-ARC_WIRE=	server
 .include "${.CURDIR}/../../share/mk/arcana.wire.mk"
 ARC_YANG_SERVER= yes
 .include "${.CURDIR}/../../share/mk/arcana.yang.mk"

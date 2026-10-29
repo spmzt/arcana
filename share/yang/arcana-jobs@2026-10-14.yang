@@ -132,6 +132,97 @@ module arcana-jobs {
     }
   }
 
+  grouping step {
+    description
+      "A step of a trace: what the agent did for a request or a job.";
+    leaf id {
+      type uint32;
+      description
+        "Its number in the trace.";
+    }
+    leaf parent {
+      type int32 {
+        range "-1..max";
+      }
+      description
+        "The step it is part of; -1, the root.";
+    }
+    leaf kind {
+      type enumeration {
+        enum daemon {
+          value 0;
+        }
+        enum lib {
+          value 1;
+        }
+        enum syscall {
+          value 2;
+        }
+        enum file {
+          value 3;
+        }
+        enum exec {
+          value 4;
+        }
+      }
+      description
+        "What it was: the agent's own, a library's call, a system
+         call, a file read or written, a program run.";
+    }
+    leaf label {
+      type string;
+      description
+        "What it was, named.";
+    }
+    leaf detail {
+      type string;
+      description
+        "What it was, said.";
+    }
+    leaf status {
+      type enumeration {
+        enum ok {
+          value 0;
+        }
+        enum failed {
+          value 1;
+        }
+        enum incomplete {
+          value 2;
+        }
+      }
+      description
+        "How it went.";
+    }
+    leaf duration {
+      type uint64;
+      units "microseconds";
+      description
+        "How long it took.";
+    }
+    leaf-list argv {
+      type string;
+      ordered-by user;
+      description
+        "A program run: its arguments.";
+    }
+    leaf exit {
+      type int32;
+      description
+        "A program run: its exit status.";
+    }
+    leaf output {
+      type binary;
+      description
+        "A program run: what it wrote to its standard output.";
+    }
+    leaf error-output {
+      type binary;
+      description
+        "And to its standard error.";
+    }
+  }
+
   container jobs {
     description
       "The queued, running and recent jobs, and how many jobs of pkg in
@@ -214,92 +305,7 @@ module arcana-jobs {
             description
               "A step of its trace, in the order taken; each names its
                parent, the tree in a flat list.";
-            leaf id {
-              type uint32;
-              description
-                "Its number in the trace.";
-            }
-            leaf parent {
-              type int32 {
-                range "-1..max";
-              }
-              description
-                "The step it is part of; -1, the root.";
-            }
-            leaf kind {
-              type enumeration {
-                enum daemon {
-                  value 0;
-                }
-                enum lib {
-                  value 1;
-                }
-                enum syscall {
-                  value 2;
-                }
-                enum file {
-                  value 3;
-                }
-                enum exec {
-                  value 4;
-                }
-              }
-              description
-                "What it was: the agent's own, a library's call, a system
-                 call, a file read or written, a program run.";
-            }
-            leaf label {
-              type string;
-              description
-                "What it was, named.";
-            }
-            leaf detail {
-              type string;
-              description
-                "What it was, said.";
-            }
-            leaf status {
-              type enumeration {
-                enum ok {
-                  value 0;
-                }
-                enum failed {
-                  value 1;
-                }
-                enum incomplete {
-                  value 2;
-                }
-              }
-              description
-                "How it went.";
-            }
-            leaf duration {
-              type uint64;
-              units "microseconds";
-              description
-                "How long it took.";
-            }
-            leaf-list argv {
-              type string;
-              ordered-by user;
-              description
-                "A program run: its arguments.";
-            }
-            leaf exit {
-              type int32;
-              description
-                "A program run: its exit status.";
-            }
-            leaf output {
-              type binary;
-              description
-                "A program run: what it wrote to its standard output.";
-            }
-            leaf error-output {
-              type binary;
-              description
-                "And to its standard error.";
-            }
+            uses step;
           }
         }
       }
@@ -342,6 +348,22 @@ module arcana-jobs {
         description
           "The jobs queued, in the order given.";
       }
+    }
+  }
+
+  notification steps {
+    description
+      "Steps of a request as the agent takes them, each as it begins
+       and again as it ends, told to the peer that made the request
+       alone, where it joined group notify: the trace a reply would
+       carry, heard while the request runs.  A step comes again with
+       the same id when it changes; the last told is what it is.";
+    list step {
+      cg:struct "step";
+      key "id";
+      description
+        "The steps told, one mostly.";
+      uses step;
     }
   }
 }

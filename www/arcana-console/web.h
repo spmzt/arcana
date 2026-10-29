@@ -235,6 +235,8 @@ struct task {
  * acting for a user (NULL: for nobody). */
 const char	*web_user(struct http_request *);
 void		 web_act_as(const char *);
+/* The program's: said as the worker stops. */
+void		 hosts_tally_log(void);
 
 void		 task_create(struct task *, task_fn *);
 void		 task_bind_request(struct task *, struct http_request *);

@@ -45,6 +45,8 @@
 #include "yprobes.h"
 #include "ysdwan.h"
 #include "ytshoot.h"
+#include "yreads.h"
+#include "ystream.h"
 #include "zprog.h"
 
 #define	PATH_SOCKET	"unix:/var/run/arcana-agent.sock"
@@ -61,17 +63,17 @@ static const char *state_names[] = {
 };
 
 static const char *kind_names[] = {
-	[ARC_STEP_KIND_DAEMON] = "daemon",
-	[ARC_STEP_KIND_LIB] = "lib",
-	[ARC_STEP_KIND_SYSCALL] = "syscall",
-	[ARC_STEP_KIND_FILE] = "file",
-	[ARC_STEP_KIND_EXEC] = "exec",
+	[ARCANA_JOBS_STEP_KIND_DAEMON] = "daemon",
+	[ARCANA_JOBS_STEP_KIND_LIB] = "lib",
+	[ARCANA_JOBS_STEP_KIND_SYSCALL] = "syscall",
+	[ARCANA_JOBS_STEP_KIND_FILE] = "file",
+	[ARCANA_JOBS_STEP_KIND_EXEC] = "exec",
 };
 
 static const char *status_names[] = {
-	[ARC_STEP_STATUS_OK] = "ok",
-	[ARC_STEP_STATUS_FAILED] = "failed",
-	[ARC_STEP_STATUS_INCOMPLETE] = "incomplete",
+	[ARCANA_JOBS_STEP_STATUS_OK] = "ok",
+	[ARCANA_JOBS_STEP_STATUS_FAILED] = "failed",
+	[ARCANA_JOBS_STEP_STATUS_INCOMPLETE] = "incomplete",
 };
 
 static bool	show_trace;
@@ -91,7 +93,7 @@ static const char *job_states[] = {
 };
 
 static void	usage(void) __dead2;
-static void	fail(struct arc_client *, int, const char *) __dead2;
+static void	fail(int, const char *) __dead2;
 static char	*slurp(const char *);
 static char	*words_joined(int, char **);
 
@@ -104,43 +106,43 @@ static fileargs_t	*files;		/* to read */
 static fileargs_t	*outfiles;	/* agent-build's program, to write */
 static const char *join(const char *const *, size_t);
 static void	emit_jail(const struct arcana_jails_jails_jail *, bool);
-static void	emit_trace(const struct arc_step *, size_t);
+static void	emit_trace(const struct arcana_jobs_step *, size_t);
 static void	emit_lines(const char *, const struct cbl_bytes *);
-static int	cmd_hello(struct arc_client *);
-static int	cmd_list(struct arc_client *, int, char **);
-static int	cmd_action(struct arc_client *, uint8_t, int, char **);
-static int	cmd_address(struct arc_client *, int, char **);
-static int	cmd_allow(struct arc_client *, int, char **);
-static int	cmd_services(struct arc_client *);
-static int	cmd_net(struct arc_client *, int, char **);
-static int	cmd_stats(struct arc_client *);
-static int	cmd_kmod(struct arc_client *, int, char **);
-static int	cmd_sysctl(struct arc_client *, int, char **);
-static int	cmd_gula(struct arc_client *, int, char **);
-static int	cmd_ipfw(struct arc_client *, int, char **);
-static int	cmd_l2(struct arc_client *, int, char **);
-static int	cmd_transport(struct arc_client *, int, char **);
-static int	cmd_config_export(struct arc_client *, int, char **);
-static int	cmd_config_apply(struct arc_client *, int, char **);
-static int	cmd_path_check(struct arc_client *, int, char **);
-static int	cmd_notify(struct arc_client *, int, char **);
-static int	cmd_storage(struct arc_client *, int, char **);
-static int	cmd_storage_job(struct arc_client *, int, char **);
-static int	cmd_fstab(struct arc_client *, int, char **);
-static int	cmd_packages(struct arc_client *, int, char **);
-static int	cmd_pkg_clean(struct arc_client *, int, char **);
-static int	cmd_pkg_install(struct arc_client *, int, char **);
-static int	cmd_ipsec(struct arc_client *, int, char **);
-static int	cmd_pkg_upgrade(struct arc_client *, int, char **);
+static int	cmd_hello(cbl_conn *);
+static int	cmd_list(cbl_conn *, int, char **);
+static int	cmd_action(cbl_conn *, uint8_t, int, char **);
+static int	cmd_address(cbl_conn *, int, char **);
+static int	cmd_allow(cbl_conn *, int, char **);
+static int	cmd_services(cbl_conn *);
+static int	cmd_net(cbl_conn *, int, char **);
+static int	cmd_stats(cbl_conn *);
+static int	cmd_kmod(cbl_conn *, int, char **);
+static int	cmd_sysctl(cbl_conn *, int, char **);
+static int	cmd_gula(cbl_conn *, int, char **);
+static int	cmd_ipfw(cbl_conn *, int, char **);
+static int	cmd_l2(cbl_conn *, int, char **);
+static int	cmd_transport(cbl_conn *, int, char **);
+static int	cmd_config_export(cbl_conn *, int, char **);
+static int	cmd_config_apply(cbl_conn *, int, char **);
+static int	cmd_path_check(cbl_conn *, int, char **);
+static int	cmd_notify(cbl_conn *, int, char **);
+static int	cmd_storage(cbl_conn *, int, char **);
+static int	cmd_storage_job(cbl_conn *, int, char **);
+static int	cmd_fstab(cbl_conn *, int, char **);
+static int	cmd_packages(cbl_conn *, int, char **);
+static int	cmd_pkg_clean(cbl_conn *, int, char **);
+static int	cmd_pkg_install(cbl_conn *, int, char **);
+static int	cmd_ipsec(cbl_conn *, int, char **);
+static int	cmd_pkg_upgrade(cbl_conn *, int, char **);
 static void	emit_packages(const struct arcana_packages_package *, size_t);
-static int	submit(struct arc_client *, struct arc_job_spec *);
+static int	submit(cbl_conn *, struct arc_job_spec *);
 static void	emit_job(const struct arc_job *);
-static int	cmd_jobs(struct arc_client *);
-static int	cmd_job(struct arc_client *, int, char **);
-static int	cmd_reboot(struct arc_client *);
-static int	cmd_interface(struct arc_client *, int, char **);
-static int	cmd_job_cancel(struct arc_client *, int, char **);
-static int	cmd_service(struct arc_client *, int, char **);
+static int	cmd_jobs(cbl_conn *);
+static int	cmd_job(cbl_conn *, int, char **);
+static int	cmd_reboot(cbl_conn *);
+static int	cmd_interface(cbl_conn *, int, char **);
+static int	cmd_job_cancel(cbl_conn *, int, char **);
+static int	cmd_service(cbl_conn *, int, char **);
 static void	emit_service(const struct arc_service *, bool);
 
 static void
@@ -390,12 +392,10 @@ usage(void)
 
 /* A request failed in transport or validation: say why and exit. */
 static void
-fail(struct arc_client *cl, int error, const char *what)
+fail(int error, const char *what)
 {
-	const char	*msg;
 
-	msg = cl->err != NULL ? cbl_msg_err_str(cl->err) : NULL;
-	xo_errx(1, "%s: %s", what, msg != NULL ? msg : strerror(error));
+	xo_errx(1, "%s: %s", what, strerror(error));
 }
 
 /* An array of strings as "a,b,c" (static buffer). */
@@ -542,9 +542,9 @@ emit_lines(const char *name, const struct cbl_bytes *b)
 
 /* The trace as an indented tree. */
 static void
-emit_trace(const struct arc_step *v, size_t n)
+emit_trace(const struct arcana_jobs_step *v, size_t n)
 {
-	const struct arc_step	*s;
+	const struct arcana_jobs_step	*s;
 	size_t			 i, k;
 	int			 depth, p;
 
@@ -564,8 +564,8 @@ emit_trace(const struct arc_step *v, size_t n)
 		if (s->detail != NULL)
 			xo_emit(": {:detail/%s}", s->detail);
 		xo_emit(" ({:duration-us/%ju}{U:us})",
-		    (uintmax_t)s->duration_us);
-		if (s->has_status && s->status != ARC_STEP_STATUS_OK)
+		    (uintmax_t)s->duration);
+		if (s->has_status && s->status != ARCANA_JOBS_STEP_STATUS_OK)
 			xo_emit(" {:status/%s}", s->status <
 			    nitems(status_names) ? status_names[s->status] :
 			    "?");
@@ -626,6 +626,21 @@ ytop_named(const char *name)
 	return (NULL);
 }
 
+/* A top-level node of any kind (a structure too) by its name. */
+static const struct cbl_ynode *
+ytop_any(const char *name)
+{
+
+	for (uint32_t i = 0; i < ymodel_schema.nmod; i++)
+		for (uint32_t k = 0; k < ymodel_schema.mod[i]->ntop; k++)
+			if (strcmp(ymodel_schema.mod[i]->top[k]->name, name) ==
+			    0)
+				return (ymodel_schema.mod[i]->top[k]);
+	return (NULL);
+}
+
+static void	sxf_run(cbl_conn *, const char *, const bool *);
+
 static enum cbl_yds_name ds_named(const char *);
 
 /*
@@ -636,7 +651,7 @@ static enum cbl_yds_name ds_named(const char *);
  * 7952): each configuration node's origin (RFC 8342), the defaults.
  */
 static int
-cmd_get(struct arc_client *cl, int argc, char **argv)
+cmd_get(cbl_conn *conn, int argc, char **argv)
 {
 	const struct cbl_ymodule	*m;
 	const struct cbl_ynode		*n;
@@ -700,12 +715,12 @@ cmd_get(struct arc_client *cl, int argc, char **argv)
 			xo_errx(1, "get: %zu nodes at most", nitems(sids));
 		sids[ns++] = n->sid;
 	}
-	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_GET, 0, &req)) != 0 || (error = cbl_msg_put_yget_opts(req,
 	    sids, ns, xpath, wd, origin)) != 0 ||
 	    (said && (error = cbl_msg_set_datastore(req, ds)) != 0))
 		xo_errx(1, "get: %s", strerror(error));
-	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0) {
+	if ((error = cbl_request(conn, req, &rep, -1)) != 0) {
 		/* The node at fault, where the agent named one. */
 		n = rep != NULL && cbl_msg_err_sid(rep) != 0 ?
 		    cbl_yschema_node(&ymodel_schema, cbl_msg_err_sid(rep)) : NULL;
@@ -814,7 +829,7 @@ warnings_of(const cbl_msg *rep)
 }
 
 static int
-cmd_edit(struct arc_client *cl, int argc, char **argv)
+cmd_edit(cbl_conn *conn, int argc, char **argv)
 {
 	const struct cbl_ynode	*n;
 	struct ucl_parser	*p;
@@ -864,7 +879,7 @@ cmd_edit(struct arc_client *cl, int argc, char **argv)
 		    ucl_object_type(top) == UCL_OBJECT ?
 		    ucl_object_lookup(top, key) : top;
 	}
-	error = yjson_edit(cl->conn, n, v, ds, accepts, naccepts, err,
+	error = yjson_edit(conn, n, v, ds, accepts, naccepts, err,
 	    sizeof(err), &errsid, tag, sizeof(tag));
 	ucl_object_unref(top);
 	free(text);
@@ -874,12 +889,12 @@ cmd_edit(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
- * An rpc of ietf-netconf's, its input in, over cl, the accepts given:
+ * An rpc of ietf-netconf's, its input in, over conn, the accepts given:
  * 0, or an errno and what the agent said in err (NULL: not wanted), its
  * app-tag in tag.  Its warnings printed.
  */
 static int
-netconf_try(struct arc_client *cl, const char *name, const void *in,
+netconf_try(cbl_conn *conn, const char *name, const void *in,
     char *err, size_t errlen, char *tag, size_t taglen)
 {
 	const struct cbl_ynode	*rpc = NULL, *inode = NULL;
@@ -897,12 +912,12 @@ netconf_try(struct arc_client *cl, const char *name, const void *in,
 			inode = rpc->child[i];
 	if (inode == NULL)
 		xo_errx(1, "%s: not in the tables", name);
-	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_RPC, 0, &m)) != 0 || (error = cbl_msg_put_ynode(m, inode,
 	    in)) != 0 || (naccepts > 0 && (error = cbl_msg_set_accept(m,
 	    accepts, naccepts)) != 0))
 		xo_errx(1, "%s: %s", name, strerror(error));
-	if ((error = cbl_request(cl->conn, m, &rep, -1)) != 0) {
+	if ((error = cbl_request(conn, m, &rep, -1)) != 0) {
 		if (err != NULL)
 			(void)snprintf(err, errlen, "%s", rep != NULL &&
 			    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
@@ -921,11 +936,12 @@ netconf_try(struct arc_client *cl, const char *name, const void *in,
 
 /* The same, what it refuses said, exit 1. */
 static void
-netconf_rpc(struct arc_client *cl, const char *name, const void *in)
+netconf_rpc(cbl_conn *conn, const char *name, const void *in)
 {
 	char	err[512], tag[80];
 
-	if (netconf_try(cl, name, in, err, sizeof(err), tag, sizeof(tag)) != 0)
+	if (netconf_try(conn, name, in, err, sizeof(err), tag,
+	    sizeof(tag)) != 0)
 		refused(name, err, tag);
 }
 
@@ -974,7 +990,7 @@ yedit_data(cbl_conn *conn, const struct cbl_ynode *n, const void *data,
 }
 
 static int
-cmd_commit(struct arc_client *cl, int argc, char **argv)
+cmd_commit(cbl_conn *conn, int argc, char **argv)
 {
 	struct ietf_netconf_commit_input	 in;
 	const char				*errstr;
@@ -1016,7 +1032,7 @@ cmd_commit(struct arc_client *cl, int argc, char **argv)
 		    arc4random(), arc4random(), arc4random(), arc4random());
 		in.persist = made;
 	}
-	netconf_rpc(cl, "commit", &in);
+	netconf_rpc(conn, "commit", &in);
 	if (in.confirmed)
 		xo_emit("{Lw:confirm within}{:seconds/%u}{L: seconds: "
 		    "arcanactl commit -i }{:persist-id/%s}\n",
@@ -1025,7 +1041,7 @@ cmd_commit(struct arc_client *cl, int argc, char **argv)
 }
 
 static int
-cmd_cancel_commit(struct arc_client *cl, int argc, char **argv)
+cmd_cancel_commit(cbl_conn *conn, int argc, char **argv)
 {
 	struct ietf_netconf_cancel_commit_input	in;
 
@@ -1034,12 +1050,12 @@ cmd_cancel_commit(struct arc_client *cl, int argc, char **argv)
 		in.persist_id = argv[2];
 	else if (argc != 1)
 		usage();
-	netconf_rpc(cl, "cancel-commit", &in);
+	netconf_rpc(conn, "cancel-commit", &in);
 	return (0);
 }
 
 static int
-cmd_discard(struct arc_client *cl, int argc, char **argv)
+cmd_discard(cbl_conn *conn, int argc, char **argv)
 {
 	struct ietf_netconf_discard_changes_input	in;
 
@@ -1047,7 +1063,7 @@ cmd_discard(struct arc_client *cl, int argc, char **argv)
 	if (argc != 1)
 		usage();
 	memset(&in, 0, sizeof(in));
-	netconf_rpc(cl, "discard-changes", &in);
+	netconf_rpc(conn, "discard-changes", &in);
 	return (0);
 }
 
@@ -1084,7 +1100,7 @@ yset(const struct cbl_ynode *n, void *p, const char *s, cbl_yarena *a)
  * as name=value; its output as RFC 7951's JSON.
  */
 static int
-cmd_yaction(struct arc_client *cl, int argc, char **argv)
+cmd_yaction(cbl_conn *conn, int argc, char **argv)
 {
 	const struct cbl_ynode	*n, *act, *in, *out, *c;
 	struct cbl_ybuf		 t = { NULL, 0, 0 }, b = { NULL, 0, 0 };
@@ -1153,12 +1169,12 @@ input:
 	}
 	if ((act != n && (error = cbl_yiid_write(n, vals, n->kind ==
 	    CBL_YN_LIST ? n->nkeys : 0, &t)) != 0) ||
-	    (error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    (error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_RPC, 0, &req)) != 0 ||
 	    (error = cbl_msg_put_ynode(req, in, pin)) != 0 ||
 	    (act != n && (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0))
 		xo_errx(1, "action: %s", strerror(error));
-	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+	if ((error = cbl_request(conn, req, &rep, -1)) != 0)
 		xo_errx(1, "action: %s", rep != NULL && cbl_msg_err_str(rep) !=
 		    NULL ? cbl_msg_err_str(rep) : strerror(error));
 	if ((error = cbl_msg_ydecode(rep, out, pout, a, 0, why,
@@ -1319,7 +1335,7 @@ subtree_arg(const struct cbl_ynode *in, const char *name, const char *arg,
 	free(text);
 }
 static int
-cmd_subscribe(struct arc_client *cl, int argc, char **argv)
+cmd_subscribe(cbl_conn *conn, int argc, char **argv)
 {
 	typedef struct ietf_subscribed_notifications_establish_subscription_input
 	    est_in;
@@ -1445,18 +1461,18 @@ cmd_subscribe(struct arc_client *cl, int argc, char **argv)
 #undef SN
 	ein.stop_time = stop;
 	ein.replay_start_time = replay;
-	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_SUBSCRIBE, 0, &m)) != 0 ||
 	    (error = cbl_msg_put_ynode(m, in, &ein)) != 0 ||
-	    (error = cbl_stream_open(cl->conn, m, CBL_SF_PUSH, &ysub_cbs, &ys,
+	    (error = cbl_stream_open(conn, m, CBL_SF_PUSH, &ysub_cbs, &ys,
 	    &s)) != 0)
 		xo_errx(1, "subscribe: %s", strerror(error));
 	cbl_ybuf_free(&fb);
 	while (!ys.closed && (!ys.opened || ys.error == 0)) {
 		ev = 0;
 		ms = -1;
-		(void)cbl_conn_interest(cl->conn, &ev, &ms);
-		pfd.fd = cbl_conn_fd(cl->conn);
+		(void)cbl_conn_interest(conn, &ev, &ms);
+		pfd.fd = cbl_conn_fd(conn);
 		pfd.events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
 		    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
 		pfd.revents = 0;
@@ -1465,7 +1481,7 @@ cmd_subscribe(struct arc_client *cl, int argc, char **argv)
 		ev = ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0 ?
 		    CBL_EV_READ : 0) | ((pfd.revents & POLLOUT) != 0 ?
 		    CBL_EV_WRITE : 0);
-		if ((error = cbl_conn_process(cl->conn, ev)) != 0)
+		if ((error = cbl_conn_process(conn, ev)) != 0)
 			xo_errx(1, "subscribe: the host is gone: %s",
 			    strerror(error));
 	}
@@ -1484,20 +1500,20 @@ cmd_subscribe(struct arc_client *cl, int argc, char **argv)
  * stopped.
  */
 static int
-cmd_notifications(struct arc_client *cl)
+cmd_notifications(cbl_conn *conn)
 {
 	struct pollfd	 pfd;
 	cbl_sub		*sub;
 	int		 error, ev, ms;
 
-	if ((error = cbl_subscribe(cl->conn, "cblink.yang", "notify",
+	if ((error = cbl_subscribe(conn, "cblink.yang", "notify",
 	    ynotif_line, NULL, &sub)) != 0)
 		xo_errx(1, "notifications: %s", strerror(error));
 	for (;;) {
 		ev = 0;
 		ms = -1;
-		(void)cbl_conn_interest(cl->conn, &ev, &ms);
-		pfd.fd = cbl_conn_fd(cl->conn);
+		(void)cbl_conn_interest(conn, &ev, &ms);
+		pfd.fd = cbl_conn_fd(conn);
 		pfd.events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
 		    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
 		pfd.revents = 0;
@@ -1506,83 +1522,102 @@ cmd_notifications(struct arc_client *cl)
 		ev = ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0 ?
 		    CBL_EV_READ : 0) | ((pfd.revents & POLLOUT) != 0 ?
 		    CBL_EV_WRITE : 0);
-		if ((error = cbl_conn_process(cl->conn, ev)) != 0)
+		if ((error = cbl_conn_process(conn, ev)) != 0)
 			break;
 	}
 	xo_errx(1, "notifications: the host is gone: %s", strerror(error));
 }
 
-static int
-cmd_hello(struct arc_client *cl)
+/* A string of host o's, "" where it has none. */
+static const char *
+hstr(const ucl_object_t *o, const char *key)
 {
-	struct arc_hello_rsp	*rsp;
-	const struct arc_host	*h;
-	char			 boot[64];
-	time_t			 t;
-	int			 error;
+	const char	*v;
 
-	if ((error = arc_hello(cl, &rsp)) != 0)
-		fail(cl, error, "hello");
-	if ((h = rsp->host) == NULL)
-		xo_errx(1, "hello: the reply has no host");
+	v = ucl_object_tostring(ucl_object_lookup(o, key));
+	return (v != NULL ? v : "");
+}
+
+static int64_t
+hint(const ucl_object_t *o, const char *key)
+{
+
+	return (ucl_object_toint(ucl_object_lookup(o, key)));
+}
+
+/* A list of host o's, as hello printed it. */
+static void
+hlist(const ucl_object_t *o, const char *key, const char *label)
+{
+	const ucl_object_t	*l, *e;
+	ucl_object_iter_t	 it = NULL;
+	bool			 first;
+
+	if ((l = ucl_object_lookup(o, key)) == NULL || ucl_array_size(l) == 0)
+		return;
+	xo_emit("{Lwc:/%s}", label);
+	xo_open_list(key);
+	first = true;
+	while ((e = ucl_object_iterate(l, &it, true)) != NULL) {
+		xo_emit("{P:/%s}{l:/%s}", first ? "" : " ",
+		    ucl_object_tostring(e));
+		first = false;
+	}
+	xo_close_list(key);
+	xo_emit("\n");
+}
+
+/* The host and its agent, a read of arcana-host's host. */
+static int
+cmd_hello(cbl_conn *conn)
+{
+	ucl_object_t	*h;
+	char		 boot[64], err[512];
+	time_t		 t;
+	int		 error;
+
+	if ((error = yh_hello(conn, &h, err, sizeof(err))) != 0)
+		xo_errx(1, "hello: %s", err[0] != '\0' ? err :
+		    strerror(error));
 	xo_open_container("host");
-	xo_emit("{Lwc:Host}{:hostname/%s}\n", h->hostname);
+	xo_emit("{Lwc:Host}{:hostname/%s}\n", hstr(h, "hostname"));
 	xo_emit("{Lwc:System}{:sysname/%s} {:release/%s} {:machine/%s}\n",
-	    h->sysname, h->release, h->machine);
-	xo_emit("{Lwc:CPUs}{:ncpu/%u}\n", h->ncpu);
-	xo_emit("{Lwc:Memory}{:physmem/%ju} {U:bytes}\n",
-	    (uintmax_t)h->physmem);
-	t = (time_t)h->boottime;
+	    hstr(h, "sysname"), hstr(h, "release"), hstr(h, "machine"));
+	xo_emit("{Lwc:CPUs}{:ncpu/%jd}\n", (intmax_t)hint(h, "ncpu"));
+	xo_emit("{Lwc:Memory}{:physmem/%jd} {U:bytes}\n",
+	    (intmax_t)hint(h, "physmem"));
+	t = (time_t)hint(h, "boottime");
 	strftime(boot, sizeof(boot), "%F %T", localtime(&t));
-	xo_emit("{Lwc:Booted}{d:/%s}{e:boottime/%jd}\n", boot,
-	    (intmax_t)h->boottime);
-	xo_emit("{Lwc:Securelevel}{:securelevel/%d}\n", h->securelevel);
+	xo_emit("{Lwc:Booted}{d:/%s}{e:boottime/%jd}\n", boot, (intmax_t)t);
+	xo_emit("{Lwc:Securelevel}{:securelevel/%jd}\n",
+	    (intmax_t)hint(h, "securelevel"));
 	xo_emit("{Lwc:Privileged}{n:privileged/%s}\n",
-	    h->privileged ? "true" : "false");
-	xo_emit("{Lwc:arcana-agent}{:version/%s}\n", h->version);
-	if (h->build != NULL)
-		xo_emit("{Lwc:Build}{:build/%s}\n", h->build);
+	    ucl_object_toboolean(ucl_object_lookup(h, "privileged")) ?
+	    "true" : "false");
+	xo_emit("{Lwc:arcana-agent}{:version/%s}\n", hstr(h, "version"));
+	if (ucl_object_lookup(h, "build") != NULL)
+		xo_emit("{Lwc:Build}{:build/%s}\n", hstr(h, "build"));
 	/* What is installed there that is not the base system's. */
-	if (h->plugins.n > 0) {
-		size_t	i;
-
-		xo_emit("{Lwc:Plugins}");
-		xo_open_list("plugins");
-		for (i = 0; i < h->plugins.n; i++)
-			xo_emit("{P:/%s}{l:plugins/%s}", i > 0 ? " " : "",
-			    h->plugins.v[i]);
-		xo_close_list("plugins");
-		xo_emit("\n");
-	}
+	hlist(h, "plugins", "Plugins");
 	/* What it takes that an agent before it did not. */
-	if (h->features.n > 0) {
-		size_t	i;
-
-		xo_emit("{Lwc:Features}");
-		xo_open_list("features");
-		for (i = 0; i < h->features.n; i++)
-			xo_emit("{P:/%s}{l:features/%s}", i > 0 ? " " : "",
-			    h->features.v[i]);
-		xo_close_list("features");
-		xo_emit("\n");
-	}
+	hlist(h, "features", "Features");
 	xo_close_container("host");
-	arc_hello_rsp_free(rsp);
+	ucl_object_unref(h);
 	return (0);
 }
 
 /*
- * The agent's steps of a request of family 1, heard on the steps group
- * while it runs (-t), as an operation's trace was: each step by its
- * number, its last word kept, printed when asked.
+ * The agent's steps of a request, heard while it runs (-t), arcana-jobs'
+ * steps on group notify: each step by its number, its last word kept,
+ * printed when asked.
  */
-static struct arc_step	*ysteps;
+static struct arcana_jobs_step	*ysteps;
 static size_t		 nysteps;
 static cbl_sub		*ystep_sub;
 static bool		 ystep_on;
 
 static void
-ystep_free(struct arc_step *s)
+ystep_free(struct arcana_jobs_step *s)
 {
 
 	free((void *)(uintptr_t)s->label);
@@ -1607,17 +1642,22 @@ ybytes(const struct cbl_bytes *b)
 	return (p);
 }
 
+/* A step arcana-jobs' steps told, kept. */
 static void
-ystep_rx(const struct arc_step_ntf *ntf, void *arg __unused)
+ystep_rx(cbl_conn *conn __unused, cbl_msg *msg, void *arg __unused)
 {
-	const struct arc_step	*s;
-	struct arc_step		*d;
-	const char		**argv;
-	size_t			 i, k;
+	const struct arcana_jobs_step	*v, *t;
+	struct arcana_jobs_step			*d;
+	const char			**argv;
+	cbl_yarena			*a;
+	size_t				 i, k, n;
 
-	for (i = 0; ystep_on && i < ntf->trace.n; i++) {
-		s = &ntf->trace.v[i];
-		for (k = 0; k < nysteps && ysteps[k].id != s->id; k++)
+	if (!ystep_on || (a = cbl_yarena_new()) == NULL)
+		return;
+	v = yh_steps_of(msg, a, &n);
+	for (i = 0; v != NULL && i < n; i++) {
+		t = &v[i];
+		for (k = 0; k < nysteps && ysteps[k].id != t->id; k++)
 			;
 		if (k == nysteps) {
 			if ((ysteps = reallocarray(ysteps, nysteps + 1,
@@ -1627,38 +1667,42 @@ ystep_rx(const struct arc_step_ntf *ntf, void *arg __unused)
 		} else
 			ystep_free(&ysteps[k]);
 		d = &ysteps[k];
-		*d = *s;
-		d->label = s->label != NULL ? strdup(s->label) : NULL;
-		d->detail = s->detail != NULL ? strdup(s->detail) : NULL;
-		if ((argv = calloc(s->argv.n + 1, sizeof(*argv))) == NULL)
+		*d = *t;
+		d->label = t->label != NULL ? strdup(t->label) : NULL;
+		d->detail = t->detail != NULL ? strdup(t->detail) : NULL;
+		if ((argv = calloc(t->argv.n + 1, sizeof(*argv))) == NULL)
 			xo_err(1, "trace");
-		for (size_t m = 0; m < s->argv.n; m++)
-			argv[m] = strdup(s->argv.v[m]);
+		for (size_t m = 0; m < t->argv.n; m++)
+			argv[m] = strdup(t->argv.v[m]);
 		d->argv.v = argv;
-		d->output.p = ybytes(&s->output);
-		d->error_output.p = ybytes(&s->error_output);
+		d->argv.n = t->argv.n;
+		d->output.p = ybytes(&t->output);
+		d->output.len = t->output.len;
+		d->error_output.p = ybytes(&t->error_output);
+		d->error_output.len = t->error_output.len;
 	}
+	cbl_yarena_free(a);
 }
 
 static int
 ystep_cmp(const void *a, const void *b)
 {
-	uint32_t	x = ((const struct arc_step *)a)->id;
-	uint32_t	y = ((const struct arc_step *)b)->id;
+	uint32_t	x = ((const struct arcana_jobs_step *)a)->id;
+	uint32_t	y = ((const struct arcana_jobs_step *)b)->id;
 
 	return (x < y ? -1 : x > y);
 }
 
 /* The steps of what is asked from now on, heard with -t. */
 static void
-ytold_begin(struct arc_client *cl)
+ytold_begin(cbl_conn *conn)
 {
-	static const struct arc_steps_handlers h = { .step = ystep_rx };
 
 	if (!show_trace)
 		return;
-	if (ystep_sub == NULL && cl->groups[ARC_MCGRP_STEPS] != 0)
-		(void)arc_steps_subscribe(cl, &h, NULL, &ystep_sub);
+	if (ystep_sub == NULL)
+		(void)cbl_subscribe(conn, "cblink.yang", "notify",
+		    ystep_rx, NULL, &ystep_sub);
 	ystep_on = true;
 }
 
@@ -1824,7 +1868,7 @@ ypath_parse(char *path, struct yseg *seg)
 
 /* Datastore ds's top-level node top, read into a tree of its own. */
 static cbl_dtree *
-yds_read(struct arc_client *cl, enum cbl_yds_name ds,
+yds_read(cbl_conn *conn, enum cbl_yds_name ds,
     const uint64_t *sids, size_t n)
 {
 	cbl_msg		*req, *rep = NULL;
@@ -1832,12 +1876,12 @@ yds_read(struct arc_client *cl, enum cbl_yds_name ds,
 	char		 why[256];
 	int		 error;
 
-	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_GET, 0, &req)) != 0 || (error = cbl_msg_put_yget_opts(req,
 	    sids, n, NULL, CBL_YWD_EXPLICIT, false)) != 0 ||
 	    (error = cbl_msg_set_datastore(req, ds)) != 0)
 		xo_errx(1, "set: %s", strerror(error));
-	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+	if ((error = cbl_request(conn, req, &rep, -1)) != 0)
 		xo_errx(1, "set: %s", rep != NULL && cbl_msg_err_str(rep) !=
 		    NULL ? cbl_msg_err_str(rep) : strerror(error));
 	if ((t = cbl_dtree_new(&ymodel_schema)) == NULL)
@@ -1850,14 +1894,14 @@ yds_read(struct arc_client *cl, enum cbl_yds_name ds,
 
 /* Whether the candidate is running: every node alike. */
 static bool
-candidate_clean(struct arc_client *cl)
+candidate_clean(cbl_conn *conn)
 {
 	struct cbl_ybuf	 a = { NULL, 0, 0 }, b = { NULL, 0, 0 };
 	cbl_dtree	*r, *c;
 	bool		 same;
 
-	r = yds_read(cl, CBL_YDS_RUNNING, NULL, 0);
-	c = yds_read(cl, CBL_YDS_CANDIDATE, NULL, 0);
+	r = yds_read(conn, CBL_YDS_RUNNING, NULL, 0);
+	c = yds_read(conn, CBL_YDS_CANDIDATE, NULL, 0);
 	if (cbl_dtree_encode(r, &a) != 0 || cbl_dtree_encode(c, &b) != 0)
 		xo_err(1, "set");
 	same = a.len == b.len && memcmp(a.p, b.p, a.len) == 0;
@@ -1889,7 +1933,7 @@ yseg_keys(const struct yseg *s, cbl_yarena *a)
 }
 
 static int
-cmd_set(struct arc_client *cl, int argc, char **argv)
+cmd_set(cbl_conn *conn, int argc, char **argv)
 {
 	struct ietf_netconf_commit_input		 cin;
 	struct ietf_netconf_discard_changes_input	 din;
@@ -1963,12 +2007,12 @@ cmd_set(struct arc_client *cl, int argc, char **argv)
 		xo_errx(2, "set: %s: a value is needed", n->name);
 	if (n->kind == CBL_YN_LIST && seg[ns - 1].nkey == 0)
 		xo_errx(2, "set: %s: an entry is named by its keys", n->name);
-	if (ds == CBL_YDS_CANDIDATE && !stop && !candidate_clean(cl))
+	if (ds == CBL_YDS_CANDIDATE && !stop && !candidate_clean(conn))
 		xo_errx(1, "set: the candidate has changes of its own: commit "
 		    "or discard them first, or set -n");
 
 	/* The datastore's node, changed in place. */
-	t = yds_read(cl, ds, &top->sid, 1);
+	t = yds_read(conn, ds, &top->sid, 1);
 	d = cbl_dtree_root(t);
 	for (size_t i = 0; i < ns - 1; i++) {
 		const struct cbl_ynode *sn = seg[i].n;
@@ -2063,8 +2107,8 @@ cmd_set(struct arc_client *cl, int argc, char **argv)
 	}
 
 	/* Sent back whole; then committed, confirmed. */
-	ytold_begin(cl);
-	if (yjson_edit_tree(cl->conn, t, &top, 1, ds, accepts, naccepts, err,
+	ytold_begin(conn);
+	if (yjson_edit_tree(conn, t, &top, 1, ds, accepts, naccepts, err,
 	    sizeof(err), &errsid, tag, sizeof(tag)) != 0) {
 		ytold_end(true);
 		refused("set", err, tag);
@@ -2080,11 +2124,11 @@ cmd_set(struct arc_client *cl, int argc, char **argv)
 			cin.has_confirm_timeout = true;
 			cin.confirm_timeout = safe_wait;
 		}
-		if (netconf_try(cl, "commit", &cin, err, sizeof(err), tag,
+		if (netconf_try(conn, "commit", &cin, err, sizeof(err), tag,
 		    sizeof(tag)) != 0) {
 			memset(&din, 0, sizeof(din));
-			(void)netconf_try(cl, "discard-changes", &din, NULL, 0,
-			    NULL, 0);
+			(void)netconf_try(conn, "discard-changes", &din, NULL,
+			    0, NULL, 0);
 			ytold_end(true);
 			refused("set", err, tag);
 		}
@@ -2094,7 +2138,7 @@ cmd_set(struct arc_client *cl, int argc, char **argv)
 		if (!safe) {
 			memset(&cin, 0, sizeof(cin));
 			cin.persist_id = token;
-			if (netconf_try(cl, "commit", &cin, err, sizeof(err),
+			if (netconf_try(conn, "commit", &cin, err, sizeof(err),
 			    tag, sizeof(tag)) != 0) {
 				ytold_end(true);
 				xo_errx(1, "set: committed, not confirmed: %s "
@@ -2156,19 +2200,19 @@ ydata_out(const char *what, int error, ucl_object_t *data, const char *err)
  * into its module's data, data (a's).  Refused: said, exit 1.
  */
 static void
-yget_data(struct arc_client *cl, const struct cbl_ynode *n, int ds,
+yget_data(cbl_conn *conn, const struct cbl_ynode *n, int ds,
     void *data, cbl_yarena *a)
 {
 	cbl_msg	*req, *rep = NULL;
 	char	 why[256];
 	int	 error;
 
-	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_GET, 0, &req)) != 0 || (error = cbl_msg_put_yget(req,
 	    &n->sid, 1)) != 0 || (ds >= 0 && (error = cbl_msg_set_datastore(
 	    req, (enum cbl_yds_name)ds)) != 0))
 		xo_errx(1, "%s: %s", n->name, strerror(error));
-	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+	if ((error = cbl_request(conn, req, &rep, -1)) != 0)
 		xo_errx(1, "%s: %s", n->name, rep != NULL &&
 		    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
 		    strerror(error));
@@ -2184,7 +2228,7 @@ yget_data(struct arc_client *cl, const struct cbl_ynode *n, int ds,
  * 0, or an errno and what the agent said in err.
  */
 static int
-ycall(struct arc_client *cl, const struct cbl_ynode *n,
+ycall(cbl_conn *conn, const struct cbl_ynode *n,
     const void *const *vals, size_t nvals, const char *act, const void *in,
     void *out, cbl_yarena *a, char *err, size_t errlen)
 {
@@ -2199,13 +2243,13 @@ ycall(struct arc_client *cl, const struct cbl_ynode *n,
 	if (in == NULL && (in = cbl_yarena_alloc(a, inode->size)) == NULL)
 		xo_err(1, "%s", act);
 	if ((error = cbl_yiid_write(n, (const void **)(uintptr_t)vals, nvals,
-	    &t)) != 0 || (error = cbl_msg_new(cbl_conn_ctx(cl->conn),
+	    &t)) != 0 || (error = cbl_msg_new(cbl_conn_ctx(conn),
 	    CBL_YANG_FAMILY, CBL_YCMD_RPC, 0, &req)) != 0 ||
 	    (error = cbl_msg_put_ynode(req, inode, in)) != 0 ||
 	    (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0)
 		xo_errx(1, "%s: %s", act, strerror(error));
 	cbl_ybuf_free(&t);
-	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0) {
+	if ((error = cbl_request(conn, req, &rep, -1)) != 0) {
 		(void)snprintf(err, errlen, "%s", rep != NULL &&
 		    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
 		    strerror(error));
@@ -2228,7 +2272,7 @@ ycall(struct arc_client *cl, const struct cbl_ynode *n,
  * not, as what failed of it.  0, or 1.
  */
 static int
-yplug_read(struct arc_client *cl, const char *top, const char *act,
+yplug_read(cbl_conn *conn, const char *top, const char *act,
     const void *in, const char *what)
 {
 	const struct cbl_ynode	*n, *an, *onode;
@@ -2245,8 +2289,8 @@ yplug_read(struct arc_client *cl, const char *top, const char *act,
 	if ((a = cbl_yarena_new()) == NULL || (out = cbl_yarena_alloc(a,
 	    onode->size)) == NULL)
 		xo_err(1, "%s", what);
-	ytold_begin(cl);
-	error = ycall(cl, n, NULL, 0, act, in, out, a, why, sizeof(why));
+	ytold_begin(conn);
+	error = ycall(conn, n, NULL, 0, act, in, out, a, why, sizeof(why));
 	ytold_end(true);
 	if (error == 0 && (error = cbl_yjson(onode, out, &b)) != 0)
 		(void)snprintf(why, sizeof(why), "%s", strerror(error));
@@ -2262,7 +2306,7 @@ yplug_read(struct arc_client *cl, const char *top, const char *act,
 
 /* arcana-jails' jails, as datastore ds has them (a's). */
 static const struct arcana_jails_jails *
-yjails(struct arc_client *cl, int ds, cbl_yarena *a)
+yjails(cbl_conn *conn, int ds, cbl_yarena *a)
 {
 	static const struct arcana_jails_jails none;
 	const struct cbl_ynode	*n;
@@ -2271,7 +2315,7 @@ yjails(struct arc_client *cl, int ds, cbl_yarena *a)
 	if ((n = ytop_named("jails")) == NULL)
 		xo_errx(1, "jails: arcana-jails is not in the tables");
 	memset(&d, 0, sizeof(d));
-	yget_data(cl, n, ds, &d, a);
+	yget_data(conn, n, ds, &d, a);
 	return (d.jails != NULL ? d.jails : &none);
 }
 
@@ -2290,7 +2334,7 @@ yjail_in(const struct arcana_jails_jails *js, const char *name)
  * with -c those configured alone.
  */
 static int
-cmd_list(struct arc_client *cl, int argc, char **argv)
+cmd_list(cbl_conn *conn, int argc, char **argv)
 {
 	const struct arcana_jails_jails	*js;
 	cbl_yarena			*a;
@@ -2312,8 +2356,8 @@ cmd_list(struct arc_client *cl, int argc, char **argv)
 		usage();
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "list");
-	ytold_begin(cl);
-	js = yjails(cl, -1, a);
+	ytold_begin(conn);
+	js = yjails(conn, -1, a);
 	ytold_end(false);
 	xo_emit("{T:/%-16s} {T:/%-8s} {T:/%4s} {T:/%-31s} {T:/%s}\n", "NAME",
 	    "STATE", "JID", "ADDRESSES", "HOSTNAME");
@@ -2333,7 +2377,7 @@ cmd_list(struct arc_client *cl, int argc, char **argv)
 
 /* The jail as it is now, in detail; boot as running has it, where given. */
 static void
-yjail_show(struct arc_client *cl, const char *name, const bool *boot)
+yjail_show(cbl_conn *conn, const char *name, const bool *boot)
 {
 	const struct arcana_jails_jails_jail	*j;
 	struct arcana_jails_jails_jail		 c;
@@ -2341,7 +2385,7 @@ yjail_show(struct arc_client *cl, const char *name, const bool *boot)
 
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "%s", name);
-	if ((j = yjail_in(yjails(cl, -1, a), name)) != NULL) {
+	if ((j = yjail_in(yjails(conn, -1, a), name)) != NULL) {
 		c = *j;
 		if (boot != NULL) {
 			c.has_boot = true;
@@ -2359,7 +2403,7 @@ yjail_show(struct arc_client *cl, const char *name, const bool *boot)
  * leaves the candidate as running is.
  */
 static int
-jail_boot(struct arc_client *cl, const char *verb, const char *name, bool on)
+jail_boot(cbl_conn *conn, const char *verb, const char *name, bool on)
 {
 	struct ietf_netconf_commit_input		 cin;
 	struct ietf_netconf_discard_changes_input	 din;
@@ -2376,7 +2420,7 @@ jail_boot(struct arc_client *cl, const char *verb, const char *name, bool on)
 		xo_errx(1, "jails: arcana-jails is not in the tables");
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "%s", verb);
-	js = yjails(cl, CBL_YDS_RUNNING, a);
+	js = yjails(conn, CBL_YDS_RUNNING, a);
 	if ((j = (struct arcana_jails_jails_jail *)(uintptr_t)yjail_in(js,
 	    name)) == NULL)
 		xo_errx(1, "%s %s: jail '%s' is not defined", verb, name, name);
@@ -2385,27 +2429,27 @@ jail_boot(struct arc_client *cl, const char *verb, const char *name, bool on)
 		j->boot = on;
 		memset(&d, 0, sizeof(d));
 		d.jails = js;
-		if ((error = yedit_data(cl->conn, n, &d, CBL_YDS_CANDIDATE,
+		if ((error = yedit_data(conn, n, &d, CBL_YDS_CANDIDATE,
 		    accepts, naccepts, err, sizeof(err), &errsid, tag,
 		    sizeof(tag))) != 0)
 			refused(verb, err, tag);
 		memset(&cin, 0, sizeof(cin));
-		if (netconf_try(cl, "commit", &cin, err, sizeof(err), tag,
+		if (netconf_try(conn, "commit", &cin, err, sizeof(err), tag,
 		    sizeof(tag)) != 0) {
 			memset(&din, 0, sizeof(din));
-			(void)netconf_try(cl, "discard-changes", &din, NULL, 0,
-			    NULL, 0);
+			(void)netconf_try(conn, "discard-changes", &din, NULL,
+			    0, NULL, 0);
 			refused(verb, err, tag);
 		}
 	}
 	cbl_yarena_free(a);
-	yjail_show(cl, name, &on);
+	yjail_show(conn, name, &on);
 	return (0);
 }
 
 /* start | stop | restart | kill jail: arcana-jails' actions. */
 static int
-cmd_action(struct arc_client *cl, uint8_t action, int argc, char **argv)
+cmd_action(cbl_conn *conn, uint8_t action, int argc, char **argv)
 {
 	const struct cbl_ynode	*n;
 	const void		*vals[1];
@@ -2439,10 +2483,10 @@ cmd_action(struct arc_client *cl, uint8_t action, int argc, char **argv)
 		sp.jail = argv[1];
 		sp.has_action = true;
 		sp.action = action;
-		return (submit(cl, &sp));
+		return (submit(conn, &sp));
 	}
 	if (action == ARC_ACTION_ENABLE || action == ARC_ACTION_DISABLE)
-		return (jail_boot(cl, argv[0], argv[1], action ==
+		return (jail_boot(conn, argv[0], argv[1], action ==
 		    ARC_ACTION_ENABLE));
 	if ((n = ytop_named("jails")) == NULL || (n = ychild(n, "jail")) ==
 	    NULL)
@@ -2450,12 +2494,12 @@ cmd_action(struct arc_client *cl, uint8_t action, int argc, char **argv)
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "%s", argv[0]);
 	vals[0] = &argv[1];
-	ytold_begin(cl);
-	error = ycall(cl, n, vals, 1, argv[0], NULL, NULL, a, why,
+	ytold_begin(conn);
+	error = ycall(conn, n, vals, 1, argv[0], NULL, NULL, a, why,
 	    sizeof(why));
 	ytold_end(false);
 	cbl_yarena_free(a);
-	yjail_show(cl, argv[1], NULL);
+	yjail_show(conn, argv[1], NULL);
 	ytold_end(true);
 	if (error != 0) {
 		xo_warnx("%s %s: %s", argv[0], argv[1], why);
@@ -2465,11 +2509,19 @@ cmd_action(struct arc_client *cl, uint8_t action, int argc, char **argv)
 }
 
 static int
-cmd_address(struct arc_client *cl, int argc, char **argv)
+cmd_address(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_address_req	 req;
-	struct arc_address_rsp	*rsp;
-	int			 ch, error;
+	struct arcana_jails_jails_jail_arcnet_address_input	 in;
+	struct arcana_jails_jails_jail_arcnet_address_output	 out;
+	struct {
+		const char	*jail, *address, *interface;
+		bool		 remove, live, persist, dry_run;
+	}							 req;
+	const struct cbl_ynode					*n;
+	const void						*vals[1];
+	cbl_yarena						*a;
+	char							 why[512];
+	int							 ch, error;
 
 	if (argc < 2 || (strcmp(argv[1], "add") != 0 &&
 	    strcmp(argv[1], "remove") != 0))
@@ -2515,22 +2567,40 @@ cmd_address(struct arc_client *cl, int argc, char **argv)
 		sp.remove = req.remove;
 		sp.live = req.live;
 		sp.persist = req.persist;
-		return (submit(cl, &sp));
+		return (submit(conn, &sp));
 	}
-	if ((error = arc_address(cl, &req, &rsp)) != 0)
-		fail(cl, error, "address");
-	if (rsp->diff != NULL)
-		xo_emit("{:diff/%s}", rsp->diff);
+	/* arcana-jails' jail's address action. */
+	if ((n = ytop_named("jails")) == NULL || (n = ychild(n, "jail")) ==
+	    NULL)
+		xo_errx(1, "address: arcana-jails is not in the tables");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "address");
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.address = req.address;
+	in.interface = req.interface;
+	in.has_remove = in.has_live = in.has_persist = in.has_dry_run = true;
+	in.remove = req.remove;
+	in.live = req.live;
+	in.persist = req.persist;
+	in.dry_run = req.dry_run;
+	vals[0] = &req.jail;
+	ytold_begin(conn);
+	error = ycall(conn, n, vals, 1, "address", &in, &out, a, why,
+	    sizeof(why));
+	ytold_end(false);
+	if (error == 0 && out.diff != NULL)
+		xo_emit("{:diff/%s}", out.diff);
+	cbl_yarena_free(a);
 	/* The jail as it is after, as arcana-jails has it. */
-	if (rsp->result != NULL && !req.dry_run)
-		yjail_show(cl, req.jail, NULL);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("address %s: %s", req.address,
-		    rsp->error != NULL ? rsp->error : "failed");
-	arc_address_rsp_free(rsp);
-	return (error);
+	if (error == 0 && !req.dry_run)
+		yjail_show(conn, req.jail, NULL);
+	ytold_end(true);
+	if (error != 0) {
+		xo_warnx("address %s: %s", req.address, why);
+		return (1);
+	}
+	return (0);
 }
 
 static void
@@ -2573,7 +2643,7 @@ typedef struct arcana_services_services_service_variable yservice_var;
 
 /* arcana-services' services, as datastore ds has them (a's). */
 static const struct arcana_services_services *
-yservices(struct arc_client *cl, int ds, cbl_yarena *a)
+yservices(cbl_conn *conn, int ds, cbl_yarena *a)
 {
 	static const struct arcana_services_services none;
 	const struct cbl_ynode	*n;
@@ -2582,7 +2652,7 @@ yservices(struct arc_client *cl, int ds, cbl_yarena *a)
 	if ((n = ytop_named("services")) == NULL)
 		xo_errx(1, "services: arcana-services is not in the tables");
 	memset(&d, 0, sizeof(d));
-	yget_data(cl, n, ds, &d, a);
+	yget_data(conn, n, ds, &d, a);
 	return (d.services != NULL ? d.services : &none);
 }
 
@@ -2608,7 +2678,7 @@ service_of(const yservice *y)
 
 /* services: the rc.d scripts, a GET of arcana-services' state. */
 static int
-cmd_services(struct arc_client *cl)
+cmd_services(cbl_conn *conn)
 {
 	const struct arcana_services_services	*ss;
 	struct arc_service			 s;
@@ -2616,8 +2686,8 @@ cmd_services(struct arc_client *cl)
 
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "services");
-	ytold_begin(cl);
-	ss = yservices(cl, CBL_YDS_OPERATIONAL, a);
+	ytold_begin(conn);
+	ss = yservices(conn, CBL_YDS_OPERATIONAL, a);
 	ytold_end(false);
 	xo_emit("{T:/%-24s} {T:/%-8s} {T:/%-8s} {T:/%s}\n", "NAME", "ENABLED",
 	    "STATE", "PID");
@@ -2638,7 +2708,7 @@ cmd_services(struct arc_client *cl)
  * as running has them.
  */
 static int
-service_show(struct arc_client *cl, const char *name, bool vars)
+service_show(cbl_conn *conn, const char *name, bool vars)
 {
 	struct arcana_services_services_service_read_output	 o;
 	const struct arcana_services_services			*ss;
@@ -2655,7 +2725,8 @@ service_show(struct arc_client *cl, const char *name, bool vars)
 		xo_err(1, "%s", name);
 	vals[0] = &name;
 	memset(&o, 0, sizeof(o));
-	if (ycall(cl, n, vals, 1, "read", NULL, &o, a, why, sizeof(why)) != 0) {
+	if (ycall(conn, n, vals, 1, "read", NULL, &o, a, why,
+	    sizeof(why)) != 0) {
 		xo_warnx("service %s: %s", name, why);
 		cbl_yarena_free(a);
 		return (1);
@@ -2681,7 +2752,7 @@ service_show(struct arc_client *cl, const char *name, bool vars)
 			    o.command.n));
 		for (size_t i = 0; i < o.command.n; i++)
 			xo_emit("{el:command/%s}", o.command.v[i]);
-		ss = yservices(cl, CBL_YDS_RUNNING, a);
+		ss = yservices(conn, CBL_YDS_RUNNING, a);
 		xo_open_list("variable");
 		for (size_t i = 0; i < ss->service.n; i++) {
 			const yservice *y = &ss->service.v[i];
@@ -2711,7 +2782,7 @@ service_show(struct arc_client *cl, const char *name, bool vars)
  * What the commit refuses leaves the candidate as running is.
  */
 static void
-service_commit(struct arc_client *cl, const char *verb, const char *name,
+service_commit(cbl_conn *conn, const char *verb, const char *name,
     int enable, const struct arc_variable *vars, size_t nv)
 {
 	struct ietf_netconf_commit_input		 cin;
@@ -2730,7 +2801,7 @@ service_commit(struct arc_client *cl, const char *verb, const char *name,
 		xo_errx(1, "services: arcana-services is not in the tables");
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "%s", verb);
-	ss = yservices(cl, CBL_YDS_RUNNING, a);
+	ss = yservices(conn, CBL_YDS_RUNNING, a);
 	for (k = 0; k < ss->service.n; k++)
 		if (strcmp(ss->service.v[k].name, name) == 0)
 			y = (yservice *)(uintptr_t)&ss->service.v[k];
@@ -2766,14 +2837,15 @@ service_commit(struct arc_client *cl, const char *verb, const char *name,
 	}
 	memset(&d, 0, sizeof(d));
 	d.services = ss;
-	if (yedit_data(cl->conn, n, &d, CBL_YDS_CANDIDATE, accepts, naccepts,
+	if (yedit_data(conn, n, &d, CBL_YDS_CANDIDATE, accepts, naccepts,
 	    err, sizeof(err), &errsid, tag, sizeof(tag)) != 0)
 		refused(verb, err, tag);
 	memset(&cin, 0, sizeof(cin));
-	if (netconf_try(cl, "commit", &cin, err, sizeof(err), tag,
+	if (netconf_try(conn, "commit", &cin, err, sizeof(err), tag,
 	    sizeof(tag)) != 0) {
 		memset(&din, 0, sizeof(din));
-		(void)netconf_try(cl, "discard-changes", &din, NULL, 0, NULL, 0);
+		(void)netconf_try(conn, "discard-changes", &din, NULL, 0, NULL,
+		    0);
 		refused(verb, err, tag);
 	}
 	cbl_yarena_free(a);
@@ -2786,7 +2858,7 @@ service_commit(struct arc_client *cl, const char *verb, const char *name,
  * value, the file and line of yours it was in, and why one was left.
  */
 static int
-cmd_services_convert(struct arc_client *cl, int argc, char **argv)
+cmd_services_convert(cbl_conn *conn, int argc, char **argv)
 {
 	const struct cbl_ynode				*n, *act, *in, *out;
 	struct arcana_services_services_convert_input	 i;
@@ -2823,14 +2895,14 @@ cmd_services_convert(struct arc_client *cl, int argc, char **argv)
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "services");
 	if ((error = cbl_yiid_write(n, NULL, 0, &t)) != 0 ||
-	    (error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    (error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_RPC, 0, &req)) != 0 ||
 	    (error = cbl_msg_put_ynode(req, in, &i)) != 0 ||
 	    (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0 ||
 	    (naccepts > 0 && (error = cbl_msg_set_accept(req, accepts,
 	    naccepts)) != 0))
 		xo_errx(1, "services: %s", strerror(error));
-	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+	if ((error = cbl_request(conn, req, &rep, -1)) != 0)
 		refused("services convert", rep != NULL && cbl_msg_err_str(rep)
 		    != NULL ? cbl_msg_err_str(rep) : strerror(error), rep !=
 		    NULL ? cbl_msg_err_apptag(rep) : NULL);
@@ -2882,7 +2954,7 @@ cmd_services_convert(struct arc_client *cl, int argc, char **argv)
  * was only dropped from Arcana's file and why.
  */
 static int
-cmd_services_release(struct arc_client *cl, int argc, char **argv)
+cmd_services_release(cbl_conn *conn, int argc, char **argv)
 {
 	const struct cbl_ynode				*n, *act, *in, *out;
 	struct arcana_services_services_release_input	 i;
@@ -2917,12 +2989,12 @@ cmd_services_release(struct arc_client *cl, int argc, char **argv)
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "services");
 	if ((error = cbl_yiid_write(n, NULL, 0, &t)) != 0 ||
-	    (error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    (error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_RPC, 0, &req)) != 0 ||
 	    (error = cbl_msg_put_ynode(req, in, &i)) != 0 ||
 	    (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0)
 		xo_errx(1, "services: %s", strerror(error));
-	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+	if ((error = cbl_request(conn, req, &rep, -1)) != 0)
 		refused("services release", rep != NULL && cbl_msg_err_str(rep)
 		    != NULL ? cbl_msg_err_str(rep) : strerror(error), rep !=
 		    NULL ? cbl_msg_err_apptag(rep) : NULL);
@@ -3000,7 +3072,7 @@ cmd_services_release(struct arc_client *cl, int argc, char **argv)
  * after, by its read action.
  */
 static int
-cmd_service(struct arc_client *cl, int argc, char **argv)
+cmd_service(cbl_conn *conn, int argc, char **argv)
 {
 	static const char *verbs[] = { "start", "stop", "restart", "reload",
 	    "enable", "disable" };
@@ -3041,13 +3113,13 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 			sp.service = argv[1];
 			sp.has_service_action = true;
 			sp.service_action = (uint8_t)i;
-			return (submit(cl, &sp));
+			return (submit(conn, &sp));
 		}
 		if (i == ARC_SERVICE_ACTION_ENABLE || i ==
 		    ARC_SERVICE_ACTION_DISABLE) {
-			service_commit(cl, argv[2], argv[1], i ==
+			service_commit(conn, argv[2], argv[1], i ==
 			    ARC_SERVICE_ACTION_ENABLE ? 1 : -1, NULL, 0);
-			return (service_show(cl, argv[1], false));
+			return (service_show(conn, argv[1], false));
 		}
 		if ((n = ytop_named("services")) == NULL || (n = ychild(n,
 		    "service")) == NULL)
@@ -3056,8 +3128,8 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 		if ((a = cbl_yarena_new()) == NULL)
 			xo_err(1, "%s", argv[2]);
 		vals[0] = &argv[1];
-		ytold_begin(cl);
-		error = ycall(cl, n, vals, 1, argv[2], NULL, NULL, a, why,
+		ytold_begin(conn);
+		error = ycall(conn, n, vals, 1, argv[2], NULL, NULL, a, why,
 		    sizeof(why));
 		ytold_end(false);
 		cbl_yarena_free(a);
@@ -3066,7 +3138,7 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 			xo_warnx("service %s %s: %s", argv[1], argv[2], why);
 			return (1);
 		}
-		error = service_show(cl, argv[1], false);
+		error = service_show(conn, argv[1], false);
 		ytold_end(true);
 		return (error);
 	}
@@ -3096,59 +3168,94 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 		sp.service = argv[1];
 		sp.variables.v = vars;
 		sp.variables.n = nv;
-		error = submit(cl, &sp);
+		error = submit(conn, &sp);
 		free(vars);
 		return (error);
 	}
 	if (nv > 0)
-		service_commit(cl, "config", argv[1], 0, vars, nv);
+		service_commit(conn, "config", argv[1], 0, vars, nv);
 	free(vars);
-	return (service_show(cl, argv[1], true));
+	return (service_show(conn, argv[1], true));
 }
 
-/* Whether the agent takes its program compressed (hello's features). */
+/* Whether the agent takes its program compressed (its features). */
 static bool
-takes_gzip(struct arc_client *cl)
+takes_gzip(cbl_conn *conn)
 {
-	struct arc_hello_rsp	*rsp;
-	bool			 yes;
-	int			 error;
+	ucl_object_t	*h;
+	char		 err[512];
+	bool		 yes;
+	int		 error;
 
-	if ((error = arc_hello(cl, &rsp)) != 0)
-		fail(cl, error, "hello");
-	yes = rsp->host != NULL && zprog_taken(rsp->host->features.v,
-	    rsp->host->features.n);
-	arc_hello_rsp_free(rsp);
+	if ((error = yh_hello(conn, &h, err, sizeof(err))) != 0)
+		xo_errx(1, "hello: %s", err[0] != '\0' ? err :
+		    strerror(error));
+	yes = yh_takes_gzip(h);
+	ucl_object_unref(h);
 	return (yes);
 }
 
 /*
- * agent-build [-o file] repository [ref]: have the host build
- * arcana-agent from a git repository, and keep what it sends back,
- * sent compressed by an agent that can.
+ * A fetch the server refused (EPERM): what it showed, and with trust the
+ * host keys it found as confirmed, *keys, for one more try: true.
+ */
+static bool
+fetch_refused(const char *what, int error, ucl_object_t *data,
+    const char *err, bool trust, char **keys)
+{
+	const ucl_object_t	*fp, *e;
+	ucl_object_iter_t	 it = NULL;
+	const char		*k;
+
+	if (error != EPERM || data == NULL) {
+		if (error != 0)
+			xo_warnx("%s: %s", what, err[0] != '\0' ? err :
+			    strerror(error));
+		return (false);
+	}
+	fp = ucl_object_lookup(data, "fingerprints");
+	while (fp != NULL && (e = ucl_object_iterate(fp, &it, true)) != NULL)
+		xo_emit("{Lwc:Host key}{l:fingerprint/%s}\n",
+		    ucl_object_tostring(e));
+	k = ucl_object_tostring(ucl_object_lookup(data, "host_keys"));
+	if (trust && *keys == NULL && k != NULL) {
+		if ((*keys = strdup(k)) == NULL)
+			xo_err(1, "strdup");
+		return (true);
+	}
+	if ((k = ucl_object_tostring(ucl_object_lookup(data,
+	    "deploy_key"))) != NULL)
+		xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n", k);
+	xo_warnx("%s: %s", what, err);
+	return (false);
+}
+
+/*
+ * agent-build [-y] [-i key] [-o file] repository [ref]: have the host
+ * build arcana-agent from a git repository, and keep what it sends
+ * back, sent compressed by an agent that can.
  */
 static int
-cmd_agent_build(struct arc_client *cl, int argc, char **argv)
+cmd_agent_build(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_agent_build_req	 req;
-	struct arc_agent_build_rsp	*rsp;
-	const char			*out, *why;
-	char				 hex[SHA256_DIGEST_STRING_LENGTH];
-	char				*keys;
-	uint8_t				*prog;
-	size_t				 i, len;
-	bool				 trust;
-	int				 ch, error, fd;
+	ucl_object_t	*data;
+	const char	*out, *sshkey, *sha;
+	char		 hex[SHA256_DIGEST_STRING_LENGTH], err[CBL_ERRMSG_MAX];
+	char		*keys;
+	uint8_t		*prog;
+	size_t		 len;
+	bool		 trust, gz;
+	int		 ch, error, fd;
 
-	memset(&req, 0, sizeof(req));
 	out = "arcana-agent";
+	sshkey = NULL;
 	trust = false;
 	keys = NULL;
 	optreset = optind = 1;
 	while ((ch = getopt(argc, argv, "i:o:y")) != -1) {
 		switch (ch) {
 		case 'i':
-			req.ssh_key = optarg;
+			sshkey = optarg;
 			break;
 		case 'o':
 			out = optarg;
@@ -3162,62 +3269,44 @@ cmd_agent_build(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc - optind < 1 || argc - optind > 2)
 		usage();
-	req.source = argv[optind];
-	req.ref = argv[optind + 1];
-	req.compress = takes_gzip(cl);
-	prog = NULL;
-again:
-	if ((error = arc_agent_build(cl, &req, &rsp)) != 0)
-		fail(cl, error, "agent-build");
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	/*
-	 * The host does not know the server's SSH host key: show what it
-	 * found, and with -y send it back as confirmed.
-	 */
-	if (!rsp->ok && rsp->host_keys != NULL) {
-		for (i = 0; i < rsp->fingerprints.n; i++)
-			xo_emit("{Lwc:Host key}{l:fingerprint/%s}\n",
-			    rsp->fingerprints.v[i]);
-		if (trust && keys == NULL) {
-			if ((keys = strdup(rsp->host_keys)) == NULL)
-				xo_err(1, "strdup");
-			req.host_keys = keys;
-			arc_agent_build_rsp_free(rsp);
-			goto again;
-		}
+	gz = takes_gzip(conn);
+	/* arcana-agent's build. */
+	for (;;) {
+		ytold_begin(conn);
+		error = yh_agent_build(conn, argv[optind],
+		    argv[optind + 1], keys, sshkey, gz, &data, &prog, &len,
+		    err, sizeof(err));
+		ytold_end(true);
+		if (!fetch_refused("agent-build", error, data, err,
+		    trust, &keys))
+			break;
+		ucl_object_unref(data);
 	}
-	if (!rsp->ok && rsp->deploy_key != NULL)
-		xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n", rsp->deploy_key);
-	if (rsp->ok) {
-		len = rsp->binary.len;
-		if (rsp->has_program_size) {
-			if ((why = zprog_inflate(rsp->binary.p, len,
-			    rsp->program_size, ARC_MAX_PROGRAM, &prog)) != NULL)
-				xo_errx(1, "agent-build: %s", why);
-			len = rsp->program_size;
-		}
-		/* What arrived is what the host says it built. */
-		if (rsp->sha256 == NULL || strcmp(SHA256_Data(prog != NULL ?
-		    prog : rsp->binary.p, len, hex), rsp->sha256) != 0)
-			xo_errx(1, "agent-build: the program does not match "
-			    "its SHA-256");
-		if ((fd = fileargs_open(outfiles, out)) == -1 ||
-		    write(fd, prog != NULL ? prog : rsp->binary.p, len) !=
-		    (ssize_t)len || close(fd) == -1)
-			xo_err(1, "%s", out);
-		xo_emit("{Lwc:Built}{:agent-version/%s}{P: }{:sha256/%s}"
-		    "{P: }{:file/%s}\n", rsp->agent_version != NULL ?
-		    rsp->agent_version : "?", hex, out);
-		if (rsp->commit != NULL)
-			xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
-	} else
-		xo_warnx("agent-build: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	error = rsp->ok ? 0 : 1;
-	arc_agent_build_rsp_free(rsp);
+	if (error != 0) {
+		if (data != NULL)
+			ucl_object_unref(data);
+		free(keys);
+		return (1);
+	}
+	/* What arrived is what the host says it built. */
+	sha = ucl_object_tostring(ucl_object_lookup(data, "sha256"));
+	if (sha == NULL || strcmp(SHA256_Data(prog, len, hex), sha) != 0)
+		xo_errx(1, "agent-build: the program does not match its "
+		    "SHA-256");
+	if ((fd = fileargs_open(outfiles, out)) == -1 ||
+	    write(fd, prog, len) != (ssize_t)len || close(fd) == -1)
+		xo_err(1, "%s", out);
+	xo_emit("{Lwc:Built}{:agent-version/%s}{P: }{:sha256/%s}{P: }"
+	    "{:file/%s}\n", ucl_object_tostring(ucl_object_lookup(data,
+	    "version")) != NULL ? ucl_object_tostring(ucl_object_lookup(data,
+	    "version")) : "?", hex, out);
+	if (ucl_object_lookup(data, "commit") != NULL)
+		xo_emit("{Lwc:Commit}{:commit/%s}\n", ucl_object_tostring(
+		    ucl_object_lookup(data, "commit")));
+	ucl_object_unref(data);
 	free(keys);
 	free(prog);
-	return (error);
+	return (0);
 }
 
 /*
@@ -3225,23 +3314,23 @@ again:
  * the whole tree, install it and restart the console's service.
  */
 static int
-cmd_console_update(struct arc_client *cl, int argc, char **argv)
+cmd_console_update(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_console_update_req	 req;
-	struct arc_console_update_rsp	*rsp;
-	char				*keys;
-	size_t				 i;
-	bool				 trust;
-	int				 ch, error;
+	ucl_object_t	*data;
+	const char	*sshkey;
+	char		 err[CBL_ERRMSG_MAX];
+	char		*keys;
+	bool		 trust;
+	int		 ch, error;
 
-	memset(&req, 0, sizeof(req));
+	sshkey = NULL;
 	trust = false;
 	keys = NULL;
 	optreset = optind = 1;
 	while ((ch = getopt(argc, argv, "i:y")) != -1) {
 		switch (ch) {
 		case 'i':
-			req.ssh_key = optarg;
+			sshkey = optarg;
 			break;
 		case 'y':
 			trust = true;
@@ -3252,38 +3341,29 @@ cmd_console_update(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc - optind < 1 || argc - optind > 2)
 		usage();
-	req.source = argv[optind];
-	req.ref = argv[optind + 1];
-again:
-	if ((error = arc_console_update(cl, &req, &rsp)) != 0)
-		fail(cl, error, "console-update");
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	if (!rsp->ok && rsp->host_keys != NULL) {
-		for (i = 0; i < rsp->fingerprints.n; i++)
-			xo_emit("{Lwc:Host key}{l:fingerprint/%s}\n",
-			    rsp->fingerprints.v[i]);
-		if (trust && keys == NULL) {
-			if ((keys = strdup(rsp->host_keys)) == NULL)
-				xo_err(1, "strdup");
-			req.host_keys = keys;
-			arc_console_update_rsp_free(rsp);
-			goto again;
-		}
+	/* arcana-agent's console-update. */
+	for (;;) {
+		ytold_begin(conn);
+		error = yh_console_update(conn, argv[optind],
+		    argv[optind + 1], keys, sshkey, &data, err, sizeof(err));
+		ytold_end(true);
+		if (!fetch_refused("console-update", error, data, err,
+		    trust, &keys))
+			break;
+		ucl_object_unref(data);
 	}
-	if (!rsp->ok && rsp->deploy_key != NULL)
-		xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n", rsp->deploy_key);
-	if (rsp->ok)
+	if (error == 0) {
 		xo_emit("{Lwc:Console}{:console/installed}{d:restarting/%s}\n",
-		    rsp->restarting ? ", restarting" : "");
-	else
-		xo_warnx("console-update: %s", rsp->error != NULL ?
-		    rsp->error : "failed");
-	if (rsp->ok && rsp->commit != NULL)
-		xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
-	error = rsp->ok ? 0 : 1;
-	arc_console_update_rsp_free(rsp);
+		    ", restarting");
+		if (ucl_object_lookup(data, "commit") != NULL)
+			xo_emit("{Lwc:Commit}{:commit/%s}\n",
+			    ucl_object_tostring(ucl_object_lookup(data,
+			    "commit")));
+	}
+	if (data != NULL)
+		ucl_object_unref(data);
 	free(keys);
-	return (error);
+	return (error != 0 ? 1 : 0);
 }
 
 /*
@@ -3292,23 +3372,23 @@ again:
  * anything new to build.
  */
 static int
-cmd_source_head(struct arc_client *cl, int argc, char **argv)
+cmd_source_head(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_source_head_req	 req;
-	struct arc_source_head_rsp	*rsp;
-	char				*keys;
-	size_t				 i;
-	bool				 trust;
-	int				 ch, error;
+	ucl_object_t	*data;
+	const char	*sshkey;
+	char		 err[CBL_ERRMSG_MAX];
+	char		*keys;
+	bool		 trust;
+	int		 ch, error;
 
-	memset(&req, 0, sizeof(req));
+	sshkey = NULL;
 	trust = false;
 	keys = NULL;
 	optreset = optind = 1;
 	while ((ch = getopt(argc, argv, "i:y")) != -1) {
 		switch (ch) {
 		case 'i':
-			req.ssh_key = optarg;
+			sshkey = optarg;
 			break;
 		case 'y':
 			trust = true;
@@ -3319,35 +3399,26 @@ cmd_source_head(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc - optind < 1 || argc - optind > 2)
 		usage();
-	req.source = argv[optind];
-	req.ref = argv[optind + 1];
-again:
-	if ((error = arc_source_head(cl, &req, &rsp)) != 0)
-		fail(cl, error, "source-head");
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	if (!rsp->ok && rsp->host_keys != NULL) {
-		for (i = 0; i < rsp->fingerprints.n; i++)
-			xo_emit("{Lwc:Host key}{l:fingerprint/%s}\n",
-			    rsp->fingerprints.v[i]);
-		if (trust && keys == NULL) {
-			if ((keys = strdup(rsp->host_keys)) == NULL)
-				xo_err(1, "strdup");
-			req.host_keys = keys;
-			arc_source_head_rsp_free(rsp);
-			goto again;
-		}
+	/* arcana-agent's source-head. */
+	for (;;) {
+		ytold_begin(conn);
+		error = yh_source_head(conn, argv[optind],
+		    argv[optind + 1], keys, sshkey, &data, err, sizeof(err));
+		ytold_end(true);
+		if (!fetch_refused("source-head", error, data, err,
+		    trust, &keys))
+			break;
+		ucl_object_unref(data);
 	}
-	if (!rsp->ok && rsp->deploy_key != NULL)
-		xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n", rsp->deploy_key);
-	if (rsp->ok)
-		xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
-	else
-		xo_warnx("source-head: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	error = rsp->ok ? 0 : 1;
-	arc_source_head_rsp_free(rsp);
+	if (error == 0)
+		xo_emit("{Lwc:Commit}{:commit/%s}\n", ucl_object_tostring(
+		    ucl_object_lookup(data, "commit")) != NULL ?
+		    ucl_object_tostring(ucl_object_lookup(data, "commit")) :
+		    "");
+	if (data != NULL)
+		ucl_object_unref(data);
 	free(keys);
-	return (error);
+	return (error != 0 ? 1 : 0);
 }
 
 /*
@@ -3355,12 +3426,12 @@ again:
  * of the repository's branch, newest first, and its tags: what is new.
  */
 static int
-cmd_source_log(struct arc_client *cl, int argc, char **argv)
+cmd_source_log(cbl_conn *conn, int argc, char **argv)
 {
 	unsigned char	*lj;
 	ucl_object_t	*data;
 	const char	*errstr, *key;
-	char		 err[512];
+	char		 err[CBL_ERRMSG_MAX];
 	uint32_t	 count;
 	int		 ch, error;
 
@@ -3384,8 +3455,8 @@ cmd_source_log(struct arc_client *cl, int argc, char **argv)
 	if (argc - optind < 1 || argc - optind > 2)
 		usage();
 	/* arcana-agent's source-log. */
-	ytold_begin(cl);
-	error = yh_source_log(cl->conn, argv[optind], argv[optind + 1], NULL,
+	ytold_begin(conn);
+	error = yh_source_log(conn, argv[optind], argv[optind + 1], NULL,
 	    key, count, &data, err, sizeof(err));
 	ytold_end(true);
 	if (error != 0) {
@@ -3412,24 +3483,23 @@ cmd_source_log(struct arc_client *cl, int argc, char **argv)
 
 /*
  * agent-update [-pr] program: put a new arcana-agent in place, sent
- * compressed to an agent that takes it so; as it is with -p, and to an
- * agent before, which takes no more than max-binary bytes.
+ * compressed to an agent that takes it so (its features in
+ * arcana-host); as it is with -p, and to an agent before, which takes
+ * no more than a frame carries.
  */
 static int
-cmd_agent_update(struct arc_client *cl, int argc, char **argv)
+cmd_agent_update(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_agent_update_req	 req;
-	struct arc_agent_update_rsp	*rsp;
-	struct stat			 sb;
-	char				 hex[SHA256_DIGEST_STRING_LENGTH];
-	uint8_t				*data, *z;
-	ssize_t				 n;
-	size_t				 off, zlen;
-	bool				 plain;
-	int				 ch, error, fd;
+	ucl_object_t	*data;
+	struct stat	 sb;
+	char		 hex[SHA256_DIGEST_STRING_LENGTH], err[512];
+	uint8_t		*prog;
+	ssize_t		 n;
+	size_t		 off;
+	bool		 plain, restart, restarting;
+	int		 ch, error, fd;
 
-	memset(&req, 0, sizeof(req));
-	plain = false;
+	plain = restart = false;
 	optreset = optind = 1;
 	while ((ch = getopt(argc, argv, "pr")) != -1) {
 		switch (ch) {
@@ -3437,7 +3507,7 @@ cmd_agent_update(struct arc_client *cl, int argc, char **argv)
 			plain = true;
 			break;
 		case 'r':
-			req.restart = true;
+			restart = true;
 			break;
 		default:
 			usage();
@@ -3445,57 +3515,44 @@ cmd_agent_update(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc - optind != 1)
 		usage();
-	if ((fd = fileargs_open(files, argv[optind])) == -1 || fstat(fd, &sb) == -1)
+	if ((fd = fileargs_open(files, argv[optind])) == -1 ||
+	    fstat(fd, &sb) == -1)
 		xo_err(1, "%s", argv[optind]);
-	if (sb.st_size == 0 || sb.st_size > ARC_MAX_PROGRAM)
+	if (sb.st_size == 0 || sb.st_size > ZPROG_MAX_PROGRAM)
 		xo_errx(1, "%s: not a program an update can carry",
 		    argv[optind]);
-	if ((data = malloc((size_t)sb.st_size)) == NULL)
+	if ((prog = malloc((size_t)sb.st_size)) == NULL)
 		xo_err(1, "malloc");
 	for (off = 0; off < (size_t)sb.st_size; off += (size_t)n)
-		if ((n = read(fd, data + off, (size_t)sb.st_size - off)) <= 0)
+		if ((n = read(fd, prog + off, (size_t)sb.st_size - off)) <= 0)
 			xo_err(1, "%s", argv[optind]);
 	close(fd);
-	req.sha256 = SHA256_Data(data, off, hex);
-	z = NULL;
-	if (!plain && takes_gzip(cl)) {
-		if ((error = zprog_deflate(data, off, &z, &zlen)) != 0)
-			xo_errc(1, error, "%s: deflate", argv[optind]);
-		if (zlen > ARC_MAX_BINARY)
-			xo_errx(1, "%s: %zu bytes compressed, more than the %d "
-			    "an update carries", argv[optind], zlen,
-			    ARC_MAX_BINARY);
-		req.binary.p = z;
-		req.binary.len = zlen;
-		req.has_program_size = true;
-		req.program_size = (uint32_t)off;
-	} else if (off > ARC_MAX_BINARY)
-		xo_errx(1, "%s: %zu bytes, more than the %d an agent takes "
-		    "uncompressed: %s", argv[optind], off, ARC_MAX_BINARY,
-		    plain ? "send it without -p" : "this agent is older than "
-		    "compressed updates; update it to arcana-agent "
-		    ZPROG_SINCE " first");
-	else {
-		req.binary.p = data;
-		req.binary.len = off;
+	(void)SHA256_Data(prog, off, hex);
+	/* arcana-agent's update; over the local socket, unsigned. */
+	ytold_begin(conn);
+	error = yh_agent_update(conn, prog, off, hex, NULL, 0, restart,
+	    !plain && takes_gzip(conn), -1, &data, err, sizeof(err));
+	ytold_end(error != EFBIG);
+	if (error == EFBIG)
+		xo_errx(1, "%s: %s%s", argv[optind], err, plain ?
+		    "; send it without -p" : "");
+	if (error != 0) {
+		xo_warnx("agent-update: %s", err[0] != '\0' ? err :
+		    strerror(error));
+		free(prog);
+		return (1);
 	}
-	if ((error = arc_agent_update(cl, &req, &rsp)) != 0)
-		fail(cl, error, "agent-update");
-	if (rsp->ok)
-		xo_emit("{Lwc:Agent}{:agent-version/%s}{d:restarting/%s}\n",
-		    rsp->agent_version != NULL ? rsp->agent_version : "?",
-		    rsp->restarting ? ", restarting" :
-		    " in place; it runs from the next start");
-	xo_emit("{e:restarting/%s}", rsp->restarting ? "true" : "false");
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("agent-update: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_agent_update_rsp_free(rsp);
-	free(data);
-	free(z);
-	return (error);
+	restarting = ucl_object_toboolean(ucl_object_lookup(data,
+	    "restarting"));
+	xo_emit("{Lwc:Agent}{:agent-version/%s}{d:restarting/%s}\n",
+	    ucl_object_tostring(ucl_object_lookup(data, "version")) != NULL ?
+	    ucl_object_tostring(ucl_object_lookup(data, "version")) : "?",
+	    restarting ? ", restarting" :
+	    " in place; it runs from the next start");
+	xo_emit("{e:restarting/%s}", restarting ? "true" : "false");
+	ucl_object_unref(data);
+	free(prog);
+	return (0);
 }
 
 /*
@@ -3507,14 +3564,14 @@ cmd_agent_update(struct arc_client *cl, int argc, char **argv)
  * with -j the jail's; d the data read (a's).  NULL where it has none.
  */
 static const struct arcana_bird_configuration *
-ybird_conf(struct arc_client *cl, struct arcana_bird *d, cbl_yarena *a)
+ybird_conf(cbl_conn *conn, struct arcana_bird *d, cbl_yarena *a)
 {
 	const struct cbl_ynode	*n;
 
 	if ((n = ytop_named("bird")) == NULL)
 		xo_errx(1, "bird: arcana-bird is not in the tables");
 	memset(d, 0, sizeof(*d));
-	yget_data(cl, n, CBL_YDS_RUNNING, d, a);
+	yget_data(conn, n, CBL_YDS_RUNNING, d, a);
 	if (d->bird == NULL)
 		return (NULL);
 	if (netjail == NULL)
@@ -3534,7 +3591,7 @@ ybird_conf(struct arc_client *cl, struct arcana_bird *d, cbl_yarena *a)
  * check action.
  */
 static int
-cmd_bird_config(struct arc_client *cl, int argc, char **argv)
+cmd_bird_config(cbl_conn *conn, int argc, char **argv)
 {
 	struct arcana_bird_bird_check_input		 cin;
 	struct ietf_netconf_commit_input		 com;
@@ -3585,8 +3642,8 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 		usage();
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "bird config");
-	ytold_begin(cl);
-	c = ybird_conf(cl, &d, a);
+	ytold_begin(conn);
+	c = ybird_conf(conn, &d, a);
 	ytold_end(false);
 	path = argc - optind == 1 ? argv[optind] : c != NULL && c->path !=
 	    NULL ? c->path : "/usr/local/etc/bird.conf";
@@ -3618,7 +3675,7 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 		cin.jail = netjail;
 		cin.path = path;
 		cin.text = text;
-		k = (size_t)yplug_read(cl, "bird", "check", &cin,
+		k = (size_t)yplug_read(conn, "bird", "check", &cin,
 		    "bird config -n");
 		if (k == 0)
 			xo_emit("{:path/%s}: {:result/%s}\n", path, "parses; left "
@@ -3669,8 +3726,8 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 		b->jail.v = jv;
 	}
 	d.bird = b;
-	ytold_begin(cl);
-	if (yedit_data(cl->conn, n, &d, CBL_YDS_CANDIDATE, accepts, naccepts,
+	ytold_begin(conn);
+	if (yedit_data(conn, n, &d, CBL_YDS_CANDIDATE, accepts, naccepts,
 	    err, sizeof(err), &errsid, tag, sizeof(tag)) != 0) {
 		ytold_end(true);
 		refused("bird config", err, tag);
@@ -3685,10 +3742,11 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 		com.confirm_timeout = wait;
 		com.persist = token;
 	}
-	if (netconf_try(cl, "commit", &com, err, sizeof(err), tag,
+	if (netconf_try(conn, "commit", &com, err, sizeof(err), tag,
 	    sizeof(tag)) != 0) {
 		memset(&din, 0, sizeof(din));
-		(void)netconf_try(cl, "discard-changes", &din, NULL, 0, NULL, 0);
+		(void)netconf_try(conn, "discard-changes", &din, NULL, 0, NULL,
+		    0);
 		ytold_end(true);
 		refused("bird config", err, tag);
 	}
@@ -3707,20 +3765,20 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 
 /* bird confirm id: the configuration committed with -s stays. */
 static int
-cmd_bird_confirm(struct arc_client *cl, const char *id)
+cmd_bird_confirm(cbl_conn *conn, const char *id)
 {
 	struct ietf_netconf_commit_input	in;
 
 	memset(&in, 0, sizeof(in));
 	in.persist_id = id;
-	netconf_rpc(cl, "commit", &in);
+	netconf_rpc(conn, "commit", &in);
 	xo_emit("{:result/%s}\n", "confirmed: it stays");
 	return (0);
 }
 
 /* bird ospf [topology [protocol]]: BIRD's OSPF areas, or their topology. */
 static int
-cmd_bird_ospf(struct arc_client *cl, int argc, char **argv)
+cmd_bird_ospf(cbl_conn *conn, int argc, char **argv)
 {
 	struct arcana_bird_bird_ospf_input	in;
 
@@ -3731,12 +3789,12 @@ cmd_bird_ospf(struct arc_client *cl, int argc, char **argv)
 	in.has_topology = argc >= 1;
 	in.topology = argc >= 1;
 	in.protocol = argc == 2 ? argv[1] : NULL;
-	return (yplug_read(cl, "bird", "ospf", &in, "bird ospf"));
+	return (yplug_read(conn, "bird", "ospf", &in, "bird ospf"));
 }
 
 /* bird routes [words]: routes of BIRD's tables, said in birdc's words. */
 static int
-cmd_bird_routes(struct arc_client *cl, int argc, char **argv)
+cmd_bird_routes(cbl_conn *conn, int argc, char **argv)
 {
 	struct arcana_bird_bird_routes_input	in;
 	char					words[256];
@@ -3752,39 +3810,27 @@ cmd_bird_routes(struct arc_client *cl, int argc, char **argv)
 	memset(&in, 0, sizeof(in));
 	in.jail = netjail;
 	in.filter = words[0] != '\0' ? words : NULL;
-	return (yplug_read(cl, "bird", "routes", &in, "bird routes"));
+	return (yplug_read(conn, "bird", "routes", &in, "bird routes"));
 }
 
 /* route get address: the route the host would take, and the others. */
 static int
-cmd_route_get(struct arc_client *cl, int argc, char **argv)
+cmd_route_get(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_route_lookup_req	 req;
-	struct arc_route_lookup_rsp	*rsp;
-	int				 error;
+	struct arcana_network_network_lookup_input	in = { 0 };
 
 	if (argc != 3)
 		usage();
-	memset(&req, 0, sizeof(req));
-	req.lookup = argv[2];
-	req.has_net_fib = fib != 0;
-	req.net_fib = fib;
-	req.jail = netjail;
-	if ((error = arc_route_lookup(cl, &req, &rsp)) != 0)
-		fail(cl, error, "route get");
-	if (rsp->json != NULL)
-		xo_emit("{:json/%s}\n", rsp->json);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("route get %s: %s", argv[2], rsp->error != NULL ?
-		    rsp->error : "failed");
-	arc_route_lookup_rsp_free(rsp);
-	return (error);
+	in.address = argv[2];
+	in.has_fib = fib != 0;
+	in.fib = fib;
+	in.jail = netjail;
+	/* arcana-network's lookup. */
+	return (yplug_read(conn, "network", "lookup", &in, "route get"));
 }
 
 static int	json_out(const char *, bool, const char *, const char *,
-		    const struct arc_step *, size_t);
+		    const struct arcana_jobs_step *, size_t);
 
 /* A JSON argument: as given, or the contents of a file after @. */
 static const char *
@@ -3817,7 +3863,7 @@ json_arg(const char *arg)
  * edge, arcana-sdwan's, as its operation took it.  Each committed.
  */
 static int
-cmd_sdwan(struct arc_client *cl, int argc, char **argv)
+cmd_sdwan(cbl_conn *conn, int argc, char **argv)
 {
 	static const char *const parts[] = { "rules", "steer", "bird", "dhcp",
 	    "dns", "proxy", "ids" };
@@ -3832,8 +3878,8 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 	bool						 same;
 
 	if (argc == 1) {
-		ytold_begin(cl);
-		error = ysdwan_read(cl->conn, false, 0, &data, err,
+		ytold_begin(conn);
+		error = ysdwan_read(conn, false, 0, &data, err,
 		    sizeof(err));
 		return (ydata_out("sdwan", error, data, err));
 	}
@@ -3844,10 +3890,10 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 	if (k == nitems(parts) && strcmp(argv[1], "probes") != 0)
 		usage();
 	snprintf(what, sizeof(what), "sdwan %s", argv[1]);
-	ytold_begin(cl);
+	ytold_begin(conn);
 	same = false;
-	if ((k == nitems(parts) ? yprobes_edit(cl->conn, json_arg(argv[2]),
-	    err, sizeof(err), &esid, tag, sizeof(tag)) : ysdwan_edit(cl->conn,
+	if ((k == nitems(parts) ? yprobes_edit(conn, json_arg(argv[2]),
+	    err, sizeof(err), &esid, tag, sizeof(tag)) : ysdwan_edit(conn,
 	    argv[1], json_arg(argv[2]), &same, err, sizeof(err), &esid, tag,
 	    sizeof(tag))) != 0) {
 		ytold_end(true);
@@ -3856,7 +3902,7 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 	/* The same as running has: set again, what is not running
 	 * started. */
 	if (same) {
-		error = ysdwan_apply(cl->conn, argv[1], json_arg(argv[2]), err,
+		error = ysdwan_apply(conn, argv[1], json_arg(argv[2]), err,
 		    sizeof(err));
 		ytold_end(true);
 		if (error != 0)
@@ -3865,10 +3911,11 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		return (json_out(what, true, NULL, NULL, NULL, 0));
 	}
 	memset(&cin, 0, sizeof(cin));
-	if (netconf_try(cl, "commit", &cin, err, sizeof(err), tag,
+	if (netconf_try(conn, "commit", &cin, err, sizeof(err), tag,
 	    sizeof(tag)) != 0) {
 		memset(&din, 0, sizeof(din));
-		(void)netconf_try(cl, "discard-changes", &din, NULL, 0, NULL, 0);
+		(void)netconf_try(conn, "discard-changes", &din, NULL, 0, NULL,
+		    0);
 		ytold_end(true);
 		refused(what, err, tag);
 	}
@@ -3880,7 +3927,7 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 
 /* traceroute address: arcana-troubleshoot's traceroute. */
 static int
-cmd_traceroute(struct arc_client *cl, int argc, char **argv)
+cmd_traceroute(cbl_conn *conn, int argc, char **argv)
 {
 	ucl_object_t	*data;
 	char		 err[256];
@@ -3888,13 +3935,13 @@ cmd_traceroute(struct arc_client *cl, int argc, char **argv)
 
 	if (argc != 2)
 		usage();
-	ytold_begin(cl);
-	error = yts_traceroute(cl->conn, argv[1], &data, err, sizeof(err));
+	ytold_begin(conn);
+	error = yts_traceroute(conn, argv[1], &data, err, sizeof(err));
 	return (ydata_out("traceroute", error, data, err));
 }
 
 static int
-cmd_interface(struct arc_client *cl, int argc, char **argv)
+cmd_interface(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec		 sp;
 	const char			*errstr;
@@ -3916,14 +3963,14 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 		goto send;
 	}
 	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "config") == 0)
-		return (cmd_bird_config(cl, argc - 1, argv + 1));
+		return (cmd_bird_config(conn, argc - 1, argv + 1));
 	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "routes") == 0)
-		return (cmd_bird_routes(cl, argc - 2, argv + 2));
+		return (cmd_bird_routes(conn, argc - 2, argv + 2));
 	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "ospf") == 0)
-		return (cmd_bird_ospf(cl, argc - 2, argv + 2));
+		return (cmd_bird_ospf(conn, argc - 2, argv + 2));
 	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "confirm") == 0 &&
 	    argc == 3)
-		return (cmd_bird_confirm(cl, argv[2]));
+		return (cmd_bird_confirm(conn, argv[2]));
 	if (strcmp(argv[0], "bird") == 0) {
 		sp.kind = ARC_JOB_KIND_BIRD;
 		sp.verb = argv[1];
@@ -3980,7 +4027,7 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 		goto send;
 	}
 	if (strcmp(argv[0], "route") == 0 && strcmp(argv[1], "get") == 0)
-		return (cmd_route_get(cl, argc, argv));
+		return (cmd_route_get(conn, argc, argv));
 	if (strcmp(argv[0], "route") == 0) {
 		/*
 		 * route [keep] add destination gateway | delete destination
@@ -4149,89 +4196,232 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	} else
 		usage();
 send:
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
-/* A text as a JSON string; what JSON would escape is left out. */
-static void
-route_str(FILE *fp, const char *key, const char *v, bool *first)
-{
-
-	if (v == NULL)
-		return;
-	fprintf(fp, "%s\"%s\":\"", *first ? "" : ",", key);
-	for (; *v != '\0'; v++)
-		if (*v != '"' && *v != '\\' && (unsigned char)*v >= 0x20)
-			fputc(*v, fp);
-	fputc('"', fp);
-	*first = false;
-}
+/* The routes, connections or sockets in parts: where the stream is. */
+struct nparts {
+	bool	 opened, done;
+	int	 error;
+	char	 why[256];
+};
 
 static void
-route_num(FILE *fp, const char *key, bool has, uint32_t v, bool *first)
+np_open(cbl_stream *s, cbl_msg *accept, int error, void *arg)
 {
+	struct nparts	*x = arg;
 
-	if (!has)
+	(void)s;
+	x->opened = true;
+	x->error = error;
+	if (error != 0) {
+		x->done = true;
+		if (accept != NULL && cbl_msg_err_str(accept) != NULL)
+			strlcpy(x->why, cbl_msg_err_str(accept), sizeof(x->why));
+	}
+}
+
+/* A part: its rows, as arcana-network's network-part has them. */
+static void
+np_data(cbl_stream *s, cbl_msg *data, void *arg)
+{
+	struct arcana_network_network_part	 d;
+	struct cbl_ybuf				 b = { NULL, 0, 0 };
+	const struct cbl_ynode			*n;
+	cbl_yarena				*a;
+
+	(void)arg;
+	memset(&d, 0, sizeof(d));
+	if ((n = ytop_any("network-part")) == NULL || (a = cbl_yarena_new()) ==
+	    NULL)
 		return;
-	fprintf(fp, "%s\"%s\":%u", *first ? "" : ",", key, v);
-	*first = false;
+	if (arcana_network_network_part_parse(data, &d, a, CBL_YD_STRICT, NULL,
+	    0) != 0) {
+		cbl_yarena_free(a);
+		(void)cbl_stream_reset(s, EBADMSG);
+		return;
+	}
+	if (cbl_yjson(n, &d, &b) == 0)
+		xo_emit("{:json/%.*s}\n", (int)b.len, (const char *)b.p);
+	cbl_ybuf_free(&b);
+	cbl_yarena_free(a);
 }
 
-/* The typed routes of a part, as the rows of a table: a JSON array. */
-static char *
-routes_json(const struct arc_route *v, size_t n)
+static void
+np_hclose(cbl_stream *s, void *arg)
 {
-	FILE	*fp;
-	char	*json;
-	size_t	 len, i;
-	bool	 first;
+	struct nparts	*x = arg;
 
-	json = NULL;
-	if ((fp = open_memstream(&json, &len)) == NULL)
-		return (NULL);
-	fputc('[', fp);
-	for (i = 0; i < n; i++) {
-		fprintf(fp, "%s{", i > 0 ? "," : "");
-		first = true;
-		route_str(fp, "family", v[i].family, &first);
-		route_str(fp, "destination", v[i].destination, &first);
-		route_str(fp, "gateway", v[i].gateway, &first);
-		route_str(fp, "flags", v[i].flags, &first);
-		route_num(fp, "nhop", v[i].has_nhop, v[i].nhop, &first);
-		route_num(fp, "mtu", v[i].has_mtu, v[i].mtu, &first);
-		route_str(fp, "interface-name", v[i].interface_name, &first);
-		route_num(fp, "metric", v[i].has_metric, v[i].metric, &first);
-		route_num(fp, "weight", v[i].has_weight, v[i].weight, &first);
-		route_num(fp, "fib", v[i].has_fib, v[i].fib, &first);
-		route_num(fp, "prefixlen", v[i].has_prefixlen, v[i].prefixlen,
-		    &first);
-		route_str(fp, "source", v[i].source, &first);
-		route_num(fp, "path", v[i].has_path, v[i].path, &first);
-		route_num(fp, "paths", v[i].has_paths, v[i].paths, &first);
-		route_num(fp, "expire-time", v[i].has_expire_time,
-		    v[i].expire_time, &first);
-		fputc('}', fp);
-	}
-	fputc(']', fp);
-	if (fclose(fp) != 0) {
-		free(json);
-		return (NULL);
-	}
-	return (json);
+	x->done = true;
+	(void)cbl_stream_close(s, 0, NULL);
 }
 
-/* The program's libxo JSON, printed as it came. */
+static void
+np_close(cbl_stream *s, int code, const char *text, void *arg)
+{
+	struct nparts	*x = arg;
+
+	(void)s;
+	x->done = true;
+	if (code != 0) {
+		x->error = code;
+		strlcpy(x->why, text != NULL && text[0] != '\0' ? text :
+		    strerror(code), sizeof(x->why));
+	}
+}
+
+static const struct cbl_stream_cbs np_cbs = {
+	.on_open = np_open,
+	.on_data = np_data,
+	.on_hclose = np_hclose,
+	.on_close = np_close,
+};
+
+/* The arcana-parts family's network-parts stream, each part printed. */
 static int
-cmd_net(struct arc_client *cl, int argc, char **argv)
+net_parts(cbl_conn *conn, int kind, int family, const char *filter)
+{
+	struct arcana_network_network_part	 rq;
+	struct nparts				 x;
+	cbl_family_info				*info;
+	cbl_stream				*s;
+	cbl_msg					*m;
+	int					 error;
+
+	memset(&rq, 0, sizeof(rq));
+	rq.has_kind = true;
+	rq.kind = kind == ARC_NET_KIND_CONNECTIONS ?
+	    ARCANA_NETWORK_NETWORK_PART_KIND_CONNECTIONS : kind ==
+	    ARC_NET_KIND_SOCKETS ? ARCANA_NETWORK_NETWORK_PART_KIND_SOCKETS :
+	    ARCANA_NETWORK_NETWORK_PART_KIND_ROUTES;
+	rq.has_family = true;
+	rq.family = family;
+	rq.has_fib = fib != 0;
+	rq.fib = fib;
+	rq.jail = netjail;
+	rq.filter = filter;
+	memset(&x, 0, sizeof(x));
+	if ((error = cbl_resolve(conn, "arcana-parts", &info)) != 0)
+		xo_errx(1, "net: the host has no arcana-parts family: %s",
+		    strerror(error));
+	error = cbl_msg_new(cbl_conn_ctx(conn), cbl_family_info_id(info),
+	    1, CBL_F_REQUEST | CBL_F_S_OPEN, &m);
+	cbl_family_info_free(info);
+	if (error == 0)
+		error = arcana_network_network_part_put(m, &rq);
+	if (error == 0)
+		error = cbl_msg_set_window(m, 2 * 1024 * 1024);
+	if (error != 0 || (error = cbl_stream_open(conn, m, 0, &np_cbs,
+	    &x, &s)) != 0)
+		xo_errx(1, "net: %s", strerror(error));
+	sxf_run(conn, "net", &x.done);
+	if (x.error != 0) {
+		xo_warnx("net: %s", x.why[0] != '\0' ? x.why :
+		    strerror(x.error));
+		return (1);
+	}
+	return (0);
+}
+
+/*
+ * The firewall, arcana-firewall's, as the operational datastore has it:
+ * the host's, or the vnet jail's (-j) by arcana-jails.
+ */
+static int
+net_ipfw(cbl_conn *conn)
+{
+	struct cbl_ybuf			 b = { NULL, 0, 0 };
+	const struct cbl_ynode		*n, *fn;
+	const void			*f = NULL;
+	struct arcana_firewall		 fd;
+	cbl_yarena			*a;
+
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "net ipfw");
+	if (netjail == NULL) {
+		if ((n = ytop_named("firewall")) == NULL)
+			xo_errx(1, "net ipfw: arcana-firewall is not in the "
+			    "tables");
+		memset(&fd, 0, sizeof(fd));
+		yget_data(conn, n, CBL_YDS_OPERATIONAL, &fd, a);
+		f = fd.firewall;
+		fn = n;
+	} else {
+		/* A vnet jail's: arcana-network's ipfw action. */
+		struct arcana_network_network_ipfw_input in = { 0 };
+
+		cbl_yarena_free(a);
+		in.jail = netjail;
+		return (yplug_read(conn, "network", "ipfw", &in, "net ipfw"));
+	}
+	if (f == NULL)
+		xo_errx(1, "net ipfw: the host told of no firewall there");
+	if (cbl_yjson(fn, f, &b) != 0)
+		xo_errx(1, "net ipfw: not written as JSON");
+	xo_emit("{:json/%.*s}\n", (int)b.len, (const char *)b.p);
+	cbl_ybuf_free(&b);
+	cbl_yarena_free(a);
+	return (0);
+}
+
+/*
+ * The routes, arcana-network's routes action, said when the table has
+ * more than was sent.
+ */
+static int
+net_routes(cbl_conn *conn,
+    const struct arcana_network_network_routes_input *in)
+{
+	struct arcana_network_network_routes_output	 out;
+	struct cbl_ybuf					 b = { NULL, 0, 0 };
+	const struct cbl_ynode				*n, *an;
+	cbl_yarena					*a;
+	char						 why[512];
+	int						 error;
+
+	if ((n = ytop_named("network")) == NULL || (an = ychild(n,
+	    "routes")) == NULL || (an = ychild(an, "output")) == NULL)
+		xo_errx(1, "net routes: arcana-network is not in the tables");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "net routes");
+	memset(&out, 0, sizeof(out));
+	ytold_begin(conn);
+	error = ycall(conn, n, NULL, 0, "routes", in, &out, a, why,
+	    sizeof(why));
+	ytold_end(true);
+	if (error == 0 && (error = cbl_yjson(an, &out, &b)) != 0)
+		(void)snprintf(why, sizeof(why), "%s", strerror(error));
+	if (error == 0) {
+		xo_emit("{:json/%.*s}\n", (int)b.len, (const char *)b.p);
+		if (out.truncated)
+			xo_warnx("net routes: the table has %ju rows, more "
+			    "than a reply carries: these are the first; give "
+			    "a text to search for, or -o to read on",
+			    (uintmax_t)out.total);
+	} else
+		xo_warnx("net routes: %s", why);
+	cbl_ybuf_free(&b);
+	cbl_yarena_free(a);
+	return (error == 0 ? 0 : 1);
+}
+
+/*
+ * net kind [-4 | -6] [-o n] [text] [parts [text]]: a table of the
+ * host's (or of the vnet jail -j names), arcana-network's read action
+ * of the kind as RFC 7951's JSON; netgraph, wireguard and bird their
+ * modules'; ipfw arcana-firewall's (get firewall).
+ */
+static int
+cmd_net(cbl_conn *conn, int argc, char **argv)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
 	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups",
 	    "neighbours", "ipsec", "multicast", "bird-ospf", "kept-routes" };
-	struct arc_network_req	 req;
-	struct arc_network_rsp	*rsp;
-	size_t			 i;
-	int			 ch, error;
+	const char	*filter;
+	size_t		 i;
+	uint32_t	 offset;
+	int		 ch, family;
 
 	if (argc < 2)
 		usage();
@@ -4247,7 +4437,8 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 		if (argc != 2)
 			usage();
 		in.jail = netjail;
-		return (yplug_read(cl, kinds[i], "read", &in, "net netgraph"));
+		return (yplug_read(conn, kinds[i], "read", &in,
+		    "net netgraph"));
 	}
 	if (i == ARC_NET_KIND_WIREGUARD) {
 		struct arcana_wireguard_wireguard_read_input in = { 0 };
@@ -4255,7 +4446,8 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 		if (argc != 2)
 			usage();
 		in.jail = netjail;
-		return (yplug_read(cl, kinds[i], "read", &in, "net wireguard"));
+		return (yplug_read(conn, kinds[i], "read", &in,
+		    "net wireguard"));
 	}
 	if (i == ARC_NET_KIND_BIRD) {
 		struct arcana_bird_bird_read_input in = { 0 };
@@ -4263,20 +4455,19 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 		if (argc != 2)
 			usage();
 		in.jail = netjail;
-		return (yplug_read(cl, kinds[i], "read", &in, "net bird"));
+		return (yplug_read(conn, kinds[i], "read", &in, "net bird"));
 	}
 	if (i == ARC_NET_KIND_BIRD_ROUTES)
-		return (cmd_bird_routes(cl, argc - 2, argv + 2));
+		return (cmd_bird_routes(conn, argc - 2, argv + 2));
 	if (i == ARC_NET_KIND_BIRD_OSPF)
-		return (cmd_bird_ospf(cl, argc - 2, argv + 2));
-	memset(&req, 0, sizeof(req));
-	req.has_net_kind = true;
-	req.net_kind = (uint8_t)i;
-	req.has_net_family = true;
-	req.net_family = ARC_NET_FAMILY_ALL;
-	req.has_net_fib = fib != 0;
-	req.net_fib = fib;
-	req.jail = netjail;
+		return (cmd_bird_ospf(conn, argc - 2, argv + 2));
+	if (i == ARC_NET_KIND_IPFW) {
+		if (argc != 2)
+			usage();
+		return (net_ipfw(conn));
+	}
+	family = 0;
+	offset = 0;
 	argc--;
 	argv++;
 	optind = 1;
@@ -4284,78 +4475,89 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 		switch (ch) {
 		case 'o':
 			/* Read on, after this many rows. */
-			req.has_offset = true;
-			req.offset = (uint32_t)strtoul(optarg, NULL, 10);
+			offset = (uint32_t)strtoul(optarg, NULL, 10);
 			break;
 		case '4':
-			req.net_family = ARC_NET_FAMILY_INET;
+			family = 1;
 			break;
 		case '6':
-			req.net_family = ARC_NET_FAMILY_INET6;
+			family = 2;
 			break;
 		default:
 			usage();
 		}
 	}
-	/* A text to search the routes for, on the host. */
 	/* In parts, each printed as it comes: nothing left out for size. */
 	if (optind < argc && strcmp(argv[optind], "parts") == 0) {
-		struct arc_network_dump_req	 dq;
-		struct arc_network_dump_rsp	*item;
-		cbl_dump			*d;
-
-		memset(&dq, 0, sizeof(dq));
-		dq.has_net_kind = true;
-		dq.net_kind = req.net_kind;
-		dq.has_net_family = req.has_net_family;
-		dq.net_family = req.net_family;
-		dq.has_net_fib = req.has_net_fib;
-		dq.net_fib = req.net_fib;
-		dq.jail = req.jail;
-		dq.net_filter = optind + 1 < argc ? argv[optind + 1] : NULL;
-		if ((error = arc_network_dump(cl, &dq, &d)) != 0)
-			fail(cl, error, "net");
-		while ((error = arc_network_dump_next(d, &item)) == 0 && item !=
-		    NULL) {
-			char	*rows;
-
-			if (item->json != NULL)
-				xo_emit("{:json/%s}\n", item->json);
-			/* The routes come typed: written as rows. */
-			else if (item->routes.n > 0 && (rows = routes_json(
-			    item->routes.v, item->routes.n)) != NULL) {
-				xo_emit("{:json/%s}\n", rows);
-				free(rows);
-			}
-		}
-		cbl_dump_free(d);
-		if (error != 0)
-			fail(cl, error, "net");
-		return (0);
+		if (i != ARC_NET_KIND_ROUTES && i != ARC_NET_KIND_CONNECTIONS &&
+		    i != ARC_NET_KIND_SOCKETS)
+			xo_errx(1, "net %s: the routes, connections and sockets "
+			    "come in parts; the rest whole", kinds[i]);
+		return (net_parts(conn, (int)i, family, optind + 1 < argc ?
+		    argv[optind + 1] : NULL));
 	}
-	if (argc - optind == 1 && (req.net_kind == ARC_NET_KIND_ROUTES ||
-	    req.net_kind == ARC_NET_KIND_NEIGHBOURS))
-		req.net_filter = argv[optind];
+	filter = NULL;
+	/* A text to search the routes or the neighbours for. */
+	if (argc - optind == 1 && (i == ARC_NET_KIND_ROUTES ||
+	    i == ARC_NET_KIND_NEIGHBOURS))
+		filter = argv[optind];
 	else if (optind != argc)
 		usage();
-	if ((error = arc_network(cl, &req, &rsp)) != 0)
-		fail(cl, error, "net");
-	if (rsp->json != NULL)
-		xo_emit("{:json/%s}", rsp->json);
-	if (rsp->has_total)
-		xo_emit("{e:total/%ju}{e:truncated/%s}", (uintmax_t)rsp->total,
-		    rsp->truncated ? "true" : "false");
-	if (rsp->truncated)
-		xo_warnx("net %s: the table has %ju rows, more than a reply "
-		    "carries: these are the first; give a text to search for",
-		    kinds[i], (uintmax_t)rsp->total);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("net %s: %s", kinds[i], rsp->error != NULL ?
-		    rsp->error : "failed");
-	arc_network_rsp_free(rsp);
-	return (error);
+	switch (i) {
+	case ARC_NET_KIND_ROUTES: {
+		struct arcana_network_network_routes_input in = { 0 };
+
+		in.jail = netjail;
+		in.has_family = true;
+		in.family = family;
+		in.filter = filter;
+		in.has_fib = fib != 0;
+		in.fib = fib;
+		in.has_offset = offset != 0;
+		in.offset = offset;
+		return (net_routes(conn, &in));
+	}
+	case ARC_NET_KIND_NEXTHOPS:
+	case ARC_NET_KIND_NHGROUPS: {
+		struct arcana_network_network_nexthops_input in = { 0 };
+
+		in.jail = netjail;
+		in.has_family = true;
+		in.family = family;
+		in.has_fib = fib != 0;
+		in.fib = fib;
+		return (yplug_read(conn, "network", kinds[i], &in, kinds[i]));
+	}
+	case ARC_NET_KIND_NEIGHBOURS: {
+		struct arcana_network_network_neighbours_input in = { 0 };
+
+		in.jail = netjail;
+		in.has_family = true;
+		in.family = family;
+		in.filter = filter;
+		return (yplug_read(conn, "network", "neighbours", &in,
+		    "net neighbours"));
+	}
+	case ARC_NET_KIND_CONNECTIONS:
+	case ARC_NET_KIND_SOCKETS:
+	case ARC_NET_KIND_INTERFACES: {
+		/* The three inputs have one layout: a jail, a family. */
+		struct arcana_network_network_connections_input in = { 0 };
+
+		in.jail = netjail;
+		in.has_family = true;
+		in.family = family;
+		return (yplug_read(conn, "network", kinds[i], &in, kinds[i]));
+	}
+	default: {
+		/* A jail alone: bridges, geneve, ipsec, multicast,
+		 * kept-routes. */
+		struct arcana_network_network_bridges_input in = { 0 };
+
+		in.jail = netjail;
+		return (yplug_read(conn, "network", kinds[i], &in, kinds[i]));
+	}
+	}
 }
 
 /*
@@ -4365,7 +4567,7 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
  */
 /* ntp server...; ntp remove: the NTP servers of the host. */
 static int
-cmd_ntp(struct arc_client *cl, int argc, char **argv)
+cmd_ntp(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	sp;
 
@@ -4381,7 +4583,7 @@ cmd_ntp(struct arc_client *cl, int argc, char **argv)
 		sp.names.v = (const char **)(uintptr_t)&argv[1];
 		sp.names.n = (size_t)argc - 1;
 	}
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /*
@@ -4389,7 +4591,7 @@ cmd_ntp(struct arc_client *cl, int argc, char **argv)
  * keyed SAs of an ipsec(4) interface; the words as the job takes them.
  */
 static int
-cmd_ipsec_sa(struct arc_client *cl, int argc, char **argv)
+cmd_ipsec_sa(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	const char		*errstr;
@@ -4405,7 +4607,7 @@ cmd_ipsec_sa(struct arc_client *cl, int argc, char **argv)
 	if (strcmp(argv[1], "key") == 0) {
 		sp.names.v = (const char **)(uintptr_t)&argv[3];
 		sp.names.n = (size_t)argc - 3;
-		return (submit(cl, &sp));
+		return (submit(conn, &sp));
 	}
 	sp.has_reqid = true;
 	sp.reqid = (uint32_t)strtonum(argv[3], 1, 16383, &errstr);
@@ -4415,7 +4617,7 @@ cmd_ipsec_sa(struct arc_client *cl, int argc, char **argv)
 	sp.tunnel_remote = argv[5];
 	sp.names.v = (const char **)(uintptr_t)&argv[6];
 	sp.names.n = (size_t)argc - 6;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /*
@@ -4423,7 +4625,7 @@ cmd_ipsec_sa(struct arc_client *cl, int argc, char **argv)
  * advertisements on an interface, for SLAAC.
  */
 static int
-cmd_rtadvd(struct arc_client *cl, int argc, char **argv)
+cmd_rtadvd(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	sp;
 
@@ -4440,7 +4642,7 @@ cmd_rtadvd(struct arc_client *cl, int argc, char **argv)
 		sp.names.v = (const char **)(uintptr_t)&argv[2];
 		sp.names.n = (size_t)argc - 2;
 	}
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /*
@@ -4449,7 +4651,7 @@ cmd_rtadvd(struct arc_client *cl, int argc, char **argv)
  * file for the next start).
  */
 static int
-cmd_allow(struct arc_client *cl, int argc, char **argv)
+cmd_allow(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	sp;
 	bool			live;
@@ -4470,7 +4672,7 @@ cmd_allow(struct arc_client *cl, int argc, char **argv)
 	sp.persist = persist;
 	sp.names.v = (const char **)(uintptr_t)&argv[2];
 	sp.names.n = (size_t)argc - 2;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* A file's whole content, "-" standard input; exits on failure. */
@@ -4504,7 +4706,7 @@ slurp(const char *path)
  * neighbour set by hand, now; with -p kept for a boot too.
  */
 static int
-cmd_neigh(struct arc_client *cl, int argc, char **argv)
+cmd_neigh(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 
@@ -4526,7 +4728,7 @@ cmd_neigh(struct arc_client *cl, int argc, char **argv)
 	sp.persist = persist;
 	sp.safe = safe;
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* A key, at a prompt that does not show it, or a line of the input. */
@@ -4549,7 +4751,7 @@ key_read(const char *prompt, char *buf, size_t len)
  * key, which is never an argument.  With -p kept for a boot too.
  */
 static int
-cmd_carp(struct arc_client *cl, int argc, char **argv)
+cmd_carp(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	char			 key[64];
@@ -4588,7 +4790,7 @@ cmd_carp(struct arc_client *cl, int argc, char **argv)
 	sp.persist = persist;
 	sp.safe = safe;
 	sp.jail = netjail;
-	i = submit(cl, &sp);
+	i = submit(conn, &sp);
 	explicit_bzero(key, sizeof(key));
 	free(words);
 	return (i);
@@ -4601,7 +4803,7 @@ cmd_carp(struct arc_client *cl, int argc, char **argv)
  * a line of the input each.
  */
 static int
-cmd_zfskey(struct arc_client *cl, int argc, char **argv)
+cmd_zfskey(cbl_conn *conn, int argc, char **argv)
 {
 	char			 key[513], nkey[513], again[513], err[512];
 	const char		*k, *nk;
@@ -4628,7 +4830,7 @@ cmd_zfskey(struct arc_client *cl, int argc, char **argv)
 		nk = nkey;
 	}
 	/* arcana-storage's load-key and change-key. */
-	error = ystore_key(cl->conn, argv[argc - 1], k, nk, NULL, err,
+	error = ystore_key(conn, argv[argc - 1], k, nk, NULL, err,
 	    sizeof(err));
 	explicit_bzero(key, sizeof(key));
 	if (change)
@@ -4646,7 +4848,7 @@ cmd_zfskey(struct arc_client *cl, int argc, char **argv)
  * trusts afterwards.
  */
 static int
-cmd_tls(struct arc_client *cl, int argc, char **argv, const char *mine)
+cmd_tls(cbl_conn *conn, int argc, char **argv, const char *mine)
 {
 	ucl_object_t	*data;
 	const char	*verb, *cert, *ca, *peer;
@@ -4666,8 +4868,8 @@ cmd_tls(struct arc_client *cl, int argc, char **argv, const char *mine)
 	} else
 		usage();
 	/* arcana-agent's tls: its state, csr or install. */
-	ytold_begin(cl);
-	error = yh_tls(cl->conn, verb, cert, ca, peer, &data, err,
+	ytold_begin(conn);
+	error = yh_tls(conn, verb, cert, ca, peer, &data, err,
 	    sizeof(err));
 	return (ydata_out("tls", error, data, err));
 }
@@ -4678,7 +4880,7 @@ cmd_tls(struct arc_client *cl, int argc, char **argv, const char *mine)
  * nothing, the sources there are.
  */
 static int
-cmd_capture(struct arc_client *cl, int argc, char **argv)
+cmd_capture(cbl_conn *conn, int argc, char **argv)
 {
 	ucl_object_t		*data;
 	const char		*errstr, *source;
@@ -4711,8 +4913,8 @@ cmd_capture(struct arc_client *cl, int argc, char **argv)
 			strlcat(f, argv[i], len);
 		}
 	}
-	ytold_begin(cl);
-	error = yts_capture(cl->conn, netjail, source, f, seconds, packets,
+	ytold_begin(conn);
+	error = yts_capture(conn, netjail, source, f, seconds, packets,
 	    &data, ebuf, sizeof(ebuf));
 	free(f);
 	return (ydata_out("capture", error, data, ebuf));
@@ -4726,27 +4928,19 @@ cmd_capture(struct arc_client *cl, int argc, char **argv)
  * with -s undone unless confirmed.
  */
 static int
-cmd_sshd(struct arc_client *cl, int argc, char **argv)
+cmd_sshd(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
-	struct arc_ssh_req	 rq;
-	struct arc_ssh_rsp	*rs;
+	ucl_object_t		*data;
+	char			 ebuf[256];
 	char			*t;
 	int			 error;
 
 	if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
-		memset(&rq, 0, sizeof(rq));
-		rq.jail = netjail;
-		if ((error = arc_ssh(cl, &rq, &rs)) != 0)
-			fail(cl, error, "sshd");
-		if (rs->json != NULL)
-			xo_emit("{:json/%s}\n", rs->json);
-		else if (rs->error != NULL)
-			warnx("%s", rs->error);
-		emit_trace(rs->trace.v, rs->trace.n);
-		error = rs->ok ? 0 : 1;
-		arc_ssh_rsp_free(rs);
-		return (error);
+		/* arcana-sshd's read. */
+		ytold_begin(conn);
+		error = yr_sshd(conn, netjail, &data, ebuf, sizeof(ebuf));
+		return (ydata_out("sshd", error, data, ebuf));
 	}
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
@@ -4783,7 +4977,7 @@ cmd_sshd(struct arc_client *cl, int argc, char **argv)
 		usage();
 	sp.safe = safe;
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /*
@@ -4794,41 +4988,25 @@ cmd_sshd(struct arc_client *cl, int argc, char **argv)
  * a run and ends (see list's runs).
  */
 static int
-cmd_poudriere(struct arc_client *cl, int argc, char **argv)
+cmd_poudriere(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_job_spec		 sp;
-	struct arc_builder_rsp		*rs;
-	struct arc_builder_options_req	 oq;
-	struct arc_builder_options_rsp	*ors;
-	char				*nm;
-	int				 error;
+	struct arc_job_spec	 sp;
+	ucl_object_t		*data;
+	char			 ebuf[256];
+	char			*nm;
+	int			 error;
 
 	if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
-		if ((error = arc_builder(cl, &rs)) != 0)
-			fail(cl, error, "builder");
-		if (rs->json != NULL)
-			xo_emit("{:json/%s}\n", rs->json);
-		else if (rs->error != NULL)
-			warnx("%s", rs->error);
-		emit_trace(rs->trace.v, rs->trace.n);
-		error = rs->ok ? 0 : 1;
-		arc_builder_rsp_free(rs);
-		return (error);
+		/* A GET of arcana-builder. */
+		error = yr_builder(conn, &data, ebuf, sizeof(ebuf));
+		return (ydata_out("poudriere", error, data, ebuf));
 	}
 	if (strcmp(argv[1], "show-options") == 0) {
-		memset(&oq, 0, sizeof(oq));
-		oq.names.v = (const char **)(uintptr_t)&argv[2];
-		oq.names.n = (size_t)argc - 2;
-		if ((error = arc_builder_options(cl, &oq, &ors)) != 0)
-			fail(cl, error, "builder-options");
-		if (ors->json != NULL)
-			xo_emit("{:json/%s}\n", ors->json);
-		else if (ors->error != NULL)
-			warnx("%s", ors->error);
-		emit_trace(ors->trace.v, ors->trace.n);
-		error = ors->ok ? 0 : 1;
-		arc_builder_options_rsp_free(ors);
-		return (error);
+		/* arcana-builder's port-options. */
+		ytold_begin(conn);
+		error = yr_port_options(conn, (const char *const *)&argv[2],
+		    (size_t)argc - 2, &data, ebuf, sizeof(ebuf));
+		return (ydata_out("show-options", error, data, ebuf));
 	}
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
@@ -4850,40 +5028,31 @@ cmd_poudriere(struct arc_client *cl, int argc, char **argv)
 	}
 	/* The host's alone: -j is passed on to be refused, not dropped. */
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* crashes [backtrace core [program]]: the cores dumped, and one's
  * backtrace. */
 static int
-cmd_crashes(struct arc_client *cl, int argc, char **argv)
+cmd_crashes(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_crashes_req	 rq;
-	struct arc_crashes_rsp	*rs;
-	int			 error;
+	ucl_object_t	*data;
+	char		 ebuf[256];
+	int		 error;
 
-	memset(&rq, 0, sizeof(rq));
-	if (argc > 1) {
-		if (strcmp(argv[1], "backtrace") != 0 || argc < 3 || argc > 4)
-			usage();
-		rq.names.v = (const char **)(uintptr_t)&argv[1];
-		rq.names.n = (size_t)argc - 1;
-	}
-	if ((error = arc_crashes(cl, &rq, &rs)) != 0)
-		fail(cl, error, "crashes");
-	if (rs->json != NULL)
-		xo_emit("{:json/%s}\n", rs->json);
-	else if (rs->error != NULL)
-		warnx("%s", rs->error);
-	emit_trace(rs->trace.v, rs->trace.n);
-	error = rs->ok ? 0 : 1;
-	arc_crashes_rsp_free(rs);
-	return (error);
+	if (argc > 1 && (strcmp(argv[1], "backtrace") != 0 || argc < 3 ||
+	    argc > 4))
+		usage();
+	/* arcana-crashes' read. */
+	ytold_begin(conn);
+	error = yr_crashes(conn, (const char *const *)&argv[1],
+	    (size_t)argc - 1, &data, ebuf, sizeof(ebuf));
+	return (ydata_out("crashes", error, data, ebuf));
 }
 
 /* reboot: the host, by shutdown(8) a minute from now; a job. */
 static int
-cmd_reboot(struct arc_client *cl)
+cmd_reboot(cbl_conn *conn)
 {
 	struct arc_job_spec	 sp;
 
@@ -4893,38 +5062,30 @@ cmd_reboot(struct arc_client *cl)
 	sp.has_kind = true;
 	sp.kind = ARC_JOB_KIND_REBOOT;
 	sp.safe = safe;		/* refused by the host, which says why */
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* system [file | host]: the system's own files, and settings beside. */
 static int
-cmd_system(struct arc_client *cl, int argc, char **argv)
+cmd_system(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_system_req	 rq;
-	struct arc_system_rsp	*rs;
-	int			 error;
+	ucl_object_t	*data;
+	char		 ebuf[256];
+	int		 error;
 
 	if (argc > 2)
 		usage();
-	memset(&rq, 0, sizeof(rq));
-	rq.names.v = (const char **)(uintptr_t)&argv[1];
-	rq.names.n = (size_t)argc - 1;
-	if ((error = arc_system(cl, &rq, &rs)) != 0)
-		fail(cl, error, "system");
-	if (rs->json != NULL)
-		xo_emit("{:json/%s}\n", rs->json);
-	else if (rs->error != NULL)
-		warnx("%s", rs->error);
-	emit_trace(rs->trace.v, rs->trace.n);
-	error = rs->ok ? 0 : 1;
-	arc_system_rsp_free(rs);
-	return (error);
+	/* arcana-system's read. */
+	ytold_begin(conn);
+	error = yr_system(conn, (const char *const *)&argv[1],
+	    (size_t)argc - 1, &data, ebuf, sizeof(ebuf));
+	return (ydata_out("system", error, data, ebuf));
 }
 
 /* geom class subcommand [word ...] [-P passfile]: geom(8), a job; a
  * GELI passphrase read from passfile. */
 static int
-cmd_geom(struct arc_client *cl, int argc, char **argv)
+cmd_geom(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	int			 n;
@@ -4943,14 +5104,14 @@ cmd_geom(struct arc_client *cl, int argc, char **argv)
 	sp.names.v = (const char **)(uintptr_t)&argv[2];
 	sp.names.n = (size_t)n;
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* sysfile file path | periodic name=YES|NO ... | dma key=value ...: a
  * file of the system's written from path, periodic.conf's variables, or
  * dma's smart host (its password from ARCANA_DMA_PASSWORD); a job. */
 static int
-cmd_sysfile(struct arc_client *cl, int argc, char **argv)
+cmd_sysfile(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 
@@ -4973,32 +5134,24 @@ cmd_sysfile(struct arc_client *cl, int argc, char **argv)
 		sp.text = slurp(argv[2]);
 	}
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* smtpd: OpenSMTPD on the host, whole; with words, a job of it. */
 static int
-cmd_smtpd(struct arc_client *cl, int argc, char **argv)
+cmd_smtpd(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_smtpd_req	 rq;
-	struct arc_smtpd_rsp	*rs;
 	struct arc_job_spec	 sp;
+	ucl_object_t		*data;
+	char			 ebuf[256];
 	char			*w[1];
 	int			 error;
 
 	if (argc == 1) {
-		memset(&rq, 0, sizeof(rq));
-		rq.jail = netjail;
-		if ((error = arc_smtpd(cl, &rq, &rs)) != 0)
-			fail(cl, error, "smtpd");
-		if (rs->json != NULL)
-			xo_emit("{:json/%s}\n", rs->json);
-		else if (rs->error != NULL)
-			warnx("%s", rs->error);
-		emit_trace(rs->trace.v, rs->trace.n);
-		error = rs->ok ? 0 : 1;
-		arc_smtpd_rsp_free(rs);
-		return (error);
+		/* arcana-smtpd's read. */
+		ytold_begin(conn);
+		error = yr_smtpd(conn, netjail, &data, ebuf, sizeof(ebuf));
+		return (ydata_out("smtpd", error, data, ebuf));
 	}
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
@@ -5046,30 +5199,24 @@ cmd_smtpd(struct arc_client *cl, int argc, char **argv)
 		sp.names.n = 1;
 	}
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* monitor: the tunnels measured outside SD-WAN; with words, a job. */
 static int
-cmd_monitor(struct arc_client *cl, int argc, char **argv)
+cmd_monitor(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_monitors_req	 rq;
-	struct arc_monitors_rsp	*rs;
 	struct arc_job_spec	 sp;
+	ucl_object_t		*data;
+	char			 ebuf[256];
 	int			 error;
 
 	if (argc == 1) {
-		memset(&rq, 0, sizeof(rq));
-		if ((error = arc_monitors(cl, &rq, &rs)) != 0)
-			fail(cl, error, "monitors");
-		if (rs->json != NULL)
-			xo_emit("{:json/%s}\n", rs->json);
-		else if (rs->error != NULL)
-			warnx("%s", rs->error);
-		emit_trace(rs->trace.v, rs->trace.n);
-		error = rs->ok ? 0 : 1;
-		arc_monitors_rsp_free(rs);
-		return (error);
+		/* arcana-probe's read of the monitors. */
+		ytold_begin(conn);
+		error = ysdwan_monitors(conn, false, 0, &data, ebuf,
+		    sizeof(ebuf));
+		return (ydata_out("monitors", error, data, ebuf));
 	}
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
@@ -5078,31 +5225,23 @@ cmd_monitor(struct arc_client *cl, int argc, char **argv)
 	sp.names.v = (const char **)(uintptr_t)&argv[2];
 	sp.names.n = (size_t)(argc - 2);
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* speeder: UDPspeeder's FEC relay, read; with words, a job of it. */
 static int
-cmd_speeder(struct arc_client *cl, int argc, char **argv)
+cmd_speeder(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_speeder_req	 rq;
-	struct arc_speeder_rsp	*rs;
 	struct arc_job_spec	 sp;
+	ucl_object_t		*data;
+	char			 ebuf[256];
 	int			 error;
 
 	if (argc == 1) {
-		memset(&rq, 0, sizeof(rq));
-		rq.jail = netjail;
-		if ((error = arc_speeder(cl, &rq, &rs)) != 0)
-			fail(cl, error, "speeder");
-		if (rs->json != NULL)
-			xo_emit("{:json/%s}\n", rs->json);
-		else if (rs->error != NULL)
-			warnx("%s", rs->error);
-		emit_trace(rs->trace.v, rs->trace.n);
-		error = rs->ok ? 0 : 1;
-		arc_speeder_rsp_free(rs);
-		return (error);
+		/* arcana-speeder's read. */
+		ytold_begin(conn);
+		error = yr_speeder(conn, netjail, &data, ebuf, sizeof(ebuf));
+		return (ydata_out("speeder", error, data, ebuf));
 	}
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
@@ -5113,32 +5252,24 @@ cmd_speeder(struct arc_client *cl, int argc, char **argv)
 	sp.names.n = (size_t)(argc - 2);
 	sp.jail = netjail;
 	sp.safe = safe;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* netstore [nfs | iscsi | hast]: the host's storage services. */
 static int
-cmd_netstore(struct arc_client *cl, int argc, char **argv)
+cmd_netstore(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_netstore_req	 rq;
-	struct arc_netstore_rsp	*rs;
-	int			 error;
+	ucl_object_t	*data;
+	char		 ebuf[256];
+	int		 error;
 
 	if (argc > 2)
 		usage();
-	memset(&rq, 0, sizeof(rq));
-	rq.names.v = (const char **)(uintptr_t)&argv[1];
-	rq.names.n = (size_t)argc - 1;
-	if ((error = arc_netstore(cl, &rq, &rs)) != 0)
-		fail(cl, error, "netstore");
-	if (rs->json != NULL)
-		xo_emit("{:json/%s}\n", rs->json);
-	else if (rs->error != NULL)
-		warnx("%s", rs->error);
-	emit_trace(rs->trace.v, rs->trace.n);
-	error = rs->ok ? 0 : 1;
-	arc_netstore_rsp_free(rs);
-	return (error);
+	/* arcana-netstore's read. */
+	ytold_begin(conn);
+	error = yr_netstore(conn, (const char *const *)&argv[1],
+	    (size_t)argc - 1, &data, ebuf, sizeof(ebuf));
+	return (ydata_out("netstore", error, data, ebuf));
 }
 
 /*
@@ -5147,7 +5278,7 @@ cmd_netstore(struct arc_client *cl, int argc, char **argv)
  * resource: the storage services changed, a job each.
  */
 static int
-cmd_netstore_job(struct arc_client *cl, int argc, char **argv, int kind)
+cmd_netstore_job(cbl_conn *conn, int argc, char **argv, int kind)
 {
 	struct arc_job_spec	 sp;
 	char			*w[2];
@@ -5183,7 +5314,7 @@ cmd_netstore_job(struct arc_client *cl, int argc, char **argv, int kind)
 		sp.names.n = (size_t)argc - 2;
 	}
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /*
@@ -5191,7 +5322,7 @@ cmd_netstore_job(struct arc_client *cl, int argc, char **argv, int kind)
  * place of those there were; a job.
  */
 static int
-cmd_clamav(struct arc_client *cl, int argc, char **argv)
+cmd_clamav(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	const char		**w;
@@ -5213,7 +5344,7 @@ cmd_clamav(struct arc_client *cl, int argc, char **argv)
 	sp.names.n = (size_t)argc - 2;
 	/* The host's alone: -j is passed on to be refused, not dropped. */
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* What a capture's stream or a pcap-log file's has come to. */
@@ -5228,9 +5359,9 @@ struct sxfer {
 static void
 sxf_open(cbl_stream *s, cbl_msg *accept, int error, void *arg)
 {
-	struct arcana_suricata_pcap_put_output	 o;
-	struct sxfer				*x = arg;
-	cbl_yarena				*a;
+	struct arcana_stream_opened	 o;
+	struct sxfer			*x = arg;
+	cbl_yarena			*a;
 
 	(void)s;
 	x->opened = true;
@@ -5242,9 +5373,7 @@ sxf_open(cbl_stream *s, cbl_msg *accept, int error, void *arg)
 	}
 	/* Both replies are ok and json: either reads them. */
 	if (accept != NULL && (a = cbl_yarena_new()) != NULL) {
-		memset(&o, 0, sizeof(o));
-		if (arcana_suricata_pcap_put_output_parse(accept, &o, a,
-		    CBL_YD_STRICT, NULL, 0) == 0 && o.json != NULL)
+		if (ys_opened(accept, &o, a) == 0 && o.json != NULL)
 			strlcpy(x->json, o.json, sizeof(x->json));
 		cbl_yarena_free(a);
 	}
@@ -5254,14 +5383,13 @@ sxf_open(cbl_stream *s, cbl_msg *accept, int error, void *arg)
 static void
 sxf_data(cbl_stream *s, cbl_msg *data, void *arg)
 {
-	struct sxfer		*x = arg;
-	struct arc_chunk	 d;
-	cbl_yarena		*a;
-	size_t			 off;
-	ssize_t			 n;
+	struct sxfer			*x = arg;
+	struct arcana_stream_chunk	 d;
+	cbl_yarena			*a;
+	size_t				 off;
+	ssize_t				 n;
 
-	if ((a = cbl_yarena_new()) == NULL || arcana_chunk_parse(data, &d, a,
-	    CBL_YD_STRICT, NULL, 0) != 0) {
+	if ((a = cbl_yarena_new()) == NULL || ys_chunk(data, &d, a) != 0) {
 		if (a != NULL)
 			cbl_yarena_free(a);
 		(void)cbl_stream_reset(s, EBADMSG);
@@ -5309,15 +5437,15 @@ static const struct cbl_stream_cbs sxf_cbs = {
 
 /* The connection's next turn: what came read, what waits sent. */
 static void
-sxf_step(struct arc_client *cl, const char *what)
+sxf_step(cbl_conn *conn, const char *what)
 {
 	struct pollfd	pfd;
 	int		ev, ms, error;
 
 	ev = 0;
 	ms = -1;
-	(void)cbl_conn_interest(cl->conn, &ev, &ms);
-	pfd.fd = cbl_conn_fd(cl->conn);
+	(void)cbl_conn_interest(conn, &ev, &ms);
+	pfd.fd = cbl_conn_fd(conn);
 	pfd.events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
 	    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
 	pfd.revents = 0;
@@ -5326,17 +5454,17 @@ sxf_step(struct arc_client *cl, const char *what)
 	ev = ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0 ?
 	    CBL_EV_READ : 0) | ((pfd.revents & POLLOUT) != 0 ?
 	    CBL_EV_WRITE : 0);
-	if ((error = cbl_conn_process(cl->conn, ev)) != 0)
+	if ((error = cbl_conn_process(conn, ev)) != 0)
 		xo_errx(1, "%s: the host is gone: %s", what, strerror(error));
 }
 
 /* The connection run until done says so, or the host goes. */
 static void
-sxf_run(struct arc_client *cl, const char *what, const bool *done)
+sxf_run(cbl_conn *conn, const char *what, const bool *done)
 {
 
 	while (!*done)
-		sxf_step(cl, what);
+		sxf_step(conn, what);
 }
 
 /*
@@ -5347,43 +5475,27 @@ sxf_run(struct arc_client *cl, const char *what, const bool *done)
  * the standard output.  Each a stream.
  */
 static int
-cmd_suricata_xfer(struct arc_client *cl, int argc, char **argv)
+cmd_suricata_xfer(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_suricata_pcap_put_req	 pq;
-	struct arc_suricata_pcap_get_req	 gq;
-	struct arc_chunk			 c;
-	struct sxfer				 x;
-	cbl_stream				*s;
-	cbl_msg					*m;
-	unsigned char				*buf;
-	ssize_t					 n;
-	bool					 put;
-	int					 error;
+	struct arcana_stream_open	 rq;
+	struct sxfer			 x;
+	cbl_stream			*s;
+	unsigned char			*buf;
+	ssize_t				 n;
+	bool				 put;
+	int				 error;
 
 	put = strcmp(argv[1], "pcap-put") == 0;
 	memset(&x, 0, sizeof(x));
 	n = 0;
-	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), cl->family, put ?
-	    ARC_CMD_SURICATA_PCAP_PUT : ARC_CMD_SURICATA_PCAP_GET,
-	    CBL_F_REQUEST | CBL_F_S_OPEN, &m)) != 0)
+	/* arcana-stream's suricata-pcap-put or -get. */
+	memset(&rq, 0, sizeof(rq));
+	rq.name.v = (const char *const *)&argv[2];
+	rq.name.n = (size_t)argc - 2;
+	if ((error = ys_open(conn, put ? YS_PCAP_PUT : YS_PCAP_GET, &rq,
+	    YS_WINDOW, 0, &sxf_cbs, &x, &s)) != 0)
 		xo_errx(1, "suricata %s: %s", argv[1], strerror(error));
-	if (put) {
-		memset(&pq, 0, sizeof(pq));
-		pq.names.v = (const char **)(uintptr_t)&argv[2];
-		pq.names.n = (size_t)argc - 2;
-		error = arc_suricata_pcap_put_req_put_fields(m, &pq);
-	} else {
-		memset(&gq, 0, sizeof(gq));
-		gq.names.v = (const char **)(uintptr_t)&argv[2];
-		gq.names.n = (size_t)argc - 2;
-		error = arc_suricata_pcap_get_req_put_fields(m, &gq);
-	}
-	if (error == 0)
-		error = cbl_msg_set_window(m, 4 * 1024 * 1024);
-	if (error != 0 || (error = cbl_stream_open(cl->conn, m, 0, &sxf_cbs,
-	    &x, &s)) != 0)
-		xo_errx(1, "suricata %s: %s", argv[1], strerror(error));
-	sxf_run(cl, argv[1], &x.opened);
+	sxf_run(conn, argv[1], &x.opened);
 	if (x.error != 0)
 		xo_errx(1, "suricata %s: %s", argv[1], x.why[0] != '\0' ? x.why :
 		    strerror(x.error));
@@ -5392,13 +5504,10 @@ cmd_suricata_xfer(struct arc_client *cl, int argc, char **argv)
 			xo_err(1, "malloc");
 		while (!x.closed && (n = read(STDIN_FILENO, buf, 256 * 1024)) >
 		    0) {
-			memset(&c, 0, sizeof(c));
-			c.data.p = buf;
-			c.data.len = (size_t)n;
 			/* No room: the host's, given back as it writes. */
-			while (!x.closed && (error = arc_suricata_pcap_put_send(s,
-			    &c)) == EAGAIN)
-				sxf_step(cl, argv[1]);
+			while (!x.closed && (error = ys_send(s, buf,
+			    (size_t)n)) == EAGAIN)
+				sxf_step(conn, argv[1]);
 			if (!x.closed && error != 0)
 				xo_errx(1, "suricata %s: %s", argv[1],
 				    strerror(error));
@@ -5409,7 +5518,7 @@ cmd_suricata_xfer(struct arc_client *cl, int argc, char **argv)
 		if (!x.closed)
 			(void)cbl_stream_half_close(s);
 	}
-	sxf_run(cl, argv[1], &x.closed);
+	sxf_run(conn, argv[1], &x.closed);
 	if (x.code != 0)
 		xo_errx(1, "suricata %s: %s", argv[1], x.why);
 	if (put)
@@ -5426,30 +5535,30 @@ cmd_suricata_xfer(struct arc_client *cl, int argc, char **argv)
  * but rules are jobs.
  */
 static int
-cmd_suricata(struct arc_client *cl, int argc, char **argv)
+cmd_suricata(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_job_spec		 sp;
-	struct arc_suricata_rules_req	 rq;
-	struct arc_suricata_rules_rsp	*rs;
-	int				 error;
+	struct arc_job_spec	 sp;
+	ucl_object_t		*data;
+	char			 ebuf[256], *raw;
+	int			 error;
 
 	if (argc >= 2 && (strcmp(argv[1], "pcap-put") == 0 ||
 	    strcmp(argv[1], "pcap-get") == 0))
-		return (cmd_suricata_xfer(cl, argc, argv));
+		return (cmd_suricata_xfer(conn, argc, argv));
 	if (argc >= 2 && strcmp(argv[1], "rules") == 0) {
-		memset(&rq, 0, sizeof(rq));
-		rq.names.v = (const char **)(uintptr_t)&argv[2];
-		rq.names.n = (size_t)argc - 2;
-		if ((error = arc_suricata_rules(cl, &rq, &rs)) != 0)
-			fail(cl, error, "suricata rules");
-		if (rs->json != NULL)
-			xo_emit("{:json/%s}\n", rs->json);
-		else if (rs->error != NULL)
-			warnx("%s", rs->error);
-		emit_trace(rs->trace.v, rs->trace.n);
-		error = rs->ok ? 0 : 1;
-		arc_suricata_rules_rsp_free(rs);
-		return (error);
+		/* arcana-suricata's actions, as the words say. */
+		ytold_begin(conn);
+		error = yr_suricata(conn, (const char *const *)&argv[2],
+		    (size_t)argc - 2, &data, &raw, ebuf, sizeof(ebuf));
+		/* Suricata's own answer, as it wrote it. */
+		if (raw != NULL) {
+			xo_emit("{:json/%s}\n", raw);
+			free(raw);
+			if (data != NULL)
+				ucl_object_unref(data);
+			data = NULL;
+		}
+		return (ydata_out("suricata rules", error, data, ebuf));
 	}
 	if (argc < 2 || ((strcmp(argv[1], "update") == 0 || strcmp(argv[1],
 	    "sources") == 0) && argc != 2) || (strcmp(argv[1], "update") != 0 &&
@@ -5470,7 +5579,7 @@ cmd_suricata(struct arc_client *cl, int argc, char **argv)
 		sp.text = slurp(argv[3]);
 	}
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /*
@@ -5479,7 +5588,7 @@ cmd_suricata(struct arc_client *cl, int argc, char **argv)
  * a change is a job.
  */
 static int
-cmd_cert(struct arc_client *cl, int argc, char **argv)
+cmd_cert(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	ucl_object_t		*data;
@@ -5488,8 +5597,8 @@ cmd_cert(struct arc_client *cl, int argc, char **argv)
 
 	if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
 		/* arcana-host's read-certificates. */
-		ytold_begin(cl);
-		error = yh_certs(cl->conn, netjail, &data, err, sizeof(err));
+		ytold_begin(conn);
+		error = yh_certs(conn, netjail, &data, err, sizeof(err));
 		return (ydata_out("certs", error, data, err));
 	}
 	memset(&sp, 0, sizeof(sp));
@@ -5506,7 +5615,7 @@ cmd_cert(struct arc_client *cl, int argc, char **argv)
 		usage();
 	sp.safe = safe;
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /*
@@ -5520,7 +5629,7 @@ cmd_cert(struct arc_client *cl, int argc, char **argv)
  * files reads what there is.
  */
 static int
-cmd_jailconf(struct arc_client *cl, int argc, char **argv)
+cmd_jailconf(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	ucl_object_t		*data;
@@ -5530,8 +5639,8 @@ cmd_jailconf(struct arc_client *cl, int argc, char **argv)
 
 	if (argc == 2 && strcmp(argv[1], "files") == 0) {
 		/* arcana-jail-files' read-files. */
-		ytold_begin(cl);
-		error = yh_jail_files(cl->conn, &data, err, sizeof(err));
+		ytold_begin(conn);
+		error = yh_jail_files(conn, &data, err, sizeof(err));
 		return (ydata_out("jail files", error, data, err));
 	}
 	if (argc < 3)
@@ -5574,7 +5683,7 @@ cmd_jailconf(struct arc_client *cl, int argc, char **argv)
 			sp.text = slurp(argv[3]);
 	} else
 		usage();
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /*
@@ -5583,7 +5692,7 @@ cmd_jailconf(struct arc_client *cl, int argc, char **argv)
  * kmod keep | forget module: rc.conf's kld_list alone, the kernel as is.
  */
 static int
-cmd_kmod(struct arc_client *cl, int argc, char **argv)
+cmd_kmod(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	const char		*name;
@@ -5603,11 +5712,11 @@ cmd_kmod(struct arc_client *cl, int argc, char **argv)
 		sp.persist = persist;
 		sp.safe = safe;
 		sp.jail = netjail;
-		return (submit(cl, &sp));
+		return (submit(conn, &sp));
 	}
 	if (argc != 1)
 		usage();
-	return (cmd_get(cl, 2, get));
+	return (cmd_get(conn, 2, get));
 }
 
 /*
@@ -5617,7 +5726,7 @@ cmd_kmod(struct arc_client *cl, int argc, char **argv)
  * at the end.  With -j, a vnet jail's network's.
  */
 static void
-sysctl_read(struct arc_client *cl, const char *prefix, const char *after,
+sysctl_read(cbl_conn *conn, const char *prefix, const char *after,
     uint16_t count, const char **next)
 {
 	const struct cbl_ynode			*n, *act, *in, *out;
@@ -5643,12 +5752,12 @@ sysctl_read(struct arc_client *cl, const char *prefix, const char *after,
 	i.count = count;
 	i.jail = netjail;
 	if ((error = cbl_yiid_write(n, NULL, 0, &t)) != 0 ||
-	    (error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    (error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_RPC, 0, &req)) != 0 ||
 	    (error = cbl_msg_put_ynode(req, in, &i)) != 0 ||
 	    (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0)
 		xo_errx(1, "sysctl: %s", strerror(error));
-	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+	if ((error = cbl_request(conn, req, &rep, -1)) != 0)
 		xo_errx(1, "sysctl: %s", rep != NULL && cbl_msg_err_str(rep) !=
 		    NULL ? cbl_msg_err_str(rep) : strerror(error));
 	memset(&o, 0, sizeof(o));
@@ -5672,7 +5781,7 @@ sysctl_read(struct arc_client *cl, const char *prefix, const char *after,
  * sysctl name=value: a job; with -p also in sysctl.conf.
  */
 static int
-cmd_sysctl(struct arc_client *cl, int argc, char **argv)
+cmd_sysctl(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	const char		*names[2], *next, *after;
@@ -5690,7 +5799,7 @@ cmd_sysctl(struct arc_client *cl, int argc, char **argv)
 		sp.persist = persist;
 		sp.safe = safe;
 		sp.jail = netjail;
-		return (submit(cl, &sp));
+		return (submit(conn, &sp));
 	}
 	/* In parts, each printed as it comes: nothing left out for size. */
 	if (argc >= 2 && strcmp(argv[1], "parts") == 0) {
@@ -5698,8 +5807,8 @@ cmd_sysctl(struct arc_client *cl, int argc, char **argv)
 			usage();
 		after = NULL;
 		do {
-			sysctl_read(cl, argc == 3 ? argv[2] : NULL, after, 120,
-			    &next);
+			sysctl_read(conn, argc == 3 ? argv[2] : NULL, after,
+			    120, &next);
 			free((void *)(uintptr_t)after);
 			after = next;
 		} while (after != NULL);
@@ -5707,7 +5816,7 @@ cmd_sysctl(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc > 2)
 		usage();
-	sysctl_read(cl, argc == 2 ? argv[1] : NULL, NULL, 0, &next);
+	sysctl_read(conn, argc == 2 ? argv[1] : NULL, NULL, 0, &next);
 	if (next != NULL)
 		xo_warnx("sysctl: the first part: go on after %s, or sysctl "
 		    "parts", next);
@@ -5718,7 +5827,7 @@ cmd_sysctl(struct arc_client *cl, int argc, char **argv)
 /* What a reply of JSON says, and how it went. */
 static int
 json_out(const char *what, bool ok, const char *error, const char *json,
-    const struct arc_step *steps, size_t nsteps)
+    const struct arcana_jobs_step *steps, size_t nsteps)
 {
 
 	if (json != NULL)
@@ -5766,20 +5875,20 @@ event_line(cbl_conn *conn, cbl_msg *msg, void *arg)
  * nothing asked of it after.
  */
 static int
-follow_events(struct arc_client *cl)
+follow_events(cbl_conn *conn)
 {
 	struct pollfd	 pfd;
 	cbl_sub		*sub;
 	int		 error, ev, ms;
 
-	if ((error = cbl_subscribe(cl->conn, "cblink.yang", "notify",
+	if ((error = cbl_subscribe(conn, "cblink.yang", "notify",
 	    event_line, NULL, &sub)) != 0)
-		fail(cl, error, "events");
+		fail(error, "events");
 	for (;;) {
 		ev = 0;
 		ms = -1;
-		(void)cbl_conn_interest(cl->conn, &ev, &ms);
-		pfd.fd = cbl_conn_fd(cl->conn);
+		(void)cbl_conn_interest(conn, &ev, &ms);
+		pfd.fd = cbl_conn_fd(conn);
 		pfd.events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
 		    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
 		pfd.revents = 0;
@@ -5788,14 +5897,14 @@ follow_events(struct arc_client *cl)
 		ev = ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0 ?
 		    CBL_EV_READ : 0) | ((pfd.revents & POLLOUT) != 0 ?
 		    CBL_EV_WRITE : 0);
-		if ((error = cbl_conn_process(cl->conn, ev)) != 0)
+		if ((error = cbl_conn_process(conn, ev)) != 0)
 			break;
 	}
 	xo_errx(1, "events: the host is gone: %s", strerror(error));
 }
 
 static int
-cmd_gula(struct arc_client *cl, int argc, char **argv)
+cmd_gula(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	uint64_t		 position;
@@ -5817,8 +5926,8 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 			if (e != NULL)
 				xo_errx(1, "ps: %s: %s", argv[1], e);
 		}
-		ytold_begin(cl);
-		error = ygula_processes(cl->conn, netjail, pid, &data, err,
+		ytold_begin(conn);
+		error = ygula_processes(conn, netjail, pid, &data, err,
 		    sizeof(err));
 		return (ydata_out("ps", error, data, err));
 	}
@@ -5835,11 +5944,11 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 		sp.names.n = 2;
 		sp.safe = safe;
 		sp.jail = netjail;
-		return (submit(cl, &sp));
+		return (submit(conn, &sp));
 	}
 	if (strcmp(argv[0], "events") == 0 && argc == 2 && strcmp(argv[1],
 	    "-f") == 0)
-		return (follow_events(cl));
+		return (follow_events(conn));
 	if (strcmp(argv[0], "events") == 0) {
 		/* arcana-events' read. */
 		uint64_t	after = 0;
@@ -5851,8 +5960,8 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 			if (e != NULL)
 				xo_errx(1, "events: after %s: %s", argv[1], e);
 		}
-		ytold_begin(cl);
-		error = ygula_events(cl->conn, argc == 2, after, &data, err,
+		ytold_begin(conn);
+		error = ygula_events(conn, argc == 2, after, &data, err,
 		    sizeof(err));
 		return (ydata_out("events", error, data, err));
 	}
@@ -5910,12 +6019,12 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 			if (e != NULL)
 				xo_errx(1, "history: after %s: %s", argv[1], e);
 		}
-		ytold_begin(cl);
+		ytold_begin(conn);
 		data = NULL;
-		error = set ? ygula_history_set(cl->conn, step, keep, has_lim ?
+		error = set ? ygula_history_set(conn, step, keep, has_lim ?
 		    lim : NULL, storage, rules, err, sizeof(err)) : 0;
 		if (error == 0)
-			error = ygula_history(cl->conn, has_after, after, &data,
+			error = ygula_history(conn, has_after, after, &data,
 			    err, sizeof(err));
 		return (ydata_out("history", error, data, err));
 	}
@@ -5945,8 +6054,8 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 	argv += optind;
 	if (argc > 2)
 		usage();
-	ytold_begin(cl);
-	error = ygula_log(cl->conn, argc > 0 ? argv[0] : NULL, argc > 1 ?
+	ytold_begin(conn);
+	error = ygula_log(conn, argc > 0 ? argv[0] : NULL, argc > 1 ?
 	    argv[1] : NULL, from, position, lines, netjail, &data, err,
 	    sizeof(err));
 	return (ydata_out("log", error, data, err));
@@ -5957,7 +6066,7 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
  * secrets.
  */
 static int
-cmd_config_export(struct arc_client *cl, int argc, char **argv)
+cmd_config_export(cbl_conn *conn, int argc, char **argv)
 {
 	ucl_object_t	*data;
 	char		 err[512];
@@ -5966,8 +6075,8 @@ cmd_config_export(struct arc_client *cl, int argc, char **argv)
 	if (argc > 2 || (argc == 2 && strcmp(argv[1], "-s") != 0))
 		usage();
 	/* arcana-agent's config-export. */
-	ytold_begin(cl);
-	error = yh_config_export(cl->conn, argc == 2, &data, err, sizeof(err));
+	ytold_begin(conn);
+	error = yh_config_export(conn, argc == 2, &data, err, sizeof(err));
 	return (ydata_out("config-export", error, data, err));
 }
 
@@ -5977,7 +6086,7 @@ cmd_config_export(struct arc_client *cl, int argc, char **argv)
  * -H another host name in rc.conf.  The report, JSON, on stdout.
  */
 static int
-cmd_config_apply(struct arc_client *cl, int argc, char **argv)
+cmd_config_apply(cbl_conn *conn, int argc, char **argv)
 {
 	ucl_object_t	*data;
 	const char	*hostname;
@@ -6008,8 +6117,8 @@ cmd_config_apply(struct arc_client *cl, int argc, char **argv)
 		usage();
 	text = slurp(argv[optind]);
 	/* arcana-agent's config-apply. */
-	ytold_begin(cl);
-	error = yh_config_apply(cl->conn, text, dry, anyway, hostname, &data,
+	ytold_begin(conn);
+	error = yh_config_apply(conn, text, dry, anyway, hostname, &data,
 	    err, sizeof(err));
 	free(text);
 	return (ydata_out("config-apply", error, data, err));
@@ -6021,7 +6130,7 @@ cmd_config_apply(struct arc_client *cl, int argc, char **argv)
  * udp, icmp or ip, -P the port.  JSON on stdout.
  */
 static int
-cmd_path_check(struct arc_client *cl, int argc, char **argv)
+cmd_path_check(cbl_conn *conn, int argc, char **argv)
 {
 	ucl_object_t	*data;
 	const char	*iface, *proto;
@@ -6060,8 +6169,8 @@ cmd_path_check(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc != optind + 2)
 		usage();
-	ytold_begin(cl);
-	error = yts_path_check(cl->conn, argv[optind], argv[optind + 1],
+	ytold_begin(conn);
+	error = yts_path_check(conn, argv[optind], argv[optind + 1],
 	    proto, port, iface, has_fib, pfib, netjail, reply, &data, err,
 	    sizeof(err));
 	return (ydata_out("path-check", error, data, err));
@@ -6073,31 +6182,21 @@ cmd_path_check(struct arc_client *cl, int argc, char **argv)
  * would show it).
  */
 static int
-cmd_notify(struct arc_client *cl, int argc, char **argv)
+cmd_notify(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_notify_req	 req;
-	struct arc_notify_rsp	*rsp;
-	const char		*token;
-	int			 error;
+	const char	*token;
+	char		 err[256];
+	int		 error;
 
 	if (argc != 3)
 		usage();
 	if ((token = getenv("ARCANA_TELEGRAM_TOKEN")) == NULL ||
 	    token[0] == '\0')
 		xo_errx(2, "notify: the bot's token is in ARCANA_TELEGRAM_TOKEN");
-	memset(&req, 0, sizeof(req));
-	req.notify_token = token;
-	req.notify_chat = argv[1];
-	req.notify_text = argv[2];
-	if ((error = arc_notify(cl, &req, &rsp)) != 0)
-		fail(cl, error, "notify");
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("notify: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_notify_rsp_free(rsp);
-	return (error);
+	/* arcana-notify's notify. */
+	ytold_begin(conn);
+	error = yr_notify(conn, token, argv[1], argv[2], err, sizeof(err));
+	return (ydata_out("notify", error, NULL, err));
 }
 
 /*
@@ -6108,7 +6207,7 @@ cmd_notify(struct arc_client *cl, int argc, char **argv)
  * rc.conf.
  */
 static int
-cmd_transport(struct arc_client *cl, int argc, char **argv)
+cmd_transport(cbl_conn *conn, int argc, char **argv)
 {
 	ucl_object_t	*data;
 	const char	*listen, *unlisten;
@@ -6131,10 +6230,134 @@ cmd_transport(struct arc_client *cl, int argc, char **argv)
 	else
 		retry = argc == 2;
 	/* arcana-agent's transport, its retry or listen action first. */
-	ytold_begin(cl);
-	error = yh_transport(cl->conn, retry, listen, unlisten, keep, NULL,
+	ytold_begin(conn);
+	error = yh_transport(conn, retry, listen, unlisten, keep, NULL,
 	    &data, err, sizeof(err));
 	return (ydata_out("transport", error, data, err));
+}
+
+/*
+ * ipfw rules: arcana-firewall's kept rules, the host's or the jail's
+ * (-j): read from running; from_rc, its from-rc action, the migration
+ * of what the host boots now, nothing written; with text, its check
+ * action (check), or put in running's place by a commit, the accepts
+ * given with -a: a host's first moves its boot to Arcana's script, and
+ * is refused, nothing written, unless the rules are those loaded now.
+ */
+static int
+ipfw_rules(cbl_conn *conn, bool from_rc, const char *text, bool check)
+{
+	struct arcana_firewall_firewall_from_rc_input	 rin;
+	struct arcana_firewall_firewall_from_rc_output	 rout;
+	struct arcana_firewall_firewall_check_input	 cin;
+	struct arcana_firewall_firewall_check_output	 cout;
+	struct ietf_netconf_commit_input		 ci;
+	struct ietf_netconf_discard_changes_input	 di;
+	const struct arcana_firewall_firewall		*f;
+	struct arcana_firewall_firewall			 nf;
+	struct arcana_firewall_firewall_kept		 nk;
+	struct arcana_firewall_firewall_jail		*jv;
+	const struct cbl_ynode				*n;
+	struct arcana_firewall				 d;
+	cbl_yarena					*a;
+	const char					*was;
+	char						 why[512], tag[80];
+	uint64_t					 errsid;
+	size_t						 k;
+	int						 error;
+
+	if ((n = ytop_named("firewall")) == NULL)
+		xo_errx(1, "ipfw rules: arcana-firewall is not in the tables");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "ipfw rules");
+	if (from_rc) {
+		memset(&rin, 0, sizeof(rin));
+		memset(&rout, 0, sizeof(rout));
+		rin.jail = netjail;
+		ytold_begin(conn);
+		error = ycall(conn, n, NULL, 0, "from-rc", &rin, &rout, a, why,
+		    sizeof(why));
+		ytold_end(true);
+		if (error != 0)
+			xo_errx(1, "ipfw rules: %s", why);
+		if (rout.rc_file != NULL)
+			xo_emit("{:rc-file/# from %s}\n", rout.rc_file);
+		if (rout.text != NULL)
+			xo_emit("{:text/%s}", rout.text);
+		cbl_yarena_free(a);
+		return (0);
+	}
+	if (check) {
+		memset(&cin, 0, sizeof(cin));
+		cin.jail = netjail;
+		cin.text = text;
+		ytold_begin(conn);
+		error = ycall(conn, n, NULL, 0, "check", &cin, &cout, a, why,
+		    sizeof(why));
+		ytold_end(true);
+		if (error != 0)
+			xo_errx(1, "ipfw rules: %s", why);
+		xo_emit("{:result/ipfw has nothing against it; left as it "
+		    "was}\n");
+		cbl_yarena_free(a);
+		return (0);
+	}
+	memset(&d, 0, sizeof(d));
+	yget_data(conn, n, CBL_YDS_RUNNING, &d, a);
+	f = d.firewall;
+	was = NULL;
+	if (netjail == NULL)
+		was = f != NULL && f->kept != NULL ? f->kept->text : NULL;
+	else
+		for (k = 0; f != NULL && k < f->jail.n; k++)
+			if (strcmp(f->jail.v[k].name, netjail) == 0)
+				was = f->jail.v[k].text;
+	if (text == NULL) {
+		xo_emit("{:text/%s}", was != NULL ? was : "");
+		cbl_yarena_free(a);
+		return (0);
+	}
+	memset(&nf, 0, sizeof(nf));
+	memset(&nk, 0, sizeof(nk));
+	if (f != NULL)
+		nf = *f;
+	if (nf.kept != NULL)
+		nk = *nf.kept;
+	if (netjail == NULL) {
+		nk.text = text;
+		nf.kept = &nk;
+	} else {
+		if ((jv = cbl_yarena_alloc(a, (nf.jail.n + 1) *
+		    sizeof(*jv))) == NULL)
+			xo_err(1, "ipfw rules");
+		for (k = 0; k < nf.jail.n; k++)
+			jv[k] = nf.jail.v[k];
+		for (k = 0; k < nf.jail.n && strcmp(jv[k].name, netjail) != 0;
+		    k++)
+			;
+		if (k == nf.jail.n) {
+			memset(&jv[k], 0, sizeof(jv[k]));
+			jv[k].name = netjail;
+			nf.jail.n++;
+		}
+		jv[k].text = text;
+		nf.jail.v = jv;
+	}
+	d.firewall = &nf;
+	if ((error = yedit_data(conn, n, &d, CBL_YDS_CANDIDATE, accepts,
+	    naccepts, why, sizeof(why), &errsid, tag, sizeof(tag))) != 0)
+		refused("ipfw rules", why, tag);
+	memset(&ci, 0, sizeof(ci));
+	if (netconf_try(conn, "commit", &ci, why, sizeof(why), tag,
+	    sizeof(tag)) != 0) {
+		memset(&di, 0, sizeof(di));
+		(void)netconf_try(conn, "discard-changes", &di, NULL, 0, NULL,
+		    0);
+		refused("ipfw rules", why, tag);
+	}
+	xo_emit("{:result/in place; the one before is kept beside it}\n");
+	cbl_yarena_free(a);
+	return (0);
 }
 
 /*
@@ -6145,11 +6368,9 @@ cmd_transport(struct arc_client *cl, int argc, char **argv)
  * file rc.conf's firewall_type names, as kept rules, nothing written.
  */
 static int
-cmd_ipfw(struct arc_client *cl, int argc, char **argv)
+cmd_ipfw(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec		 sp;
-	struct arc_ipfw_rules_req	 req;
-	struct arc_ipfw_rules_rsp	*rsp, *cur;
 	struct stat			 sb;
 	const char			*from;
 	char				*text;
@@ -6179,26 +6400,31 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 				xo_errx(1, "ipfw trace: packets %s: %s", argv[4],
 				    e);
 		}
-		ytold_begin(cl);
-		error = yts_fw_trace(cl->conn, netjail, argv[2], seconds,
+		ytold_begin(conn);
+		error = yts_fw_trace(conn, netjail, argv[2], seconds,
 		    packets, &data, err, sizeof(err));
 		return (ydata_out("ipfw trace", error, data, err));
 	}
 	if (strcmp(argv[1], "rules") == 0) {
+		bool	check = false, from_rc = false;
+
 		from = NULL;
-		memset(&req, 0, sizeof(req));
-		req.jail = netjail;
 		argc--;
 		argv++;
 		optind = 1;
 		optreset = 1;
-		while ((ch = getopt(argc, argv, "nrw:")) != -1) {
+		while ((ch = getopt(argc, argv, "a:nrw:")) != -1) {
 			switch (ch) {
+			case 'a':
+				/* A warning the commit is to take. */
+				if (naccepts < nitems(accepts))
+					accepts[naccepts++] = optarg;
+				break;
 			case 'n':
-				req.dry_run = true;
+				check = true;
 				break;
 			case 'r':
-				req.from_rc = true;
+				from_rc = true;
 				break;
 			case 'w':
 				from = optarg;
@@ -6207,9 +6433,10 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 				usage();
 			}
 		}
-		if (argc != optind || (req.dry_run && from == NULL) ||
-		    (req.from_rc && from != NULL))
+		if (argc != optind || (check && from == NULL) || (from_rc &&
+		    from != NULL))
 			usage();
+		text = NULL;
 		if (from != NULL) {
 			if ((fd = fileargs_open(files, from)) == -1 || fstat(fd,
 			    &sb) == -1 || (text = malloc((size_t)sb.st_size +
@@ -6218,28 +6445,8 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 				xo_err(1, "%s", from);
 			close(fd);
 			text[sb.st_size] = '\0';
-			if ((error = arc_ipfw_rules(cl, &req, &cur)) != 0)
-				fail(cl, error, "ipfw rules");
-			req.sha256 = cur->sha256;
-			req.conf_text = text;
 		}
-		if ((error = arc_ipfw_rules(cl, &req, &rsp)) != 0)
-			fail(cl, error, "ipfw rules");
-		if (req.from_rc && rsp->rc_file != NULL)
-			xo_emit("{:rc-file/# from %s}\n", rsp->rc_file);
-		if (from == NULL && rsp->conf_text != NULL && rsp->ok)
-			xo_emit("{:text/%s}", rsp->conf_text);
-		else if (rsp->ok)
-			xo_emit("{:result/%s}\n", req.dry_run ? "ipfw has "
-			    "nothing against it; left as it was" : "in place; "
-			    "the one before is kept beside it");
-		emit_trace(rsp->trace.v, rsp->trace.n);
-		error = rsp->ok ? 0 : 1;
-		if (!rsp->ok)
-			xo_warnx("ipfw rules: %s", rsp->error != NULL ?
-			    rsp->error : "failed");
-		arc_ipfw_rules_rsp_free(rsp);
-		return (error);
+		return (ipfw_rules(conn, from_rc, text, check));
 	}
 	keep = strcmp(argv[1], "keep") == 0;
 	if (keep) {
@@ -6270,7 +6477,7 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 	sp.persist = keep || persist;
 	sp.safe = safe;
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* Words joined by a space, a text of its own. */
@@ -6296,7 +6503,7 @@ words_joined(int n, char **v)
 
 /* bridge | geneve name verb word ...: a job; with -p kept in rc.conf. */
 static int
-cmd_l2(struct arc_client *cl, int argc, char **argv)
+cmd_l2(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 
@@ -6313,12 +6520,12 @@ cmd_l2(struct arc_client *cl, int argc, char **argv)
 	sp.persist = persist;
 	sp.safe = safe;
 	sp.jail = netjail;
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* storage kind [dataset]: the host's storage, as the host says it. */
 static int
-cmd_storage(struct arc_client *cl, int argc, char **argv)
+cmd_storage(cbl_conn *conn, int argc, char **argv)
 {
 	static const char *kinds[] = { "disks", "pools", "datasets",
 	    "snapshots", "mounts", "importable", "health" };
@@ -6337,8 +6544,8 @@ cmd_storage(struct arc_client *cl, int argc, char **argv)
 	if (i == nitems(kinds) || (argc == 3 && i != 3))
 		usage();
 	/* arcana-storage's read; -j: what that jail's own zfs sees. */
-	ytold_begin(cl);
-	if (ystore_read(cl->conn, (int)i, argc == 3 ? argv[2] : NULL, netjail,
+	ytold_begin(conn);
+	if (ystore_read(conn, (int)i, argc == 3 ? argv[2] : NULL, netjail,
 	    &data, &total, &truncated, err, sizeof(err)) != 0) {
 		ytold_end(true);
 		xo_warnx("storage %s: %s", kinds[i], err);
@@ -6361,7 +6568,7 @@ cmd_storage(struct arc_client *cl, int argc, char **argv)
  * flags, not words: the host gives no word to a program as an option.
  */
 static int
-cmd_storage_job(struct arc_client *cl, int argc, char **argv)
+cmd_storage_job(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	const char		*words[24];
@@ -6402,12 +6609,12 @@ cmd_storage_job(struct arc_client *cl, int argc, char **argv)
 		else
 			usage();
 	}
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* fstab: print it.  fstab -w new-text [-n]: put a local file in its place. */
 static int
-cmd_fstab(struct arc_client *cl, int argc, char **argv)
+cmd_fstab(cbl_conn *conn, int argc, char **argv)
 {
 	struct stat		 sb;
 	const char		*from;
@@ -6436,7 +6643,7 @@ cmd_fstab(struct arc_client *cl, int argc, char **argv)
 	text = NULL;
 	/* arcana-storage's fstab: read with what is mounted, put in place
 	 * by its replace action. */
-	if ((error = ystore_fstab(cl->conn, &cur, &sha, err, sizeof(err))) !=
+	if ((error = ystore_fstab(conn, &cur, &sha, err, sizeof(err))) !=
 	    0)
 		xo_errx(1, "fstab: %s", err);
 	if (from == NULL) {
@@ -6457,7 +6664,7 @@ cmd_fstab(struct arc_client *cl, int argc, char **argv)
 	}
 	/* What is there now says what the new text replaces. */
 	cur = NULL;
-	error = ystore_fstab_put(cl->conn, text, sha != NULL ? sha : "", dry,
+	error = ystore_fstab_put(conn, text, sha != NULL ? sha : "", dry,
 	    &cur, err, sizeof(err));
 	if (error == 0)
 		xo_emit("{:result/%s}\n", dry ? "it is an fstab; left as it "
@@ -6471,7 +6678,7 @@ cmd_fstab(struct arc_client *cl, int argc, char **argv)
 }
 
 static int
-cmd_stats(struct arc_client *cl)
+cmd_stats(cbl_conn *conn)
 {
 	const struct arcana_host_host_stats	*st;
 	struct arcana_host			 d;
@@ -6485,8 +6692,8 @@ cmd_stats(struct arc_client *cl)
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "stats");
 	memset(&d, 0, sizeof(d));
-	ytold_begin(cl);
-	yget_data(cl, n, -1, &d, a);
+	ytold_begin(conn);
+	yget_data(conn, n, -1, &d, a);
 	if (d.host != NULL && (st = d.host->stats) != NULL) {
 		xo_open_container("stats");
 		xo_emit("{Lwc:CPU}{:cpu-pct/%.1f}%\n", st->cpu / 10.0);
@@ -6597,7 +6804,7 @@ ypkg_node(const char *jail, const char **keyp, const void **vals,
  * first); with -i, what is installed, its read action.
  */
 static int
-cmd_packages(struct arc_client *cl, int argc, char **argv)
+cmd_packages(cbl_conn *conn, int argc, char **argv)
 {
 	struct arcana_packages_packages_refresh_input	 ri;
 	struct arcana_packages_packages_refresh_output	 ro;
@@ -6642,12 +6849,12 @@ cmd_packages(struct arc_client *cl, int argc, char **argv)
 		xo_err(1, "packages");
 	memset(&ro, 0, sizeof(ro));
 	memset(&io, 0, sizeof(io));
-	ytold_begin(cl);
+	ytold_begin(conn);
 	if (inst)
-		error = ycall(cl, n, vals, nvals, "read", NULL, &io, a, why,
+		error = ycall(conn, n, vals, nvals, "read", NULL, &io, a, why,
 		    sizeof(why));
 	else
-		error = ycall(cl, n, vals, nvals, "refresh", &ri, &ro, a, why,
+		error = ycall(conn, n, vals, nvals, "refresh", &ri, &ro, a, why,
 		    sizeof(why));
 	ytold_end(false);
 	repos = inst ? io.repository.v : ro.repository.v;
@@ -6679,7 +6886,7 @@ cmd_packages(struct arc_client *cl, int argc, char **argv)
  * arcana-jobs' lanes in the candidate, committed.
  */
 static int
-cmd_jobs_set(struct arc_client *cl, const char *number)
+cmd_jobs_set(cbl_conn *conn, const char *number)
 {
 	struct yq_jobs	 q;
 	cbl_yarena	*a;
@@ -6690,11 +6897,11 @@ cmd_jobs_set(struct arc_client *cl, const char *number)
 	n = (int)strtonum(number, 1, 32, &errstr);
 	if (errstr != NULL)
 		xo_errx(2, "lanes %s: %s", number, errstr);
-	if (yq_lanes(cl->conn, n, err, sizeof(err)) != 0)
+	if (yq_lanes(conn, n, err, sizeof(err)) != 0)
 		xo_errx(1, "jobs lanes: %s", err);
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "jobs lanes");
-	if (yq_list(cl->conn, a, &q, err, sizeof(err)) != 0)
+	if (yq_list(conn, a, &q, err, sizeof(err)) != 0)
 		xo_errx(1, "jobs: %s", err);
 	xo_emit("{T:Lanes}: {:lanes/%d} jobs of pkg in jails at once\n",
 	    q.lanes);
@@ -6708,7 +6915,7 @@ cmd_jobs_set(struct arc_client *cl, const char *number)
  * as pkgbase, a job.
  */
 static int
-cmd_jail_base(struct arc_client *cl, int argc, char **argv)
+cmd_jail_base(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	int			 ch;
@@ -6755,7 +6962,7 @@ cmd_jail_base(struct arc_client *cl, int argc, char **argv)
 		sp.names.v = (const char **)(uintptr_t)&argv[optind];
 		sp.names.n = (size_t)(argc - optind);
 	}
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /*
@@ -6763,7 +6970,7 @@ cmd_jail_base(struct arc_client *cl, int argc, char **argv)
  * job; with -J, of every running jail, one batch of a job each.
  */
 static int
-cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
+cmd_pkg_clean(cbl_conn *conn, int argc, char **argv)
 {
 	const struct arcana_jails_jails	*js;
 	struct arc_job_spec		 sp, *v;
@@ -6797,10 +7004,10 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 	if (optind != argc || (jails && sp.jail != NULL))
 		usage();
 	if (!jails)
-		return (submit(cl, &sp));
+		return (submit(conn, &sp));
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "pkg-clean");
-	js = yjails(cl, -1, a);
+	js = yjails(conn, -1, a);
 	if ((v = calloc(js->jail.n + 1, sizeof(*v))) == NULL)
 		xo_err(1, "calloc");
 	for (i = n = 0; i < js->jail.n; i++) {
@@ -6820,7 +7027,7 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 		cbl_yarena_free(a);
 		return (1);
 	}
-	if (yq_submit(cl->conn, v, n, a, &jv, &nj, err, sizeof(err)) != 0)
+	if (yq_submit(conn, v, n, a, &jv, &nj, err, sizeof(err)) != 0)
 		xo_errx(1, "pkg-clean: %s", err);
 	xo_open_list("job");
 	for (i = 0; i < nj; i++)
@@ -6833,7 +7040,7 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 
 /* pkg-install [-O] [-4 | -6] [-r repo] [-j jail] package ...: a job. */
 static int
-cmd_pkg_install(struct arc_client *cl, int argc, char **argv)
+cmd_pkg_install(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	sp;
 	int			ch;
@@ -6866,7 +7073,7 @@ cmd_pkg_install(struct arc_client *cl, int argc, char **argv)
 		usage();
 	sp.names.v = (const char **)(uintptr_t)&argv[optind];
 	sp.names.n = (size_t)(argc - optind);
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /*
@@ -6875,7 +7082,7 @@ cmd_pkg_install(struct arc_client *cl, int argc, char **argv)
  * jail of -j when one is named.
  */
 static int
-cmd_ipsec(struct arc_client *cl, int argc, char **argv)
+cmd_ipsec(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
 	const char		*errstr;
@@ -6892,7 +7099,7 @@ cmd_ipsec(struct arc_client *cl, int argc, char **argv)
 	if (strcmp(argv[1], "init") == 0 || strcmp(argv[1], "start") == 0) {
 		if (argc != 2)
 			usage();
-		return (submit(cl, &sp));
+		return (submit(conn, &sp));
 	}
 	if (argc < 3)
 		usage();
@@ -6901,13 +7108,13 @@ cmd_ipsec(struct arc_client *cl, int argc, char **argv)
 	    strcmp(argv[1], "down") == 0) {
 		if (argc != 3)
 			usage();
-		return (submit(cl, &sp));
+		return (submit(conn, &sp));
 	}
 	if (strcmp(argv[1], "unchild") == 0) {
 		if (argc != 4)
 			usage();
 		sp.child = argv[3];
-		return (submit(cl, &sp));
+		return (submit(conn, &sp));
 	}
 	/*
 	 * conn name local remote [words]: the connection, this host and
@@ -6961,14 +7168,14 @@ cmd_ipsec(struct arc_client *cl, int argc, char **argv)
 	}
 	if (i != argc)
 		usage();
-	return (submit(cl, &sp));
+	return (submit(conn, &sp));
 }
 
 /* pkg-upgrade [-n] [-O] [-4 | -6] [-r repo] [-j jail | -J] [package ...]:
  * -J, of every running jail, by the agent, one after the other; -r, from
  * that repository alone. */
 static int
-cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
+cmd_pkg_upgrade(cbl_conn *conn, int argc, char **argv)
 {
 	struct arcana_packages_packages_upgrade_input	 ui;
 	struct arcana_packages_packages_upgrade_output	 uo;
@@ -7028,7 +7235,7 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 		sp.pkg_repo = ui.repository;
 		sp.names.v = ui.name.v;
 		sp.names.n = ui.name.n;
-		return (submit(cl, &sp));
+		return (submit(conn, &sp));
 	}
 	/* In every running jail: the host's, every-jail. */
 	if (jail != NULL && strcmp(jail, "*") == 0) {
@@ -7040,8 +7247,8 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "pkg-upgrade");
 	memset(&uo, 0, sizeof(uo));
-	ytold_begin(cl);
-	error = ycall(cl, n, vals, nvals, "upgrade", &ui, &uo, a, why,
+	ytold_begin(conn);
+	error = ycall(conn, n, vals, nvals, "upgrade", &ui, &uo, a, why,
 	    sizeof(why));
 	ytold_end(false);
 	if (error == 0) {
@@ -7084,7 +7291,7 @@ emit_job(const struct arc_job *j)
  * change made in safe mode.
  */
 static int
-submit(struct arc_client *cl, struct arc_job_spec *sp)
+submit(cbl_conn *conn, struct arc_job_spec *sp)
 {
 	struct arc_job	*v;
 	cbl_yarena	*a;
@@ -7105,7 +7312,7 @@ submit(struct arc_client *cl, struct arc_job_spec *sp)
 	}
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "queue");
-	if (yq_submit(cl->conn, sp, 1, a, &v, &n, err, sizeof(err)) != 0 ||
+	if (yq_submit(conn, sp, 1, a, &v, &n, err, sizeof(err)) != 0 ||
 	    n != 1) {
 		xo_warnx("%s", n != 1 && err[0] == '\0' ? "not accepted" :
 		    err);
@@ -7120,7 +7327,7 @@ submit(struct arc_client *cl, struct arc_job_spec *sp)
 		jargv[2] = id;
 		jargv[3] = NULL;
 		optreset = 1;
-		return (cmd_job(cl, 3, jargv));
+		return (cmd_job(conn, 3, jargv));
 	}
 	xo_open_list("job");
 	for (i = 0; i < n; i++)
@@ -7132,7 +7339,7 @@ submit(struct arc_client *cl, struct arc_job_spec *sp)
 
 /* jobs: the queue, a GET of arcana-jobs' jobs. */
 static int
-cmd_jobs(struct arc_client *cl)
+cmd_jobs(cbl_conn *conn)
 {
 	struct yq_jobs	 q;
 	cbl_yarena	*a;
@@ -7140,7 +7347,7 @@ cmd_jobs(struct arc_client *cl)
 
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "jobs");
-	if (yq_list(cl->conn, a, &q, err, sizeof(err)) != 0)
+	if (yq_list(conn, a, &q, err, sizeof(err)) != 0)
 		xo_errx(1, "jobs: %s", err);
 	xo_emit("{T:/%4s} {T:/%-9s} {T:/%s}\n", "ID", "STATE", "JOB");
 	xo_open_list("job");
@@ -7167,14 +7374,16 @@ cmd_jobs(struct arc_client *cl)
  * to finish.
  */
 static int
-cmd_job(struct arc_client *cl, int argc, char **argv)
+cmd_job(cbl_conn *conn, int argc, char **argv)
 {
-	struct arc_job	 j;
-	cbl_yarena	*a;
-	char		 err[512];
-	uint64_t	 id;
-	bool		 wait, done, ok;
-	int		 ch;
+	struct arc_job			 j;
+	const struct arcana_jobs_step	*steps;
+	cbl_yarena			*a;
+	char				 err[512];
+	uint64_t			 id;
+	size_t				 nsteps;
+	bool				 wait, done, ok;
+	int				 ch;
 
 	wait = false;
 	optind = 1;
@@ -7193,7 +7402,8 @@ cmd_job(struct arc_client *cl, int argc, char **argv)
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "job");
 	for (;;) {
-		if (yq_job(cl->conn, id, a, &j, err, sizeof(err)) != 0) {
+		if (yq_job(conn, id, a, &j, &steps, &nsteps, err,
+		    sizeof(err)) != 0) {
 			xo_warnx("job %s: %s", argv[optind], err);
 			cbl_yarena_free(a);
 			return (1);
@@ -7207,7 +7417,7 @@ cmd_job(struct arc_client *cl, int argc, char **argv)
 		 * this request gets through is what it waits for.
 		 */
 		if (j.state == ARC_JOB_STATE_UNCONFIRMED)
-			(void)yq_confirm(cl->conn, id, err, sizeof(err));
+			(void)yq_confirm(conn, id, err, sizeof(err));
 		/* Each read anew: the last one's go. */
 		cbl_yarena_free(a);
 		if ((a = cbl_yarena_new()) == NULL)
@@ -7218,7 +7428,7 @@ cmd_job(struct arc_client *cl, int argc, char **argv)
 	emit_job(&j);
 	xo_close_list("job");
 	show_trace = true;
-	emit_trace(j.trace.v, j.trace.n);
+	emit_trace(steps, nsteps);
 	ok = !done || (j.state == ARC_JOB_STATE_DONE && j.ok);
 	cbl_yarena_free(a);
 	return (ok ? 0 : 1);
@@ -7226,7 +7436,7 @@ cmd_job(struct arc_client *cl, int argc, char **argv)
 
 /* job-cancel id: its cancel action. */
 static int
-cmd_job_cancel(struct arc_client *cl, int argc, char **argv)
+cmd_job_cancel(cbl_conn *conn, int argc, char **argv)
 {
 	struct arc_job	 j;
 	cbl_yarena	*a;
@@ -7236,7 +7446,7 @@ cmd_job_cancel(struct arc_client *cl, int argc, char **argv)
 		usage();
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "job-cancel");
-	if (yq_cancel(cl->conn, strtoull(argv[1], NULL, 10), a, &j, err,
+	if (yq_cancel(conn, strtoull(argv[1], NULL, 10), a, &j, err,
 	    sizeof(err)) != 0) {
 		xo_warnx("job %s: %s", argv[1], err);
 		cbl_yarena_free(a);
@@ -7252,7 +7462,6 @@ cmd_job_cancel(struct arc_client *cl, int argc, char **argv)
 int
 main(int argc, char *argv[])
 {
-	struct arc_client	 cl;
 	cbl_conn		*conn;
 	cbl_ctx			*ctx;
 	cbl_tls			*tls;
@@ -7358,9 +7567,6 @@ main(int argc, char *argv[])
 	}
 	if ((error = cbl_conn_connect(conn)) != 0)
 		xo_errx(1, "%s: %s", uri, cbl_conn_errstr(conn));
-	if ((error = arc_client_init(&cl, conn)) != 0)
-		xo_errx(1, "%s: no %s family: %s", uri, ARC_FAMILY_NAME,
-		    strerror(error));
 	/*
 	 * Capability mode from here (capsicum(4)): the agent's socket is
 	 * connected and TLS is up; the files named on the command line
@@ -7384,186 +7590,185 @@ main(int argc, char *argv[])
 
 	xo_open_container("arcana");
 	if (strcmp(argv[0], "hello") == 0 && argc == 1)
-		rc = cmd_hello(&cl);
+		rc = cmd_hello(conn);
 	else if (strcmp(argv[0], "get") == 0)
-		rc = cmd_get(&cl, argc, argv);
+		rc = cmd_get(conn, argc, argv);
 	else if (strcmp(argv[0], "edit") == 0)
-		rc = cmd_edit(&cl, argc, argv);
+		rc = cmd_edit(conn, argc, argv);
 	else if (strcmp(argv[0], "set") == 0)
-		rc = cmd_set(&cl, argc, argv);
+		rc = cmd_set(conn, argc, argv);
 	else if (strcmp(argv[0], "commit") == 0)
-		rc = cmd_commit(&cl, argc, argv);
+		rc = cmd_commit(conn, argc, argv);
 	else if (strcmp(argv[0], "cancel-commit") == 0)
-		rc = cmd_cancel_commit(&cl, argc, argv);
+		rc = cmd_cancel_commit(conn, argc, argv);
 	else if (strcmp(argv[0], "discard") == 0)
-		rc = cmd_discard(&cl, argc, argv);
+		rc = cmd_discard(conn, argc, argv);
 	else if (strcmp(argv[0], "action") == 0)
-		rc = cmd_yaction(&cl, argc, argv);
+		rc = cmd_yaction(conn, argc, argv);
 	else if (strcmp(argv[0], "notifications") == 0)
-		rc = cmd_notifications(&cl);
+		rc = cmd_notifications(conn);
 	else if (strcmp(argv[0], "subscribe") == 0)
-		rc = cmd_subscribe(&cl, argc, argv);
+		rc = cmd_subscribe(conn, argc, argv);
 	else if (strcmp(argv[0], "list") == 0)
-		rc = cmd_list(&cl, argc, argv);
+		rc = cmd_list(conn, argc, argv);
 	else if (strcmp(argv[0], "start") == 0)
-		rc = cmd_action(&cl, ARC_ACTION_START, argc, argv);
+		rc = cmd_action(conn, ARC_ACTION_START, argc, argv);
 	else if (strcmp(argv[0], "stop") == 0)
-		rc = cmd_action(&cl, ARC_ACTION_STOP, argc, argv);
+		rc = cmd_action(conn, ARC_ACTION_STOP, argc, argv);
 	else if (strcmp(argv[0], "restart") == 0)
-		rc = cmd_action(&cl, ARC_ACTION_RESTART, argc, argv);
+		rc = cmd_action(conn, ARC_ACTION_RESTART, argc, argv);
 	else if (strcmp(argv[0], "kill") == 0)
-		rc = cmd_action(&cl, ARC_ACTION_KILL, argc, argv);
+		rc = cmd_action(conn, ARC_ACTION_KILL, argc, argv);
 	else if (strcmp(argv[0], "enable") == 0)
-		rc = cmd_action(&cl, ARC_ACTION_ENABLE, argc, argv);
+		rc = cmd_action(conn, ARC_ACTION_ENABLE, argc, argv);
 	else if (strcmp(argv[0], "disable") == 0)
-		rc = cmd_action(&cl, ARC_ACTION_DISABLE, argc, argv);
+		rc = cmd_action(conn, ARC_ACTION_DISABLE, argc, argv);
 	else if (strcmp(argv[0], "address") == 0)
-		rc = cmd_address(&cl, argc, argv);
+		rc = cmd_address(conn, argc, argv);
 	else if (strcmp(argv[0], "services") == 0 && argc == 1)
-		rc = cmd_services(&cl);
+		rc = cmd_services(conn);
 	else if (strcmp(argv[0], "services") == 0 && strcmp(argv[1],
 	    "convert") == 0)
-		rc = cmd_services_convert(&cl, argc - 1, argv + 1);
+		rc = cmd_services_convert(conn, argc - 1, argv + 1);
 	else if (strcmp(argv[0], "services") == 0 && strcmp(argv[1],
 	    "release") == 0)
-		rc = cmd_services_release(&cl, argc - 1, argv + 1);
+		rc = cmd_services_release(conn, argc - 1, argv + 1);
 	else if (strcmp(argv[0], "service") == 0)
-		rc = cmd_service(&cl, argc, argv);
+		rc = cmd_service(conn, argc, argv);
 	else if (strcmp(argv[0], "interface") == 0 ||
 	    strcmp(argv[0], "route") == 0 || strcmp(argv[0], "ng") == 0 ||
 	    strcmp(argv[0], "wg") == 0 || strcmp(argv[0], "bird") == 0)
-		rc = cmd_interface(&cl, argc, argv);
+		rc = cmd_interface(conn, argc, argv);
 	else if (strcmp(argv[0], "reboot") == 0 && argc == 1)
-		rc = cmd_reboot(&cl);
+		rc = cmd_reboot(conn);
 	else if (strcmp(argv[0], "net") == 0)
-		rc = cmd_net(&cl, argc, argv);
+		rc = cmd_net(conn, argc, argv);
 	else if (strcmp(argv[0], "stats") == 0 && argc == 1)
-		rc = cmd_stats(&cl);
+		rc = cmd_stats(conn);
 	else if (strcmp(argv[0], "ntp") == 0)
-		rc = cmd_ntp(&cl, argc, argv);
+		rc = cmd_ntp(conn, argc, argv);
 	else if (strcmp(argv[0], "rtadvd") == 0)
-		rc = cmd_rtadvd(&cl, argc, argv);
+		rc = cmd_rtadvd(conn, argc, argv);
 	else if (strcmp(argv[0], "allow") == 0)
-		rc = cmd_allow(&cl, argc, argv);
+		rc = cmd_allow(conn, argc, argv);
 	else if (strcmp(argv[0], "ipsec-sa") == 0)
-		rc = cmd_ipsec_sa(&cl, argc, argv);
+		rc = cmd_ipsec_sa(conn, argc, argv);
 	else if (strcmp(argv[0], "kmod") == 0)
-		rc = cmd_kmod(&cl, argc, argv);
+		rc = cmd_kmod(conn, argc, argv);
 	else if (strcmp(argv[0], "jailconf") == 0)
-		rc = cmd_jailconf(&cl, argc, argv);
+		rc = cmd_jailconf(conn, argc, argv);
 	else if (strcmp(argv[0], "neigh") == 0)
-		rc = cmd_neigh(&cl, argc, argv);
+		rc = cmd_neigh(conn, argc, argv);
 	else if (strcmp(argv[0], "carp") == 0)
-		rc = cmd_carp(&cl, argc, argv);
+		rc = cmd_carp(conn, argc, argv);
 	else if (strcmp(argv[0], "cert") == 0)
-		rc = cmd_cert(&cl, argc, argv);
+		rc = cmd_cert(conn, argc, argv);
 	else if (strcmp(argv[0], "crashes") == 0)
-		rc = cmd_crashes(&cl, argc, argv);
+		rc = cmd_crashes(conn, argc, argv);
 	else if (strcmp(argv[0], "clamav") == 0)
-		rc = cmd_clamav(&cl, argc, argv);
+		rc = cmd_clamav(conn, argc, argv);
 	else if (strcmp(argv[0], "smtpd") == 0)
-		rc = cmd_smtpd(&cl, argc, argv);
+		rc = cmd_smtpd(conn, argc, argv);
 	else if (strcmp(argv[0], "speeder") == 0)
-		rc = cmd_speeder(&cl, argc, argv);
+		rc = cmd_speeder(conn, argc, argv);
 	else if (strcmp(argv[0], "monitor") == 0)
-		rc = cmd_monitor(&cl, argc, argv);
+		rc = cmd_monitor(conn, argc, argv);
 	else if (strcmp(argv[0], "system") == 0)
-		rc = cmd_system(&cl, argc, argv);
+		rc = cmd_system(conn, argc, argv);
 	else if (strcmp(argv[0], "geom") == 0)
-		rc = cmd_geom(&cl, argc, argv);
+		rc = cmd_geom(conn, argc, argv);
 	else if (strcmp(argv[0], "sysfile") == 0)
-		rc = cmd_sysfile(&cl, argc, argv);
+		rc = cmd_sysfile(conn, argc, argv);
 	else if (strcmp(argv[0], "netstore") == 0)
-		rc = cmd_netstore(&cl, argc, argv);
+		rc = cmd_netstore(conn, argc, argv);
 	else if (strcmp(argv[0], "nfs") == 0)
-		rc = cmd_netstore_job(&cl, argc, argv, ARC_JOB_KIND_NFS);
+		rc = cmd_netstore_job(conn, argc, argv, ARC_JOB_KIND_NFS);
 	else if (strcmp(argv[0], "iscsi") == 0)
-		rc = cmd_netstore_job(&cl, argc, argv, ARC_JOB_KIND_ISCSI);
+		rc = cmd_netstore_job(conn, argc, argv, ARC_JOB_KIND_ISCSI);
 	else if (strcmp(argv[0], "hast") == 0)
-		rc = cmd_netstore_job(&cl, argc, argv, ARC_JOB_KIND_HAST);
+		rc = cmd_netstore_job(conn, argc, argv, ARC_JOB_KIND_HAST);
 	else if (strcmp(argv[0], "suricata") == 0)
-		rc = cmd_suricata(&cl, argc, argv);
+		rc = cmd_suricata(conn, argc, argv);
 	else if (strcmp(argv[0], "poudriere") == 0)
-		rc = cmd_poudriere(&cl, argc, argv);
+		rc = cmd_poudriere(conn, argc, argv);
 	else if (strcmp(argv[0], "sshd") == 0)
-		rc = cmd_sshd(&cl, argc, argv);
+		rc = cmd_sshd(conn, argc, argv);
 	else if (strcmp(argv[0], "capture") == 0)
-		rc = cmd_capture(&cl, argc, argv);
+		rc = cmd_capture(conn, argc, argv);
 	else if (strcmp(argv[0], "tls") == 0)
-		rc = cmd_tls(&cl, argc, argv, certfile);
+		rc = cmd_tls(conn, argc, argv, certfile);
 	else if (strcmp(argv[0], "zfskey") == 0)
-		rc = cmd_zfskey(&cl, argc, argv);
+		rc = cmd_zfskey(conn, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
-		rc = cmd_sysctl(&cl, argc, argv);
+		rc = cmd_sysctl(conn, argc, argv);
 	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||
 	    strcmp(argv[0], "renice") == 0 || strcmp(argv[0], "log") == 0 ||
 	    strcmp(argv[0], "history") == 0 || strcmp(argv[0], "events") == 0)
-		rc = cmd_gula(&cl, argc, argv);
+		rc = cmd_gula(conn, argc, argv);
 	else if (strcmp(argv[0], "transport") == 0)
-		rc = cmd_transport(&cl, argc, argv);
+		rc = cmd_transport(conn, argc, argv);
 	else if (strcmp(argv[0], "config-export") == 0)
-		rc = cmd_config_export(&cl, argc, argv);
+		rc = cmd_config_export(conn, argc, argv);
 	else if (strcmp(argv[0], "config-apply") == 0)
-		rc = cmd_config_apply(&cl, argc, argv);
+		rc = cmd_config_apply(conn, argc, argv);
 	else if (strcmp(argv[0], "path-check") == 0)
-		rc = cmd_path_check(&cl, argc, argv);
+		rc = cmd_path_check(conn, argc, argv);
 	else if (strcmp(argv[0], "notify") == 0)
-		rc = cmd_notify(&cl, argc, argv);
+		rc = cmd_notify(conn, argc, argv);
 	else if (strcmp(argv[0], "storage") == 0)
-		rc = cmd_storage(&cl, argc, argv);
+		rc = cmd_storage(conn, argc, argv);
 	else if (strcmp(argv[0], "zfs") == 0 || strcmp(argv[0], "zpool") == 0 ||
 	    strcmp(argv[0], "gpart") == 0 || strcmp(argv[0], "cam") == 0 ||
 	    strcmp(argv[0], "mount") == 0 || strcmp(argv[0], "umount") == 0 ||
 	    strcmp(argv[0], "swapon") == 0 || strcmp(argv[0], "swapoff") == 0)
-		rc = cmd_storage_job(&cl, argc, argv);
+		rc = cmd_storage_job(conn, argc, argv);
 	else if (strcmp(argv[0], "fstab") == 0)
-		rc = cmd_fstab(&cl, argc, argv);
+		rc = cmd_fstab(conn, argc, argv);
 	else if (strcmp(argv[0], "ipfw") == 0)
-		rc = cmd_ipfw(&cl, argc, argv);
+		rc = cmd_ipfw(conn, argc, argv);
 	else if (strcmp(argv[0], "bridge") == 0 || strcmp(argv[0], "geneve") ==
 	    0)
-		rc = cmd_l2(&cl, argc, argv);
+		rc = cmd_l2(conn, argc, argv);
 	else if (strcmp(argv[0], "packages") == 0)
-		rc = cmd_packages(&cl, argc, argv);
+		rc = cmd_packages(conn, argc, argv);
 	else if (strcmp(argv[0], "jobs") == 0 && argc == 1)
-		rc = cmd_jobs(&cl);
+		rc = cmd_jobs(conn);
 	else if (strcmp(argv[0], "jobs") == 0 && argc == 3 && strcmp(argv[1],
 	    "lanes") == 0)
-		rc = cmd_jobs_set(&cl, argv[2]);
+		rc = cmd_jobs_set(conn, argv[2]);
 	else if (strcmp(argv[0], "jail-base") == 0)
-		rc = cmd_jail_base(&cl, argc, argv);
+		rc = cmd_jail_base(conn, argc, argv);
 	else if (strcmp(argv[0], "job") == 0)
-		rc = cmd_job(&cl, argc, argv);
+		rc = cmd_job(conn, argc, argv);
 	else if (strcmp(argv[0], "job-cancel") == 0)
-		rc = cmd_job_cancel(&cl, argc, argv);
+		rc = cmd_job_cancel(conn, argc, argv);
 	else if (strcmp(argv[0], "pkg-clean") == 0)
-		rc = cmd_pkg_clean(&cl, argc, argv);
+		rc = cmd_pkg_clean(conn, argc, argv);
 	else if (strcmp(argv[0], "pkg-install") == 0)
-		rc = cmd_pkg_install(&cl, argc, argv);
+		rc = cmd_pkg_install(conn, argc, argv);
 	else if (strcmp(argv[0], "ipsec") == 0)
-		rc = cmd_ipsec(&cl, argc, argv);
+		rc = cmd_ipsec(conn, argc, argv);
 	else if (strcmp(argv[0], "pkg-upgrade") == 0)
-		rc = cmd_pkg_upgrade(&cl, argc, argv);
+		rc = cmd_pkg_upgrade(conn, argc, argv);
 	else if (strcmp(argv[0], "agent-update") == 0)
-		rc = cmd_agent_update(&cl, argc, argv);
+		rc = cmd_agent_update(conn, argc, argv);
 	else if (strcmp(argv[0], "agent-build") == 0)
-		rc = cmd_agent_build(&cl, argc, argv);
+		rc = cmd_agent_build(conn, argc, argv);
 	else if (strcmp(argv[0], "traceroute") == 0)
-		rc = cmd_traceroute(&cl, argc, argv);
+		rc = cmd_traceroute(conn, argc, argv);
 	else if (strcmp(argv[0], "sdwan") == 0)
-		rc = cmd_sdwan(&cl, argc, argv);
+		rc = cmd_sdwan(conn, argc, argv);
 	else if (strcmp(argv[0], "source-head") == 0)
-		rc = cmd_source_head(&cl, argc, argv);
+		rc = cmd_source_head(conn, argc, argv);
 	else if (strcmp(argv[0], "source-log") == 0)
-		rc = cmd_source_log(&cl, argc, argv);
+		rc = cmd_source_log(conn, argc, argv);
 	else if (strcmp(argv[0], "console-update") == 0)
-		rc = cmd_console_update(&cl, argc, argv);
+		rc = cmd_console_update(conn, argc, argv);
 	else
 		usage();
 	xo_close_container("arcana");
 	xo_finish();
 
-	arc_client_fini(&cl);
 	cbl_conn_free(conn);
 	cbl_tls_free(tls);
 	(void)cbl_ctx_free(ctx);

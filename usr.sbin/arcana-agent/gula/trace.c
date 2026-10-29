@@ -7,13 +7,15 @@
 /*
  * Gula: what a request did, step by step, with what each program it ran
  * printed.  Every reply carries it; a job's is read while the job runs;
- * a peer that subscribed to steps is told each step of its own requests
- * as it begins and as it ends, on its connection.
+ * a peer that joined cblink's YANG group notify is told each step of its
+ * own requests as it begins and as it ends, arcana-jobs' steps
+ * notification on its connection alone.
  */
 
 #include <sys/types.h>
 
 #include <err.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,8 +24,7 @@
 #include <wchar.h>
 
 #include "agent.h"
-
-static cbl_family	*tell_family;
+#include "ymodel.h"
 
 static void	tell(struct work *, int);
 
@@ -152,30 +153,29 @@ step_exec(struct work *w, int idx, char *const argv[], int status,
 }
 
 /*
- * Step s, the trace's i-th, in the shape the family's replies carry it,
- * allocated from dst; with copy, its strings too, as from another work.
+ * Step s, the trace's i-th, as arcana-jobs' step, allocated from dst;
+ * with copy, its strings too, as from another work.
  */
 static void
 step_fill(struct work *dst, const struct step *s, int i, bool copy,
-    struct arc_step *v)
+    struct arcana_jobs_step *v)
 {
 	const char	**av;
 	size_t		 k;
 
-	v->has_id = true;
 	v->id = (uint32_t)i;
 	v->has_parent = true;
 	v->parent = s->parent;
 	v->has_kind = true;
-	v->kind = s->kind;
+	v->kind = (enum arcana_jobs_step_kind)s->kind;
 	v->label = wtext(dst, copy ? wstrdup(dst, s->label) : s->label);
 	v->detail = wtext(dst, copy ? wstrdup(dst, s->detail) : s->detail);
 	v->has_status = true;
-	v->status = !s->done ? ARC_STEP_STATUS_INCOMPLETE :
-	    s->ok ? ARC_STEP_STATUS_OK : ARC_STEP_STATUS_FAILED;
-	v->has_duration_us = s->done;
-	v->duration_us = s->dur;
-	if (s->kind == ARC_STEP_KIND_EXEC && s->argv != NULL) {
+	v->status = !s->done ? ARCANA_JOBS_STEP_STATUS_INCOMPLETE :
+	    s->ok ? ARCANA_JOBS_STEP_STATUS_OK : ARCANA_JOBS_STEP_STATUS_FAILED;
+	v->has_duration = s->done;
+	v->duration = s->dur;
+	if (s->kind == STEP_EXEC && s->argv != NULL) {
 		av = s->argv;
 		if (copy) {
 			av = wcalloc(dst, s->argc + 1, sizeof(*av));
@@ -195,26 +195,18 @@ step_fill(struct work *dst, const struct step *s, int i, bool copy,
 	}
 }
 
-/* The trace in the shape the family's replies carry it. */
-void
-trace_steps(struct work *w, const struct arc_step **vp, size_t *np)
-{
-
-	trace_copy(w, w, vp, np);
-}
-
 /*
- * The trace of src as reply structures allocated from dst.  With dst
+ * The trace of src as arcana-jobs' steps allocated from dst.  With dst
  * another work than src, everything is copied, under src's lock: the
  * snapshot of a job that may still be running.
  */
 void
-trace_copy(struct work *dst, struct work *src, const struct arc_step **vp,
-    size_t *np)
+trace_copy(struct work *dst, struct work *src,
+    const struct arcana_jobs_step **vp, size_t *np)
 {
-	struct arc_step	*v;
-	int		 i, n;
-	bool		 copy;
+	struct arcana_jobs_step	*v;
+	int			 i, n;
+	bool			 copy;
 
 	copy = dst != src;
 	pthread_mutex_lock(&src->lock);
@@ -227,27 +219,15 @@ trace_copy(struct work *dst, struct work *src, const struct arc_step **vp,
 	*np = (size_t)n;
 }
 
-/* The family the steps are told in; set once, before any request. */
-void
-trace_family(cbl_family *fam)
-{
-
-	tell_family = fam;
-}
-
 /*
  * The request's steps are told to the peer that made it, as they begin
- * and end, when it subscribed to steps; else nothing is.
+ * and end, when it joined group notify; else nothing is (tell()).
  */
 void
 trace_tell(struct work *w, cbl_req *req)
 {
-	cbl_conn	*conn;
 
-	conn = req != NULL ? cbl_req_conn(req) : NULL;
-	if (conn != NULL && tell_family != NULL &&
-	    cbl_conn_subscribed(conn, tell_family, ARC_MCGRP_STEPS))
-		w->tell = conn;
+	w->tell = req != NULL ? cbl_req_conn(req) : NULL;
 }
 
 /*
@@ -258,9 +238,7 @@ trace_tell(struct work *w, cbl_req *req)
 static void
 tell(struct work *w, int idx)
 {
-	struct arc_step_ntf	 ntf;
-	struct arc_step		 v;
-	cbl_msg			*msg;
+	struct arcana_jobs_step	 v;
 
 	if (w->told)
 		yang_changed(YANG_JOBS);
@@ -270,15 +248,11 @@ tell(struct work *w, int idx)
 	pthread_mutex_lock(&w->lock);
 	step_fill(w, &w->steps[idx], idx, false, &v);
 	pthread_mutex_unlock(&w->lock);
-	memset(&ntf, 0, sizeof(ntf));
-	ntf.trace.n = 1;
-	ntf.trace.v = &v;
-	if (cbl_notify_msg_new(tell_family, ARC_CMD_STEP, &msg) != 0)
-		return;
-	if (arc_step_ntf_put_fields(msg, &ntf) != 0) {
-		cbl_msg_free(msg);
-		return;
-	}
-	/* A peer that is gone, or too slow, misses it: the reply has it. */
-	(void)cbl_conn_notify(w->tell, tell_family, ARC_MCGRP_STEPS, msg);
+	/*
+	 * A peer that did not join is not asked again: it joins before it
+	 * asks.  One that is gone, or too slow, misses it: the reply, or
+	 * the job's read, has it.
+	 */
+	if (yang_step(w->tell, &v) == ENOENT)
+		w->tell = NULL;
 }

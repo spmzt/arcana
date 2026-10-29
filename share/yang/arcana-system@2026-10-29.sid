@@ -1,0 +1,306 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-system",
+    "module-revision": "2026-10-29",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "assignment-range": [
+      {
+        "entry-point": "85300",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-system",
+        "sid": "85300"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system",
+        "sid": "85301"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read",
+        "sid": "85302"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/input",
+        "sid": "85303"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/input/name",
+        "sid": "85304"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output",
+        "sid": "85305"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/file",
+        "sid": "85306"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/file/enabled",
+        "sid": "85307"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/file/name",
+        "sid": "85308"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/file/path",
+        "sid": "85309"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/file/running",
+        "sid": "85310"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/file/service",
+        "sid": "85311"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/file/shows",
+        "sid": "85312"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/file/text",
+        "sid": "85313"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host",
+        "sid": "85314"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/auditd",
+        "sid": "85315"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/auditd/enabled",
+        "sid": "85316"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/auditd/running",
+        "sid": "85317"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/dma",
+        "sid": "85318"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/dma/conf-path",
+        "sid": "85319"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/dma/password-set",
+        "sid": "85320"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/dma/port",
+        "sid": "85321"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/dma/smarthost",
+        "sid": "85322"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/dma/tls",
+        "sid": "85323"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/dma/user",
+        "sid": "85324"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/geli",
+        "sid": "85325"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/geom",
+        "sid": "85326"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/geom-class",
+        "sid": "85327"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/geom-class/name",
+        "sid": "85328"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/geom-class/status",
+        "sid": "85329"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/hardening",
+        "sid": "85330"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/hardening/name",
+        "sid": "85331"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/hardening/value",
+        "sid": "85332"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/linux",
+        "sid": "85333"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/linux/enabled",
+        "sid": "85334"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/linux/module",
+        "sid": "85335"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/linux/module/loaded",
+        "sid": "85336"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/linux/module/name",
+        "sid": "85337"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/mac-module",
+        "sid": "85338"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/mac-module/loaded",
+        "sid": "85339"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/mac-module/name",
+        "sid": "85340"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/ntp",
+        "sid": "85341"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/ntp/conf",
+        "sid": "85342"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/ntp/enabled",
+        "sid": "85343"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/ntp/peers",
+        "sid": "85344"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/ntp/running",
+        "sid": "85345"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/periodic",
+        "sid": "85346"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/periodic/default-value",
+        "sid": "85347"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/periodic/name",
+        "sid": "85348"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/periodic/value",
+        "sid": "85349"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/racct",
+        "sid": "85350"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/securelevel",
+        "sid": "85351"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/securelevel/kern-securelevel",
+        "sid": "85352"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/securelevel/kern-securelevel-enable",
+        "sid": "85353"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/securelevel/now",
+        "sid": "85354"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/svcj",
+        "sid": "85355"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/svcj/name",
+        "sid": "85356"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-system:system/read/output/host/svcj/value",
+        "sid": "85357"
+      }
+    ]
+  }
+}

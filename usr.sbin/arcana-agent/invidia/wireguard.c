@@ -164,7 +164,7 @@ field(char **pp)
  * five fields, a peer's nine, each after the interface's name.
  */
 int
-do_wireguard(struct work *w, struct arc_network_rsp *rsp)
+do_wireguard(struct work *w, struct net_rsp *rsp)
 {
 	struct execres	 res;
 	ucl_object_t	*top, *arr, *o, *peers, *p, *ips;
@@ -276,7 +276,7 @@ new_key(struct work *w, const char *ifname, const char **errp)
 	char		 text[48], *path, *argv[6];
 	int		 rc, step;
 
-	step = step_begin(w, ARC_STEP_KIND_FILE, "private key", "made %s, for "
+	step = step_begin(w, STEP_FILE, "private key", "made %s, for "
 	    "%s", w->jail != NULL ? "in the jail" : "on this host", ifname);
 	arc4random_buf(raw, sizeof(raw));
 	raw[0] &= 248;
@@ -377,7 +377,7 @@ wg_save(struct work *w, const char *ifname, const char **errp)
 	}
 
 	path = conf_path(w, ifname);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
+	step = step_begin(w, STEP_FILE, "write", "%s", path);
 	text = wfmt(w, "%.*s%s%s", (int)(nl + 1 - res.out), res.out, extra,
 	    nl + 1);
 	if (scope_replace(w, path, text, strlen(text), 0600, NULL) == -1) {
@@ -405,7 +405,7 @@ wg_forget(struct work *w, const char *ifname)
 
 	if (!wg_ifname(ifname))
 		return;
-	step = step_begin(w, ARC_STEP_KIND_FILE, "remove", "%s", conf_path(w,
+	step = step_begin(w, STEP_FILE, "remove", "%s", conf_path(w,
 	    ifname));
 	step_end(w, step, scope_rename(w, conf_path(w, ifname), wfmt(w,
 	    "%s.conf", ifname), NULL) == 0 || errno == ENOENT, NULL);
@@ -550,7 +550,7 @@ wg_syncconf(struct work *w, const char *ifname, const char *text,
 		*errp = wfmt(w, "%s: %s", opts.wg_dir, strerror(errno));
 		return (-1);
 	}
-	step = step_begin(w, ARC_STEP_KIND_EXEC, "wg", "syncconf %s: the key, "
+	step = step_begin(w, STEP_EXEC, "wg", "syncconf %s: the key, "
 	    "the port and the peers as they were", ifname);
 	argv[0] = (char *)(uintptr_t)opts.wg_bin;
 	argv[1] = (char *)(uintptr_t)"syncconf";

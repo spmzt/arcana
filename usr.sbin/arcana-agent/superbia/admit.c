@@ -18,10 +18,10 @@
  * for, the console's own requests user "console"; root, or the user the
  * agent runs as, on the unix socket is the recovery session, which may
  * say a user too (who can write the rules' file needs no rule); another
- * local user is its login name.  Every command of the family is an rpc
- * of module "arcana"; those that change the host, or give out what
- * should stay on it, are as nacm:default-deny-all marks them: run only
- * by a rule that permits them.
+ * local user is its login name.  Every rpc and action of the models is
+ * NACM's; those that change the host, or give out what should stay on
+ * it, are marked nacm:default-deny-all: run only by a rule that permits
+ * them.  So are the commands of the agent's own stream families.
  */
 
 #include <sys/param.h>
@@ -35,19 +35,9 @@
 #include <unistd.h>
 
 #include "agent.h"
+#include "ystream.h"
 
 #define	ROLE_AGENT	"URI:urn:arcana:role:agent"
-
-static struct cbl_op		*ops;
-static struct cbl_family_def	 def;
-
-/* The commands that change the host, or give out a packet capture, its
- * whole configuration or a dataset. */
-static const char *const changes[] = {
-	"address", "agent-update", "agent-build", "console-update",
-	"ipfw-rules", "zfs-receive", "notify", "builder-options", "zfs-send",
-	"suricata-pcap-put", "suricata-pcap-get",
-};
 
 /* Is the peer another host? */
 bool
@@ -141,36 +131,112 @@ admit_user(const cbl_peer *p, const char *said, char *name, size_t len,
 	return (0);
 }
 
-/* arc_register(), each command NACM's to let through. */
+/* Whom each request is for, admit_user()'s, for NACM; before any
+ * family is registered. */
 int
-admit_register(cbl_ctx *ctx, cbl_family **famp)
+admit_init(cbl_ctx *ctx)
 {
-	uint32_t	i;
-	size_t		j;
-	int		error;
 
-	if ((error = cbl_ctx_set_user(ctx, admit_user, NULL)) != 0)
-		return (error);
-	if ((ops = calloc(arc_family_def.nops, sizeof(*ops))) == NULL)
+	return (cbl_ctx_set_user(ctx, admit_user, NULL));
+}
+
+/* ---- arcana-stream: the streams' family ------------------------------ */
+
+typedef int	open_f(cbl_req *, const struct arcana_stream_open *,
+		    cbl_stream *);
+
+/* A stream's opening: its open structure, to the command's handler. */
+static int
+stream_opened(cbl_req *req, const cbl_msg *msg, cbl_stream *s, open_f *fn)
+{
+	struct arcana_stream_open	 in;
+	cbl_yarena			*a;
+	char				 why[256];
+	int				 error;
+
+	/* The console's alone; admit_user() refuses a host too, before
+	 * NACM. */
+	if (peer_is_host(cbl_req_peer(req))) {
+		(void)cbl_req_set_err(req, "only the console may open this "
+		    "stream", NULL, 0, -1);
+		return (EPERM);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
 		return (ENOMEM);
-	for (i = 0; i < arc_family_def.nops; i++) {
-		ops[i] = arc_family_def.ops[i];
-		ops[i].flags |= CBL_OPF_NACM;
+	memset(&in, 0, sizeof(in));
+	if (arcana_stream_open_parse(msg, &in, a, CBL_YD_STRICT, why,
+	    sizeof(why)) != 0) {
+		(void)cbl_req_set_err(req, why, NULL, 0, -1);
+		cbl_yarena_free(a);
+		return (EINVAL);
 	}
-	/* A name that is no command's would hold nothing back. */
-	for (j = 0; j < nitems(changes); j++) {
-		for (i = 0; i < arc_family_def.nops; i++)
-			if (strcmp(ops[i].name, changes[j]) == 0) {
-				ops[i].flags |= CBL_OPF_DENY;
-				break;
-			}
-		if (i == arc_family_def.nops) {
-			logmsg(LOG_ERR, "admit: no command %s", changes[j]);
-			free(ops);
-			return (EINVAL);
-		}
-	}
-	def = arc_family_def;
-	def.ops = ops;
-	return (cbl_family_register(ctx, &def, NULL, famp));
+	error = fn(req, &in, s);
+	cbl_yarena_free(a);
+	return (error);
+}
+
+static int
+zfs_send_sopen(cbl_req *req, const cbl_msg *msg, cbl_stream *s,
+    void *arg __unused)
+{
+
+	return (stream_opened(req, msg, s, zfs_send_open));
+}
+
+static int
+zfs_receive_sopen(cbl_req *req, const cbl_msg *msg, cbl_stream *s,
+    void *arg __unused)
+{
+
+	return (stream_opened(req, msg, s, zfs_receive_open));
+}
+
+static int
+pcap_put_sopen(cbl_req *req, const cbl_msg *msg, cbl_stream *s,
+    void *arg __unused)
+{
+
+	return (stream_opened(req, msg, s, pcap_put_open));
+}
+
+static int
+pcap_get_sopen(cbl_req *req, const cbl_msg *msg, cbl_stream *s,
+    void *arg __unused)
+{
+
+	return (stream_opened(req, msg, s, pcap_get_open));
+}
+
+/*
+ * Each gives out a dataset or a capture, or writes them: NACM's to let
+ * through, by its name, and refused to any other unless a rule says.
+ */
+#define	STREAM_OPF	(CBL_OPF_STREAM | CBL_OPF_AUTH | CBL_OPF_NACM | \
+	CBL_OPF_DENY)
+
+static const struct cbl_op stream_ops[] = {
+	{ .cmd = YS_ZFS_SEND, .flags = STREAM_OPF, .name = "zfs-send",
+	    .stream_open = zfs_send_sopen },
+	{ .cmd = YS_ZFS_RECEIVE, .flags = STREAM_OPF, .name = "zfs-receive",
+	    .stream_open = zfs_receive_sopen },
+	{ .cmd = YS_PCAP_PUT, .flags = STREAM_OPF,
+	    .name = "suricata-pcap-put", .stream_open = pcap_put_sopen },
+	{ .cmd = YS_PCAP_GET, .flags = STREAM_OPF,
+	    .name = "suricata-pcap-get", .stream_open = pcap_get_sopen },
+};
+
+static const struct cbl_family_def stream_def = {
+	.abi = CBL_FAMILY_ABI,
+	.name = YS_FAMILY_NAME,
+	.version = 1,
+	.ops = stream_ops,
+	.nops = nitems(stream_ops),
+};
+
+int
+stream_register(cbl_ctx *ctx)
+{
+	cbl_family	*fam;
+
+	return (cbl_family_register(ctx, &stream_def, NULL, &fam));
 }

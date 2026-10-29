@@ -11,19 +11,23 @@
  *	{"id": 9, "server": "<id>", "what": "events"}
  *
  * and is told, for that id, each event the host tells its subscribers
- * (arcana-events' event notifications, of family 1's group notify, each
- * made the JSON the events reply has: ygula.c),
+ * (arcana-events' event notifications, each made the JSON the events
+ * reply has: ygula.c),
  *
  *	{"id": 9, "event": {"n": 41, "t": 1791234567, "kind": ..., ...}}
  *
  * until it says {"id": 9, "stop": true} or goes; {"id": 9, "error":
  * "why"} when the host is gone, and the page then reads them as before.
  *
- * Each is a thread of its own, not one of the tasks': a subscription
- * lasts as long as the page looks, and the tasks are few.  It drives
- * its own connection to the host, which nothing else uses, and puts
- * what it hears in a queue; a timer of the worker's empties the queues
- * into the sockets, which only the worker may write to.
+ * The host's events are subscribed once, for each user that follows
+ * them, on the console's connection for the host's subscriptions
+ * (watch.c), whose thread puts each event in the queue of every page
+ * following the host for that user (follow_told()); a timer of the
+ * worker's empties the queues into the sockets, which only the worker
+ * may write to.  An agent that has no such subscription (one of the
+ * release before) is followed as it was before: by a thread of the
+ * follow's own, on a connection nothing else uses, subscribed to family
+ * 1's group notify.
  */
 
 #include <sys/param.h>
@@ -41,7 +45,7 @@
 
 #define	FOLLOW_MAX	32		/* at once, on all sockets */
 #define	FOLLOW_QUEUE	256		/* events not yet passed on, at most */
-#define	FOLLOW_TICK_MS	200		/* how soon one is passed on */
+#define	FOLLOW_TICK_MS	50		/* how soon one is passed on */
 #define	FOLLOW_WAKE_MS	250		/* how soon a stop is seen */
 
 struct said {
@@ -54,22 +58,27 @@ struct follow {
 	struct conn	*c;	/* NULL once the socket is gone */
 	uint64_t		 id;
 	char			 sid[9];
+	char			 user[64];	/* the socket's, "": the console */
 	char			*uri;
 	char			*peer;
+	bool			 own;	/* followed by a thread of its own */
 	pthread_t		 thread;
 	atomic_bool		 stop;
-	atomic_bool		 ended;	/* the thread is done */
+	atomic_bool		 ended;	/* the thread is done, or the host */
 	pthread_mutex_t		 lock;
 	STAILQ_HEAD(, said)	 queue;
 	int			 queued;
 	bool			 lost;	/* some were dropped: the page was slow */
 };
 
+/* The list is the worker's to change, follow_lock held; the watches'
+ * threads go through it under the lock. */
 static LIST_HEAD(, follow)	follows = LIST_HEAD_INITIALIZER(follows);
+static pthread_mutex_t		follow_lock = PTHREAD_MUTEX_INITIALIZER;
 static int			nfollows;
-static struct timer	*ticker;
+static struct timer		*ticker;
 
-/* In the follow's thread: something for the page, queued. */
+/* Something for the page, queued. */
 static void
 tell(struct follow *f, char *text)
 {
@@ -95,7 +104,50 @@ tell(struct follow *f, char *text)
 	pthread_mutex_unlock(&f->lock);
 }
 
-/* A notification of the host's models: its events alone, passed on. */
+/* In a watch's thread: an event host sid told for user, to each page
+ * that follows it so. */
+void
+follow_told(const char *sid, const char *user, const char *json)
+{
+	struct follow	*f;
+	char		*text;
+
+	pthread_mutex_lock(&follow_lock);
+	LIST_FOREACH(f, &follows, list) {
+		if (f->own || atomic_load(&f->ended) || strcmp(f->sid, sid) !=
+		    0 || strcmp(f->user, user) != 0)
+			continue;
+		if (asprintf(&text, "{\"id\":%ju,\"event\":%s}",
+		    (uintmax_t)f->id, json) == -1)
+			text = NULL;
+		tell(f, text);
+	}
+	pthread_mutex_unlock(&follow_lock);
+}
+
+/* In a watch's thread: host sid gone, why; its follows end. */
+void
+follow_gone(const char *sid, const char *why)
+{
+	struct follow	*f;
+	char		*text;
+
+	pthread_mutex_lock(&follow_lock);
+	LIST_FOREACH(f, &follows, list) {
+		if (f->own || atomic_load(&f->ended) || strcmp(f->sid, sid) !=
+		    0)
+			continue;
+		if (asprintf(&text, "{\"id\":%ju,\"error\":\"%s\"}",
+		    (uintmax_t)f->id, why) == -1)
+			text = NULL;
+		tell(f, text);
+		atomic_store(&f->ended, true);
+	}
+	pthread_mutex_unlock(&follow_lock);
+}
+
+/* An agent before: a notification of the host's models, its events
+ * alone passed on. */
 static void
 heard(cbl_conn *conn, cbl_msg *msg, void *arg)
 {
@@ -118,11 +170,11 @@ heard(cbl_conn *conn, cbl_msg *msg, void *arg)
 	tell(f, text);
 }
 
+/* An agent before: the follow's own thread and connection. */
 static void *
 follow_run(void *arg)
 {
 	struct follow	*f = arg;
-	struct arc_client cl;
 	struct pollfd	 pfd;
 	cbl_conn	*conn;
 	cbl_tls		*tls;
@@ -131,7 +183,7 @@ follow_run(void *arg)
 	char		*text;
 	int		 error, ev, ms;
 
-	if ((msg = hosts_connect(f->uri, f->peer, &conn, &tls, &cl)) != NULL) {
+	if ((msg = hosts_connect(f->uri, f->peer, &conn, &tls)) != NULL) {
 		thread_log(LOG_NOTICE, "events %s: %s", f->sid, msg);
 		if (asprintf(&text, "{\"id\":%ju,\"error\":\"the host does not "
 		    "answer\"}", (uintmax_t)f->id) != -1)
@@ -144,7 +196,7 @@ follow_run(void *arg)
 		if (asprintf(&text, "{\"id\":%ju,\"error\":\"the host refused: "
 		    "%s\"}", (uintmax_t)f->id, strerror(error)) != -1)
 			tell(f, text);
-		hosts_release(f->uri, f->peer, conn, tls, &cl, false);
+		hosts_release(f->uri, f->peer, conn, tls, false);
 		atomic_store(&f->ended, true);
 		return (NULL);
 	}
@@ -171,7 +223,7 @@ follow_run(void *arg)
 	    strerror(error)) != -1)
 		tell(f, text);
 	/* A connection with a subscription on it is no one else's. */
-	hosts_release(f->uri, f->peer, conn, tls, &cl, false);
+	hosts_release(f->uri, f->peer, conn, tls, false);
 	atomic_store(&f->ended, true);
 	return (NULL);
 }
@@ -181,9 +233,12 @@ follow_free(struct follow *f)
 {
 	struct said	*s;
 
-	(void)pthread_join(f->thread, NULL);
+	if (f->own)
+		(void)pthread_join(f->thread, NULL);
+	pthread_mutex_lock(&follow_lock);
 	LIST_REMOVE(f, list);
 	nfollows--;
+	pthread_mutex_unlock(&follow_lock);
 	while ((s = STAILQ_FIRST(&f->queue)) != NULL) {
 		STAILQ_REMOVE_HEAD(&f->queue, next);
 		free(s->text);
@@ -193,6 +248,40 @@ follow_free(struct follow *f)
 	free(f->uri);
 	free(f->peer);
 	free(f);
+}
+
+/*
+ * A follow on the host's subscription kept asked for; the host's own
+ * answer to it: refused, by an agent before, followed by a thread of
+ * its own; not made, said.
+ */
+static void
+follow_keep(struct follow *f)
+{
+	char	*text;
+
+	if (f->own || atomic_load(&f->ended) || atomic_load(&f->stop))
+		return;
+	switch (watch_events(f->sid, f->uri, f->peer, f->user)) {
+	case WATCH_S_REFUSED:
+		hosts_act_as(f->user);
+		if (hosts_thread(&f->thread, follow_run, f) == 0)
+			f->own = true;
+		else {
+			if (asprintf(&text, "{\"id\":%ju,\"error\":\"cannot "
+			    "follow now: try again\"}", (uintmax_t)f->id) != -1)
+				tell(f, text);
+			atomic_store(&f->ended, true);
+		}
+		hosts_act_as(NULL);
+		break;
+	case WATCH_S_LOST:
+		if (asprintf(&text, "{\"id\":%ju,\"error\":\"the host does not "
+		    "answer\"}", (uintmax_t)f->id) != -1)
+			tell(f, text);
+		atomic_store(&f->ended, true);
+		break;
+	}
 }
 
 /* In the worker: what each follow heard, to its socket. */
@@ -209,6 +298,7 @@ follow_tick(void *arg, u_int64_t now)
 	(void)arg;
 	(void)now;
 	LIST_FOREACH_SAFE(f, &follows, list, next) {
+		follow_keep(f);
 		STAILQ_INIT(&q);
 		pthread_mutex_lock(&f->lock);
 		STAILQ_CONCAT(&q, &f->queue);
@@ -231,6 +321,9 @@ follow_tick(void *arg, u_int64_t now)
 			free(s->text);
 			free(s);
 		}
+		/* Stopped on the watch's: nothing to wait for. */
+		if (!f->own && atomic_load(&f->stop))
+			atomic_store(&f->ended, true);
 		if (atomic_load(&f->ended))
 			follow_free(f);
 	}
@@ -252,21 +345,20 @@ follow_start(struct conn *c, uint64_t id, const struct server *sv)
 	f->c = c;
 	f->id = id;
 	strlcpy(f->sid, sv->id, sizeof(f->sid));
+	strlcpy(f->user, c->hdlr_extra != NULL ? c->hdlr_extra : "",
+	    sizeof(f->user));
 	f->uri = xstrdup(sv->uri);
 	f->peer = sv->peer_name != NULL ? xstrdup(sv->peer_name) : NULL;
 	atomic_init(&f->stop, false);
 	atomic_init(&f->ended, false);
 	pthread_mutex_init(&f->lock, NULL);
 	STAILQ_INIT(&f->queue);
-	if (hosts_thread(&f->thread, follow_run, f) != 0) {
-		pthread_mutex_destroy(&f->lock);
-		free(f->uri);
-		free(f->peer);
-		free(f);
-		return ("cannot follow now: try again");
-	}
+	pthread_mutex_lock(&follow_lock);
 	LIST_INSERT_HEAD(&follows, f, list);
 	nfollows++;
+	pthread_mutex_unlock(&follow_lock);
+	/* Subscribed now, not at the first tick. */
+	follow_keep(f);
 	if (ticker == NULL)
 		ticker = timer_add(follow_tick, FOLLOW_TICK_MS, NULL, 0);
 	return (NULL);

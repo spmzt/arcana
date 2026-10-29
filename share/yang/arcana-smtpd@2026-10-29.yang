@@ -1,0 +1,363 @@
+module arcana-smtpd {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-smtpd";
+  prefix arcsmtpd;
+
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "OpenSMTPD (mail/opensmtpd) on a FreeBSD host, or in a jail of it,
+     as the agent reads it: whether it runs, smtpctl(8)'s status,
+     statistics and queue, smtpd.conf(5) with the tables it declares,
+     the form Arcana rendered it from, the filters installed, what
+     mailer.conf(5) makes sendmail, and the watcher's samples.
+     Credentials and secrets are never read out: their users' and
+     labels' names alone.  Changes are jobs of kind smtpd.  The smtpd
+     operation of arcana.yaml converted (Y-3).";
+
+  revision 2026-10-29 {
+    description
+      "Initial revision.";
+  }
+
+  container smtpd {
+    config false;
+    description
+      "OpenSMTPD, read when asked.";
+    action read {
+      description
+        "OpenSMTPD, of the host or of a jail.";
+      input {
+        leaf jail {
+          type string;
+          description
+            "A running jail's (one with or without a network of its
+             own); none, the host's.";
+        }
+      }
+      output {
+        leaf installed {
+          type boolean;
+          description
+            "smtpd is there.";
+        }
+        leaf enabled {
+          type boolean;
+          description
+            "rc.conf enables it.";
+        }
+        leaf running {
+          type boolean;
+          description
+            "It runs.";
+        }
+        container smtpctl {
+          presence
+            "smtpd runs and smtpctl was asked.";
+          description
+            "What smtpctl says, where smtpd runs.";
+          list status {
+            key "process";
+            description
+              "smtpctl show status: each process, running or paused.";
+            leaf process {
+              type string;
+              description
+                "mda, mta or smtp.";
+            }
+            leaf state {
+              type string;
+              description
+                "running or paused.";
+            }
+          }
+          list stat {
+            key "name";
+            description
+              "smtpctl show stats, each counter.";
+            leaf name {
+              type string;
+              description
+                "The counter.";
+            }
+            leaf count {
+              type string;
+              description
+                "Its value: a number, or as smtpctl says it.";
+            }
+          }
+          list envelope {
+            description
+              "The queue as smtpctl show queue prints it, 500 at
+               most.";
+            leaf evpid {
+              type string;
+              description
+                "The envelope's id.";
+            }
+            leaf source {
+              type string;
+              description
+                "Where it came from.";
+            }
+            leaf type {
+              type string;
+              description
+                "mda, mta.";
+            }
+            leaf flags {
+              type string;
+              description
+                "Its flags.";
+            }
+            leaf from {
+              type string;
+              description
+                "The sender.";
+            }
+            leaf to {
+              type string;
+              description
+                "The recipient.";
+            }
+            leaf dest {
+              type string;
+              description
+                "The destination.";
+            }
+            leaf created {
+              type string;
+              description
+                "When it was queued, seconds of the epoch as smtpctl
+                 prints them.";
+            }
+            leaf expires {
+              type string;
+              description
+                "When it expires.";
+            }
+            leaf retries {
+              type string;
+              description
+                "Its tries.";
+            }
+            leaf lasttry {
+              type string;
+              description
+                "The last.";
+            }
+            leaf state {
+              type string;
+              description
+                "Its state.";
+            }
+            leaf next {
+              type string;
+              description
+                "The next try.";
+            }
+            leaf error {
+              type string;
+              description
+                "What went wrong, when something did.";
+            }
+          }
+          leaf queued {
+            type int64;
+            description
+              "The envelopes in the queue.";
+          }
+        }
+        container config {
+          presence
+            "smtpd.conf was read.";
+          description
+            "smtpd.conf, where it is.";
+          leaf conf {
+            type string;
+            description
+              "smtpd.conf's text.";
+          }
+          leaf conf-arcana {
+            type boolean;
+            description
+              "Arcana's form wrote it.";
+          }
+          list conf-table {
+            key "name";
+            description
+              "The tables smtpd.conf declares.";
+            leaf name {
+              type string;
+              description
+                "Its name.";
+            }
+            leaf backend {
+              type string;
+              description
+                "file, db, passwd ...";
+            }
+            leaf path {
+              type string;
+              description
+                "Its path.";
+            }
+            leaf kind {
+              type string;
+              description
+                "auth, relay, or none.";
+            }
+            leaf secret {
+              type boolean;
+              description
+                "Its values are never read out.";
+            }
+            leaf editable {
+              type boolean;
+              description
+                "A file holds it, which the tab edits.";
+            }
+            leaf source {
+              type string;
+              description
+                "A db table's source file.";
+            }
+            leaf error {
+              type string;
+              description
+                "Why it was not read.";
+            }
+            list entry {
+              description
+                "Its entries, 5000 at most.";
+              leaf entry-key {
+                type string;
+                description
+                  "The entry's key.";
+              }
+              leaf value {
+                type string;
+                description
+                  "Its value, where it is no secret.";
+              }
+            }
+          }
+        }
+        leaf conf-path {
+          type string;
+          description
+            "smtpd.conf.";
+        }
+        list sample {
+          key "time";
+          description
+            "The watcher's samples of this place, a minute apart, the
+             oldest first.";
+          leaf time {
+            type yang:date-and-time;
+            description
+              "When taken.";
+          }
+          leaf queued {
+            type int64;
+            description
+              "Envelopes queued.";
+          }
+          leaf ok {
+            type int64;
+            description
+              "Delivered.";
+          }
+          leaf tempfail {
+            type int64;
+            description
+              "Failed for now.";
+          }
+          leaf permfail {
+            type int64;
+            description
+              "Failed for good.";
+          }
+          leaf sessions {
+            type int64;
+            description
+              "SMTP sessions.";
+          }
+        }
+        leaf queue-max {
+          type int64;
+          description
+            "The queue's limit the tab set; 0, none.";
+        }
+        leaf spec {
+          type string;
+          description
+            "The form smtpd.conf was rendered from, the console's
+             JSON, as an SD-WAN instance's spec is.";
+        }
+        list table {
+          key "name";
+          description
+            "The tables Arcana keeps.";
+          leaf name {
+            type string;
+            description
+              "Its name.";
+          }
+          leaf text {
+            type string;
+            description
+              "Its text, where it is no secret.";
+          }
+          leaf-list user {
+            type string;
+            description
+              "A secret one's users' and labels' names alone.";
+          }
+        }
+        leaf-list filter {
+          type string;
+          description
+            "The filters installed (filter-*).";
+        }
+        leaf mailer {
+          type string;
+          description
+            "What mailer.conf makes sendmail.";
+        }
+        leaf pki {
+          type boolean;
+          description
+            "This agent has a certificate smtpd may listen with.";
+        }
+        container pki-cert {
+          description
+            "The host's certificate, when smtpd serves with it.";
+          leaf not-before {
+            type yang:date-and-time;
+            description
+              "Valid from.";
+          }
+          leaf not-after {
+            type yang:date-and-time;
+            description
+              "Valid until.";
+          }
+        }
+        leaf jail {
+          type string;
+          description
+            "The jail read.";
+        }
+      }
+    }
+  }
+}

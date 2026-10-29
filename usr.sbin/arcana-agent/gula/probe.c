@@ -1045,7 +1045,7 @@ do_probes_set(struct work *w, const char *json, const char **errp)
 	}
 	if (links_set(w, json, jail, errp) != 0)
 		return (-1);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", conf_path(path,
+	step = step_begin(w, STEP_FILE, "write", "%s", conf_path(path,
 	    sizeof(path), jail, OWN_SDWAN));
 	e = NULL;
 	/* None left: no file, so that a start makes no edge of it. */
@@ -1516,14 +1516,12 @@ do_sdwan_state(struct work *w, struct json_rsp *rsp)
 
 /* What the monitors have seen, as JSON, the host's and the jails'. */
 int
-do_monitors(struct work *w, uint64_t after, struct arc_monitors_rsp *rsp)
+do_monitors(struct work *w, uint64_t after, struct json_rsp *rsp)
 {
 	ucl_object_t	*top, *arr;
-	unsigned char	*json;
 	double		 now;
 	int		 i;
 
-	rsp->has_ok = true;
 	top = ucl_object_typed_new(UCL_OBJECT);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	now = now_s();
@@ -1538,16 +1536,7 @@ do_monitors(struct work *w, uint64_t after, struct arc_monitors_rsp *rsp)
 	    false);
 	ucl_object_insert_key(top, ucl_object_frombool(started), "probing", 0,
 	    false);
-	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
-	ucl_object_unref(top);
-	if (json == NULL) {
-		rsp->ok = false;
-		rsp->error = "no memory";
-		return (0);
-	}
-	rsp->json = wadopt(w, (char *)json);
-	rsp->ok = true;
-	return (0);
+	return (json_reply(w, top, rsp));
 }
 
 /* A monitor's name: letters, digits and _ . @ -, 63 at most. */
@@ -1800,7 +1789,7 @@ monitors_put(struct work *w, ucl_object_t *arr, const char *jail,
 		return (-1);
 	}
 	conf_path(path, sizeof(path), jail, OWN_MONITOR);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
+	step = step_begin(w, STEP_FILE, "write", "%s", path);
 	e = NULL;
 	if (n == 0 ? unlink(path) == -1 && errno != ENOENT && (e = strerror(
 	    errno)) != NULL : conf_write(json, jail, OWN_MONITOR, &e) != 0) {

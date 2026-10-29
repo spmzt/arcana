@@ -1,0 +1,156 @@
+module: arcana-speeder
+  +--ro speeder
+     +---x read
+        +---w input
+        |  +---w jail?   string
+        +--ro output
+           +--ro installed?            boolean
+           +--ro enabled?              boolean
+           +--ro profiles-supported?   boolean
+           +--ro running?              boolean
+           +--ro flags?                string
+           +--ro role?                 string
+           +--ro listen?               string
+           +--ro remote?               string
+           +--ro fec?                  string
+           +--ro fifo?                 string
+           +--ro mode?                 int32
+           +--ro mtu?                  int32
+           +--ro timeout?              int32
+           +--ro report-every?         int32
+           +--ro key?                  boolean
+           +--ro extra?                string
+           +--ro svcj?                 boolean
+           +--ro svcj-options?         string
+           +--ro svcj-ipaddrs?         string
+           +--ro fec-group* [size]
+           |  +--ro size         int32
+           |  +--ro redundant?   int32
+           +--ro period* [time]
+           |  +--ro time               yang:date-and-time
+           |  +--ro to-server?         rate
+           |  +--ro to-client?         rate
+           |  +--ro plain-to-server?   rate
+           |  +--ro plain-to-client?   rate
+           +--ro report
+           |  +--ro time?               yang:date-and-time
+           |  +--ro interval?           rate
+           |  +--ro client-to-server
+           |  |  +--ro plain-packets?   int64
+           |  |  +--ro plain-bytes?     int64
+           |  |  +--ro fec-packets?     int64
+           |  |  +--ro fec-bytes?       int64
+           |  |  +--ro overhead?        rate
+           |  |  +--ro overhead-now?    rate
+           |  |  +--ro plain-rate?      rate
+           |  |  +--ro fec-rate?        rate
+           |  +--ro server-to-client
+           |     +--ro plain-packets?   int64
+           |     +--ro plain-bytes?     int64
+           |     +--ro fec-packets?     int64
+           |     +--ro fec-bytes?       int64
+           |     +--ro overhead?        rate
+           |     +--ro overhead-now?    rate
+           |     +--ro plain-rate?      rate
+           |     +--ro fec-rate?        rate
+           +--ro log*                  string
+           +--ro profile* [name]
+           |  +--ro name            string
+           |  +--ro running?        boolean
+           |  +--ro flags?          string
+           |  +--ro role?           string
+           |  +--ro listen?         string
+           |  +--ro remote?         string
+           |  +--ro fec?            string
+           |  +--ro fifo?           string
+           |  +--ro mode?           int32
+           |  +--ro mtu?            int32
+           |  +--ro timeout?        int32
+           |  +--ro report-every?   int32
+           |  +--ro key?            boolean
+           |  +--ro extra?          string
+           |  +--ro svcj?           boolean
+           |  +--ro svcj-options?   string
+           |  +--ro svcj-ipaddrs?   string
+           |  +--ro fec-group* [size]
+           |  |  +--ro size         int32
+           |  |  +--ro redundant?   int32
+           |  +--ro period* [time]
+           |  |  +--ro time               yang:date-and-time
+           |  |  +--ro to-server?         rate
+           |  |  +--ro to-client?         rate
+           |  |  +--ro plain-to-server?   rate
+           |  |  +--ro plain-to-client?   rate
+           |  +--ro report
+           |  |  +--ro time?               yang:date-and-time
+           |  |  +--ro interval?           rate
+           |  |  +--ro client-to-server
+           |  |  |  +--ro plain-packets?   int64
+           |  |  |  +--ro plain-bytes?     int64
+           |  |  |  +--ro fec-packets?     int64
+           |  |  |  +--ro fec-bytes?       int64
+           |  |  |  +--ro overhead?        rate
+           |  |  |  +--ro overhead-now?    rate
+           |  |  |  +--ro plain-rate?      rate
+           |  |  |  +--ro fec-rate?        rate
+           |  |  +--ro server-to-client
+           |  |     +--ro plain-packets?   int64
+           |  |     +--ro plain-bytes?     int64
+           |  |     +--ro fec-packets?     int64
+           |  |     +--ro fec-bytes?       int64
+           |  |     +--ro overhead?        rate
+           |  |     +--ro overhead-now?    rate
+           |  |     +--ro plain-rate?      rate
+           |  |     +--ro fec-rate?        rate
+           |  +--ro log*            string
+           +--ro speederv2
+           |  +--ro enabled?        boolean
+           |  +--ro running?        boolean
+           |  +--ro flags?          string
+           |  +--ro role?           string
+           |  +--ro listen?         string
+           |  +--ro remote?         string
+           |  +--ro fec?            string
+           |  +--ro fifo?           string
+           |  +--ro mode?           int32
+           |  +--ro mtu?            int32
+           |  +--ro timeout?        int32
+           |  +--ro report-every?   int32
+           |  +--ro key?            boolean
+           |  +--ro extra?          string
+           |  +--ro svcj?           boolean
+           |  +--ro svcj-options?   string
+           |  +--ro svcj-ipaddrs?   string
+           |  +--ro fec-group* [size]
+           |  |  +--ro size         int32
+           |  |  +--ro redundant?   int32
+           |  +--ro period* [time]
+           |  |  +--ro time               yang:date-and-time
+           |  |  +--ro to-server?         rate
+           |  |  +--ro to-client?         rate
+           |  |  +--ro plain-to-server?   rate
+           |  |  +--ro plain-to-client?   rate
+           |  +--ro report
+           |  |  +--ro time?               yang:date-and-time
+           |  |  +--ro interval?           rate
+           |  |  +--ro client-to-server
+           |  |  |  +--ro plain-packets?   int64
+           |  |  |  +--ro plain-bytes?     int64
+           |  |  |  +--ro fec-packets?     int64
+           |  |  |  +--ro fec-bytes?       int64
+           |  |  |  +--ro overhead?        rate
+           |  |  |  +--ro overhead-now?    rate
+           |  |  |  +--ro plain-rate?      rate
+           |  |  |  +--ro fec-rate?        rate
+           |  |  +--ro server-to-client
+           |  |     +--ro plain-packets?   int64
+           |  |     +--ro plain-bytes?     int64
+           |  |     +--ro fec-packets?     int64
+           |  |     +--ro fec-bytes?       int64
+           |  |     +--ro overhead?        rate
+           |  |     +--ro overhead-now?    rate
+           |  |     +--ro plain-rate?      rate
+           |  |     +--ro fec-rate?        rate
+           |  +--ro log*            string
+           +--ro log-path?             string
+           +--ro jail?                 string

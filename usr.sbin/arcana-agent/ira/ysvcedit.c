@@ -368,7 +368,7 @@ service_job_rc(struct work *w, const struct arc_job_spec *sp,
 		*errp = strerror(ENOMEM);
 		return (-1);
 	}
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s: %s, as a "
+	step = step_begin(w, STEP_FILE, "write", "%s: %s, as a "
 	    "commit writes it", name, RC_ARCANA);
 	err[0] = '\0';
 	if ((error = rca_open(x, name, err, sizeof(err))) != 0) {
@@ -415,7 +415,7 @@ service_job_undo(struct work *w, struct rca *x, const char **errp)
 	int	step;
 
 	(void)errp;
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s and your rc.conf "
+	step = step_begin(w, STEP_FILE, "write", "%s and your rc.conf "
 	    "files, as they were", RC_ARCANA);
 	rca_undo(x);
 	step_end(w, step, true, NULL);

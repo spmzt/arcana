@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.335.1"
+#define	ARCW_VERSION		"0.336.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -344,8 +344,7 @@ void		 workflow_job_safe(ucl_object_t *);
 char		*workflow_submit(const char *, const char *, const char *,
 		    ucl_object_t *, int *, const char **, const char **);
 void		 hosts_forget(const char *);
-const char	*hosts_shared(const char *, const char *, cbl_conn **,
-		    struct arc_client *);
+const char	*hosts_shared(const char *, const char *, cbl_conn **);
 void		 hosts_shared_done(cbl_conn *, bool);
 char		*hosts_submit(const char *, const char *, const char *,
 		    const ucl_object_t *, int *, const char **);
@@ -388,11 +387,59 @@ bool		 host_ref(const char *, char *, size_t, char *, size_t, char *,
 		    size_t);
 void		 host_refs(void);
 const char	*hosts_connect(const char *, const char *, cbl_conn **,
-		    cbl_tls **, struct arc_client *);
+		    cbl_tls **);
 void		 hosts_release(const char *, const char *, cbl_conn *,
-		    cbl_tls *, struct arc_client *, bool);
+		    cbl_tls *, bool);
 void		 hosts_act_as(const char *);
 int		 hosts_thread(pthread_t *, void *(*)(void *), void *);
+void		 hosts_count(bool);
+void		 hosts_tally(uint64_t *, uint64_t *, uint64_t *);
+
+/*
+ * watch.c: what the console holds of each agent by subscription, on a
+ * connection of its own (PLAN-SDN-YANG 3.4).  A topic's last push is
+ * held: a tree never changed again (tree), its module's struct made of
+ * it (data, in a); arcana-probe's read for a user (data the edges, more
+ * what the probes saw from from to newest).  Each is one user's, read
+ * as that user.
+ */
+#define	WATCH_JOBS	0
+#define	WATCH_STATS	1
+#define	WATCH_JAILS	2
+#define	WATCH_SDWAN	3
+#define	WATCH_EVENTS	4
+#define	WATCH_NTOPIC	5
+
+#define	WATCH_S_NONE	0	/* to be asked */
+#define	WATCH_S_OPENING	1
+#define	WATCH_S_OPEN	2
+#define	WATCH_S_REFUSED	3	/* the host has no such subscription */
+#define	WATCH_S_LOST	4	/* the connection went, or could not be made */
+
+struct cbl_dtree;
+struct held {
+	_Atomic int		 refs;
+	struct cbl_dtree	*tree;
+	struct cbl_yarena	*a;
+	void			*data;
+	void			*more;
+	uint64_t		 at;		/* µs, monotonic: when pushed */
+	time_t			 wall, from, newest;
+};
+
+struct held	*watch_held(const char *, const char *, const char *, int,
+		    const char *);
+struct held	*watch_probes_held(const char *, const char *, const char *);
+void		 held_rele(struct held *);
+int		 watch_events(const char *, const char *, const char *,
+		    const char *);
+void		 watch_changed(const char *);
+void		 watch_forget(const char *);
+int		 api_watch(struct http_request *);
+/* follow.c: an event a host told for user, to the pages following it;
+ * the host gone, why, to them all. */
+void		 follow_told(const char *, const char *, const char *);
+void		 follow_gone(const char *, const char *);
 
 /* Route handlers, named in routes.c. */
 int		 api_health(struct http_request *);

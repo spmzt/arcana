@@ -44,11 +44,12 @@ int
 ysshd_from_json(const char *json, cbl_yarena *a,
     struct arcana_sshd_sshd *out)
 {
-	struct arcana_sshd_sshd_setting			*st;
-	struct arcana_sshd_sshd_host_key		*hk;
-	struct arcana_sshd_sshd_host_key_certificate	*ce;
-	struct arcana_sshd_sshd_user			*us;
-	struct arcana_sshd_sshd_user_key		*uk;
+	struct arcana_sshd_setting			*st;
+	struct arcana_sshd_host_key		*hk;
+	struct arcana_sshd_host_key_certificate	*ce;
+	struct arcana_sshd_user			*us;
+	struct arcana_sshd_user_key		*uk;
+	struct arcana_sshd_user_ca_key		*ck;
 	const ucl_object_t				*e, *o, *ee;
 	ucl_object_iter_t				 it, eit;
 	ucl_object_t					*top;
@@ -126,6 +127,7 @@ ysshd_from_json(const char *json, cbl_yarena *a,
 			if (yj_num(o, "valid_before", &n) && n >= 0)
 				ce->valid_before = datetime(a, n);
 			ce->ca = yj_str(a, o, "ca");
+			YJ_NUM(o, "serial", ce, serial);
 			hk[k].certificate = ce;
 		}
 		hk[k].certificate_used = yj_yes(e, "certificate_used",
@@ -166,9 +168,24 @@ ysshd_from_json(const char *json, cbl_yarena *a,
 	}
 	out->user.n = k;
 	out->user.v = us;
-	if (yj_strs(a, ucl_object_lookup(top, "user_cas"), &out->user_ca.n,
-	    &out->user_ca.v) != 0)
+	/* The user CAs, each a key as authorized_keys has one. */
+	if (!ALLOC_N(a, ck, yj_count(ucl_object_lookup(top, "user_cas"))))
 		goto nomem;
+	k = 0;
+	YJ_EACH(ucl_object_lookup(top, "user_cas"), it, e) {
+		memset(&ck[k], 0, sizeof(ck[k]));
+		if ((ck[k].fingerprint = yj_str(a, e, "fingerprint")) == NULL)
+			continue;
+		ck[k].type = yj_str(a, e, "type");
+		YJ_NUM(e, "bits", &ck[k], bits);
+		ck[k].comment = yj_str(a, e, "comment");
+		ck[k].options = yj_str(a, e, "options");
+		k++;
+	}
+	out->user_ca_key.n = k;
+	out->user_ca_key.v = ck;
+	out->user_cas_text = yj_str(a, top, "user_cas_text");
+	out->config = yj_str(a, top, "config");
 	out->before_kept = yj_yes(top, "before_kept", &out->has_before_kept);
 	ucl_object_unref(top);
 	return (0);

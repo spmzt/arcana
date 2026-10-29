@@ -191,7 +191,7 @@ do_geom_job(struct work *w, const struct arc_job_spec *sp,
 	for (i = 1; i < sp->names.n; i++)
 		argv[n++] = (char *)(uintptr_t)sp->names.v[i];
 	argv[n] = NULL;
-	step = step_begin(w, ARC_STEP_KIND_EXEC, "geom", "%s %s", sp->verb,
+	step = step_begin(w, STEP_EXEC, "geom", "%s %s", sp->verb,
 	    sp->names.v[0]);
 	rc = run_exec(w, argv, &res);
 	if (passfile != NULL) {

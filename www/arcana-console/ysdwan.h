@@ -28,7 +28,10 @@
  * of it is not running started, as the operation did when sent the
  * same again.  ysdwan_read(): the sdwan operation's JSON object, made of
  * arcana-sdwan's and arcana-probe's operational state (with has_after,
- * only the samples after that time), into *data.
+ * only the samples after that time), into *data.  ysdwan_monitors():
+ * the monitors operation's, {"monitors", "time", "probing"}, the
+ * admin's monitors as arcana-probe's read tells them with their
+ * settings of running, the same way.
  */
 int	ysdwan_edit(cbl_conn *conn, const char *kind, const char *json,
 	    bool *same, char *err, size_t errlen, uint64_t *errsid,
@@ -37,5 +40,18 @@ int	ysdwan_apply(cbl_conn *conn, const char *kind, const char *json,
 	    char *err, size_t errlen);
 int	ysdwan_read(cbl_conn *conn, bool has_after, uint64_t after,
 	    ucl_object_t **data, char *err, size_t errlen);
+int	ysdwan_monitors(cbl_conn *conn, bool has_after, uint64_t after,
+	    ucl_object_t **data, char *err, size_t errlen);
+/*
+ * ysdwan_held(): the same of what the console holds (watch.c):
+ * arcana-sdwan's state as a push held it, arcana-probe's edges and the
+ * probes' read with the samples held, of which those after after.
+ */
+struct arcana_sdwan;
+struct arcana_probe;
+struct arcana_probe_probes_read_output;
+ucl_object_t *ysdwan_held(const struct arcana_sdwan *sd,
+	    const struct arcana_probe *pr,
+	    const struct arcana_probe_probes_read_output *rd, uint64_t after);
 
 #endif	/* !_ARCANA_YSDWAN_H_ */

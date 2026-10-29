@@ -153,7 +153,7 @@ key_make(struct work *w, const char *ifname, bool next, char *pub,
 		EVP_PKEY_free(k);
 		return (0);
 	}
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
+	step = step_begin(w, STEP_FILE, "write", "%s", path);
 	if ((k = EVP_PKEY_Q_keygen(NULL, NULL, "X25519")) == NULL) {
 		step_end(w, step, false, "no key made");
 		*errp = "OpenSSL made no X25519 key";
@@ -773,7 +773,7 @@ sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	}
 	if (strcmp(sp->verb, "key") == 0) {
 		rotate = word_next(sp);
-		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s: "
+		step = step_begin(w, STEP_DAEMON, "arcana-agent", "%s: "
 		    "its %skey pair", sp->interface, rotate ? "next " : "");
 		if (key_make(w, sp->interface, rotate, pub, sizeof(pub), errp) !=
 		    0) {
@@ -821,7 +821,7 @@ sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			ucl_object_unref(stt);
 			return (-1);
 		}
-		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s: "
+		step = step_begin(w, STEP_DAEMON, "arcana-agent", "%s: "
 		    "the next keys the keys", sp->interface);
 		/* The old inbound SA out (the outbound went with the new one
 		 * in), the next pair the pair. */
@@ -1109,7 +1109,7 @@ sa_undo(struct work *w, const struct arc_job_spec *sp, const char **errp)
 
 	if (strcmp(sp->verb, "key") == 0)
 		return (0);
-	step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s: its "
+	step = step_begin(w, STEP_DAEMON, "arcana-agent", "%s: its "
 	    "SAs as they were", sp->interface);
 	snprintf(text, sizeof(text), "deleteall %s %s esp ;\ndeleteall %s %s "
 	    "esp ;\n", sp->tunnel_local, sp->tunnel_remote, sp->tunnel_remote,

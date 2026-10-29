@@ -534,6 +534,14 @@ module arcana-probe {
           description
             "Only samples after this.";
         }
+        leaf monitors {
+          type boolean;
+          default "false";
+          description
+            "The admin's monitors (the monitor lists') instead of
+             SD-WAN's targets, read apart as the monitors operation
+             of arcana.yaml read them.";
+        }
       }
       output {
         leaf probing {

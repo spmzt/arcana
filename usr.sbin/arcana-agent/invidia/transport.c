@@ -718,7 +718,7 @@ listen_set(struct work *w, const char *listen, const char *unlisten,
 		memset(&tc, 0, sizeof(tc));
 		tc.uri = listen;
 		tc.add = true;
-		step = step_begin(w, ARC_STEP_KIND_LIB, "libcblink "
+		step = step_begin(w, STEP_LIB, "libcblink "
 		    "cbl_listener_start()", "listening on %s too", listen);
 		if ((e = in_loop(listen_change, &tc)) == NULL && tc.error[0] !=
 		    '\0')
@@ -730,7 +730,7 @@ listen_set(struct work *w, const char *listen, const char *unlisten,
 	if (unlisten != NULL) {
 		memset(&tc, 0, sizeof(tc));
 		tc.uri = unlisten;
-		step = step_begin(w, ARC_STEP_KIND_LIB, "libcblink "
+		step = step_begin(w, STEP_LIB, "libcblink "
 		    "cbl_listener_free()", "no longer listening on %s",
 		    unlisten);
 		e = in_loop(listen_change, &tc);
@@ -739,7 +739,7 @@ listen_set(struct work *w, const char *listen, const char *unlisten,
 			return (e);
 	}
 	if (keep && listen != NULL && unlisten != NULL) {
-		step = step_begin(w, ARC_STEP_KIND_FILE, "/etc/rc.conf",
+		step = step_begin(w, STEP_FILE, "/etc/rc.conf",
 		    "%s in %s's place, for the next start", listen, unlisten);
 		e = listen_keep(w, unlisten, listen);
 		step_end(w, step, e == NULL, e != NULL ? "%s" : NULL, e);
@@ -788,7 +788,7 @@ also_set(struct work *w, const char *now)
 		ta.now = NULL;
 	else if ((ta.now = strdup(now)) == NULL)
 		return ("out of memory");
-	step = step_begin(w, ARC_STEP_KIND_LIB, "sctp_bindx(3)", "the SCTP "
+	step = step_begin(w, STEP_LIB, "sctp_bindx(3)", "the SCTP "
 	    "listeners bound to %s too", now[0] != '\0' ? now : "nothing "
 	    "more");
 	e = in_loop(also_change, &ta);
@@ -798,7 +798,7 @@ also_set(struct work *w, const char *now)
 	/* Read by the listeners started from now on too; the one before
 	 * is let be (the loop may have read it). */
 	opts.sctp_also = ta.now;
-	step = step_begin(w, ARC_STEP_KIND_FILE, "/etc/rc.conf",
+	step = step_begin(w, STEP_FILE, "/etc/rc.conf",
 	    "arcana_agent_sctp_also, for the next start");
 	e = NULL;
 	if (now[0] == '\0')
@@ -823,7 +823,7 @@ do_transport(struct work *w, bool retry, const char *listen,
 	rsp->has_ok = true;
 	rsp->ok = false;
 	if (retry) {
-		step = step_begin(w, ARC_STEP_KIND_LIB, "libcblink "
+		step = step_begin(w, STEP_LIB, "libcblink "
 		    "cbl_listener_start()", "the SCTP listeners that are not "
 		    "up");
 		e = transport_retry();

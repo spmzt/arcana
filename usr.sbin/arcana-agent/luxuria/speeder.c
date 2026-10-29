@@ -975,7 +975,7 @@ relay_json(struct work *w, ucl_object_t *top, const char *name)
 }
 
 void
-do_speeder(struct work *w, struct arc_speeder_rsp *rsp)
+do_speeder(struct work *w, struct json_rsp *rsp)
 {
 	ucl_object_t	*top, *list, *o;
 	const char	**v, *names;
@@ -1423,7 +1423,7 @@ fifo_send(struct work *w, const char *fifo, const char *fec,
 	int		 dfd, fd, step;
 
 	cmd = wfmt(w, "fec %s\n", fec);
-	step = step_begin(w, ARC_STEP_KIND_FILE, fifo, "write(2) \"fec %s\" "
+	step = step_begin(w, STEP_FILE, fifo, "write(2) \"fec %s\" "
 	    "to the relay's fifo", fec);
 	fd = -1;
 	if ((dfd = scope_open_dir(w, fifo, &base)) != -1) {

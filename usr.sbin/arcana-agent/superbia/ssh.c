@@ -597,7 +597,7 @@ akeys_path(struct work *w, const struct pwent *u, const ucl_object_t *set)
 /* --- the read -------------------------------------------------------- */
 
 void
-do_ssh(struct work *w, struct arc_ssh_rsp *rsp)
+do_ssh(struct work *w, struct json_rsp *rsp)
 {
 	ucl_object_t		*top, *set, *hk, *k, *ul, *u, *ks;
 	const ucl_object_t	*a, *v;

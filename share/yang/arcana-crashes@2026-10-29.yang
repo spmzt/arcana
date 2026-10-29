@@ -1,0 +1,135 @@
+module arcana-crashes {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-crashes";
+  prefix arccrash;
+
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The cores FreeBSD's kernel dumped (core(5)), where kern.corefile
+     says and where else one lies (/, /root, /tmp, /var/tmp, the home
+     directories), and a core's backtrace as lldb(1), and gdb where it
+     is installed, read it.  Nothing is changed.  The crashes
+     operation of arcana.yaml converted (Y-3).";
+
+  revision 2026-10-29 {
+    description
+      "Initial revision.";
+  }
+
+  container crashes {
+    config false;
+    description
+      "The cores dumped, read when asked.";
+    action read {
+      description
+        "The cores, and with backtrace one's backtrace too.";
+      input {
+        leaf backtrace {
+          type string {
+            length "1..199";
+            pattern '[^/]+';
+          }
+          description
+            "A core's name, as the list has it: its backtrace is read
+             too.";
+        }
+        leaf program {
+          type string;
+          description
+            "The program the core is of; found by the core's name
+             when not given.";
+        }
+      }
+      output {
+        leaf corefile {
+          type string;
+          description
+            "kern.corefile, the cores' name pattern.";
+        }
+        leaf directory {
+          type string;
+          description
+            "The directory it names, when it names one of its own.";
+        }
+        leaf-list other {
+          type string;
+          description
+            "The other files of the cores' directory, twenty at most,
+             each with its size.";
+        }
+        list core-file {
+          key "directory name";
+          description
+            "The cores found.";
+          leaf name {
+            type string;
+            description
+              "Its file's name.";
+          }
+          leaf directory {
+            type string;
+            description
+              "Where it is.";
+          }
+          leaf program {
+            type string;
+            description
+              "The program it is of, by its name.";
+          }
+          leaf pid {
+            type uint32;
+            description
+              "The process's id, when the name has it (%N.%P.core).";
+          }
+          leaf size {
+            type uint64;
+            units "bytes";
+            description
+              "Its size.";
+          }
+          leaf time {
+            type yang:date-and-time;
+            description
+              "When it was written.";
+          }
+        }
+        leaf-list note {
+          type string;
+          description
+            "What the reader should know: the directory unread, the
+             files that are no cores.";
+        }
+        leaf core {
+          type string;
+          description
+            "With backtrace, the core read.";
+        }
+        leaf program {
+          type string;
+          description
+            "With backtrace, the program it was read with.";
+        }
+        leaf backtrace {
+          type string;
+          description
+            "With backtrace, lldb's thread list, every thread's
+             backtrace and the signal's information (and gdb's).";
+        }
+        leaf truncated {
+          type boolean;
+          description
+            "The backtrace was cut at 512 KiB.";
+        }
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-host",
     "module-revision": "2026-10-15",
-    "sid-file-version": 2,
+    "sid-file-version": 4,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -21,6 +21,10 @@
       },
       {
         "entry-point": "82000",
+        "size": "100"
+      },
+      {
+        "entry-point": "83000",
         "size": "100"
       }
     ],
@@ -628,6 +632,31 @@
         "namespace": "data",
         "identifier": "/arcana-host:host/read-certificates/output/untrusted/subject",
         "sid": "82013"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "poudriere",
+        "sid": "82014"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "smtpd",
+        "sid": "82015"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "speederv2",
+        "sid": "82016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/agent/feature",
+        "sid": "83000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/agent/safe-wait",
+        "sid": "83001"
       }
     ]
   }

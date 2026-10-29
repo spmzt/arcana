@@ -4,8 +4,8 @@
 #
 # Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
 #
-# The YANG model of each operation converted to YANG (share/arcana/
-# yang-ops), as the console shows it beside the operation's CBOR schema.
+# The YANG model of each operation (share/arcana/yang-ops), as the
+# console shows it beside the operation.
 #
 #	yang.sh trees cblink-gen yang-dir yang-ops tree-dir
 #		each module's RFC 8340 tree, as cblink-gen draws it, into

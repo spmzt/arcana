@@ -169,7 +169,7 @@ offload_off(struct work *w, const struct instance *in)
 	for (i = 0; i < in->nifs; i++) {
 		snprintf(ifn, sizeof(ifn), "%.*s", (int)strcspn(in->ifs[i], "^"),
 		    in->ifs[i]);
-		step = step_begin(w, ARC_STEP_KIND_EXEC, "ifconfig",
+		step = step_begin(w, STEP_EXEC, "ifconfig",
 		    "%s: checksum, TSO and LRO offloading off", ifn);
 		argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
 		argv[1] = ifn;
@@ -616,7 +616,7 @@ divert_ready(struct work *w, const char **errp)
 
 	if (kmod_loaded("ipdivert"))
 		return (0);
-	step = step_begin(w, ARC_STEP_KIND_EXEC, "kldload",
+	step = step_begin(w, STEP_EXEC, "kldload",
 	    "ipdivert, for ipfw divert");
 	argv[0] = (char *)(uintptr_t)opts.kldload_bin;
 	argv[1] = (char *)(uintptr_t)"-n";
@@ -1345,7 +1345,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			if (strcmp(ni[k].name, held[i].name) == 0)
 				break;
 		if (k == n) {
-			step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+			step = step_begin(w, STEP_DAEMON, "arcana-agent",
 			    "suricata %s stopped", held[i].name);
 			inst_stop(w, held[i].name);
 			fault_clear("ids", held[i].name, "Suricata %s taken "
@@ -1372,7 +1372,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		    true);
 		/* Stopped by the admin: not run, its place kept. */
 		if (ni[k].stopped) {
-			step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+			step = step_begin(w, STEP_DAEMON, "arcana-agent",
 			    "suricata %s stopped, kept", ni[k].name);
 			inst_stop(w, ni[k].name);
 			step_end(w, step, true, NULL);
@@ -1402,7 +1402,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			    ni[k].divert, seen, &e);
 			ucl_object_unref(seen);
 			if (conf == NULL) {
-				step_end(w, step_begin(w, ARC_STEP_KIND_DAEMON,
+				step_end(w, step_begin(w, STEP_DAEMON,
 				    "arcana-agent", "suricata %s", ni[k].name),
 				    false, "%s", e);
 				*errp = e;
@@ -1443,7 +1443,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		    ni[k].divert > 0 ? wfmt(w, "prevents by divert %d",
 		    ni[k].divert) : "detects", same ? "as it was" : samerun ?
 		    "its rules read again" : "started");
-		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		step = step_begin(w, STEP_DAEMON, "arcana-agent", "%s",
 		    what);
 		if (same) {
 			step_end(w, step, true, NULL);
@@ -2095,7 +2095,7 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 		return (-1);
 	}
 	if (rule) {
-		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		step = step_begin(w, STEP_DAEMON, "arcana-agent",
 		    "the rules set kept");
 		if (suricata_rule_set(w, sp, errp) != 0) {
 			step_end(w, step, false, "%s", *errp);
@@ -2103,7 +2103,7 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 		}
 		step_end(w, step, true, NULL);
 	}
-	step = step_begin(w, ARC_STEP_KIND_EXEC, "suricata-update",
+	step = step_begin(w, STEP_EXEC, "suricata-update",
 	    rule ? "the ruleset made again, from what was fetched, to %s" :
 	    "the ruleset fetched to %s", SURICATA_RULESET);
 	/* Each instance is checked by suricata -T as it is applied: the
@@ -2175,7 +2175,7 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 		if (t == NULL || strstr(t, SURICATA_RULESET) == NULL ||
 		    (pid = (pid_t)inst_pid(w, instances[i].name)) <= 1)
 			continue;
-		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		step = step_begin(w, STEP_DAEMON, "arcana-agent",
 		    "suricata %s reads its rules again", instances[i].name);
 		step_end(w, step, kill(pid, SIGUSR2) == 0, NULL);
 	}
@@ -2262,7 +2262,7 @@ suricata_replay(struct work *w, const struct arc_job_spec *sp,
 		closedir(d);
 	}
 	(void)mkdir(dir, 0750);
-	step = step_begin(w, ARC_STEP_KIND_EXEC, "suricata", "%s through %s, "
+	step = step_begin(w, STEP_EXEC, "suricata", "%s through %s, "
 	    "offline", file, inst);
 	argv[0] = (char *)(uintptr_t)suricata_bin(w);
 	argv[1] = (char *)(uintptr_t)"-c";

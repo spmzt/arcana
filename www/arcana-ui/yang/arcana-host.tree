@@ -12,8 +12,10 @@ module: arcana-host
      +--ro securelevel?         int32
      +--ro privileged?          boolean
      +--ro agent
-     |  +--ro version?   string
-     |  +--ro build?     string
+     |  +--ro version?     string
+     |  +--ro build?       string
+     |  +--ro feature*     string
+     |  +--ro safe-wait?   uint32
      +--ro plugin*              identityref
      +--ro stats
      |  +--ro cpu?               decimal64

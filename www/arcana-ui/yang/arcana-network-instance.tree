@@ -1,5 +1,0 @@
-module: arcana-network-instance
-
-  augment /ni:network-instances/ni:network-instance/ni:ni-type:
-    +--:(fib)
-       +--rw fib?   uint16

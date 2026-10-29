@@ -241,7 +241,7 @@ do_processes(struct work *w, const char *jail, struct json_rsp *rsp)
 		rsp->error = wfmt(w, "jail %s is not running", jail);
 		return (0);
 	}
-	step = step_begin(w, ARC_STEP_KIND_LIB, "sysctl(3)",
+	step = step_begin(w, STEP_LIB, "sysctl(3)",
 	    "kern.proc.proc, against the look before");
 	pthread_mutex_lock(&procs_lock);
 	kp = procs_read(&n);
@@ -520,7 +520,7 @@ do_proc_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	(void)pid_of(sp->names.v[0], &pid);
 	mib[3] = pid;
 	len = sizeof(kp);
-	step = step_begin(w, ARC_STEP_KIND_LIB, "sysctl(3)",
+	step = step_begin(w, STEP_LIB, "sysctl(3)",
 	    "kern.proc.pid.%d", (int)pid);
 	if (sysctl(mib, 4, &kp, &len, NULL, 0) == -1 || len < sizeof(kp)) {
 		step_end(w, step, false, "not there");
@@ -548,13 +548,13 @@ do_proc_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	}
 	if (is_signal(sp)) {
 		sig = sig_of(sp->names.v[1]);
-		step = step_begin(w, ARC_STEP_KIND_LIB, "kill(2)",
+		step = step_begin(w, STEP_LIB, "kill(2)",
 		    "SIG%s to %d (%s)", sys_signame[sig], (int)pid,
 		    kp.ki_comm);
 		rc = kill(pid, sig);
 	} else {
 		(void)nice_of(sp->names.v[1], &n);
-		step = step_begin(w, ARC_STEP_KIND_LIB, "setpriority(2)",
+		step = step_begin(w, STEP_LIB, "setpriority(2)",
 		    "%d (%s) from %d to %d", (int)pid, kp.ki_comm,
 		    kp.ki_nice - NZERO, n);
 		rc = setpriority(PRIO_PROCESS, pid, n);
@@ -613,7 +613,7 @@ do_process(struct work *w, uint32_t pid, struct json_rsp *rsp)
 
 	rsp->has_ok = true;
 	rsp->ok = false;
-	step = step_begin(w, ARC_STEP_KIND_LIB, "procstat(3)", "process %u",
+	step = step_begin(w, STEP_LIB, "procstat(3)", "process %u",
 	    pid);
 	if ((ps = procstat_open_sysctl()) == NULL) {
 		step_end(w, step, false, "procstat_open_sysctl failed");

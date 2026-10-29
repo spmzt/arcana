@@ -1292,14 +1292,14 @@ smtpd_cert_renewed(struct work *w)
 	if (w->jail != NULL || (conf = scope_slurp(w, opts.smtpd_conf, &len))
 	    == NULL || !uses_host_cert(conf))
 		return;
-	step = step_begin(w, ARC_STEP_KIND_DAEMON, "smtpd", "serves with the "
+	step = step_begin(w, STEP_DAEMON, "smtpd", "serves with the "
 	    "certificate renewed: started again");
 	e = NULL;
 	step_end(w, step, restart(w, &e) == 0, e != NULL ? "%s" : NULL, e);
 }
 
 void
-do_smtpd(struct work *w, struct arc_smtpd_rsp *rsp)
+do_smtpd(struct work *w, struct json_rsp *rsp)
 {
 	ucl_object_t	*top, *o, *arr;
 	struct ucl_parser *p;
@@ -1895,7 +1895,7 @@ conf_put(struct work *w, const char *conf, bool check_only,
 		*errp = wfmt(w, "%s: %s", path, strerror(errno));
 		return (-1);
 	}
-	step = step_begin(w, ARC_STEP_KIND_EXEC, "smtpd -n", "the "
+	step = step_begin(w, STEP_EXEC, "smtpd -n", "the "
 	    "configuration checked");
 	argv[0] = (char *)(uintptr_t)smtpd_bin(w);
 	argv[1] = (char *)(uintptr_t)"-n";

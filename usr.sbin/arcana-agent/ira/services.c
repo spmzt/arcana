@@ -103,7 +103,7 @@ scan_scripts(struct work *w, struct script **outp, size_t *np)
 	for (it = dirs; (dir = strsep(&it, ":")) != NULL; ) {
 		if (*dir == '\0')
 			continue;
-		step = step_begin(w, ARC_STEP_KIND_FILE, "read", "scripts in %s",
+		step = step_begin(w, STEP_FILE, "read", "scripts in %s",
 		    dir);
 		if ((d = opendir(dir)) == NULL) {
 			step_end(w, step, false, "%s: %s", dir, strerror(errno));
@@ -413,7 +413,7 @@ do_service_action(struct work *w, const char *name, uint8_t action,
 		if (strcmp(name, OWN_SERVICE) == 0 && (action ==
 		    ARC_SERVICE_ACTION_STOP || action ==
 		    ARC_SERVICE_ACTION_RESTART)) {
-			n = (size_t)step_begin(w, ARC_STEP_KIND_DAEMON,
+			n = (size_t)step_begin(w, STEP_DAEMON,
 			    "own service", "service %s %s", name, verb);
 			service_detached(name, verb);
 			step_end(w, (int)n, true, "handed to a process of its "

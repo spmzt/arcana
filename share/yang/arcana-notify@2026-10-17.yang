@@ -35,21 +35,24 @@ module arcana-notify {
       leaf token {
         type string {
           length "1..128";
-          pattern '[0-9]+:[A-Za-z0-9_-]+';
         }
         mandatory true;
         description
-          "The bot's token, as BotFather gives it.  Used for this
-           message and forgotten.";
+          "The bot's token, as BotFather gives it: digits, a colon,
+           letters, digits, _ and -.  Used for this message and
+           forgotten.  Its form is the agent's to check, which says
+           what is wrong and never the token, where a pattern's
+           refusal would show it.";
       }
       leaf chat {
         type string {
-          pattern '-?[0-9]{1,20}|@[A-Za-z0-9_]{5,32}';
+          length "1..33";
         }
         mandatory true;
         description
           "The chat: its number (negative for a group), or @ and a
-           channel's name.";
+           channel's name of 5 to 32 letters, digits and _; the
+           agent checks it.";
       }
       leaf text {
         type string {

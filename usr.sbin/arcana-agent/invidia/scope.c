@@ -394,7 +394,7 @@ helper_lines(struct work *w, const char *verb, size_t n,
 	if (w->jail != NULL || !opts.helper_self)
 		return (run_exec_lines(w, helper_argv(w, verb, n, words), fn,
 		    arg));
-	step = step_begin(w, ARC_STEP_KIND_LIB, strncmp(verb, "pcb-", 4) == 0 ?
+	step = step_begin(w, STEP_LIB, strncmp(verb, "pcb-", 4) == 0 ?
 	    "sysctl(3)" : "netlink(4)", "%s %s", verb, n > 0 ? words[0] : "");
 	memset(&l, 0, sizeof(l));
 	l.fn = fn;

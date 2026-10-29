@@ -135,8 +135,12 @@ static struct {
 	char		*text;
 	char		 sha[65];
 	bool		 file_loading;
-	char		 file_error[300];
-	char		 file_note[160];
+	char		 file_error[600];
+	char		 file_note[300];
+	/* What the host stops a Keep at to ask first (its error-app-tag),
+	 * and what was accepted so far, JSON strings with commas. */
+	char		 file_tag[64];
+	char		 file_acc[200];
 	/* The sysctls Apply needs: asked for in the page when one is not
 	 * set, set by jobs, read again, and Apply then goes on. */
 	bool		 ask;
@@ -353,10 +357,14 @@ file_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		snprintf(fw.file_error, sizeof(fw.file_error), "%s", status ==
 		    200 && jstr(o, "error") != NULL ? jstr(o, "error") : err !=
 		    NULL ? err : "no answer");
+		/* A warning to accept (rc.conf's): asked on the page. */
+		snprintf(fw.file_tag, sizeof(fw.file_tag), "%s", status ==
+		    200 && jstr(o, "error_tag") != NULL ? jstr(o,
+		    "error_tag") : "");
 		free(what);
 		return;
 	}
-	fw.file_error[0] = '\0';
+	fw.file_error[0] = fw.file_tag[0] = fw.file_acc[0] = '\0';
 	/* A check leaves what is being written as it is. */
 	if (strcmp(what, "check") != 0) {
 		free(fw.text);
@@ -372,6 +380,13 @@ file_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		snprintf(fw.file_note, sizeof(fw.file_note), "From %s, not "
 		    "kept yet: look it over, then Keep.", jstr(o, "rc_file") !=
 		    NULL ? jstr(o, "rc_file") : "the firewall's file");
+	/* The host's first Keep moved its boot to Arcana's script. */
+	if (strcmp(what, "write") == 0 && jstr(o, "migrated") != NULL)
+		snprintf(fw.file_note, sizeof(fw.file_note), "Kept, and "
+		    "migrated from %s: the host boots these rules by Arcana's "
+		    "own script from now on, its own files as they were. "
+		    "Apply makes them the host's ruleset.", jstr(o,
+		    "migrated"));
 	if (strcmp(what, "write") == 0) {
 		struct server	*s;
 
@@ -820,6 +835,13 @@ view_text(struct html *h)
 	if (fw.file_error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, fw.file_error);
+		/* rc.conf's warning: accepted, kept again. */
+		if (fw.file_tag[0] != '\0' && !fw.file_loading) {
+			h_raw(h, " <button class=\"small\" data-act=\""
+			    "fw-file-accept\">Accept ");
+			h_txt(h, fw.file_tag);
+			h_raw(h, " and keep again</button>");
+		}
 		h_raw(h, "</div>");
 	} else if (fw.file_note[0] != '\0') {
 		h_raw(h, "<div class=\"notice info\">");
@@ -4014,8 +4036,9 @@ firewall_form(const char *form, const ucl_object_t *f)
 			abort();
 		q = json_quote(copy);
 		free(copy);
-		h_fmt(&b, "{\"text\":%s,\"sha256\":\"%s\",\"check\":%s}", q,
-		    fw.sha, strcmp(how, "check") == 0 ? "true" : "false");
+		h_fmt(&b, "{\"text\":%s,\"sha256\":\"%s\",\"check\":%s,"
+		    "\"accept\":[%s]}", q, fw.sha, strcmp(how, "check") == 0 ?
+		    "true" : "false", fw.file_acc);
 		free(q);
 		fw.file_loading = true;
 		fw.file_note[0] = '\0';
@@ -4218,6 +4241,31 @@ firewall_action(const char *act, const char *arg, const char *value)
 				fw.sect = (int)i;
 	} else if (strcmp(act, "fw-load-rc") == 0) {
 		file_read_rc(s);
+	} else if (strcmp(act, "fw-file-accept") == 0) {
+		/* The warning accepted, the same text kept again. */
+		if (fw.file_tag[0] != '\0' && fw.text != NULL &&
+		    strlen(fw.file_acc) + strlen(fw.file_tag) + 4 <
+		    sizeof(fw.file_acc)) {
+			struct html	b;
+			char		url[400], *q;
+
+			snprintf(fw.file_acc + strlen(fw.file_acc),
+			    sizeof(fw.file_acc) - strlen(fw.file_acc),
+			    "%s\"%s\"", fw.file_acc[0] != '\0' ? "," : "",
+			    fw.file_tag);
+			fw.file_tag[0] = '\0';
+			memset(&b, 0, sizeof(b));
+			q = json_quote(fw.text);
+			h_fmt(&b, "{\"text\":%s,\"sha256\":\"%s\",\"accept\":"
+			    "[%s]}", q, fw.sha, fw.file_acc);
+			free(q);
+			fw.file_loading = true;
+			snprintf(url, sizeof(url), "/api/servers/%s/ipfw/rules"
+			    "%s%s", s->id, fw.jail[0] != '\0' ? "?jail=" : "",
+			    fw.jail);
+			api("POST", url, b.s, file_cb, strdup("write"));
+			free(b.s);
+		}
 	} else if (strcmp(act, "fw-skeleton") == 0) {
 		free(fw.text);
 		fw.text = strdup(skeleton);

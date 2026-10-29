@@ -127,7 +127,7 @@ yhost_certs_from_json(const char *json, cbl_yarena *a,
 }
 
 int
-yhost_from(const struct arc_host *h, const struct host_stats *st,
+yhost_from(const struct host_facts *h, const struct host_stats *st,
     cbl_yarena *a, struct arcana_host_host *out)
 {
 	struct arcana_host_host_agent		*ag;
@@ -158,8 +158,13 @@ yhost_from(const struct arc_host *h, const struct host_stats *st,
 	if ((ag = cbl_yarena_alloc(a, sizeof(*ag))) == NULL || (pl =
 	    cbl_yarena_alloc(a, (h->plugins.n + 1) * sizeof(*pl))) == NULL)
 		return (ENOMEM);
+	memset(ag, 0, sizeof(*ag));
 	ag->version = h->version;
 	ag->build = h->build;
+	ag->feature.n = h->features.n;
+	ag->feature.v = h->features.v;
+	ag->has_safe_wait = h->has_safe_wait;
+	ag->safe_wait = h->safe_wait;
 	out->agent = ag;
 	/* A plugin the model does not know is left out. */
 	for (i = n = 0; i < h->plugins.n; i++)

@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.237.2"
+#define	ARCANA_AGENT_VERSION	"0.238.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -193,8 +193,17 @@ extern struct opts opts;
  * the request's pool and released with it, and the request records what
  * it did in its own trace.
  */
+/* What a step is, by the number arcana-jobs' step has its kind by. */
+enum {
+	STEP_DAEMON = 0,	/* the agent's own */
+	STEP_LIB,		/* a library's call */
+	STEP_SYSCALL,
+	STEP_FILE,		/* a file read or written */
+	STEP_EXEC,		/* a program run */
+};
+
 struct step {
-	uint8_t		 kind;		/* ARC_STEP_KIND_* */
+	uint8_t		 kind;		/* STEP_* */
 	const char	*label;
 	const char	*detail;
 	int		 parent;
@@ -263,10 +272,9 @@ void		 step_end(struct work *, int, bool, const char *, ...)
 		    __printflike(4, 5);
 void		 step_exec(struct work *, int, char *const [], int,
 		    const char *, size_t, const char *, size_t);
-void		 trace_steps(struct work *, const struct arc_step **, size_t *);
+struct arcana_jobs_step;
 void		 trace_copy(struct work *, struct work *,
-		    const struct arc_step **, size_t *);
-void		 trace_family(cbl_family *);
+		    const struct arcana_jobs_step **, size_t *);
 void		 trace_tell(struct work *, cbl_req *);
 uint64_t	 now_us(void);
 
@@ -367,8 +375,44 @@ const struct cjail *conf_jail(const struct cconf *, const char *);
 const struct arc_param *cjail_param(const struct cjail *, const char *);
 const char	*cjail_param1(const struct cjail *, const char *);
 
-/* superbia/host.c */
-void		 host_info(struct work *, struct arc_host *);
+/*
+ * superbia/host.c: what the host is and the agent that answers,
+ * arcana-host's host as a read has it (yhost.c); features, what this
+ * agent takes that one before it did not.
+ */
+struct host_facts {
+	const char	*hostname;
+	const char	*sysname;
+	const char	*release;
+	const char	*machine;
+	bool		 has_osreldate;
+	uint32_t	 osreldate;
+	bool		 has_ncpu;
+	uint32_t	 ncpu;
+	bool		 has_physmem;
+	uint64_t	 physmem;
+	bool		 has_boottime;
+	int64_t		 boottime;
+	bool		 has_time;
+	int64_t		 time;
+	bool		 has_securelevel;
+	int32_t		 securelevel;
+	bool		 has_privileged;
+	bool		 privileged;
+	const char	*version;
+	const char	*build;
+	struct {
+		size_t		 n;
+		const char	*const *v;
+	}		 plugins;
+	bool		 has_safe_wait;
+	uint32_t	 safe_wait;
+	struct {
+		size_t		 n;
+		const char	*const *v;
+	}		 features;
+};
+void		 host_info(struct work *, struct host_facts *);
 bool		 has_feature(const char *);
 
 /* ira/jail.c: one jail record from runtime and configured state. */
@@ -452,6 +496,64 @@ struct json_rsp {
 };
 
 /*
+ * A network table read as JSON (network.c), that arcana-network's
+ * actions make typed (ynet.c): total, rows on the host, and truncated,
+ * more wanted than sent, where the table says.
+ */
+struct net_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+	const char	*json;
+	bool		 has_total;
+	uint64_t	 total;
+	bool		 truncated;
+};
+
+/* The kept rules of the firewall (ipfw.c): read, checked or put in place. */
+struct ipfw_rules_req {
+	const char	*conf_text;	/* NULL: read */
+	const char	*sha256;	/* of the text it was made from */
+	bool		 dry_run;
+	bool		 from_rc;
+};
+struct ipfw_rules_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+	const char	*conf_text;
+	const char	*sha256;
+	const char	*rc_file;
+};
+
+/* A jail's address (address.c), added or taken away. */
+struct address_req {
+	const char	*jail;
+	const char	*address;
+	const char	*interface;
+	bool		 remove;
+	bool		 live;
+	bool		 persist;
+	bool		 dry_run;
+};
+struct address_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+	const char	*diff;
+	const struct arc_jail *result;
+};
+
+/* A part of a table in parts (netdump.c): what was asked. */
+struct net_parts_req {
+	uint8_t		 kind;		/* ARC_NET_KIND_* */
+	uint8_t		 family;	/* ARC_NET_FAMILY_* */
+	uint32_t	 fib;
+	const char	*filter;
+	const char	*jail;
+};
+
+/*
  * invidia/capture.c: packets taken with tcpdump off interface (NULL:
  * the sources there are), filter a pcap-filter(7) expression, so many
  * packets or seconds at most (0: 50, 10).
@@ -466,7 +568,7 @@ void		 do_capture(struct work *, const struct capture_req *,
 		    struct json_rsp *);
 
 /* superbia/ssh.c: the base system's sshd */
-void		 do_ssh(struct work *, struct arc_ssh_rsp *);
+void		 do_ssh(struct work *, struct json_rsp *);
 const char	*ssh_check(const struct arc_job_spec *);
 /* luxuria/poudriere.c: the package builder, its runs left to go on. */
 const char	*poudriere_check(const struct arc_job_spec *);
@@ -475,20 +577,17 @@ int		 do_poudriere_job(struct work *, const struct arc_job_spec *,
 char		*poudriere_title(const struct arc_job_spec *);
 
 /* gula/crashes.c: the cores dumped, and a backtrace of one. */
-struct arc_crashes_rsp;
 void		 do_crashes(struct work *, const char *const *, size_t,
-		    struct arc_crashes_rsp *);
+		    struct json_rsp *);
 
 /* luxuria/clamav.c: freshclam's mirrors. */
 const char	*clamav_check(const struct arc_job_spec *);
 char		*clamav_title(const struct arc_job_spec *);
 int		 do_clamav_job(struct work *, const struct arc_job_spec *,
 		    const char **);
-struct arc_builder_rsp;
-void		 do_builder(struct work *, struct arc_builder_rsp *);
-struct arc_builder_options_rsp;
+void		 do_builder(struct work *, struct json_rsp *);
 void		 do_builder_options(struct work *, const struct arc_job_spec *,
-		    struct arc_builder_options_rsp *);
+		    struct json_rsp *);
 int		 do_ssh_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 int		 ssh_undo(struct work *, const struct arc_job_spec *,
@@ -505,8 +604,8 @@ int		 do_carp(struct work *, const struct arc_job_spec *,
 const char	*neigh_check(const struct arc_job_spec *);
 int		 do_neigh(struct work *, const struct arc_job_spec *,
 		    const char **);
-int		 do_address(struct work *, const struct arc_address_req *,
-		    struct arc_address_rsp *);
+int		 do_address(struct work *, const struct address_req *,
+		    struct address_rsp *);
 
 /*
  * ira/services.c: the rc.d scripts, by service(8) and sysrc(8), which
@@ -582,13 +681,13 @@ void		 service_job_forget(struct rca *);
 
 /* invidia/network.c */
 int		 do_network(struct work *, uint8_t, uint8_t, const char *,
-		    uint32_t, uint32_t, struct arc_network_rsp *);
+		    uint32_t, uint32_t, struct net_rsp *);
 int		 do_route_lookup(struct work *, const char *, uint32_t,
-		    struct arc_route_lookup_rsp *);
+		    struct json_rsp *);
 int		 do_traceroute(struct work *, const char *, struct json_rsp *);
 
 /* invidia/interfaces.c */
-int		 do_interfaces(struct work *, uint8_t, struct arc_network_rsp *);
+int		 do_interfaces(struct work *, uint8_t, struct net_rsp *);
 int		 do_if_address(struct work *, const char *, const char *, bool,
 		    bool, const char **);
 int		 do_if_state(struct work *, const char *, bool, const char **);
@@ -647,7 +746,7 @@ int		 do_route(struct work *, const char *, const char *, bool,
 		    uint32_t, const struct route_more *, bool, const char **);
 int		 route_snapshot(struct work *, const char *, uint32_t,
 		    const char **, struct route_more *, bool *, const char **);
-int		 do_kept_routes(struct work *, struct arc_network_rsp *);
+int		 do_kept_routes(struct work *, struct net_rsp *);
 
 /* invidia/rcconf.c: what of the network rc.conf keeps. */
 bool		 rc_name_ok(const char *);
@@ -664,7 +763,7 @@ int		 rc_word(struct work *, const char *, const char *,
 void		 rc_forget_if(struct work *, const char *);
 
 /* invidia/wireguard.c: WireGuard, through the base system's wg(8). */
-int		 do_wireguard(struct work *, struct arc_network_rsp *);
+int		 do_wireguard(struct work *, struct net_rsp *);
 const char	*wg_check(struct work *, const struct arc_job_spec *);
 int		 do_wg(struct work *, const struct arc_job_spec *,
 		    const char **);
@@ -676,7 +775,7 @@ int		 wg_syncconf(struct work *, const char *, const char *,
 bool		 wg_key_ok(const char *);
 
 /* luxuria/ipsec.c: a plugin, strongSwan through swanctl(8). */
-int		 do_ipsec(struct work *, struct arc_network_rsp *);
+int		 do_ipsec(struct work *, struct net_rsp *);
 const char	*ipsec_check(const struct arc_job_spec *);
 int		 do_ipsec_job(struct work *, const struct arc_job_spec *,
 		    const char **);
@@ -686,7 +785,7 @@ int		 ipsec_undo(struct work *, const char *, bool, const char **);
 int		 ipsec_toggle(struct work *, const char *, bool, const char **);
 
 /* luxuria/bird.c: a plugin, through birdc(8). */
-int		 do_bird(struct work *, struct arc_network_rsp *);
+int		 do_bird(struct work *, struct net_rsp *);
 void		 bird_watch_start(void);
 void		 smtpd_watch_start(void);
 void		 smtpd_cert_renewed(struct work *);
@@ -725,9 +824,9 @@ int		 scope_enter(struct work *, const char *, const char **);
 int		 scope_enter_jail(struct work *, const char *, const char **,
 		    bool);
 int		 do_bird_routes(struct work *, const char *,
-		    struct arc_network_rsp *);
+		    struct net_rsp *);
 int		 do_bird_ospf(struct work *, const char *,
-		    struct arc_network_rsp *);
+		    struct net_rsp *);
 /* superbia/kernel.c: the kernel's modules and memory. */
 const char	*do_kernel(struct work *, const char **);
 bool		 kld_listed(struct work *, const char *);
@@ -772,8 +871,7 @@ int		 do_probes_set(struct work *, const char *, const char **);
 int		 do_probes_read(struct work *, uint64_t, struct json_rsp *);
 int		 do_sdwan_state(struct work *, struct json_rsp *);
 /* ... and the admin's own monitors on any tunnel, by the same prober. */
-struct arc_monitors_rsp;
-int		 do_monitors(struct work *, uint64_t, struct arc_monitors_rsp *);
+int		 do_monitors(struct work *, uint64_t, struct json_rsp *);
 const char	*monitor_check(const struct arc_job_spec *);
 char		*monitor_title(const struct arc_job_spec *);
 int		 do_monitor_job(struct work *, const struct arc_job_spec *,
@@ -867,9 +965,8 @@ int		 do_geom_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 struct ucl_object_s *geom_classes_json(struct work *);
 /* superbia/sysfiles.c: the system's own configuration files. */
-struct arc_system_rsp;
 void		 do_system(struct work *, const char *const *, size_t,
-		    struct arc_system_rsp *);
+		    struct json_rsp *);
 const char	*sysfile_check(const struct arc_job_spec *);
 char		*sysfile_title(const struct arc_job_spec *);
 int		 do_sysfile_job(struct work *, const struct arc_job_spec *,
@@ -877,16 +974,14 @@ int		 do_sysfile_job(struct work *, const struct arc_job_spec *,
 const char	*sysfile_path(struct work *, const char *);
 int		 sysfile_tell(struct work *, const char *, const char **);
 /* superbia/netstore.c: NFS, iSCSI and HAST. */
-struct arc_netstore_rsp;
 void		 do_netstore(struct work *, const char *const *, size_t,
-		    struct arc_netstore_rsp *);
+		    struct json_rsp *);
 const char	*netstore_check(const struct arc_job_spec *);
 char		*netstore_title(const struct arc_job_spec *);
 int		 do_netstore_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 /* luxuria/speeder.c: UDPspeeder's FEC relay, a plugin. */
-struct arc_speeder_rsp;
-void		 do_speeder(struct work *, struct arc_speeder_rsp *);
+void		 do_speeder(struct work *, struct json_rsp *);
 const char	*speeder_check(const struct arc_job_spec *);
 char		*speeder_title(const struct arc_job_spec *);
 int		 do_speeder_job(struct work *, const struct arc_job_spec *,
@@ -910,8 +1005,7 @@ struct speeder_rate {
 size_t		 speeder_rates(struct speeder_rate *, size_t, unsigned int);
 
 /* luxuria/smtpd.c: OpenSMTPD, a plugin: its read, and its job. */
-struct arc_smtpd_rsp;
-void		 do_smtpd(struct work *, struct arc_smtpd_rsp *);
+void		 do_smtpd(struct work *, struct json_rsp *);
 const char	*smtpd_check(const struct arc_job_spec *);
 char		*smtpd_title(const struct arc_job_spec *);
 int		 do_smtpd_job(struct work *, const struct arc_job_spec *,
@@ -920,9 +1014,8 @@ char		*smtpd_render(struct work *, const struct ucl_object_s *,
 		    const char **);
 const char	*suricata_ruleset(void);
 /* luxuria/surules.c: the ruleset's rules, and those the admin set. */
-struct arc_suricata_rules_rsp;
 void		 do_suricata_rules(struct work *, const char *const *, size_t,
-		    struct arc_suricata_rules_rsp *);
+		    struct json_rsp *);
 const char	*suricata_rule_check(const struct arc_job_spec *);
 int		 suricata_rule_set(struct work *, const struct arc_job_spec *,
 		    const char **);
@@ -946,7 +1039,7 @@ struct ucl_object_s *suricata_build_json(struct work *);
 /* luxuria/idsfiles.c: captures in, pcap-log out, profiling read. */
 struct ucl_object_s *suricata_captures_json(const char *);
 void		 suricata_profiling(struct work *, const char *,
-		    struct arc_suricata_rules_rsp *);
+		    struct json_rsp *);
 int		 do_rtadvd(struct work *, const char *, const char *const *,
 		    size_t, bool, bool, const char **);
 /* invidia/sa.c: manually keyed SAs by setkey(8). */
@@ -1012,18 +1105,31 @@ const char	*change_busy(struct work *);
 bool		 valid_service(const char *);
 bool		 valid_ifname(const char *);
 bool		 sysctl_value_ok(const char *);
-int		 do_l2(struct work *, bool, struct arc_network_rsp *);
+int		 do_l2(struct work *, bool, struct net_rsp *);
 const char	*bridge_holding(struct work *, const char *);
 const char	*l2_check(const struct arc_job_spec *);
 int		 l2_destroy(struct work *, const char *, const char **);
 char		*l2_title(const struct arc_job_spec *);
 int		 do_l2_job(struct work *, const struct arc_job_spec *,
 		    const char **);
-int		 do_ipfw(struct work *, struct arc_network_rsp *);
+int		 do_ipfw(struct work *, struct net_rsp *);
 int		 do_fw_trace(struct work *, const char *, uint32_t, uint32_t,
 		    struct json_rsp *);
-int		 do_ipfw_rules(struct work *, const struct arc_ipfw_rules_req *,
-		    struct arc_ipfw_rules_rsp *);
+int		 do_ipfw_rules(struct work *, const struct ipfw_rules_req *,
+		    struct ipfw_rules_rsp *);
+/*
+ * The kept rules by arcana-firewall's commit: Arcana's boot script,
+ * whether rc.conf boots by it, the migration to it (from-rc), what
+ * differs from the kernel's set 0, the commit and its undo.
+ */
+const char	*ipfw_boot_script(struct work *);
+bool		 ipfw_on_script(struct work *);
+int		 ipfw_migration(struct work *, const char **, const char **,
+		    const char **);
+const char	*ipfw_differs(struct work *, const char *, const char **);
+int		 ipfw_kept_commit(struct work *, cbl_req *, const char *,
+		    const char **, const char **);
+int		 ipfw_kept_undo(struct work *, const char *, const char **);
 const char	*ipfw_check(const struct arc_job_spec *);
 char		*ipfw_title(const struct arc_job_spec *);
 int		 do_ipfw_job(struct work *, const struct arc_job_spec *, bool *,
@@ -1035,7 +1141,23 @@ void		 transport_add(const char *, cbl_listener *);
 void		 transport_init(cbl_ctx *, cbl_loop *, cbl_tls *);
 /* superbia/admit.c: only the console asks */
 bool		 peer_is_host(const cbl_peer *);
-int		 admit_register(cbl_ctx *, cbl_family **);
+int		 admit_init(cbl_ctx *);
+/*
+ * superbia/admit.c: arcana-stream, the streams' family (ira/ystream.h);
+ * each command's opening, its open structure checked by its handler:
+ * acedia/xfer.c's snapshot sent and received, luxuria/idsfiles.c's
+ * capture put and pcap-log file got.
+ */
+int		 stream_register(cbl_ctx *);
+struct arcana_stream_open;
+int		 zfs_send_open(cbl_req *, const struct arcana_stream_open *,
+		    cbl_stream *);
+int		 zfs_receive_open(cbl_req *, const struct arcana_stream_open *,
+		    cbl_stream *);
+int		 pcap_put_open(cbl_req *, const struct arcana_stream_open *,
+		    cbl_stream *);
+int		 pcap_get_open(cbl_req *, const struct arcana_stream_open *,
+		    cbl_stream *);
 /* superbia/tlsfiles.c: the agent's own TLS files renewed */
 const char	*tls_files_ca(void);
 const char	*tls_files_cert(void);
@@ -1141,14 +1263,11 @@ int		 pcb_list(FILE *, bool, int);
 int		 helper_lines(struct work *, const char *, size_t,
 		    const char *const [], void (*)(const char *, void *), void *);
 struct cbl_dump_state;
-struct arc_network_dump_req;
 bool		 network_part(struct cbl_dump_state *,
-		    const struct arc_network_dump_req *, char **, uint64_t *,
+		    const struct net_parts_req *, char **, uint64_t *,
 		    const char **);
-struct ucl_object_s;
-int		 network_routes(const char *, struct arc_route **, size_t *,
-		    struct ucl_object_s **);
-void		 network_routes_free(struct ucl_object_s *);
+/* invidia/parts.c: the arcana-parts family, its network-parts stream. */
+int		 parts_register(cbl_ctx *);
 int		 zfs_pipe(int, char **);
 const char	*tool(struct work *, const char *);
 int		 do_health(struct work *, struct storage_rsp *);
@@ -1156,13 +1275,16 @@ struct ucl_object_s;
 struct ucl_object_s *swap_list(struct work *);
 void		 route_watch_start(void);
 void		 event_add(const char *, const char *, ...) __printflike(2, 3);
-void		 event_family(cbl_family *);
+void		 events_told(bool);
 void		 events_replay(time_t, void (*)(const char *, time_t, void *),
 		    void (*)(void *), void *, time_t *, time_t *, bool *);
 /* invidia/yserve.c: an event's JSON told as arcana-events' notification
  * on cblink's YANG family too; the events or the alarms changed, for
  * their on-change subscriptions. */
 void		 yang_event(const char *);
+/* A step of a request, told to its peer as arcana-jobs' steps: ENOENT
+ * where it did not join group notify. */
+int		 yang_step(cbl_conn *, const struct arcana_jobs_step *);
 #define	YANG_EVENTS	0
 #define	YANG_ALARMS	1
 #define	YANG_JOBS	2
@@ -1196,7 +1318,7 @@ void		 event_add_jail(const char *, const char *, const char *, ...)
 int		 do_events(struct work *, uint64_t, struct json_rsp *);
 
 /* invidia/netgraph.c */
-int		 do_netgraph(struct work *, struct arc_network_rsp *);
+int		 do_netgraph(struct work *, struct net_rsp *);
 const char	*ng_check(const char *, const char *const *, size_t);
 int		 do_ng(struct work *, const char *, const char *const *, size_t,
 		    const char **);
@@ -1312,7 +1434,8 @@ int		 jobs_submit_checked(cbl_req *, const struct arc_job_spec *,
 		    size_t, struct work *, const struct arc_job **, size_t *,
 		    const char **);
 size_t		 jobs_waiting(void);
-const struct arc_job *jobs_get(struct work *, uint64_t);
+const struct arc_job *jobs_get(struct work *, uint64_t,
+		    const struct arcana_jobs_step **, size_t *);
 const struct arc_job *jobs_cancel(struct work *, uint64_t, const char **);
 const struct arc_job *jobs_confirm(struct work *, uint64_t, const char **);
 
@@ -1339,12 +1462,34 @@ bool		 verify_jail8(struct work *, const char *, const char *,
 void		 resources_measure(struct work *, struct host_stats *);
 void		 pools_measure(struct work *, struct host_stats *);
 
-/* ira/build.c */
+/*
+ * ira/build.c, ira/update.c: what a build, a fetch or an update comes
+ * to: ok or why not, with what a fetch tells of the server (its host
+ * keys to confirm, the deploy key to give access); the program built,
+ * compressed with its program_size, its SHA-256, version and commit.
+ */
+struct build_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+	struct cbl_bytes binary;
+	bool		 has_program_size;
+	uint32_t	 program_size;
+	const char	*sha256;
+	const char	*agent_version;
+	const char	*commit;
+	const char	*host_keys;
+	struct {
+		size_t		 n;
+		const char	*const *v;
+	}		 fingerprints;
+	const char	*deploy_key;
+};
 int		 do_agent_build(struct work *, const char *, const char *,
 		    const char *, const char *, bool,
-		    struct arc_agent_build_rsp *);
+		    struct build_rsp *);
 int		 do_source_head(struct work *, const char *, const char *,
-		    const char *, const char *, struct arc_source_head_rsp *);
+		    const char *, const char *, struct build_rsp *);
 /*
  * source-log's: the head, the commits and the tags, each a JSON list,
  * and as a fetch tells them, the host keys to confirm and the deploy
@@ -1369,12 +1514,12 @@ int		 do_source_log(struct work *, const char *, const char *,
 		    struct source_log_rsp *);
 
 int		 do_console_update(struct work *, const char *, const char *,
-		    const char *, const char *, struct arc_console_update_rsp *);
+		    const char *, const char *, struct build_rsp *);
 
 /* ira/update.c */
 int		 do_agent_update(struct work *, const uint8_t *, size_t,
 		    size_t, const char *, const uint8_t *, size_t, bool,
-		    struct arc_agent_update_rsp *);
+		    struct build_rsp *);
 void		 service_restart(const char *);
 void		 service_detached(const char *, const char *);
 

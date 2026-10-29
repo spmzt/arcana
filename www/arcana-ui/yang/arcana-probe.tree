@@ -123,7 +123,8 @@ module: arcana-probe
      |     +--ro jail?       string
      +---x read
         +---w input
-        |  +---w after?   yang:date-and-time
+        |  +---w after?      yang:date-and-time
+        |  +---w monitors?   boolean
         +--ro output
            +--ro probing?   boolean
            +--ro time?      yang:date-and-time

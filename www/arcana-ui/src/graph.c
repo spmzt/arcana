@@ -318,8 +318,8 @@ view_trace(struct html *h, const struct op *o)
 	}
 	if (o->trace != NULL)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"schema\" "
-		    "title=\"The operation's request and reply as CBOR, from "
-		    "the family's schema\">{ } Schema</button>",
+		    "title=\"The operation's YANG model, its module's "
+		    "tree\">{ } Schema</button>",
 		    app.trace_schema ? " on" : "");
 	if (o->trace != NULL && has_exec(o->trace))
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"raw\" "

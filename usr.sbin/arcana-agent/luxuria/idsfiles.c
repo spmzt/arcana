@@ -31,6 +31,7 @@
 #include <ucl.h>
 
 #include "agent.h"
+#include "ystream.h"
 
 #define	XF_MAX		4			/* at once, each way */
 /* Sent at once: half the window a stream has unless its opener says
@@ -223,7 +224,7 @@ put_free(struct put *p)
 }
 
 static void
-put_data(cbl_stream *s, const struct arc_chunk *d, void *arg)
+put_data(cbl_stream *s, const struct arcana_stream_chunk *d, void *arg)
 {
 	struct put	*p = arg;
 	size_t		 off;
@@ -293,20 +294,19 @@ put_close(cbl_stream *s __unused, int code __unused,
 	put_free(p);
 }
 
-static const struct arc_suricata_pcap_put_server_cbs put_cbs = {
+static const struct ys_cbs put_cbs = {
 	.on_data = put_data,
 	.on_hclose = put_hclose,
 	.on_close = put_close,
 };
 
 int
-arc_suricata_pcap_put_stream_open(cbl_req *req,
-    const struct arc_suricata_pcap_put_req *rq, cbl_stream *s,
-    void *arg __unused)
+pcap_put_open(cbl_req *req, const struct arcana_stream_open *rq,
+    cbl_stream *s)
 {
 	static const char *const keys[] = { "instance", "file", "offset",
 	    "last" };
-	struct arc_suricata_pcap_put_rsp	 rsp;
+	struct arcana_stream_opened		 rsp;
 	struct put				*p;
 	struct stat				 sb;
 	const char				*inst, *file, *off, *last;
@@ -314,12 +314,12 @@ arc_suricata_pcap_put_stream_open(cbl_req *req,
 	char					 why[96];
 	long long				 o;
 
-	inst = word(rq->names.v, rq->names.n, "instance");
-	file = word(rq->names.v, rq->names.n, "file");
-	off = word(rq->names.v, rq->names.n, "offset");
-	last = word(rq->names.v, rq->names.n, "last");
+	inst = word(rq->name.v, rq->name.n, "instance");
+	file = word(rq->name.v, rq->name.n, "file");
+	off = word(rq->name.v, rq->name.n, "offset");
+	last = word(rq->name.v, rq->name.n, "last");
 	o = 0;
-	if (!words_ok(rq->names.v, rq->names.n, keys, nitems(keys)) ||
+	if (!words_ok(rq->name.v, rq->name.n, keys, nitems(keys)) ||
 	    inst == NULL || !suricata_name_ok(inst) || !capture_name_ok(file) ||
 	    (off != NULL && ((o = strtoll(off, &end, 10)) < 0 || *end != '\0' ||
 	    off[0] == '\0' || o > CAPTURE_MAX)) || (last != NULL &&
@@ -379,7 +379,7 @@ arc_suricata_pcap_put_stream_open(cbl_req *req,
 	rsp.ok = true;
 	snprintf(json, sizeof(json), "{\"path\":\"%s\"}", p->path);
 	rsp.json = json;
-	if (arc_suricata_pcap_put_accept(s, &rsp, &put_cbs, p) != 0) {
+	if (ys_accept(s, &rsp, &put_cbs, p) != 0) {
 		(void)unlink(p->part);
 		put_free(p);
 		return (ECONNREFUSED);
@@ -446,7 +446,6 @@ static void *
 get_run(void *arg)
 {
 	struct get		*g = arg;
-	struct arc_chunk	 c;
 	unsigned char		*buf;
 	ssize_t			 n;
 	int			 error;
@@ -456,11 +455,7 @@ get_run(void *arg)
 	if ((buf = malloc(XF_CHUNK)) == NULL)
 		error = ENOMEM;
 	while (error == 0 && (n = read(g->fd, buf, XF_CHUNK)) > 0) {
-		memset(&c, 0, sizeof(c));
-		c.data.p = buf;
-		c.data.len = (size_t)n;
-		while ((error = arc_suricata_pcap_get_server_send(g->s, &c)) ==
-		    EAGAIN) {
+		while ((error = ys_send(g->s, buf, (size_t)n)) == EAGAIN) {
 			pthread_mutex_lock(&g->lock);
 			while (!g->closed && cbl_stream_credit(g->s) < XF_ROOM)
 				pthread_cond_wait(&g->wake, &g->lock);
@@ -482,18 +477,17 @@ get_run(void *arg)
 	return (NULL);
 }
 
-static const struct arc_suricata_pcap_get_server_cbs get_cbs = {
+static const struct ys_cbs get_cbs = {
 	.on_writable = get_writable,
 	.on_close = get_closed,
 };
 
 int
-arc_suricata_pcap_get_stream_open(cbl_req *req,
-    const struct arc_suricata_pcap_get_req *rq, cbl_stream *s,
-    void *arg __unused)
+pcap_get_open(cbl_req *req, const struct arcana_stream_open *rq,
+    cbl_stream *s)
 {
 	static const char *const keys[] = { "instance", "file" };
-	struct arc_suricata_pcap_get_rsp	 rsp;
+	struct arcana_stream_opened		 rsp;
 	struct get				*g;
 	struct stat				 sb;
 	pthread_t				 tid;
@@ -501,10 +495,10 @@ arc_suricata_pcap_get_stream_open(cbl_req *req,
 	char					 dir[MAXPATHLEN], p[MAXPATHLEN];
 	char					 json[MAXPATHLEN + 64];
 
-	inst = word(rq->names.v, rq->names.n, "instance");
-	file = word(rq->names.v, rq->names.n, "file");
+	inst = word(rq->name.v, rq->name.n, "instance");
+	file = word(rq->name.v, rq->name.n, "file");
 	/* Its pcap-log's files alone: log.pcap, and its rotations. */
-	if (!words_ok(rq->names.v, rq->names.n, keys, nitems(keys)) ||
+	if (!words_ok(rq->name.v, rq->name.n, keys, nitems(keys)) ||
 	    inst == NULL || !suricata_name_ok(inst) || !base_ok(file) ||
 	    strncmp(file, "log.pcap", 8) != 0) {
 		(void)cbl_req_set_err(req, "a file of pcap-log is asked by "
@@ -549,7 +543,7 @@ arc_suricata_pcap_get_stream_open(cbl_req *req,
 	snprintf(json, sizeof(json), "{\"path\":\"%s\",\"size\":%jd}", p,
 	    (intmax_t)sb.st_size);
 	rsp.json = json;
-	if (arc_suricata_pcap_get_accept(s, &rsp, &get_cbs, g) != 0) {
+	if (ys_accept(s, &rsp, &get_cbs, g) != 0) {
 		g->refs = 1;
 		get_unref(g);
 		return (ECONNREFUSED);
@@ -789,7 +783,7 @@ dir_json(struct work *w, const char *dir)
  */
 void
 suricata_profiling(struct work *w, const char *inst,
-    struct arc_suricata_rules_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	ucl_object_t	*top, *b, *o;
 	char		 dir[MAXPATHLEN], *json;

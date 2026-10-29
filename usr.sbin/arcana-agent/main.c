@@ -31,6 +31,7 @@
 #include <openssl/x509.h>
 
 #include "agent.h"
+#include "ystream.h"
 #include "collect.h"
 
 #define	PATH_SOCKET	"unix:/var/run/arcana-agent.sock"
@@ -390,7 +391,6 @@ main(int argc, char *argv[])
 	struct pidfh	*pfh;
 	struct group	*gr;
 	cbl_listener	*ls[MAX_LISTEN];
-	cbl_family	*fam;
 	cbl_loop	*loop;
 	cbl_ctx		*ctx;
 	cbl_tls		*tls;
@@ -762,14 +762,18 @@ main(int argc, char *argv[])
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_DEPTH, MAX_DEPTH);
 	if ((error = transport_watch(ctx)) != 0)
 		fatal(pfh, "cbl_ctx_set_conn_cbs: %s", strerror(error));
-	if ((error = admit_register(ctx, &fam)) != 0)
-		fatal(pfh, "registering the %s family: %s", ARC_FAMILY_NAME,
+	if ((error = admit_init(ctx)) != 0)
+		fatal(pfh, "cbl_ctx_set_user: %s", strerror(error));
+	if ((error = stream_register(ctx)) != 0)
+		fatal(pfh, "registering the %s family: %s", YS_FAMILY_NAME,
 		    strerror(error));
-	event_family(fam);
-	trace_family(fam);
+	if ((error = parts_register(ctx)) != 0)
+		fatal(pfh, "registering the arcana-parts family: %s",
+		    strerror(error));
 	/* The standard models, by cblink's YANG family. */
 	if ((error = yang_serve(ctx)) != 0)
 		fatal(pfh, "serving the models: %s", strerror(error));
+	events_told(true);
 	if ((error = cbl_loop_new(ctx, &loop)) != 0)
 		fatal(pfh, "cbl_loop_new: %s", strerror(error));
 	for (i = 0; i < nl; i++) {
@@ -832,8 +836,7 @@ main(int argc, char *argv[])
 	/* The listeners are transport.c's now: some closed, some added
 	 * while it ran. */
 	transport_fini();
-	event_family(NULL);
-	(void)cbl_family_unregister(fam);
+	events_told(false);
 	cbl_loop_free(loop);
 	cbl_tls_free(tls);
 	(void)cbl_ctx_free(ctx);

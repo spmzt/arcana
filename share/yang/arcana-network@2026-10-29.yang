@@ -1,0 +1,2202 @@
+module arcana-network {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-network";
+  prefix arcnet;
+
+  import arcana-firewall {
+    prefix arcfw;
+  }
+  import arcana-jails {
+    prefix arcj;
+  }
+  import ietf-netconf-acm {
+    prefix nacm;
+    reference
+      "RFC 8341: Network Configuration Access Control Model";
+  }
+  import ietf-yang-structure-ext {
+    prefix sx;
+    reference
+      "RFC 8791: YANG Data Structure Extensions";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "A FreeBSD host's network tables as its own tools tell them, the
+     host's or a vnet jail's (read from the host, nothing run in the
+     jail for it): the FIB's routes, nexthops and nexthop groups as
+     netlink(4) and netstat(1) give them, the connections and sockets
+     as netstat(1) and sockstat(1) do (read from the kernel's pcb
+     lists), the interfaces by getifaddrs(3), the bridges (if_bridge(4))
+     and geneve(4) tunnels by ifconfig(8), the ARP and NDP neighbours by
+     netlink(4), IGMP's and MLD's state by ifmcstat(8), the static
+     routes rc.conf(5) keeps, strongSwan's IPsec by swanctl(8) and the
+     route an address goes by, as route(8) get finds it.  Each is a
+     read action of the network container; a leaf keeps the name the
+     tool gives it.  The standard models have what they can say of
+     these (ietf-interfaces, ietf-ip's neighbours, ietf-routing's RIBs
+     and active-route); these are the tables as FreeBSD prints them.
+     The routes, connections and sockets also come in parts, a stream
+     of the arcana-parts family whose messages are the network-part
+     structure.  A jail's addresses are changed by the address action
+     of arcana-jails' jail.  The network, network-parts, route-lookup
+     and address operations of arcana.yaml converted and retired
+     (Y-3).";
+
+  revision 2026-10-29 {
+    description
+      "Initial revision.";
+  }
+
+  typedef family {
+    type enumeration {
+      enum all {
+        description
+          "IPv4 and IPv6.";
+      }
+      enum inet {
+        description
+          "IPv4.";
+      }
+      enum inet6 {
+        description
+          "IPv6.";
+      }
+    }
+    description
+      "The address families asked for.";
+  }
+
+  grouping where {
+    description
+      "Whose table: the host's, or a running vnet jail's.";
+    leaf jail {
+      type string;
+      description
+        "The vnet jail; none, the host's.";
+    }
+  }
+
+  grouping route-entry {
+    description
+      "A route of a FIB, a way of it for a route of several (ECMP).";
+    leaf destination {
+      type string;
+      description
+        "The prefix, or default.";
+    }
+    leaf gateway {
+      type string;
+      description
+        "The next hop's address, or link#n for a route on a link.";
+    }
+    leaf flags {
+      type string;
+      description
+        "Its flags as netstat -r writes them: UGS and so on.";
+    }
+    leaf nhop {
+      type uint32;
+      description
+        "The kernel's nexthop it uses.";
+    }
+    leaf mtu {
+      type uint32;
+      description
+        "Its MTU, when it has one of its own.";
+    }
+    leaf interface-name {
+      type string;
+      description
+        "The interface it goes out by.";
+    }
+    leaf metric {
+      type uint32;
+      description
+        "Its metric.";
+    }
+    leaf weight {
+      type uint32;
+      description
+        "Its share, against the other ways of a route of several.";
+    }
+    leaf fib {
+      type uint32;
+      description
+        "Its FIB.";
+    }
+    leaf prefixlen {
+      type uint32;
+      description
+        "The prefix's length.";
+    }
+    leaf source {
+      type string;
+      description
+        "The address it sends from, when it is set.";
+    }
+    leaf path {
+      type uint32;
+      description
+        "Which of the ways of a route of several this is.";
+    }
+    leaf paths {
+      type uint32;
+      description
+        "How many ways the route has.";
+    }
+    leaf expire-time {
+      type string;
+      description
+        "When a route that expires does, seconds of the kernel's
+         uptime.";
+    }
+  }
+
+  grouping rt-families {
+    description
+      "The routes, a list a family, as netstat(1)'s libxo document
+       has them.";
+    list rt-family {
+      description
+        "A family's table.";
+      leaf address-family {
+        type string;
+        description
+          "Internet or Internet6.";
+      }
+      list rt-entry {
+        description
+          "Its routes, in the kernel's order.";
+        uses route-entry;
+      }
+    }
+  }
+
+  grouping endpoint-text {
+    description
+      "An end of a connection, its port as netstat writes it.";
+    leaf address {
+      type string;
+      description
+        "The address, * for any.";
+    }
+    leaf port {
+      type string;
+      description
+        "The port.";
+    }
+  }
+
+  grouping endpoint {
+    description
+      "An end of a socket, its port as sockstat writes it.";
+    leaf address {
+      type string;
+      description
+        "The address, * for any.";
+    }
+    leaf port {
+      type uint32;
+      description
+        "The port.";
+    }
+  }
+
+  grouping connection {
+    description
+      "A connection, a row of netstat -n.";
+    leaf protocol {
+      type string;
+      description
+        "tcp4, udp6, sctp46 ...";
+    }
+    leaf receive-bytes-waiting {
+      type uint32;
+      description
+        "Bytes received and not read.";
+    }
+    leaf send-bytes-waiting {
+      type uint32;
+      description
+        "Bytes written and not sent.";
+    }
+    container local {
+      description
+        "Its own end.";
+      uses endpoint-text;
+    }
+    container remote {
+      description
+        "The other end.";
+      uses endpoint-text;
+    }
+    leaf tcp-state {
+      type string;
+      description
+        "TCP's state: ESTABLISHED, LISTEN ...";
+    }
+  }
+
+  grouping socket {
+    description
+      "A socket and who holds it, a row of sockstat.";
+    leaf user {
+      type string;
+      description
+        "The holder's user, ? for none.";
+    }
+    leaf command {
+      type string;
+      description
+        "The holder's command, ? for none.";
+    }
+    leaf pid {
+      type int32;
+      description
+        "The holder's process.";
+    }
+    leaf fd {
+      type int32;
+      description
+        "Its descriptor there.";
+    }
+    leaf proto {
+      type string;
+      description
+        "tcp4, udp6, sctp46 ...";
+    }
+    container local {
+      description
+        "Its own end.";
+      uses endpoint;
+    }
+    container foreign {
+      description
+        "The other end.";
+      uses endpoint;
+    }
+  }
+
+  grouping ipsec-auth {
+    description
+      "A side's authentication round, as swanctl --list-conns says it.";
+    leaf class {
+      type string;
+      description
+        "public key, pre-shared key, EAP ...";
+    }
+    leaf id {
+      type string;
+      description
+        "Its identity.";
+    }
+    leaf eap_id {
+      type string;
+      description
+        "Its EAP identity.";
+    }
+    leaf xauth_id {
+      type string;
+      description
+        "Its XAuth identity.";
+    }
+    leaf aaa_id {
+      type string;
+      description
+        "Its AAA identity.";
+    }
+    leaf-list groups {
+      type string;
+      description
+        "The groups it is asked to be in.";
+    }
+    leaf-list cert_policy {
+      type string;
+      description
+        "The policies its certificate must have.";
+    }
+    leaf-list certs {
+      type string;
+      description
+        "Its certificates.";
+    }
+    leaf-list cacerts {
+      type string;
+      description
+        "The CA certificates it is checked by.";
+    }
+    leaf-list pubkeys {
+      type string;
+      description
+        "Its raw public keys.";
+    }
+  }
+
+  grouping ipsec-sa-common {
+    description
+      "What an IKE SA and a child SA have alike.";
+    leaf name {
+      type string;
+      description
+        "Its name.";
+    }
+    leaf uniqueid {
+      type uint64;
+      description
+        "Its unique id.";
+    }
+    leaf state {
+      type string;
+      description
+        "Its state: ESTABLISHED, INSTALLED, CONNECTING ...";
+    }
+    leaf encr-alg {
+      type string;
+      description
+        "Its cipher.";
+    }
+    leaf encr-keysize {
+      type uint32;
+      description
+        "Its cipher's key size.";
+    }
+    leaf integ-alg {
+      type string;
+      description
+        "Its integrity algorithm.";
+    }
+    leaf integ-keysize {
+      type uint32;
+      description
+        "Its integrity key size.";
+    }
+    leaf prf-alg {
+      type string;
+      description
+        "Its pseudo-random function.";
+    }
+    leaf dh-group {
+      type string;
+      description
+        "Its key exchange group.";
+    }
+    leaf rekey-time {
+      type uint64;
+      description
+        "Seconds to its rekeying.";
+    }
+  }
+
+  container network {
+    config false;
+    description
+      "The network tables, each by its read action.";
+
+    action routes {
+      description
+        "A FIB's routes, read through netlink(4), 2000 at most: from
+         offset on, those that have filter in them.";
+      input {
+        uses where;
+        leaf family {
+          type family;
+          default "all";
+          description
+            "Of which families.";
+        }
+        leaf filter {
+          type string {
+            length "0..128";
+          }
+          description
+            "A text a route has, to find it among many.";
+        }
+        leaf fib {
+          type uint32;
+          default "0";
+          description
+            "The FIB.";
+        }
+        leaf offset {
+          type uint32;
+          default "0";
+          description
+            "Of those wanted, so many left out first.";
+        }
+      }
+      output {
+        leaf total {
+          type uint64;
+          description
+            "Routes in the table.";
+        }
+        leaf truncated {
+          type boolean;
+          description
+            "More were wanted than are here.";
+        }
+        uses rt-families;
+      }
+    }
+
+    action nexthops {
+      description
+        "The kernel's nexthops, as netstat -onW prints them.";
+      input {
+        uses where;
+        leaf family {
+          type family;
+          default "all";
+          description
+            "Of which families.";
+        }
+        leaf fib {
+          type uint32;
+          default "0";
+          description
+            "The FIB.";
+        }
+      }
+      output {
+        leaf fib {
+          type uint32;
+          description
+            "The FIB, when one was named.";
+        }
+        list rt-family {
+          description
+            "A family's nexthops.";
+          leaf address-family {
+            type string;
+            description
+              "Internet or Internet6.";
+          }
+          list nh-entry {
+            description
+              "A nexthop.";
+            leaf index {
+              type uint32;
+              description
+                "Its index.";
+            }
+            leaf type_str {
+              type string;
+              description
+                "Its type: v4/gw, v6/resolve ...";
+            }
+            leaf ifa {
+              type string;
+              description
+                "The address it sends from.";
+            }
+            leaf gateway {
+              type string;
+              description
+                "Its gateway, or interface/resolve.";
+            }
+            leaf flags {
+              type string;
+              description
+                "The route's flags, as netstat writes them.";
+            }
+            leaf-list rt_flags_pretty {
+              type string;
+              description
+                "The route's flags by name.";
+            }
+            leaf-list nh_flags_pretty {
+              type string;
+              description
+                "Its own flags by name.";
+            }
+            leaf use {
+              type uint64;
+              description
+                "Packets sent by it.";
+            }
+            leaf mtu {
+              type uint32;
+              description
+                "Its MTU.";
+            }
+            leaf interface-name {
+              type string;
+              description
+                "The interface it goes out by.";
+            }
+            leaf address-interface-name {
+              type string;
+              description
+                "The interface its address is of, when another.";
+            }
+            leaf refcount {
+              type uint64;
+              description
+                "How many use it.";
+            }
+            leaf nhop-prepend {
+              type string;
+              description
+                "The link header it prepends, in hexadecimal.";
+            }
+          }
+        }
+      }
+    }
+
+    action nhgroups {
+      description
+        "The kernel's nexthop groups, what a route of several next hops
+         (ECMP) points to, as netstat -OnW prints them.";
+      input {
+        uses where;
+        leaf family {
+          type family;
+          default "all";
+          description
+            "Of which families.";
+        }
+        leaf fib {
+          type uint32;
+          default "0";
+          description
+            "The FIB.";
+        }
+      }
+      output {
+        leaf fib {
+          type uint32;
+          description
+            "The FIB, when one was named.";
+        }
+        list rt-family {
+          description
+            "A family's groups.";
+          leaf address-family {
+            type string;
+            description
+              "Internet or Internet6.";
+          }
+          list nhgrp-entry {
+            description
+              "A group.";
+            leaf nhgrp-index {
+              type uint32;
+              description
+                "Its index.";
+            }
+            leaf nhg-refcnt {
+              type uint64;
+              description
+                "How many routes use it.";
+            }
+            list nhop-weights {
+              description
+                "Its next hops.";
+              leaf nh-index {
+                type uint32;
+                description
+                  "The nexthop.";
+              }
+              leaf nh-weight {
+                type uint32;
+                description
+                  "Its weight.";
+              }
+              leaf nh-slots {
+                type uint32;
+                description
+                  "Its slots of the group.";
+              }
+              leaf nh-gw {
+                type string;
+                description
+                  "Its gateway.";
+              }
+              leaf nh-interface {
+                type string;
+                description
+                  "Its interface.";
+              }
+            }
+          }
+        }
+      }
+    }
+
+    action connections {
+      description
+        "The active connections, netstat -n's, from the kernel's pcb
+         lists.";
+      input {
+        uses where;
+        leaf family {
+          type family;
+          default "all";
+          description
+            "Of which families.";
+        }
+      }
+      output {
+        list socket {
+          description
+            "A connection.";
+          uses connection;
+        }
+      }
+    }
+
+    action sockets {
+      description
+        "The open sockets with their holders, sockstat's, from the
+         kernel's pcb lists.";
+      input {
+        uses where;
+        leaf family {
+          type family;
+          default "all";
+          description
+            "Of which families.";
+        }
+      }
+      output {
+        list socket {
+          description
+            "A socket, a row for each who holds it.";
+          uses socket;
+        }
+      }
+    }
+
+    action interfaces {
+      description
+        "The interfaces with their addresses, flags, link and counters,
+         from getifaddrs(3).";
+      input {
+        uses where;
+        leaf family {
+          type family;
+          default "all";
+          description
+            "Of which families the addresses.";
+        }
+      }
+      output {
+        leaf time {
+          type int64;
+          description
+            "Milliseconds of a clock that only runs forward, to make
+             rates of the counters.";
+        }
+        leaf carp {
+          type boolean;
+          description
+            "carp(4) is in the kernel.";
+        }
+        list interfaces {
+          description
+            "An interface.";
+          leaf name {
+            type string;
+            description
+              "Its name.";
+          }
+          leaf up {
+            type boolean;
+            description
+              "It is up.";
+          }
+          leaf-list flags {
+            type string;
+            description
+              "Its flags: UP, BROADCAST, LOOPBACK, POINTOPOINT,
+               RUNNING, NOARP, PROMISC, MULTICAST.";
+          }
+          leaf link {
+            type string;
+            description
+              "Its link: up, down or unknown.";
+          }
+          leaf mtu {
+            type uint32;
+            description
+              "Its MTU.";
+          }
+          leaf ether {
+            type string;
+            description
+              "Its link-level address.";
+          }
+          leaf description {
+            type string;
+            description
+              "Its description.";
+          }
+          leaf fib {
+            type uint32;
+            description
+              "Its FIB, when not 0.";
+          }
+          leaf tunnelfib {
+            type uint32;
+            description
+              "A tunnel's FIB, when not 0.";
+          }
+          container tunnel {
+            description
+              "A tunnel's ends.";
+            leaf local {
+              type string;
+              description
+                "Its own.";
+            }
+            leaf remote {
+              type string;
+              description
+                "The far one.";
+            }
+          }
+          leaf ipackets {
+            type uint64;
+            description
+              "Packets in.";
+          }
+          leaf opackets {
+            type uint64;
+            description
+              "Packets out.";
+          }
+          leaf ibytes {
+            type uint64;
+            description
+              "Bytes in.";
+          }
+          leaf obytes {
+            type uint64;
+            description
+              "Bytes out.";
+          }
+          leaf ierrors {
+            type uint64;
+            description
+              "Errors in.";
+          }
+          leaf oerrors {
+            type uint64;
+            description
+              "Errors out.";
+          }
+          list addresses {
+            description
+              "Its addresses.";
+            leaf family {
+              type string;
+              description
+                "inet or inet6.";
+            }
+            leaf address {
+              type string;
+              description
+                "The address.";
+            }
+            leaf prefixlen {
+              type uint32;
+              description
+                "Its prefix's length.";
+            }
+            leaf broadcast {
+              type string;
+              description
+                "Its broadcast address.";
+            }
+            leaf destination {
+              type string;
+              description
+                "A point-to-point link's far end.";
+            }
+            leaf vhid {
+              type uint32;
+              description
+                "The carp(4) virtual host it is of.";
+            }
+          }
+          list carp {
+            description
+              "Its carp(4) virtual hosts, as netlink(4) tells them.";
+            leaf vhid {
+              type uint32;
+              description
+                "Its number.";
+            }
+            leaf state {
+              type string;
+              description
+                "MASTER, BACKUP or INIT.";
+            }
+            leaf version {
+              type uint32;
+              description
+                "CARP's 2, or VRRPv3's 3.";
+            }
+            leaf advbase {
+              type uint32;
+              description
+                "Seconds between its advertisements (version 2).";
+            }
+            leaf advskew {
+              type uint32;
+              description
+                "Its skew (version 2).";
+            }
+            leaf prio {
+              type uint32;
+              description
+                "Its priority (version 3).";
+            }
+            leaf interval {
+              type uint32;
+              description
+                "Centiseconds between its advertisements (version 3).";
+            }
+            leaf peer {
+              type string;
+              description
+                "Its IPv4 peer, when unicast.";
+            }
+            leaf peer6 {
+              type string;
+              description
+                "Its IPv6 peer, when unicast.";
+            }
+          }
+        }
+      }
+    }
+
+    action bridges {
+      description
+        "The bridges, if_bridge(4), as ifconfig -v tells them, with
+         the addresses each has learned (ifconfig addr), the first
+         500.";
+      input {
+        uses where;
+      }
+      output {
+        list bridges {
+          description
+            "A bridge.";
+          leaf name {
+            type string;
+            description
+              "Its name.";
+          }
+          leaf id {
+            type string;
+            description
+              "Its own identifier in the spanning tree.";
+          }
+          leaf priority {
+            type uint32;
+            description
+              "Its priority.";
+          }
+          leaf hellotime {
+            type uint32;
+            description
+              "Its hello time.";
+          }
+          leaf fwddelay {
+            type uint32;
+            description
+              "Its forward delay.";
+          }
+          leaf maxage {
+            type uint32;
+            description
+              "Its max age.";
+          }
+          leaf holdcnt {
+            type uint32;
+            description
+              "Its transmit hold count.";
+          }
+          leaf proto {
+            type string;
+            description
+              "Its spanning tree protocol: stp or rstp.";
+          }
+          leaf maxaddr {
+            type uint32;
+            description
+              "Addresses it learns at most.";
+          }
+          leaf timeout {
+            type uint32;
+            description
+              "Seconds a learned address is kept.";
+          }
+          leaf root {
+            type string;
+            description
+              "The root's identifier.";
+          }
+          leaf root_priority {
+            type uint32;
+            description
+              "The root's priority.";
+          }
+          leaf root_cost {
+            type uint32;
+            description
+              "The cost to the root.";
+          }
+          leaf root_port {
+            type uint32;
+            description
+              "The root port.";
+          }
+          leaf is_root {
+            type boolean;
+            description
+              "It is the root.";
+          }
+          leaf vlanfilter {
+            type boolean;
+            description
+              "It filters VLANs.";
+          }
+          leaf defqinq {
+            type boolean;
+            description
+              "Its members carry 802.1ad by default.";
+          }
+          leaf defuntagged {
+            type uint32;
+            description
+              "The VLAN a member is in untagged by default.";
+          }
+          list members {
+            description
+              "Its members.";
+            leaf name {
+              type string;
+              description
+                "The interface.";
+            }
+            leaf stp {
+              type boolean;
+              description
+                "It takes part in the spanning tree.";
+            }
+            leaf-list flags {
+              type string;
+              description
+                "Its flags, lower case.";
+            }
+            leaf-list addresses {
+              type string;
+              description
+                "Addresses it has, which a member should not.";
+            }
+            leaf port {
+              type uint32;
+              description
+                "Its port number.";
+            }
+            leaf priority {
+              type uint32;
+              description
+                "Its priority.";
+            }
+            leaf cost {
+              type uint32;
+              description
+                "Its path cost.";
+            }
+            leaf proto {
+              type string;
+              description
+                "Its spanning tree protocol.";
+            }
+            leaf role {
+              type string;
+              description
+                "Its role in the spanning tree.";
+            }
+            leaf state {
+              type string;
+              description
+                "Its state in the spanning tree.";
+            }
+            leaf maxaddr {
+              type uint32;
+              description
+                "Addresses learned behind it at most.";
+            }
+            leaf vlanproto {
+              type string;
+              description
+                "Its VLAN protocol.";
+            }
+            leaf untagged {
+              type uint32;
+              description
+                "The VLAN it is in untagged.";
+            }
+            leaf tagged {
+              type string;
+              description
+                "The VLANs it carries tagged.";
+            }
+            leaf mode {
+              type string;
+              description
+                "access or trunk.";
+            }
+          }
+          list learned {
+            description
+              "An address it has learned.";
+            leaf mac {
+              type string;
+              description
+                "The address.";
+            }
+            leaf vlan {
+              type uint32;
+              description
+                "Its VLAN.";
+            }
+            leaf member {
+              type string;
+              description
+                "The member it is behind.";
+            }
+            leaf expire {
+              type uint32;
+              description
+                "Seconds to its expiry.";
+            }
+            leaf static {
+              type boolean;
+              description
+                "It was set, not learned.";
+            }
+            leaf sticky {
+              type boolean;
+              description
+                "It does not move.";
+            }
+          }
+          leaf learned_total {
+            type uint32;
+            description
+              "How many it has learned.";
+          }
+        }
+      }
+    }
+
+    action geneve {
+      description
+        "The geneve(4) tunnels, as ifconfig -v tells them.";
+      input {
+        uses where;
+      }
+      output {
+        list geneves {
+          description
+            "A tunnel.";
+          leaf name {
+            type string;
+            description
+              "Its name.";
+          }
+          leaf mode {
+            type string;
+            description
+              "l2 or l3.";
+          }
+          leaf id {
+            type uint32;
+            description
+              "Its identifier (VNI).";
+          }
+          leaf local {
+            type string;
+            description
+              "Its own address and port.";
+          }
+          leaf remote {
+            type string;
+            description
+              "The far one.";
+          }
+          leaf group {
+            type string;
+            description
+              "Its multicast group.";
+          }
+          leaf dev {
+            type string;
+            description
+              "The interface the group is on.";
+          }
+          leaf portrange {
+            type string;
+            description
+              "Its source ports.";
+          }
+          leaf ttl {
+            type string;
+            description
+              "Its TTL, or inherit.";
+          }
+          leaf df {
+            type string;
+            description
+              "Its don't-fragment setting.";
+          }
+          leaf dscpinherit {
+            type boolean;
+            description
+              "It takes the DSCP of what it carries.";
+          }
+          leaf external {
+            type boolean;
+            description
+              "It is controlled from outside.";
+          }
+          leaf learn {
+            type boolean;
+            description
+              "Its forwarding table learns.";
+          }
+          leaf count {
+            type uint32;
+            description
+              "Addresses in its forwarding table.";
+          }
+          leaf maxaddr {
+            type uint32;
+            description
+              "Addresses its table holds at most.";
+          }
+          leaf timeout {
+            type uint32;
+            description
+              "Seconds an address is kept.";
+          }
+          leaf up {
+            type boolean;
+            description
+              "It is up.";
+          }
+        }
+      }
+    }
+
+    action neighbours {
+      description
+        "The neighbours, ARP's and NDP's, asked of the kernel through
+         netlink(4), those that have filter in them.";
+      input {
+        uses where;
+        leaf family {
+          type family;
+          default "all";
+          description
+            "Of which families.";
+        }
+        leaf filter {
+          type string {
+            length "0..128";
+          }
+          description
+            "A text a neighbour has.";
+        }
+      }
+      output {
+        leaf total {
+          type uint64;
+          description
+            "How many there are before the filter.";
+        }
+        list neighbours {
+          description
+            "A neighbour.";
+          leaf family {
+            type string;
+            description
+              "inet or inet6.";
+          }
+          leaf address {
+            type string;
+            description
+              "Its address.";
+          }
+          leaf lladdr {
+            type string;
+            description
+              "Its link-level address.";
+          }
+          leaf interface-name {
+            type string;
+            description
+              "The interface it is on.";
+          }
+          leaf state {
+            type string;
+            description
+              "reachable, stale, delay, probe, incomplete, permanent.";
+          }
+          leaf router {
+            type boolean;
+            description
+              "It is a router.";
+          }
+          leaf next {
+            type uint32;
+            description
+              "When it moves on, seconds of the kernel's uptime.";
+          }
+        }
+      }
+    }
+
+    action multicast {
+      description
+        "IGMP's and MLD's state, from ifmcstat(8), and the kernel's
+         settings of both (sysctl(8)).";
+      input {
+        uses where;
+      }
+      output {
+        list interfaces {
+          description
+            "An interface.";
+          leaf name {
+            type string;
+            description
+              "Its name.";
+          }
+          container igmp {
+            description
+              "IGMP there.";
+            uses mcast-proto;
+          }
+          container mld {
+            description
+              "MLD there.";
+            uses mcast-proto;
+          }
+          list groups {
+            description
+              "A group joined there.";
+            leaf family {
+              type string;
+              description
+                "inet or inet6.";
+            }
+            leaf group {
+              type string;
+              description
+                "Its address.";
+            }
+            leaf mode {
+              type string;
+              description
+                "Its filter mode.";
+            }
+            leaf lladdr {
+              type string;
+              description
+                "Its link-level address.";
+            }
+            leaf-list sources {
+              type string;
+              description
+                "Its sources.";
+            }
+          }
+        }
+        list settings {
+          description
+            "A setting of the kernel's.";
+          leaf name {
+            type string;
+            description
+              "The sysctl.";
+          }
+          leaf value {
+            type string;
+            description
+              "Its value.";
+          }
+        }
+      }
+    }
+
+    action kept-routes {
+      description
+        "The static routes rc.conf(5) keeps, from sysrc(8), and the
+         default routers.";
+      input {
+        uses where;
+      }
+      output {
+        list routes {
+          description
+            "A kept route.";
+          leaf name {
+            type string;
+            description
+              "Its name in the list.";
+          }
+          leaf family {
+            type string;
+            description
+              "inet or inet6.";
+          }
+          leaf list {
+            type string;
+            description
+              "static_routes or ipv6_static_routes.";
+          }
+          leaf variable {
+            type string;
+            description
+              "Its variable.";
+          }
+          leaf value {
+            type string;
+            description
+              "Its value, as route(8) is given it.";
+          }
+          leaf destination {
+            type string;
+            description
+              "Its destination.";
+          }
+          leaf gateway {
+            type string;
+            description
+              "Its gateway.";
+          }
+          leaf kind {
+            type string;
+            description
+              "gateway, interface, blackhole or reject.";
+          }
+          leaf fib {
+            type uint32;
+            description
+              "Its FIB.";
+          }
+          leaf listed {
+            type boolean;
+            description
+              "The list names it; rc(8) leaves one it does not.";
+          }
+          leaf missing {
+            type boolean;
+            description
+              "The list names it, and it has no variable.";
+          }
+        }
+        list defaults {
+          description
+            "A default router.";
+          leaf variable {
+            type string;
+            description
+              "Its variable.";
+          }
+          leaf family {
+            type string;
+            description
+              "inet or inet6.";
+          }
+          leaf fib {
+            type uint32;
+            description
+              "Its FIB.";
+          }
+          leaf gateway {
+            type string;
+            description
+              "The router.";
+          }
+        }
+      }
+    }
+
+    action ipsec {
+      description
+        "strongSwan's IPsec, from swanctl(8): its connections and
+         security associations, the host's own public key and the
+         certificates it has.  Never a private key.";
+      input {
+        uses where;
+      }
+      output {
+        leaf running {
+          type boolean;
+          description
+            "Its daemon answers.";
+        }
+        leaf kernel {
+          type boolean;
+          description
+            "The kernel has IPsec.";
+        }
+        leaf public-key {
+          type string;
+          description
+            "The host's own, in base64.";
+        }
+        leaf now {
+          type int64;
+          description
+            "When this was read, seconds since the epoch.";
+        }
+        list certificates {
+          description
+            "A certificate of swanctl's x509 or x509ca.";
+          leaf file {
+            type string;
+            description
+              "Its file.";
+          }
+          leaf where {
+            type string;
+            description
+              "Its directory.";
+          }
+          leaf error {
+            type string;
+            description
+              "Why it was not read.";
+          }
+          leaf subject {
+            type string;
+            description
+              "Its subject.";
+          }
+          leaf issuer {
+            type string;
+            description
+              "Its issuer.";
+          }
+          leaf not_before {
+            type int64;
+            description
+              "Valid from, seconds since the epoch.";
+          }
+          leaf not_after {
+            type int64;
+            description
+              "Valid until.";
+          }
+          leaf ca {
+            type boolean;
+            description
+              "It is a CA's.";
+          }
+          leaf self_signed {
+            type boolean;
+            description
+              "It is signed by itself.";
+          }
+          leaf-list names {
+            type string;
+            description
+              "Its subject alternative names.";
+          }
+          leaf sha256 {
+            type string;
+            description
+              "Its fingerprint.";
+          }
+        }
+        list connections {
+          description
+            "A connection, as swanctl --list-conns says it.";
+          leaf name {
+            type string;
+            description
+              "Its name.";
+          }
+          leaf version {
+            type string;
+            description
+              "IKEv1, IKEv2.";
+          }
+          leaf-list local_addrs {
+            type string;
+            description
+              "Its own addresses.";
+          }
+          leaf-list remote_addrs {
+            type string;
+            description
+              "The peer's.";
+          }
+          leaf local_port {
+            type uint32;
+            description
+              "Its own port.";
+          }
+          leaf remote_port {
+            type uint32;
+            description
+              "The peer's.";
+          }
+          leaf reauth_time {
+            type uint64;
+            description
+              "Seconds between reauthentications.";
+          }
+          leaf rekey_time {
+            type uint64;
+            description
+              "Seconds between rekeyings.";
+          }
+          leaf unique {
+            type string;
+            description
+              "Its uniqueness policy.";
+          }
+          leaf dpd_delay {
+            type uint64;
+            description
+              "Seconds between dead peer checks.";
+          }
+          leaf dpd_timeout {
+            type uint64;
+            description
+              "Seconds to a dead peer.";
+          }
+          leaf local-id {
+            type string;
+            description
+              "Who it is.";
+          }
+          leaf remote-id {
+            type string;
+            description
+              "Who the peer is.";
+          }
+          leaf arcana {
+            type boolean;
+            description
+              "Arcana wrote it.";
+          }
+          container local-1 {
+            description
+              "Its own first authentication round.";
+            uses ipsec-auth;
+          }
+          container local-2 {
+            description
+              "Its own second.";
+            uses ipsec-auth;
+          }
+          container remote-1 {
+            description
+              "The peer's first.";
+            uses ipsec-auth;
+          }
+          container remote-2 {
+            description
+              "The peer's second.";
+            uses ipsec-auth;
+          }
+          list children {
+            description
+              "Its children.";
+            leaf name {
+              type string;
+              description
+                "Its name.";
+            }
+            leaf mode {
+              type string;
+              description
+                "TUNNEL, TRANSPORT ...";
+            }
+            leaf label {
+              type string;
+              description
+                "Its security label.";
+            }
+            leaf rekey_time {
+              type uint64;
+              description
+                "Seconds between rekeyings.";
+            }
+            leaf rekey_bytes {
+              type uint64;
+              description
+                "Bytes between rekeyings.";
+            }
+            leaf rekey_packets {
+              type uint64;
+              description
+                "Packets between rekeyings.";
+            }
+            leaf dpd_action {
+              type string;
+              description
+                "What a dead peer brings.";
+            }
+            leaf close_action {
+              type string;
+              description
+                "What the peer's close brings.";
+            }
+            leaf interface {
+              type string;
+              description
+                "The interface its policies are for.";
+            }
+            leaf priority {
+              type uint64;
+              description
+                "Its policies' priority.";
+            }
+            leaf-list local-ts {
+              type string;
+              description
+                "Its own traffic selectors.";
+            }
+            leaf-list remote-ts {
+              type string;
+              description
+                "The peer's.";
+            }
+          }
+          container model {
+            description
+              "What Arcana knows of one it wrote: how the peer is known
+               and the children as it wrote them.";
+            leaf local_id {
+              type string;
+              description
+                "Its own identity.";
+            }
+            leaf remote_id {
+              type string;
+              description
+                "The peer's.";
+            }
+            leaf local_cert {
+              type string;
+              description
+                "Its own certificate.";
+            }
+            leaf remote_cert {
+              type string;
+              description
+                "The peer's certificate.";
+            }
+            leaf remote_ca {
+              type string;
+              description
+                "The CA the peer's certificate is checked by.";
+            }
+            leaf pubkey {
+              type boolean;
+              description
+                "The peer is known by its raw public key.";
+            }
+            list children {
+              key "name";
+              description
+                "A child as Arcana wrote it.";
+              leaf name {
+                type string;
+                description
+                  "Its name.";
+              }
+              leaf mode {
+                type string;
+                description
+                  "tunnel or transport.";
+              }
+              leaf local_ts {
+                type string;
+                description
+                  "Its own traffic selectors.";
+              }
+              leaf remote_ts {
+                type string;
+                description
+                  "The peer's.";
+              }
+              leaf reqid {
+                type uint32;
+                description
+                  "Its reqid, an if_ipsec(4) interface's.";
+              }
+              leaf start {
+                type string;
+                description
+                  "What starts it: trap, start or none.";
+              }
+            }
+          }
+        }
+        list sas {
+          description
+            "An IKE security association, as swanctl --list-sas says
+             it.";
+          uses ipsec-sa-common;
+          leaf version {
+            type uint32;
+            description
+              "Its IKE version.";
+          }
+          leaf local-host {
+            type string;
+            description
+              "Its own address.";
+          }
+          leaf local-port {
+            type uint32;
+            description
+              "Its own port.";
+          }
+          leaf local-id {
+            type string;
+            description
+              "Its own identity.";
+          }
+          leaf remote-host {
+            type string;
+            description
+              "The peer's address.";
+          }
+          leaf remote-port {
+            type uint32;
+            description
+              "The peer's port.";
+          }
+          leaf remote-id {
+            type string;
+            description
+              "The peer's identity.";
+          }
+          leaf initiator {
+            type string;
+            description
+              "yes where this host began it.";
+          }
+          leaf initiator-spi {
+            type string;
+            description
+              "The initiator's SPI.";
+          }
+          leaf responder-spi {
+            type string;
+            description
+              "The responder's SPI.";
+          }
+          leaf nat-local {
+            type string;
+            description
+              "yes where this host is behind NAT.";
+          }
+          leaf nat-remote {
+            type string;
+            description
+              "yes where the peer is.";
+          }
+          leaf established {
+            type uint64;
+            description
+              "Seconds since it was.";
+          }
+          leaf reauth-time {
+            type uint64;
+            description
+              "Seconds to its reauthentication.";
+          }
+          leaf-list local-vips {
+            type string;
+            description
+              "Its own virtual addresses.";
+          }
+          leaf-list remote-vips {
+            type string;
+            description
+              "The peer's.";
+          }
+          list children {
+            description
+              "Its child security associations.";
+            uses ipsec-sa-common;
+            leaf reqid {
+              type uint32;
+              description
+                "Its reqid.";
+            }
+            leaf mode {
+              type string;
+              description
+                "TUNNEL, TRANSPORT ...";
+            }
+            leaf protocol {
+              type string;
+              description
+                "ESP or AH.";
+            }
+            leaf encap {
+              type string;
+              description
+                "yes where it is in UDP.";
+            }
+            leaf spi-in {
+              type string;
+              description
+                "Its SPI in.";
+            }
+            leaf spi-out {
+              type string;
+              description
+                "Its SPI out.";
+            }
+            leaf bytes-in {
+              type uint64;
+              description
+                "Bytes in.";
+            }
+            leaf packets-in {
+              type uint64;
+              description
+                "Packets in.";
+            }
+            leaf use-in {
+              type uint64;
+              description
+                "Seconds since a packet came in.";
+            }
+            leaf bytes-out {
+              type uint64;
+              description
+                "Bytes out.";
+            }
+            leaf packets-out {
+              type uint64;
+              description
+                "Packets out.";
+            }
+            leaf use-out {
+              type uint64;
+              description
+                "Seconds since one went out.";
+            }
+            leaf life-time {
+              type uint64;
+              description
+                "Seconds to its end.";
+            }
+            leaf install-time {
+              type uint64;
+              description
+                "Seconds since it was installed.";
+            }
+            leaf-list local-ts {
+              type string;
+              description
+                "Its own traffic selectors.";
+            }
+            leaf-list remote-ts {
+              type string;
+              description
+                "The peer's.";
+            }
+          }
+        }
+      }
+    }
+
+    action ipfw {
+      description
+        "A vnet jail's firewall as arcana-firewall has it, read inside
+         the jail (ipfw run there); the host's is
+         /arcana-firewall:firewall.";
+      input {
+        uses where;
+      }
+      output {
+        container firewall {
+          description
+            "ipfw(8), where this network lives.";
+          uses arcfw:firewall-data;
+        }
+      }
+    }
+
+    action lookup {
+      description
+        "The route this host would send a packet to an address by, as
+         route(8) get tells it, and the routes of its table that cover
+         the address, which are what is left when the best one goes:
+         64 at most, the most specific first.";
+      input {
+        uses where;
+        leaf address {
+          type string;
+          mandatory true;
+          description
+            "An IPv4 or IPv6 address.";
+        }
+        leaf fib {
+          type uint32;
+          default "0";
+          description
+            "The FIB.";
+        }
+      }
+      output {
+        leaf address {
+          type string;
+          description
+            "The address.";
+        }
+        leaf family {
+          type string;
+          description
+            "inet or inet6.";
+        }
+        leaf fib {
+          type uint32;
+          description
+            "The FIB.";
+        }
+        container best {
+          description
+            "The route it goes by; none, no route.";
+          leaf to {
+            type string;
+            description
+              "The address.";
+          }
+          leaf destination {
+            type string;
+            description
+              "The route's prefix, or default.";
+          }
+          leaf prefixlen {
+            type uint32;
+            description
+              "Its length.";
+          }
+          leaf gateway {
+            type string;
+            description
+              "Its gateway, or link#n.";
+          }
+          leaf fib {
+            type string;
+            description
+              "Its FIB.";
+          }
+          leaf interface {
+            type string;
+            description
+              "The interface it goes out by.";
+          }
+          leaf flags {
+            type string;
+            description
+              "Its flags.";
+          }
+          leaf metric {
+            type uint32;
+            description
+              "Its metric.";
+          }
+          leaf weight {
+            type uint32;
+            description
+              "Its weight.";
+          }
+        }
+        list candidates {
+          description
+            "A route that covers it.";
+          uses route-entry;
+        }
+      }
+    }
+  }
+
+  grouping mcast-proto {
+    description
+      "The version of IGMP or MLD an interface speaks, and its timers.";
+    leaf version {
+      type uint32;
+      description
+        "The version.";
+    }
+    leaf flags {
+      type string;
+      description
+        "MLD's flags.";
+    }
+    leaf rv {
+      type uint32;
+      description
+        "Its robustness.";
+    }
+    leaf qi {
+      type uint32;
+      description
+        "Its query interval.";
+    }
+    leaf qri {
+      type uint32;
+      description
+        "Its query response interval.";
+    }
+    leaf uri {
+      type uint32;
+      description
+        "Its unsolicited report interval.";
+    }
+  }
+
+  sx:structure network-part {
+    description
+      "A message of the arcana-parts family's network-parts stream:
+       its open request names the table (kind and the rest), each
+       piece of it is a part, the next rows with the total.";
+    leaf kind {
+      type enumeration {
+        enum routes {
+          description
+            "The FIB's routes.";
+        }
+        enum connections {
+          description
+            "The connections.";
+        }
+        enum sockets {
+          description
+            "The sockets.";
+        }
+      }
+      description
+        "The table: the request's.";
+    }
+    uses where;
+    leaf family {
+      type family;
+      description
+        "Of which families: the request's.";
+    }
+    leaf filter {
+      type string {
+        length "0..128";
+      }
+      description
+        "A text a route has: the request's.";
+    }
+    leaf fib {
+      type uint32;
+      description
+        "The FIB: the request's.";
+    }
+    leaf total {
+      type uint64;
+      description
+        "Rows in the table on the host: a part's.";
+    }
+    list route {
+      description
+        "The next routes: a part's.";
+      leaf family {
+        type string;
+        description
+          "Internet or Internet6.";
+      }
+      uses route-entry;
+    }
+    list connection {
+      description
+        "The next connections: a part's.";
+      uses connection;
+    }
+    list socket {
+      description
+        "The next sockets: a part's.";
+      uses socket;
+    }
+  }
+
+  augment "/arcj:jails/arcj:jail" {
+    description
+      "A jail's addresses, changed.";
+    action address {
+      nacm:default-deny-all;
+      description
+        "An address added to the jail or taken from it: live, with
+         jail_set(2) and the interface's alias, on a running jail that
+         shares the host's network; persist, in its block of jail.conf
+         (libjailconf), read back by jail(8) -e.  dry-run checks it
+         alone.";
+      input {
+        leaf address {
+          type string;
+          mandatory true;
+          description
+            "An IPv4 or IPv6 address, with its prefix length or not.";
+        }
+        leaf interface {
+          type string;
+          description
+            "The interface it is an alias of: the jail's
+             interface parameter where none is given.";
+        }
+        leaf remove {
+          type boolean;
+          default "false";
+          description
+            "Taken away, not added.";
+        }
+        leaf live {
+          type boolean;
+          default "false";
+          description
+            "On the running jail.";
+        }
+        leaf persist {
+          type boolean;
+          default "false";
+          description
+            "In jail.conf.";
+        }
+        leaf dry-run {
+          type boolean;
+          default "false";
+          description
+            "Checked, nothing changed.";
+        }
+      }
+      output {
+        leaf diff {
+          type string;
+          description
+            "What changed in the jail's configuration file, a unified
+             diff.";
+        }
+      }
+    }
+  }
+}

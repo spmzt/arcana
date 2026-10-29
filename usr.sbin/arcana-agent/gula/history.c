@@ -1129,7 +1129,7 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 			}
 			pthread_mutex_unlock(&hist_lock);
 		}
-		st = step_begin(w, ARC_STEP_KIND_DAEMON, "history",
+		st = step_begin(w, STEP_DAEMON, "history",
 		    "every %u s, %u kept, into %s", step, keep,
 		    opts.history_conf);
 		if (hconf_write(step, keep) == -1) {
@@ -1150,7 +1150,7 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 		pthread_mutex_unlock(&hist_lock);
 		step_end(w, st, true, NULL);
 	}
-	st = step_begin(w, ARC_STEP_KIND_DAEMON, "history",
+	st = step_begin(w, STEP_DAEMON, "history",
 	    "the samples kept");
 	json = NULL;
 	if ((fp = open_memstream(&json, &len)) == NULL) {

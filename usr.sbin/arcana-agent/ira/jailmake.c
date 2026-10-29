@@ -184,7 +184,7 @@ put_file(struct work *w, const char *path, const char *text,
 	int		 fd, step;
 
 	tmp = wfmt(w, "%s.arcana-new", path);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
+	step = step_begin(w, STEP_FILE, "write", "%s", path);
 	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)) ==
 	    -1)
 		goto fail;
@@ -284,7 +284,7 @@ send_recv(struct work *w, const char *snap, const char *ds,
 	rv[3] = mp;
 	rv[4] = (char *)(uintptr_t)ds;
 	rv[5] = NULL;
-	step = step_begin(w, ARC_STEP_KIND_EXEC, "zfs", "send %s | zfs recv -o "
+	step = step_begin(w, STEP_EXEC, "zfs", "send %s | zfs recv -o "
 	    "%s %s", snap, mp, ds);
 	if (pipe2(fd, O_CLOEXEC) == -1) {
 		*errp = wfmt(w, "pipe: %s", strerror(errno));

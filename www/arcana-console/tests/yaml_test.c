@@ -81,7 +81,7 @@ ATF_TC_BODY(round_trip, tc)
 	/* The panel's own documents, as they are served. */
 	{
 		static const char *const files[] = { "openapi.json",
-		    "schema.json", "yang.json" };
+		    "yang.json" };
 		char	path[1024], *buf;
 		FILE	*fp;
 		size_t	n;

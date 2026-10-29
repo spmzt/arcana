@@ -37,7 +37,9 @@
 #include <errno.h>
 #include <jail.h>
 #include <pthread.h>
+#include <stdarg.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
@@ -47,6 +49,7 @@
 #include "agent.h"
 #include "collect.h"
 #include "yjson.h"
+#include "zprog.h"
 
 static void
 ywork_free(void *p)
@@ -91,9 +94,28 @@ ywork_told(cbl_req *req, cbl_yarena *a, const char *what, int *root)
 	if ((w = ywork(a)) == NULL)
 		return (NULL);
 	trace_tell(w, req);
-	*root = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+	*root = step_begin(w, STEP_DAEMON, "arcana-agent", "%s",
 	    what);
 	return (w);
+}
+
+/* A string made as printf(3) does, a's; NULL: out of memory. */
+static const char *
+yfmt(cbl_yarena *a, const char *fmt, ...)
+{
+	va_list	 ap;
+	char	*p;
+	int	 n;
+
+	va_start(ap, fmt);
+	n = vsnprintf(NULL, 0, fmt, ap);
+	va_end(ap);
+	if (n < 0 || (p = cbl_yarena_alloc(a, (size_t)n + 1)) == NULL)
+		return (NULL);
+	va_start(ap, fmt);
+	(void)vsnprintf(p, (size_t)n + 1, fmt, ap);
+	va_end(ap);
+	return (p);
 }
 
 /* An operation that failed: said in the log, cblink tells EIO. */
@@ -426,35 +448,57 @@ job_action(cbl_req *req, const struct cbl_bytes *target, bool confirm,
 }
 
 
+/*
+ * A fetch the server refused, its host keys to confirm or the deploy key
+ * to give access, from r into the output: the answer, for a person to
+ * act on, rather than the action's error, which would lose them.
+ */
+#define	YFETCH_REFUSED(r, out)	do {					\
+	(out)->host_keys = (r)->host_keys;				\
+	(out)->fingerprint.n = (r)->fingerprints.n;			\
+	(out)->fingerprint.v = (r)->fingerprints.v;			\
+	(out)->deploy_key = (r)->deploy_key;				\
+	(out)->refused = (r)->error != NULL ? (r)->error :		\
+	    "the repository was not fetched";				\
+} while (0)
+
 int
 arcana_agent_agent_build_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_agent_agent_build_input *in,
     struct arcana_agent_agent_build_output *out, cbl_yarena *a)
 {
-	struct arc_agent_build_rsp	 r;
+	struct build_rsp	 r;
 	struct work			*w;
+	int				 root;
 
 	(void)target;
 	if (in->source == NULL)
 		return (said(req, "a repository is needed"));
-	if ((w = ywork(a)) == NULL)
+	/* As an agent before gzip-update, which has no compress. */
+	if (in->has_compress && in->compress && !has_feature(ZPROG_FEATURE))
+		return (said(req, "unknown leaf compress"));
+	if ((w = ywork_told(req, a, "agent build", &root)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
 	/* One build at a time: they share the directory. */
 	pthread_mutex_lock(&build_lock);
 	(void)do_agent_build(w, in->source, in->ref != NULL && in->ref[0] !=
-	    '\0' ? in->ref : NULL, in->host_keys, in->ssh_key, false, &r);
+	    '\0' ? in->ref : NULL, in->host_keys, in->ssh_key,
+	    in->has_compress && in->compress, &r);
 	pthread_mutex_unlock(&build_lock);
+	step_end(w, root, r.ok, NULL);
+	if (!r.ok && (r.host_keys != NULL || r.deploy_key != NULL)) {
+		YFETCH_REFUSED(&r, out);
+		return (0);
+	}
 	if (!r.ok)
 		return (said(req, r.error));
 	out->binary = r.binary;
 	out->sha256 = r.sha256;
 	out->version = r.agent_version;
 	out->commit = r.commit;
-	out->host_keys = r.host_keys;
-	out->fingerprint.n = r.fingerprints.n;
-	out->fingerprint.v = r.fingerprints.v;
-	out->deploy_key = r.deploy_key;
+	out->has_program_size = r.has_program_size;
+	out->program_size = r.program_size;
 	return (0);
 }
 
@@ -532,13 +576,14 @@ arcana_agent_agent_console_update_action(cbl_req *req,
     const struct arcana_agent_agent_console_update_input *in,
     struct arcana_agent_agent_console_update_output *out, cbl_yarena *a)
 {
-	struct arc_console_update_rsp	 r;
+	struct build_rsp	 r;
 	struct work			*w;
+	int				 root;
 
 	(void)target;
 	if (in->source == NULL)
 		return (said(req, "a repository is needed"));
-	if ((w = ywork(a)) == NULL)
+	if ((w = ywork_told(req, a, "console update", &root)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
 	pthread_mutex_lock(&build_lock);
@@ -546,12 +591,14 @@ arcana_agent_agent_console_update_action(cbl_req *req,
 	    in->ref[0] != '\0' ? in->ref : NULL, in->host_keys, in->ssh_key,
 	    &r);
 	pthread_mutex_unlock(&build_lock);
+	step_end(w, root, r.ok, NULL);
+	if (!r.ok && (r.host_keys != NULL || r.deploy_key != NULL)) {
+		YFETCH_REFUSED(&r, out);
+		return (0);
+	}
 	if (!r.ok)
 		return (said(req, r.error));
-	out->host_keys = r.host_keys;
-	out->fingerprint.n = r.fingerprints.n;
-	out->fingerprint.v = r.fingerprints.v;
-	out->deploy_key = r.deploy_key;
+	out->commit = r.commit;
 	/* The tree installed has this daemon in it too: both restart. */
 	restart_later(true);
 	return (0);
@@ -612,26 +659,28 @@ arcana_agent_agent_source_head_action(cbl_req *req,
     const struct arcana_agent_agent_source_head_input *in,
     struct arcana_agent_agent_source_head_output *out, cbl_yarena *a)
 {
-	struct arc_source_head_rsp	 r;
+	struct build_rsp	 r;
 	struct work			*w;
+	int				 root;
 
 	(void)target;
 	if (in->source == NULL)
 		return (said(req, "a repository is needed"));
-	if ((w = ywork(a)) == NULL)
+	if ((w = ywork_told(req, a, "source head", &root)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
 	pthread_mutex_lock(&build_lock);
 	(void)do_source_head(w, in->source, in->ref != NULL && in->ref[0] !=
 	    '\0' ? in->ref : NULL, in->host_keys, in->ssh_key, &r);
 	pthread_mutex_unlock(&build_lock);
+	step_end(w, root, r.ok, NULL);
+	if (!r.ok && (r.host_keys != NULL || r.deploy_key != NULL)) {
+		YFETCH_REFUSED(&r, out);
+		return (0);
+	}
 	if (!r.ok)
 		return (said(req, r.error));
 	out->commit = r.commit;
-	out->host_keys = r.host_keys;
-	out->fingerprint.n = r.fingerprints.n;
-	out->fingerprint.v = r.fingerprints.v;
-	out->deploy_key = r.deploy_key;
 	return (0);
 }
 
@@ -657,6 +706,10 @@ arcana_agent_agent_source_log_action(cbl_req *req,
 	    in->has_count ? in->count : 0, &r);
 	pthread_mutex_unlock(&build_lock);
 	step_end(w, root, r.ok, NULL);
+	if (!r.ok && (r.host_keys != NULL || r.deploy_key != NULL)) {
+		YFETCH_REFUSED(&r, out);
+		return (0);
+	}
 	if (!r.ok)
 		return (said(req, r.error));
 	return (yagent_log_from_json(r.commit, r.log, r.tags, a, out));
@@ -794,32 +847,45 @@ arcana_agent_agent_update_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_agent_agent_update_input *in,
     struct arcana_agent_agent_update_output *out, cbl_yarena *a)
 {
-	struct arc_agent_update_rsp	 r;
+	struct build_rsp	 r;
 	const cbl_peer			*pe;
 	struct work			*w;
 	bool				 local, restart;
+	int				 root;
 
 	(void)target;
 	if (in->binary.len == 0 || in->sha256 == NULL ||
 	    strlen(in->sha256) != 64)
 		return (said(req, "a program and its SHA-256 are needed"));
-	if ((w = ywork(a)) == NULL)
+	/* As an agent before gzip-update, which has no program-size. */
+	if (in->has_program_size && !has_feature(ZPROG_FEATURE))
+		return (said(req, "unknown leaf program-size"));
+	if (in->has_program_size && (in->program_size == 0 ||
+	    in->program_size > ZPROG_MAX_PROGRAM))
+		return (said(req, "the program would inflate past what this "
+		    "host takes"));
+	restart = in->has_restart && in->restart;
+	if ((w = ywork_told(req, a, restart ? "agent update and restart" :
+	    "agent update", &root)) == NULL)
 		return (ENOMEM);
 	/* The local socket's root is root already: its program is taken
 	 * unsigned; any other peer's must be signed by the CA. */
 	pe = cbl_req_peer(req);
 	local = pe != NULL && cbl_peer_transport(pe) == CBL_TR_UNIX;
-	restart = in->has_restart && in->restart;
 	memset(&r, 0, sizeof(r));
 	/* Not while a change runs: a restart would cut it short. */
-	if (pthread_mutex_trylock(&change_lock) != 0)
+	if (pthread_mutex_trylock(&change_lock) != 0) {
+		step_end(w, root, false, NULL);
 		return (said(req, change_busy(w)));
+	}
 	if (change_note("agent update"))
-		(void)do_agent_update(w, in->binary.p, in->binary.len, 0,
-		    in->sha256, in->signature.p, in->signature.len, local, &r);
+		(void)do_agent_update(w, in->binary.p, in->binary.len,
+		    in->has_program_size ? in->program_size : 0, in->sha256,
+		    in->signature.p, in->signature.len, local, &r);
 	else
 		r.error = "not done: arcana-agent is stopping";
 	change_end();
+	step_end(w, root, r.ok, NULL);
 	if (!r.ok)
 		return (said(req, r.error));
 	out->version = r.agent_version;
@@ -892,7 +958,7 @@ ybird_conf(struct work *w, cbl_yarena *a,
 int
 arcana_bird_bird_get(cbl_req *req, struct arcana_bird *data, cbl_yarena *a)
 {
-	struct arc_network_rsp		 r;
+	struct net_rsp		 r;
 	struct arcana_bird_bird		*o;
 	struct arcana_bird_bird_jail	*jv;
 	struct arcana_bird_state	*st;
@@ -1098,7 +1164,7 @@ arcana_bird_bird_edit(cbl_req *req, const struct arcana_bird *before,
 	}
 	work_init(&w);
 	trace_tell(&w, req);
-	root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "BIRD's "
+	root = step_begin(&w, STEP_DAEMON, "arcana-agent", "BIRD's "
 	    "configuration: %s%s%s", ch.path, ch.jail != NULL ? " in " : "",
 	    ch.jail != NULL ? ch.jail : "");
 	why = warn = NULL;
@@ -1128,7 +1194,7 @@ static int
 bird_read(cbl_req *req, const char *jail, struct arcana_bird_state *out,
     cbl_yarena *a)
 {
-	struct arc_network_rsp	 r;
+	struct net_rsp	 r;
 	struct work		*w;
 	int			 error, root;
 
@@ -1162,7 +1228,7 @@ static int
 bird_routes(cbl_req *req, const char *jail, const char *filter,
     struct arcana_bird_routes *out, cbl_yarena *a)
 {
-	struct arc_network_rsp	 r;
+	struct net_rsp	 r;
 	struct work		*w;
 	int			 error, root;
 
@@ -1195,7 +1261,7 @@ static int
 bird_ospf(cbl_req *req, const char *jail, bool topology, const char *protocol,
     struct arcana_bird_ospf *out, cbl_yarena *a)
 {
-	struct arc_network_rsp		 r;
+	struct net_rsp		 r;
 	struct arcana_bird_ospf_protocol	*v;
 	struct work			*w;
 	size_t				 n = 0;
@@ -1278,7 +1344,7 @@ int
 arcana_builder_builder_get(cbl_req *req, struct arcana_builder *data,
     cbl_yarena *a)
 {
-	struct arc_builder_rsp		 r;
+	struct json_rsp			 r;
 	struct arcana_builder_builder	*o;
 	struct work			*w;
 	int				 error;
@@ -1354,37 +1420,282 @@ arcana_events_events_read_action(cbl_req *req, const struct cbl_bytes *target,
 	return (0);
 }
 
+/* Two texts the same, none like none. */
+static bool
+same_text(const char *a, const char *b)
+{
+
+	return (a == b || (a != NULL && b != NULL && strcmp(a, b) == 0));
+}
+
+/* A jail's kept rules in a firewall's list; NULL: none. */
+static const char *
+jail_kept(const struct arcana_firewall_firewall *f, const char *name)
+{
+
+	for (size_t i = 0; f != NULL && i < f->jail.n; i++)
+		if (strcmp(f->jail.v[i].name, name) == 0)
+			return (f->jail.v[i].text);
+	return (NULL);
+}
+
+/*
+ * One file of kept rules, the host's (jail NULL) or a vnet jail's, from
+ * was to text: a commit (ipfw.c, ipfw_kept_commit()) or its undo.
+ */
+static int
+fw_kept_put(cbl_req *req, const char *jail, const char *was,
+    const char *text, bool undo)
+{
+	struct work	 w;
+	const char	*e, *note;
+	int		 rc, root;
+
+	if (!undo && text == NULL)
+		return (said(req, "the kept rules are not taken away by a "
+		    "commit: commit them empty"));
+	if (jail != NULL && !valid_jail(jail))
+		return (said(req, "invalid jail name"));
+	if (!change_begin("the kept rules"))
+		return (said(req, "not done: arcana-agent is stopping"));
+	work_init(&w);
+	trace_tell(&w, req);
+	root = step_begin(&w, STEP_DAEMON, "arcana-agent", "the kept "
+	    "rules%s%s%s", jail != NULL ? " of " : "", jail != NULL ? jail : "",
+	    undo ? ", as they were" : "");
+	e = note = NULL;
+	rc = 0;
+	if (jail != NULL && scope_enter(&w, jail, &e) != 0)
+		rc = -1;
+	else if (undo)
+		rc = ipfw_kept_undo(&w, text, &e);
+	else
+		rc = ipfw_kept_commit(&w, req, text, &note, &e);
+	change_end();
+	step_end(&w, root, rc == 0, NULL);
+	if (rc == 0 && note != NULL)
+		(void)cbl_req_ywarn(req, 0, "firewall-migrated", note);
+	/* rca's refusal, its app-tag with it, said already. */
+	if (rc == 1)
+		rc = EEXIST;
+	else if (rc != 0)
+		rc = said(req, e);
+	work_free(&w);
+	(void)was;
+	return (rc);
+}
+
+/*
+ * The kept rules, the host's and the vnet jails', by commit: each file
+ * whose text changed put in place (ipfw -n first, nothing loaded), a
+ * host's first moving its boot to Arcana's script; an undo puts back
+ * what its commit changed.  rc.conf's say is Arcana's to set alone.
+ */
 int
 arcana_firewall_firewall_edit(cbl_req *req,
     const struct arcana_firewall *before, const struct arcana_firewall *after)
 {
+	const struct arcana_firewall_firewall	*b, *f;
+	const struct arcana_firewall_firewall_rc *br, *fr;
+	const char				*bt, *ft;
+	bool					 undo;
+	int					 rc;
 
-	(void)req;
-	(void)before;
-	(void)after;
-	return (EOPNOTSUPP);
+	b = before != NULL ? before->firewall : NULL;
+	f = after != NULL ? after->firewall : NULL;
+	undo = cbl_req_yundo(req);
+	br = b != NULL ? b->rc : NULL;
+	fr = f != NULL ? f->rc : NULL;
+	if (!undo && fr != NULL && (br == NULL || !same_text(br->firewall_enable,
+	    fr->firewall_enable) || !same_text(br->firewall_type,
+	    fr->firewall_type) || !same_text(br->firewall_script,
+	    fr->firewall_script)))
+		return (said(req, "rc.conf's firewall variables are not "
+		    "committed: the kept rules' first commit points "
+		    "firewall_script at Arcana's script, and an ipfw job "
+		    "enables the firewall"));
+	bt = b != NULL && b->kept != NULL ? b->kept->text : NULL;
+	ft = f != NULL && f->kept != NULL ? f->kept->text : NULL;
+	if (!same_text(bt, ft) && (rc = fw_kept_put(req, NULL, bt, ft, undo)) !=
+	    0)
+		return (rc);
+	for (size_t i = 0; f != NULL && i < f->jail.n; i++) {
+		bt = jail_kept(b, f->jail.v[i].name);
+		ft = f->jail.v[i].text;
+		if (!same_text(bt, ft) && (rc = fw_kept_put(req,
+		    f->jail.v[i].name, bt, ft, undo)) != 0)
+			return (rc);
+	}
+	return (0);
+}
+
+/* The jail an action of a firewall is for: the target's, or input's. */
+static int
+fw_jail(cbl_req *req, const struct cbl_bytes *target, const char *in,
+    struct work *w, cbl_yarena *a, const char **jailp)
+{
+	const void	**k;
+
+	*jailp = NULL;
+	if (target != NULL && (k = keys_of(target, 1, a)) != NULL)
+		*jailp = *(const char *const *)k[0];
+	else if (in != NULL && in[0] != '\0')
+		*jailp = in;
+	return (yjail_in(req, *jailp, w));
+}
+
+/* A kept file's text, read by ipfw -n: nothing written, nothing loaded. */
+int
+arcana_firewall_firewall_check_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_firewall_firewall_check_input *in,
+    struct arcana_firewall_firewall_check_output *out, cbl_yarena *a)
+{
+	struct ipfw_rules_req	 kq;
+	struct ipfw_rules_rsp	 kr;
+	struct work		*w;
+	const char		*jail;
+	int			 error, root;
+
+	(void)out;
+	if (in->text == NULL)
+		return (said(req, "the text to check is needed"));
+	if ((w = ywork_told(req, a, "the kept rules, checked", &root)) == NULL)
+		return (ENOMEM);
+	if ((error = fw_jail(req, target, in->jail, w, a, &jail)) != 0) {
+		step_end(w, root, false, NULL);
+		return (error);
+	}
+	memset(&kq, 0, sizeof(kq));
+	memset(&kr, 0, sizeof(kr));
+	(void)do_ipfw_rules(w, &kq, &kr);
+	kq.conf_text = in->text;
+	kq.sha256 = kr.sha256;
+	kq.dry_run = true;
+	memset(&kr, 0, sizeof(kr));
+	(void)do_ipfw_rules(w, &kq, &kr);
+	step_end(w, root, kr.ok, NULL);
+	return (kr.ok ? 0 : said(req, kr.error));
+}
+
+/*
+ * The migration's dry run: the kept rules made of what the host boots
+ * now; a jail's, of the file its rc.conf names.
+ */
+int
+arcana_firewall_firewall_from_rc_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_firewall_firewall_from_rc_input *in,
+    struct arcana_firewall_firewall_from_rc_output *out, cbl_yarena *a)
+{
+	struct ipfw_rules_req	 kq;
+	struct ipfw_rules_rsp	 kr;
+	struct work		*w;
+	const char		*jail, *text, *from, *e;
+	int			 error, root;
+
+	if ((w = ywork_told(req, a, "the kept rules from rc.conf", &root)) ==
+	    NULL)
+		return (ENOMEM);
+	if ((error = fw_jail(req, target, in->jail, w, a, &jail)) != 0) {
+		step_end(w, root, false, NULL);
+		return (error);
+	}
+	memset(&kq, 0, sizeof(kq));
+	memset(&kr, 0, sizeof(kr));
+	(void)do_ipfw_rules(w, &kq, &kr);
+	out->sha256 = kr.sha256;
+	if (jail != NULL) {
+		kq.from_rc = true;
+		memset(&kr, 0, sizeof(kr));
+		(void)do_ipfw_rules(w, &kq, &kr);
+		step_end(w, root, kr.ok, NULL);
+		if (!kr.ok)
+			return (said(req, kr.error));
+		out->text = kr.conf_text;
+		out->rc_file = kr.rc_file;
+		return (0);
+	}
+	e = NULL;
+	error = ipfw_migration(w, &text, &from, &e);
+	step_end(w, root, error == 0, NULL);
+	if (error != 0)
+		return (said(req, e));
+	out->text = text;
+	out->rc_file = from;
+	return (0);
+}
+
+/* An address added to a jail or taken from it (address.c). */
+int
+arcana_jails_jails_jail_arcnet_address_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_jails_jails_jail_arcnet_address_input *in,
+    struct arcana_jails_jails_jail_arcnet_address_output *out, cbl_yarena *a)
+{
+	struct address_req	 dq;
+	struct address_rsp	 dr;
+	const void		**k;
+	const char		*name;
+	struct work		*w;
+	int			 root;
+
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (EINVAL);
+	name = *(const char *const *)k[0];
+	if (!valid_jail(name))
+		return (said(req, "invalid jail name"));
+	if (in->address == NULL)
+		return (said(req, "an address is needed"));
+	if (strchr(in->address, '|') != NULL)
+		return (said(req, "give the interface separately"));
+	if (in->interface != NULL && !valid_ifname(in->interface))
+		return (said(req, "invalid interface name"));
+	if ((w = ywork(a)) == NULL || (w = ywork_told(req, a, wfmt(w,
+	    "address %s %s %s", name, in->remove ? "remove" : "add",
+	    in->address), &root)) == NULL)
+		return (ENOMEM);
+	memset(&dq, 0, sizeof(dq));
+	dq.jail = name;
+	dq.address = in->address;
+	dq.interface = in->interface;
+	dq.remove = in->has_remove && in->remove;
+	dq.live = in->has_live && in->live;
+	dq.persist = in->has_persist && in->persist;
+	dq.dry_run = in->has_dry_run && in->dry_run;
+	memset(&dr, 0, sizeof(dr));
+	if (!change_begin("a jail's address")) {
+		step_end(w, root, false, NULL);
+		return (said(req, "not done: arcana-agent is stopping"));
+	}
+	(void)do_address(w, &dq, &dr);
+	change_end();
+	step_end(w, root, dr.ok, NULL);
+	if (!dr.ok)
+		return (said(req, dr.error));
+	out->diff = dr.diff;
+	return (0);
 }
 
 int
-arcana_firewall_firewall_get(cbl_req *req, struct arcana_firewall *data,
-    cbl_yarena *a)
+yfw_read(struct work *w, cbl_yarena *a, struct arcana_firewall_firewall **op,
+    const char **errp)
 {
-	struct arc_network_rsp			 r;
-	struct arc_ipfw_rules_req		 kq;
-	struct arc_ipfw_rules_rsp		 kr;
+	struct net_rsp			 r;
+	struct ipfw_rules_req		 kq;
+	struct ipfw_rules_rsp		 kr;
 	struct arcana_firewall_firewall		*o;
 	struct arcana_firewall_firewall_kept	*k;
-	struct work				*w;
 	int					 error;
 
-	(void)req;
-	if ((w = ywork(a)) == NULL)
-		return (ENOMEM);
+	*op = NULL;
 	memset(&r, 0, sizeof(r));
 	(void)do_network(w, ARC_NET_KIND_IPFW, ARC_NET_FAMILY_ALL, NULL, 0, 0,
 	    &r);
-	if (!r.ok)
-		return (failed("ipfw", r.error));
+	if (!r.ok) {
+		*errp = r.error;
+		return (EIO);
+	}
 	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL ||
 	    (k = cbl_yarena_alloc(a, sizeof(*k))) == NULL)
 		return (ENOMEM);
@@ -1394,11 +1705,80 @@ arcana_firewall_firewall_get(cbl_req *req, struct arcana_firewall *data,
 	memset(&kq, 0, sizeof(kq));
 	memset(&kr, 0, sizeof(kr));
 	(void)do_ipfw_rules(w, &kq, &kr);
-	if (kr.ok && (error = yfw_kept_from_text(kr.conf_text, kr.sha256, a,
-	    k)) == 0)
+	/*
+	 * read_ipfw()'s rules, other lines and aliases (a rule's own set
+	 * taken off, each with ipfw -n's wording), with the file's text and
+	 * SHA-256 as ipfw-rules read them.
+	 */
+	if (kr.ok && o->kept != NULL) {
+		*k = *o->kept;
+		k->text = kr.conf_text;
+		k->sha256 = kr.sha256;
+		o->kept = k;
+	} else if (kr.ok && (error = yfw_kept_from_text(kr.conf_text,
+	    kr.sha256, a, k)) == 0)
 		o->kept = k;
 	else if (error != 0)
 		return (error);
+	*op = o;
+	return (0);
+}
+
+int
+arcana_firewall_firewall_get(cbl_req *req, struct arcana_firewall *data,
+    cbl_yarena *a)
+{
+	struct ipfw_rules_req			 kq;
+	struct ipfw_rules_rsp			 kr;
+	struct arcana_firewall_firewall		*o;
+	struct work				*w;
+	const char				*e = NULL;
+	int					 error;
+
+	(void)req;
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	if ((error = yfw_read(w, a, &o, &e)) != 0)
+		return (error == EIO ? failed("ipfw", e) : error);
+	/* The vnet jails' kept rules, each its own file in it. */
+	{
+		const struct ietf_logical_network_element_logical_network_elements
+		    *l;
+		struct arcana_firewall_firewall_jail	*jv;
+		struct work				*jw;
+		size_t					 n = 0;
+
+		if (ylne_elements(a, &l) == 0 && l != NULL &&
+		    l->logical_network_element.n > 0) {
+			if ((jv = cbl_yarena_alloc(a,
+			    l->logical_network_element.n * sizeof(*jv))) ==
+			    NULL)
+				return (ENOMEM);
+			for (size_t i = 0; i < l->logical_network_element.n;
+			    i++) {
+				const char	*name, *je;
+
+				name = l->logical_network_element.v[i].name;
+				je = NULL;
+				if ((jw = ywork(a)) == NULL)
+					return (ENOMEM);
+				if (scope_enter(jw, name, &je) != 0)
+					continue;
+				memset(&kq, 0, sizeof(kq));
+				memset(&kr, 0, sizeof(kr));
+				(void)do_ipfw_rules(jw, &kq, &kr);
+				if (!kr.ok)
+					continue;
+				memset(&jv[n], 0, sizeof(jv[n]));
+				jv[n].name = name;
+				jv[n].text = kr.conf_text;
+				jv[n].sha256 = kr.sha256;
+				n++;
+			}
+			o->jail.n = n;
+			o->jail.v = jv;
+		}
+	}
 	data->firewall = o;
 	return (0);
 }
@@ -1715,19 +2095,22 @@ arcana_jobs_jobs_job_read_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_jobs_jobs_job_read_input *in,
     struct arcana_jobs_jobs_job_read_output *out, cbl_yarena *a)
 {
-	const struct arc_job	*j;
-	const void		**k;
-	struct work		*w;
+	const struct arc_job		*j;
+	const struct arcana_jobs_step	*v;
+	const void			**k;
+	struct work			*w;
+	size_t				 n;
 
 	(void)in;
 	if ((k = keys_of(target, 1, a)) == NULL)
 		return (EINVAL);
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
-	if ((j = jobs_get(w, *(const uint64_t *)k[0])) == NULL)
+	if ((j = jobs_get(w, *(const uint64_t *)k[0], &v, &n)) == NULL)
 		return (said(req, "no such job; the agent keeps the last "
 		    "finished ones and forgets all when it restarts"));
-	return (yjobs_read(j, a, out));
+	yjobs_read(j, v, n, out);
+	return (0);
 }
 
 int
@@ -1886,7 +2269,7 @@ int
 arcana_netgraph_netgraph_get(cbl_req *req, struct arcana_netgraph *data,
     cbl_yarena *a)
 {
-	struct arc_network_rsp		 r;
+	struct net_rsp		 r;
 	struct arcana_netgraph_netgraph	*o;
 	struct work			*w;
 	int				 error;
@@ -1918,7 +2301,7 @@ arcana_netgraph_netgraph_read_action(cbl_req *req,
     const struct arcana_netgraph_netgraph_read_input *in,
     struct arcana_netgraph_netgraph_read_output *out, cbl_yarena *a)
 {
-	struct arc_network_rsp	 r;
+	struct net_rsp	 r;
 	struct work		*w;
 	int			 error, root;
 
@@ -1945,17 +2328,22 @@ arcana_notify_notify_rpc(cbl_req *req,
 {
 	const char	*e;
 	struct work	*w;
-	int		 rc;
+	int		 rc, root;
 
 	(void)out;
 	if (in->token == NULL || in->chat == NULL || in->text == NULL)
 		return (said(req, "a token, a chat and a text are needed"));
-	if ((w = ywork(a)) == NULL)
+	/* The trace names the chat, never the token. */
+	if ((w = ywork_told(req, a, yfmt(a, "notify chat %s", in->chat),
+	    &root)) == NULL)
 		return (ENOMEM);
+	/* What it sends is no read: not niced. */
+	w->nice = false;
 	e = NULL;
 	rc = do_notify(w, in->token, in->chat, in->text, &e);
 	/* The token goes as soon as it is used. */
 	explicit_bzero((void *)(uintptr_t)in->token, strlen(in->token));
+	step_end(w, root, rc == 0, NULL);
 	return (rc != 0 ? said(req, e) : 0);
 }
 
@@ -2202,7 +2590,7 @@ arcana_probe_probes_edit(cbl_req *req, const struct arcana_probe *before,
 		return (said(req, "not done: arcana-agent is stopping"));
 	work_init(&w);
 	trace_tell(&w, req);
-	root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+	root = step_begin(&w, STEP_DAEMON, "arcana-agent",
 	    "the probes' targets, links and monitors");
 	why = NULL;
 	/* The host's, then each jail's that is or was. */
@@ -2288,7 +2676,11 @@ arcana_probe_probes_read_action(cbl_req *req, const struct cbl_bytes *target,
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
-	(void)do_probes_read(w, (uint64_t)after, &r);
+	/* The admin's monitors are read apart, as SD-WAN leaves them. */
+	if (in->has_monitors && in->monitors)
+		(void)do_monitors(w, (uint64_t)after, &r);
+	else
+		(void)do_probes_read(w, (uint64_t)after, &r);
 	if (!r.ok)
 		return (failed("probes", r.error));
 	memset(&st, 0, sizeof(st));
@@ -2889,11 +3281,11 @@ arcana_sdwan_sdwan_edit(cbl_req *req, const struct arcana_sdwan *before,
 	}
 	work_init(&w);
 	trace_tell(&w, req);
-	root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+	root = step_begin(&w, STEP_DAEMON, "arcana-agent",
 	    "the SD-WAN edge: %zu part%s", p->n, p->n == 1 ? "" : "s");
 	why = NULL;
 	for (k = 0; rc == 0 && k < p->n; k++) {
-		step = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		step = step_begin(&w, STEP_DAEMON, "arcana-agent",
 		    "sdwan %s%s%s", sd_kinds[p->v[k].kind], p->v[k].jail != NULL ?
 		    " of " : "", p->v[k].jail != NULL ? p->v[k].jail : "");
 		rc = sd_set(&w, p->v[k].kind, p->v[k].now, &why);
@@ -2905,7 +3297,7 @@ arcana_sdwan_sdwan_edit(cbl_req *req, const struct arcana_sdwan *before,
 	for (m = k; rc != 0 && m-- > 0;) {
 		const char	*e = NULL;
 
-		step = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		step = step_begin(&w, STEP_DAEMON, "arcana-agent",
 		    "sdwan %s%s%s as it was", sd_kinds[p->v[m].kind],
 		    p->v[m].jail != NULL ? " of " : "", p->v[m].jail != NULL ?
 		    p->v[m].jail : "");
@@ -3005,7 +3397,7 @@ arcana_sdwan_sdwan_apply_action(cbl_req *req, const struct cbl_bytes *target,
 		return (said(req, "not done: arcana-agent is stopping"));
 	}
 	trace_tell(&w, req);
-	root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+	root = step_begin(&w, STEP_DAEMON, "arcana-agent",
 	    "sdwan %s%s%s set again", sd_kinds[kind], jail != NULL ? " of " :
 	    "", jail != NULL ? jail : "");
 	why = NULL;
@@ -3150,16 +3542,16 @@ arcana_services_services_release_action(cbl_req *req,
 int
 arcana_sshd_sshd_get(cbl_req *req, struct arcana_sshd *data, cbl_yarena *a)
 {
-	struct arc_ssh_rsp		 r;
+	struct json_rsp		 r;
 	struct arcana_sshd_sshd	*o;
-	struct work			*w;
-	int				 error;
+	struct work		*w;
+	int			 error;
 
 	(void)req;
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
-	(void)do_ssh(w, &r);
+	do_ssh(w, &r);
 	if (!r.ok)
 		return (failed("ssh", r.error));
 	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL)
@@ -3170,17 +3562,50 @@ arcana_sshd_sshd_get(cbl_req *req, struct arcana_sshd *data, cbl_yarena *a)
 	return (0);
 }
 
+/* sshd of the host or of a jail, one with or without a vnet. */
 int
-arcana_storage_receive_rpc(cbl_req *req,
-    const struct arcana_storage_receive_input *in,
-    struct arcana_storage_receive_output *out, cbl_yarena *a)
+arcana_sshd_sshd_read_action(cbl_req *req, const struct cbl_bytes *target,
+    const struct arcana_sshd_sshd_read_input *in,
+    struct arcana_sshd_sshd_read_output *out, cbl_yarena *a)
 {
+	struct arcana_sshd_sshd	 d;
+	struct json_rsp		 r;
+	struct work		*w;
+	const char		*e;
+	int			 error, root;
 
-	(void)req;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	(void)target;
+	if ((w = ywork_told(req, a, in->jail != NULL && in->jail[0] != '\0' ?
+	    yfmt(a, "sshd of %s", in->jail) : "sshd", &root)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	e = NULL;
+	if (in->jail != NULL && in->jail[0] != '\0' && (!valid_jail(in->jail) ||
+	    scope_enter_jail(w, in->jail, &e, false) != 0)) {
+		step_end(w, root, false, NULL);
+		return (said(req, e != NULL ? e : "invalid jail name"));
+	}
+	do_ssh(w, &r);
+	step_end(w, root, r.ok, NULL);
+	if (!r.ok)
+		return (said(req, r.error));
+	if ((error = ysshd_from_json(r.json, a, &d)) != 0)
+		return (error);
+	out->setting.n = d.setting.n;
+	out->setting.v = d.setting.v;
+	out->settings_from_file = d.settings_from_file;
+	out->banner = d.banner;
+	out->host_key.n = d.host_key.n;
+	out->host_key.v = d.host_key.v;
+	out->user.n = d.user.n;
+	out->user.v = d.user.v;
+	out->user_ca_key.n = d.user_ca_key.n;
+	out->user_ca_key.v = d.user_ca_key.v;
+	out->user_cas_text = d.user_cas_text;
+	out->config = d.config;
+	out->has_before_kept = d.has_before_kept;
+	out->before_kept = d.before_kept;
+	return (0);
 }
 
 int
@@ -3439,21 +3864,6 @@ arcana_storage_storage_read_action(cbl_req *req, const struct cbl_bytes *target,
 }
 
 int
-arcana_storage_storage_snapshot_send_action(cbl_req *req,
-    const struct cbl_bytes *target,
-    const struct arcana_storage_storage_snapshot_send_input *in,
-    struct arcana_storage_storage_snapshot_send_output *out, cbl_yarena *a)
-{
-
-	(void)req;
-	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
-}
-
-int
 arcana_troubleshoot_troubleshoot_capture_action(cbl_req *req,
     const struct cbl_bytes *target,
     const struct arcana_troubleshoot_troubleshoot_capture_input *in,
@@ -3576,7 +3986,7 @@ int
 arcana_wireguard_wireguard_get(cbl_req *req, struct arcana_wireguard *data,
     cbl_yarena *a)
 {
-	struct arc_network_rsp		 r;
+	struct net_rsp		 r;
 	struct arcana_wireguard_wireguard	*o;
 	struct work			*w;
 	int				 error;
@@ -3608,7 +4018,7 @@ arcana_wireguard_wireguard_read_action(cbl_req *req,
     const struct arcana_wireguard_wireguard_read_input *in,
     struct arcana_wireguard_wireguard_read_output *out, cbl_yarena *a)
 {
-	struct arc_network_rsp	 r;
+	struct net_rsp	 r;
 	struct work		*w;
 	int			 error, root;
 
@@ -3636,7 +4046,7 @@ arcana_wireguard_wireguard_read_action(cbl_req *req,
 int
 arcana_host_host_get(cbl_req *req, struct arcana_host *data, cbl_yarena *a)
 {
-	struct arc_host			 h;
+	struct host_facts			 h;
 	struct host_stats		 st;
 	struct arcana_host_host		*o;
 	struct work			*w;
@@ -3689,17 +4099,19 @@ arcana_builder_builder_port_options_action(cbl_req *req,
     const struct arcana_builder_builder_port_options_input *in,
     struct arcana_builder_builder_port_options_output *out, cbl_yarena *a)
 {
-	struct arc_builder_options_rsp	 r;
-	struct arc_job_spec		 sp;
-	const char			*names[8];
-	struct work			*w;
-	size_t				 n = 0;
+	struct json_rsp		 r;
+	struct arc_job_spec	 sp;
+	const char		*names[8];
+	struct work		*w;
+	size_t			 n = 0;
+	int			 root;
 
 	(void)target;
-	/* As the builder-options operation takes them: jail=, ports=,
-	 * set=, origin=. */
-	if ((w = ywork(a)) == NULL)
+	if ((w = ywork_told(req, a, "a port's options for poudriere",
+	    &root)) == NULL)
 		return (ENOMEM);
+	/* As poudriere.c's port_where() takes them: jail=, ports=, set=,
+	 * origin=. */
 	if (in->jail != NULL)
 		names[n++] = wfmt(w, "jail=%s", in->jail);
 	if (in->ports != NULL)
@@ -3714,6 +4126,7 @@ arcana_builder_builder_port_options_action(cbl_req *req,
 	memset(&r, 0, sizeof(r));
 	r.has_ok = true;
 	do_builder_options(w, &sp, &r);
+	step_end(w, root, r.ok, NULL);
 	if (!r.ok)
 		return (said(req, r.error));
 	return (ybuilder_options_from_json(r.json, a, out));

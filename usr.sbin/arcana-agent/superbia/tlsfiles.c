@@ -582,7 +582,7 @@ do_tls(struct work *w, const char *verb, const char *certpem,
 		    "local socket only";
 		return;
 	}
-	step = step_begin(w, ARC_STEP_KIND_LIB, "OpenSSL", "tls %s", verb);
+	step = step_begin(w, STEP_LIB, "OpenSSL", "tls %s", verb);
 	if (strcmp(verb, "status") == 0)
 		o = status(w);
 	else if (strcmp(verb, "csr") == 0) {

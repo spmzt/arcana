@@ -60,7 +60,7 @@ do_ntp(struct work *w, const char *const *servers, size_t n, bool remove,
 			    servers[i]);
 			return (-1);
 		}
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", opts.ntp_conf);
+	step = step_begin(w, STEP_FILE, "write", "%s", opts.ntp_conf);
 	if ((old = scope_slurp(w, opts.ntp_conf, &len)) == NULL) {
 		if (errno != ENOENT) {
 			step_end(w, step, false, "%s", strerror(errno));

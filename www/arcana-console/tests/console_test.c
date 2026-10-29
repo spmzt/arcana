@@ -31,6 +31,7 @@
 #include <atf-c.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <spawn.h>
@@ -2324,7 +2325,7 @@ ATF_TC_BODY(agent_update, tc)
 
 	/*
 	 * An agent before compressed updates, as one with no features in
-	 * hello: the program as it is, within max-binary.
+	 * arcana-host: the program as it is, within a frame.
 	 */
 	snprintf(jgd, sizeof(jgd), "%s", locate(tc,
 	    "../../../usr.sbin/arcana-agent/arcana-agent", "arcana-agent",
@@ -2367,9 +2368,9 @@ ATF_TC_BODY(agent_update, tc)
 	resp_free(&r);
 
 	/*
-	 * One past max-binary, the agent with 7 MiB of zeros after it:
-	 * carried compressed to the one that takes it so, refused for the
-	 * one before, which is to be updated first.
+	 * Past a frame, the agent with 7 MiB of zeros after it: carried
+	 * compressed to the one that takes it so, refused for the one
+	 * before.
 	 */
 	snprintf(body, sizeof(body), "cat '%s' > big-agent && dd if=/dev/zero "
 	    "bs=1m count=7 >> big-agent 2>/dev/null && chmod 755 big-agent",
@@ -2389,7 +2390,7 @@ ATF_TC_BODY(agent_update, tc)
 	http("POST", old, "{}", &r);
 	ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "false") == 0, "%s", r.body);
 	ATF_CHECK_MSG(jstr(&r, "error") != NULL && strstr(jstr(&r, "error"),
-	    "update it to arcana-agent") != NULL, "%s", r.body);
+	    "takes no compressed update") != NULL, "%s", r.body);
 	resp_free(&r);
 	ATF_CHECK(stat("installed-agent3", &sb) == 0 && sb.st_size !=
 	    sbig.st_size);
@@ -7237,7 +7238,8 @@ ATF_TC_BODY(mtls, tc)
 			long	seen1;
 			int	k, st, bad;
 
-			snprintf(path, sizeof(path), "/api/servers/%s/jails",
+			/* A read the subscriptions hold none of. */
+			snprintf(path, sizeof(path), "/api/servers/%s/services",
 			    sid);
 			for (k = 0; k < 6; k++)
 				if ((kids[k] = fork()) == 0) {
@@ -7293,10 +7295,9 @@ ATF_TC_BODY(mtls, tc)
 			    "burst of six first requests made %ld connections",
 			    seen1 - seen_pre);
 		}
-		snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
+		snprintf(path, sizeof(path), "/api/servers/%s/services", sid);
 		http("GET", path, NULL, &r);
 		EXPECT(&r, 200);
-		ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
 		ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "mutual DTLS")
 		    != NULL, "%s", jstr(&r, "trace.2.detail"));
 		resp_free(&r);
@@ -7306,6 +7307,13 @@ ATF_TC_BODY(mtls, tc)
 		ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "kept open")
 		    != NULL && strstr(jstr(&r, "trace.2.detail"), "shared") !=
 		    NULL, "%s", jstr(&r, "trace.2.detail"));
+		resp_free(&r);
+		/* The jails: their subscription's association made beside
+		 * the requests'. */
+		snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
 		resp_free(&r);
 		/* The association's paths, as the agent's kernel sees
 		 * them: to the console's address, active, the primary. */
@@ -7357,7 +7365,8 @@ ATF_TC_BODY(mtls, tc)
 				if (strcmp(t, "sctp") == 0)
 					nsctp++;
 			}
-			ATF_CHECK_EQ_MSG(1, nsctp, "%d SCTP sessions", nsctp);
+			/* The requests' and the subscriptions'. */
+			ATF_CHECK_EQ_MSG(2, nsctp, "%d SCTP sessions", nsctp);
 		}
 		resp_free(&r);
 		snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
@@ -7610,6 +7619,198 @@ ca_change(const char *path, const char *body)
 	resp_free(&r);
 }
 
+/*
+ * An agent of a release before, its program named by the environment's
+ * ARCANA_OLD_AGENT or the config variable old_agent; NULL without.
+ */
+static const char *
+old_agent(const atf_tc_t *tc)
+{
+	const char	*p;
+
+	if ((p = getenv("ARCANA_OLD_AGENT")) != NULL && p[0] != '\0')
+		return (p);
+	if (atf_tc_has_config_var(tc, "old_agent"))
+		return (atf_tc_get_config_var(tc, "old_agent"));
+	return (NULL);
+}
+
+/*
+ * prog listening on listen, and on tcp (not NULL) with mutual TLS, the
+ * pki's server certificate; the program an update replaces, installed.
+ */
+static pid_t
+agent_spawn(const char *prog, const char *listen, const char *tcp,
+    const char *installed)
+{
+	char	*argv[24];
+	FILE	*fp;
+	pid_t	 pid;
+	int	 i;
+
+	i = 0;
+	argv[i++] = (char *)(uintptr_t)prog;
+	argv[i++] = (char *)(uintptr_t)"-F";
+	argv[i++] = (char *)(uintptr_t)"-l";
+	argv[i++] = (char *)(uintptr_t)listen;
+	if (tcp != NULL) {
+		argv[i++] = (char *)(uintptr_t)"-l";
+		argv[i++] = (char *)(uintptr_t)tcp;
+		argv[i++] = (char *)(uintptr_t)"-A";
+		argv[i++] = (char *)(uintptr_t)"pki/ca.pem";
+		argv[i++] = (char *)(uintptr_t)"-C";
+		argv[i++] = (char *)(uintptr_t)"pki/server.pem";
+		argv[i++] = (char *)(uintptr_t)"-K";
+		argv[i++] = (char *)(uintptr_t)"pki/server.key";
+	}
+	argv[i++] = (char *)(uintptr_t)"-f";
+	argv[i++] = (char *)(uintptr_t)"etc/jail.conf";
+	argv[i++] = (char *)(uintptr_t)"-D";
+	argv[i++] = (char *)(uintptr_t)"etc/jail.conf.d";
+	argv[i++] = (char *)(uintptr_t)"-y";
+	argv[i++] = (char *)(uintptr_t)"./fake-sysrc";
+	argv[i++] = (char *)(uintptr_t)"-U";
+	argv[i++] = (char *)(uintptr_t)installed;
+	argv[i] = NULL;
+	pid = spawn_server(argv, "arcana-agent2.out");
+	ATF_REQUIRE((fp = fopen("arcana-agent2.pid", "w")) != NULL);
+	fprintf(fp, "%d\n", (int)pid);
+	fclose(fp);
+	return (pid);
+}
+
+/* A host named name at uri, the n-th added: its id, in buf. */
+static void
+host_add(const char *name, const char *uri, int n, char *buf, size_t len)
+{
+	struct resp	r;
+	char		body[MAXPATHLEN + 64];
+
+	snprintf(body, sizeof(body), "{\"name\":\"%s\",\"uri\":\"%s\"}", name,
+	    uri);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(body, sizeof(body), "servers.%d.id", n);
+	ATF_REQUIRE_MSG(jstr(&r, body) != NULL, "%s", r.body);
+	strlcpy(buf, jstr(&r, body), len);
+	resp_free(&r);
+}
+
+/* id's agent-update, its answer in r, checked: as it is, or compressed. */
+static void
+bridge_update(const char *id, bool gz, struct resp *r)
+{
+	char	path[160];
+
+	snprintf(path, sizeof(path), "/api/servers/%s/agent-update", id);
+	http("POST", path, "{}", r);
+	EXPECT(r, 200);
+	ATF_CHECK_MSG(strcmp(jstr(r, "ok"), "true") == 0, "%s", r->body);
+	if (gz)
+		ATF_CHECK_MSG(strstr(r->body, "inflate(3)") != NULL, "%s",
+		    r->body);
+	else
+		ATF_CHECK_MSG(strstr(r->body, "inflate") == NULL, "%s",
+		    r->body);
+}
+
+/* id's host as hello said it, in r. */
+static void
+bridge_hello(const char *id, struct resp *r)
+{
+	char	path[160];
+
+	snprintf(path, sizeof(path), "/api/servers/%s/jails", id);
+	http("GET", path, NULL, r);
+	EXPECT(r, 200);
+}
+
+CONSOLE_TC(agent_update_bridge, "An agent of the release before the "
+    "interim protocol went, a real build of it (ARCANA_OLD_AGENT), is read "
+    "and updated through YANG alone, over a unix socket and over TCP with "
+    "mutual TLS, sent its program as it is; the agent it becomes takes the "
+    "next one compressed")
+ATF_TC_BODY(agent_update_bridge, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	struct stat	sb, snew;
+	char		cwd[MAXPATHLEN], jgd[MAXPATHLEN], unix[MAXPATHLEN];
+	char		tcp[64], id[16], became[MAXPATHLEN];
+	const char	*old;
+	pid_t		pid;
+	int		port, i;
+
+	if ((old = old_agent(tc)) == NULL)
+		atf_tc_skip("no agent of a release before: set ARCANA_OLD_AGENT "
+		    "or old_agent");
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	ATF_REQUIRE(mkdir("pki", 0700) == 0);
+	pki("ca", NULL, NULL);
+	pki("server", "ca", "IP:127.0.0.1,DNS:localhost");
+	pki("console", "ca", "DNS:console");
+	snprintf(harness_webconf, sizeof(harness_webconf), "tls {\n"
+	    "\tca = \"%s/pki/ca.pem\";\n\tcert = \"%s/pki/console.pem\";\n"
+	    "\tkey = \"%s/pki/console.key\";\n\tca_key = \"%s/pki/ca.key\";\n"
+	    "}\n", cwd, cwd, cwd, cwd);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(jgd, sizeof(jgd), "%s", locate(tc,
+	    "../../../usr.sbin/arcana-agent/arcana-agent", "arcana-agent",
+	    "/usr/local/sbin/arcana-agent"));
+	ATF_REQUIRE(stat(jgd, &snew) == 0);
+
+	port = 20000 + (int)(getpid() % 20000);
+	snprintf(unix, sizeof(unix), "unix:%s/old.sock", cwd);
+	snprintf(tcp, sizeof(tcp), "tcp://127.0.0.1:%d", port);
+	pid = agent_spawn(old, unix, tcp, "installed-old");
+	wait_for("old.sock");
+
+	/* Its hello: its version, and no features. */
+	host_add("old-unix", unix, 0, id, sizeof(id));
+	bridge_hello(id, &r);
+	ATF_CHECK_MSG(jstr(&r, "host.version") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(jstr(&r, "host.features.0") == NULL, "%s", r.body);
+	printf("old agent %s, its features none\n", jstr(&r,
+	    "host.version"));
+	resp_free(&r);
+
+	/* Over the unix socket: as it is, taken unsigned. */
+	bridge_update(id, false, &r);
+	printf("unix: %s\n", r.body);
+	resp_free(&r);
+	ATF_CHECK(stat("installed-old", &sb) == 0 && sb.st_size ==
+	    snew.st_size);
+	ATF_REQUIRE(unlink("installed-old") == 0);
+
+	/* Over TCP with mutual TLS: as it is, signed by the CA key. */
+	host_add("old-tcp", tcp, 1, id, sizeof(id));
+	bridge_update(id, false, &r);
+	printf("tcp: %s\n", r.body);
+	resp_free(&r);
+	ATF_CHECK(stat("installed-old", &sb) == 0 && sb.st_size ==
+	    snew.st_size);
+
+	/* What it became runs, and takes the next one compressed. */
+	(void)kill(pid, SIGTERM);
+	for (i = 0; i < 100 && kill(pid, 0) == 0; i++)
+		usleep(50000);
+	ATF_REQUIRE(system("cp installed-old became && chmod 755 became") ==
+	    0);
+	snprintf(became, sizeof(became), "%s/became", cwd);
+	snprintf(unix, sizeof(unix), "unix:%s/new.sock", cwd);
+	(void)agent_spawn(became, unix, NULL, "installed-new");
+	wait_for("new.sock");
+	host_add("became", unix, 2, id, sizeof(id));
+	bridge_hello(id, &r);
+	ATF_CHECK_MSG(strstr(r.body, "gzip-update") != NULL, "%s", r.body);
+	resp_free(&r);
+	bridge_update(id, true, &r);
+	resp_free(&r);
+	ATF_CHECK(stat("installed-new", &sb) == 0 && sb.st_size ==
+	    snew.st_size);
+}
+
 CONSOLE_TC(enrol, "The console's own CA, a host's certificate renewed, the CA changed for another and for an intermediate across the hosts, and a host joining with "
     "arcana-enrol(8)")
 ATF_TC_BODY(enrol, tc)
@@ -7761,7 +7962,7 @@ ATF_TC_BODY(enrol, tc)
 	    "'URI:urn:arcana:role:console'") == 0);
 	snprintf(body, sizeof(body), "%s -c tcp://127.0.0.1:%d -A data/ca.pem "
 	    "-C host/host.pem -K host/host.key hello 2>&1 | grep -q "
-	    "'ermission denied'", locate(tc, "../../../usr.sbin/arcanactl/"
+	    "'not let in'", locate(tc, "../../../usr.sbin/arcanactl/"
 	    "arcanactl", "arcanactl", "/usr/local/sbin/arcanactl"), jport);
 	ATF_CHECK(system(body) == 0);
 	/* Its certificate renewed from here: a key made there, signed
@@ -11832,11 +12033,511 @@ ATF_TC_BODY(notif_token, tc)
 	resp_free(&r);
 }
 
+#define	HELD	"held: the host's subscription pushed it"
+
+/* A host on the test's agent, its id in id. */
+static void
+watch_host(char *id, size_t len)
+{
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, len, "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+}
+
+/*
+ * The console's subscription of topic at host id, as /watch says it:
+ * its state and pushes, within secs of it being open with a push since
+ * pushed (time(3)); asked for by read meanwhile, a GET of it.
+ */
+static bool
+watch_open(const char *id, const char *topic, const char *read,
+    time_t pushed, int secs)
+{
+	const ucl_object_t	*t;
+	ucl_object_iter_t	 it;
+	struct resp		 r;
+	char			 path[128];
+	bool			 open;
+
+	for (int i = 0; i < secs * 10; i++) {
+		if (read != NULL) {
+			snprintf(path, sizeof(path), "/api/servers/%s/%s", id,
+			    read);
+			http("GET", path, NULL, &r);
+			resp_free(&r);
+		}
+		snprintf(path, sizeof(path), "/api/servers/%s/watch", id);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		open = false;
+		it = NULL;
+		while ((t = ucl_object_iterate(ucl_object_lookup(r.json,
+		    "topics"), &it, true)) != NULL)
+			if (strcmp(ucl_object_tostring(ucl_object_lookup(t,
+			    "topic")), topic) == 0 && strcmp(ucl_object_tostring(
+			    ucl_object_lookup(t, "state")), "open") == 0 &&
+			    (pushed == 0 || ucl_object_toint(ucl_object_lookup(
+			    t, "pushed")) >= pushed) && (strcmp(topic,
+			    "events") == 0 || ucl_object_lookup(t, "pushed") !=
+			    NULL))
+				open = true;
+		resp_free(&r);
+		if (open)
+			return (true);
+		usleep(100000);
+	}
+	return (false);
+}
+
+/* /watch's count of what was asked of the agents, or answered held. */
+static long
+watch_count(const char *id, const char *which)
+{
+	struct resp	 r;
+	char		 path[128];
+	long		 n;
+
+	snprintf(path, sizeof(path), "/api/servers/%s/watch", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "requests.%s", which);
+	n = jstr(&r, path) != NULL ? atol(jstr(&r, path)) : -1;
+	resp_free(&r);
+	return (n);
+}
+
+/*
+ * PLAN-SDN-YANG 3.4.1: one connection per agent for its subscriptions,
+ * made again when the agent comes back.  The first read of the jails
+ * goes to the host and has them subscribed; once pushed, the reads are
+ * answered from what is held.  The agent restarted, the connection is
+ * made again a while on, the subscription with it, and the reads are
+ * answered from it again.
+ */
+CONSOLE_TC(watch_reconnect, "The subscriptions' connection to an agent: "
+    "the reads answered from it, an agent restarted, it comes back")
+ATF_TC_BODY(watch_reconnect, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 id[16], path[128], name[64];
+	unsigned char	*host, *held;
+	time_t		 t;
+	int		 i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	watch_host(id, sizeof(id));
+	snprintf(path, sizeof(path), "/api/servers/%s/jails", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, HELD) == NULL);
+	ATF_REQUIRE(jstr(&r, "jails.0.name") != NULL);
+	snprintf(name, sizeof(name), "%s", jstr(&r, "jails.0.name"));
+	host = ucl_object_emit(ucl_object_lookup(r.json, "jails"),
+	    UCL_EMIT_JSON_COMPACT);
+	resp_free(&r);
+	ATF_REQUIRE_MSG(watch_open(id, "jails", "jails", 0, 15),
+	    "the jails not subscribed");
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, HELD) != NULL, "%s", r.body);
+	/* As the host gives it: the host by hello, the jails, each as
+	 * the host's own answer has it. */
+	ATF_CHECK_STREQ(name, jstr(&r, "jails.0.name"));
+	ATF_CHECK(jstr(&r, "host.version") != NULL);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	held = ucl_object_emit(ucl_object_lookup(r.json, "jails"),
+	    UCL_EMIT_JSON_COMPACT);
+	ATF_CHECK_MSG(host != NULL && held != NULL && strcmp((char *)host,
+	    (char *)held) == 0, "the host's:\n%s\nheld:\n%s", host, held);
+	free(host);
+	free(held);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/watch", id);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "connected"));
+	ATF_CHECK_STREQ("0", jstr(&r, "reconnects"));
+	resp_free(&r);
+
+	t = time(NULL);
+	agent_restart();
+	/* Gone: the reads go to the host again; back, they are held. */
+	ATF_REQUIRE_MSG(watch_open(id, "jails", "jails", t, 30),
+	    "the subscription did not come back");
+	snprintf(path, sizeof(path), "/api/servers/%s/watch", id);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "connected"));
+	ATF_CHECK(jstr(&r, "reconnects") != NULL && atoi(jstr(&r,
+	    "reconnects")) >= 1);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/jails", id);
+	for (i = 0; i < 50; i++) {
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		if (strstr(r.body, HELD) != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(i < 50, "not held after the agent came back");
+	ATF_CHECK_STREQ(name, jstr(&r, "jails.0.name"));
+	resp_free(&r);
+}
+
+/*
+ * PLAN-SDN-YANG 3.4.2: the reads the pages poll answered from the
+ * subscriptions, in the shapes the host's answers have: the stats
+ * (periodic), the jails (periodic), the jobs (on-change, the agent
+ * telling each job's change); nothing asked of the agent meanwhile.
+ * A job queued is in the jobs held within a second or two of its
+ * change; a job's read, kept, is not asked twice in a second.
+ */
+CONSOLE_TC(watch_held, "The stats, jails and jobs the pages poll "
+    "answered from subscriptions, nothing asked of the agent")
+ATF_TC_BODY(watch_held, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 id[16], path[128], job[24];
+	long		 asked, held;
+	int		 i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	watch_host(id, sizeof(id));
+	/* The host's own answers, before. */
+	snprintf(path, sizeof(path), "/api/servers/%s/stats", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, HELD) == NULL);
+	ATF_CHECK(jstr(&r, "stats.mem_total") != NULL);
+	resp_free(&r);
+	ATF_REQUIRE(watch_open(id, "stats", "stats", 0, 15));
+	ATF_REQUIRE(watch_open(id, "jails", "jails", 0, 15));
+	ATF_REQUIRE(watch_open(id, "jobs", "jobs", 0, 15));
+	asked = watch_count(id, "asked");
+	held = watch_count(id, "held");
+	for (i = 0; i < 20; i++) {
+		snprintf(path, sizeof(path), "/api/servers/%s/stats", id);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK(strstr(r.body, HELD) != NULL);
+		ATF_CHECK(jstr(&r, "stats.mem_total") != NULL);
+		ATF_CHECK(jstr(&r, "stats.cpu_pct") != NULL);
+		ATF_CHECK_STREQ(id, jstr(&r, "server.id"));
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/api/servers/%s/jails", id);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK(strstr(r.body, HELD) != NULL);
+		ATF_CHECK(jstr(&r, "jails.0.name") != NULL);
+		ATF_CHECK(ucl_object_lookup(r.json, "scopes") != NULL);
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/api/servers/%s/jobs", id);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK(strstr(r.body, HELD) != NULL);
+		ATF_CHECK(ucl_object_lookup(r.json, "jobs") != NULL);
+		ATF_CHECK(jstr(&r, "stopping") != NULL);
+		resp_free(&r);
+	}
+	/* The jails' host by its hello alone, each time: what tools it
+	 * has can change unannounced. */
+	ATF_CHECK_MSG(watch_count(id, "asked") == asked + 20, "the agent was "
+	    "asked %ld times", watch_count(id, "asked") - asked);
+	ATF_CHECK(watch_count(id, "held") >= held + 60);
+
+	/* The SD-WAN read: the page's first the host's, all the samples;
+	 * those after a time it has, held. */
+	snprintf(path, sizeof(path), "/api/servers/%s/sdwan", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, HELD) == NULL);
+	ATF_CHECK(ucl_object_lookup_path(r.json, "data.targets") != NULL);
+	resp_free(&r);
+	ATF_REQUIRE(watch_open(id, "sdwan", "sdwan?after=1", 0, 15));
+	snprintf(path, sizeof(path), "/api/servers/%s/sdwan?after=%ld", id,
+	    (long)time(NULL) - 30);
+	for (i = 0; i < 50; i++) {
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		if (strstr(r.body, HELD) != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(i < 50, "the SD-WAN read not held");
+	ATF_CHECK(ucl_object_lookup_path(r.json, "data.targets") != NULL);
+	ATF_CHECK(ucl_object_lookup_path(r.json, "data.edges") != NULL);
+	ATF_CHECK(ucl_object_lookup_path(r.json, "data.time") != NULL);
+	ATF_CHECK(ucl_object_lookup_path(r.json, "data.faults") != NULL);
+	resp_free(&r);
+	/* Long before what is held: the host's. */
+	snprintf(path, sizeof(path), "/api/servers/%s/sdwan?after=1", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, HELD) == NULL);
+	resp_free(&r);
+
+	/* A job: in the jobs held as the agent tells its changes. */
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", id);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"sysctl\",\"verb\":\"set\","
+	    "\"args\":[\"kern.hostname\",\"lab\"]}]}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "jobs.0.id") != NULL);
+	snprintf(job, sizeof(job), "%s", jstr(&r, "jobs.0.id"));
+	resp_free(&r);
+	for (i = 0; i < 100; i++) {
+		const ucl_object_t	*j;
+		ucl_object_iter_t	 it = NULL;
+		bool			 done = false;
+
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		while ((j = ucl_object_iterate(ucl_object_lookup(r.json,
+		    "jobs"), &it, true)) != NULL)
+			if (ucl_object_toint(ucl_object_lookup(j, "id")) ==
+			    atoll(job) && strcmp(ucl_object_tostring(
+			    ucl_object_lookup(j, "state")), "done") == 0)
+				done = true;
+		done = done && strstr(r.body, HELD) != NULL;
+		resp_free(&r);
+		if (done)
+			break;
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(i < 100, "the job's end not in the jobs held");
+	/* Its read with its trace: the host's once, then kept. */
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs/%s", id, job);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("done", jstr(&r, "job.state"));
+	ATF_CHECK(ucl_object_lookup_path(r.json, "job.trace") != NULL);
+	resp_free(&r);
+	asked = watch_count(id, "asked");
+	for (i = 0; i < 5; i++) {
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("done", jstr(&r, "job.state"));
+		ATF_CHECK(ucl_object_lookup_path(r.json, "job.trace") != NULL);
+		resp_free(&r);
+	}
+	ATF_CHECK_EQ(asked, watch_count(id, "asked"));
+}
+
+/*
+ * PLAN-SDN-YANG 3.4.3: the host's events subscribed once for the pages
+ * that follow them, each relayed to every one of them within a second
+ * of the agent telling it: sysctl.conf changed by somebody else, the
+ * agent told by the kernel (EVFILT_VNODE).
+ */
+CONSOLE_TC(watch_events, "A host's events subscribed once, relayed to "
+    "each page that follows them within a second")
+ATF_TC_BODY(watch_events, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	struct timespec	 t0, t1;
+	struct pollfd	 pfd;
+	char		 id[16], ask[128], path[128], *m;
+	double		 secs;
+	long		 last;
+	bool		 one, two, told;
+	int		 ws, n;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	watch_host(id, sizeof(id));
+	ws = ws_open("/api/stream");
+	snprintf(ask, sizeof(ask), "{\"id\":1,\"server\":\"%s\",\"what\":"
+	    "\"events\"}", id);
+	ws_send(ws, ask);
+	snprintf(ask, sizeof(ask), "{\"id\":2,\"server\":\"%s\",\"what\":"
+	    "\"events\"}", id);
+	ws_send(ws, ask);
+	ATF_REQUIRE_MSG(watch_open(id, "events", NULL, 0, 15),
+	    "the events not subscribed");
+	/* One subscription for both. */
+	snprintf(path, sizeof(path), "/api/servers/%s/watch", id);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_EQ(1, ucl_array_size(ucl_object_lookup(r.json, "topics")));
+	resp_free(&r);
+	/* The last the agent has, read from it. */
+	snprintf(path, sizeof(path), "/api/servers/%s/events", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	last = jstr(&r, "data.last") != NULL ? atol(jstr(&r, "data.last")) :
+	    0;
+	resp_free(&r);
+	/*
+	 * The agent says what it saw once a second: when it has the event
+	 * is when its read has it, asked meanwhile; the page has it within
+	 * a second of that.
+	 */
+	ATF_REQUIRE(system("echo 'kern.maxfiles=4321' >> sysctl.conf") == 0);
+	one = two = false;
+	told = false;
+	secs = 0;
+	memset(&t0, 0, sizeof(t0));
+	snprintf(path, sizeof(path), "/api/servers/%s/events?after=%ld", id,
+	    last);
+	for (n = 0; n < 2000 && !(one && two); n++) {
+		if (!told) {
+			http("GET", path, NULL, &r);
+			if (jstr(&r, "data.events.0.n") != NULL) {
+				clock_gettime(CLOCK_MONOTONIC, &t0);
+				told = true;
+			}
+			resp_free(&r);
+		}
+		pfd.fd = ws;
+		pfd.events = POLLIN;
+		if (poll(&pfd, 1, 20) != 1)
+			continue;
+		if ((m = ws_recv(ws)) == NULL)
+			break;
+		if (strstr(m, "\"event\":") != NULL) {
+			clock_gettime(CLOCK_MONOTONIC, &t1);
+			if (!told) {
+				t0 = t1;
+				told = true;
+			}
+			secs = (double)(t1.tv_sec - t0.tv_sec) +
+			    (double)(t1.tv_nsec - t0.tv_nsec) / 1e9;
+			if (strstr(m, "\"id\":1,") != NULL)
+				one = true;
+			if (strstr(m, "\"id\":2,") != NULL)
+				two = true;
+		}
+		free(m);
+	}
+	ATF_REQUIRE_MSG(one && two, "the event not told to both");
+	printf("the event in the page %.3f s after the agent had it\n", secs);
+	ATF_CHECK_MSG(secs < 1.0, "the event came %.3f s after", secs);
+	close(ws);
+}
+
+/*
+ * What is held is held for one user, read as that user: the host's
+ * access rules (NACM) let the admin read arcana-probe and arcana-host
+ * and deny them bob; once the admin's reads are held, bob's are never
+ * answered with them, his own subscription read as him.
+ */
+CONSOLE_TC(watch_nacm, "What the subscriptions hold is one user's, read "
+    "as that user: another whose rules deny it never sees it")
+ATF_TC_BODY(watch_nacm, tc)
+{
+	static const char rules[] = "{\"groups\":{\"group\":[{\"name\":"
+	    "\"admin\",\"user-name\":[\"admin\",\"console\"]},{\"name\":"
+	    "\"ops\",\"user-name\":[\"bob\"]}]},\"rule-list\":[{\"name\":"
+	    "\"admin\",\"group\":[\"admin\"],\"rule\":[{\"name\":\"all\","
+	    "\"module-name\":\"*\",\"access-operations\":\"*\",\"action\":"
+	    "\"permit\"}]},{\"name\":\"ops\",\"group\":[\"ops\"],\"rule\":["
+	    "{\"name\":\"no-probe\",\"module-name\":\"arcana-probe\","
+	    "\"access-operations\":\"*\",\"action\":\"deny\"},{\"name\":"
+	    "\"no-host\",\"module-name\":\"arcana-host\",\"access-operations\":"
+	    "\"*\",\"action\":\"deny\"}]}]}";
+	struct authn	 a, b;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], cmd[3 * MAXPATHLEN], id[16];
+	char		 path[128], sdwan[128], invite[80];
+	const char	*ctl;
+	FILE		*fp;
+	int		 i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	ctl = locate(tc, "../../../usr.sbin/arcanactl/arcanactl", "arcanactl",
+	    "/usr/local/sbin/arcanactl");
+	ATF_REQUIRE((fp = fopen("rules.json", "w")) != NULL);
+	fprintf(fp, "%s\n", rules);
+	fclose(fp);
+	snprintf(cmd, sizeof(cmd), "%s -c unix:%s/jgd.sock edit nacm "
+	    "@rules.json && %s -c unix:%s/jgd.sock commit", ctl, cwd, ctl, cwd);
+	ATF_REQUIRE_EQ_MSG(0, system(cmd), "%s", cmd);
+	watch_host(id, sizeof(id));
+	http("PUT", "/api/roles/ops", "{\"console\":\"member\",\"hosts\":"
+	    "{\"*\":\"operator\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("PUT", "/api/users/bob", "{\"roles\":[\"ops\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/users/bob/invite", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r, "token"));
+	resp_free(&r);
+
+	/* The admin's, held. */
+	snprintf(path, sizeof(path), "/api/servers/%s/sdwan", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(ucl_object_lookup_path(r.json, "data.targets") != NULL);
+	resp_free(&r);
+	ATF_REQUIRE(watch_open(id, "sdwan", "sdwan?after=1", 0, 15));
+	ATF_REQUIRE(watch_open(id, "stats", "stats", 0, 15));
+	snprintf(sdwan, sizeof(sdwan), "/api/servers/%s/sdwan?after=%ld", id,
+	    (long)time(NULL) - 30);
+	for (i = 0; i < 50; i++) {
+		http("GET", sdwan, NULL, &r);
+		if (strstr(r.body, HELD) != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(i < 50, "the admin's SD-WAN read not held");
+	ATF_CHECK(ucl_object_lookup_path(r.json, "data.targets") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/stats", id);
+	http("GET", path, NULL, &r);
+	ATF_CHECK(strstr(r.body, HELD) != NULL);
+	ATF_CHECK(jstr(&r, "stats.mem_total") != NULL);
+	resp_free(&r);
+
+	/* bob, while the admin's stay held: never the admin's. */
+	cookie[0] = '\0';
+	authn_new(&b, -8);
+	do_register(&b, invite, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r, "user"));
+	resp_free(&r);
+	for (i = 0; i < 40; i++) {
+		http("GET", sdwan, NULL, &r);
+		ATF_CHECK_MSG(strstr(r.body, HELD) == NULL &&
+		    ucl_object_lookup_path(r.json, "data.targets") == NULL,
+		    "bob was given the probes: %.300s", r.body);
+		resp_free(&r);
+		http("GET", path, NULL, &r);
+		ATF_CHECK_MSG(jstr(&r, "stats.mem_total") == NULL,
+		    "bob was given the stats: %.300s", r.body);
+		resp_free(&r);
+		usleep(100000);
+	}
+	/* His own subscriptions, as him. */
+	snprintf(cmd, sizeof(cmd), "/api/servers/%s/watch", id);
+	http("GET", cmd, NULL, &r);
+	ATF_CHECK(strstr(r.body, "\"user\":\"bob\"") != NULL);
+	resp_free(&r);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
+	ATF_TP_ADD_TC(tp, watch_nacm);
 	ATF_TP_ADD_TC(tp, cluster);
 	ATF_TP_ADD_TC(tp, notif_receiver);
 	ATF_TP_ADD_TC(tp, notif_token);
+	ATF_TP_ADD_TC(tp, watch_reconnect);
+	ATF_TP_ADD_TC(tp, watch_held);
+	ATF_TP_ADD_TC(tp, watch_events);
 
 	ATF_TP_ADD_TC(tp, unauthenticated);
 	ATF_TP_ADD_TC(tp, setup_token);
@@ -11914,6 +12615,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);
 	ATF_TP_ADD_TC(tp, mtls);
+	ATF_TP_ADD_TC(tp, agent_update_bridge);
 	ATF_TP_ADD_TC(tp, enrol);
 	ATF_TP_ADD_TC(tp, tls_ec);
 	return (atf_no_error());

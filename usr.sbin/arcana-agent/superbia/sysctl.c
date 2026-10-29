@@ -344,7 +344,7 @@ sysctl_read(struct work *w, const char *prefix, const char *after,
 		*errp = wfmt(w, "%s: no such sysctl to go on after", after);
 		return (-1);
 	}
-	step = step_begin(w, ARC_STEP_KIND_LIB, "sysctl(3)", plen > 0 ?
+	step = step_begin(w, STEP_LIB, "sysctl(3)", plen > 0 ?
 	    "the kernel's state under %s" : "the kernel's state%s", plen > 0 ?
 	    prefix : "");
 	val = wcalloc(w, SYSCTL_VALUE + 1, 1);
@@ -639,7 +639,7 @@ do_sysctl_set(struct work *w, const char *name, const char *value,
 	}
 	if (!persist)
 		return (0);
-	step = step_begin(w, ARC_STEP_KIND_FILE, w->jail != NULL ? wfmt(w,
+	step = step_begin(w, STEP_FILE, w->jail != NULL ? wfmt(w,
 	    "%s's /etc/sysctl.conf", w->jail) : sysctl_conf_path(path,
 	    sizeof(path)), "%s=%s", name, value);
 	if (conf_set(w, name, value, errp) != 0) {
@@ -662,7 +662,7 @@ sysctl_conf_restore(struct work *w, const char *name, const char *value,
 	char	path[MAXPATHLEN];
 	int	step;
 
-	step = step_begin(w, ARC_STEP_KIND_FILE, w->jail != NULL ? wfmt(w,
+	step = step_begin(w, STEP_FILE, w->jail != NULL ? wfmt(w,
 	    "%s's /etc/sysctl.conf", w->jail) : sysctl_conf_path(path,
 	    sizeof(path)), value != NULL ?
 	    "%s=%s again" : "%s no longer set%s", name, value != NULL ? value :

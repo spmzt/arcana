@@ -229,7 +229,7 @@ file_change(struct work *w, const struct arc_job_spec *sp,
 		    "nothing to persist to", sp->jail);
 		return (-1);
 	}
-	step = step_begin(w, ARC_STEP_KIND_LIB, "jc_load(3)", "libjailconf: %s "
+	step = step_begin(w, STEP_LIB, "jc_load(3)", "libjailconf: %s "
 	    "and its includes", cj->scope);
 	memset(&jc, 0, sizeof(jc));
 	if (jc_load(&jc, cj->scope) == -1 || (b = jc_find(&jc, sp->jail, &f)) ==
@@ -252,7 +252,7 @@ file_change(struct work *w, const struct arc_job_spec *sp,
 	/* One at a time, the text parsed again between: a statement's
 	 * offsets hold for one edit. */
 	for (i = 0; i < sp->names.n; i++) {
-		step = step_begin(w, ARC_STEP_KIND_LIB, "jc_replace(3)", "%s %s "
+		step = step_begin(w, STEP_LIB, "jc_replace(3)", "%s %s "
 		    "in %s", aws[i].name, aws[i].value < 0 ? "taken out" :
 		    aws[i].value ? "= 1" : "= 0", path);
 		memset(&jc, 0, sizeof(jc));
@@ -278,7 +278,7 @@ file_change(struct work *w, const struct arc_job_spec *sp,
 		step_end(w, step, true, "%d statement%s replaced", n, n == 1 ? "" :
 		    "s");
 	}
-	step = step_begin(w, ARC_STEP_KIND_LIB, "jc_verify(3)", "re-parse %s",
+	step = step_begin(w, STEP_LIB, "jc_verify(3)", "re-parse %s",
 	    path);
 	memset(&jc, 0, sizeof(jc));
 	if (jc_load_buf(&jc, path, buf, len) == -1) {
@@ -292,7 +292,7 @@ file_change(struct work *w, const struct arc_job_spec *sp,
 	jc_free(&jc);
 	step_end(w, step, true, NULL);
 	*diffp = wtext(w, wadopt(w, jc_diff(path, orig, origlen, buf, len)));
-	step = step_begin(w, ARC_STEP_KIND_LIB, "jc_write(3)", "%s, %zu bytes",
+	step = step_begin(w, STEP_LIB, "jc_write(3)", "%s, %zu bytes",
 	    path, len);
 	if (jc_write(path, buf, len, ebuf, sizeof(ebuf)) == -1) {
 		*errp = wtext(w, wstrdup(w, ebuf));
@@ -333,7 +333,7 @@ live_change(struct work *w, int jid, const struct allow_word *aws, size_t n,
 		jailparam_free(jp, 1);
 		return (0);
 	}
-	step = step_begin(w, ARC_STEP_KIND_LIB, "jailparam_set(3)", "jid %d: "
+	step = step_begin(w, STEP_LIB, "jailparam_set(3)", "jid %d: "
 	    "JAIL_UPDATE, %zu parameter%s", jid, k - 1, k == 2 ? "" : "s");
 	if (jailparam_set(jp, (unsigned int)k, JAIL_UPDATE) == -1) {
 		*errp = wfmt(w, "%s", jail_errmsg);
@@ -367,7 +367,7 @@ do_jail_allow(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	    errp) != 0)
 		return (-1);
 	if (sp->live && jid < 0) {
-		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s is "
+		step = step_begin(w, STEP_DAEMON, "arcana-agent", "%s is "
 		    "not running: its file alone, for the next start", sp->jail);
 		step_end(w, step, true, NULL);
 	}

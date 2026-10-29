@@ -293,8 +293,8 @@ Superbia's edit of the configuration, and traced by Gula. A file is
 where its main concern lives; the `y*.c` files in each directory fill
 that Archive's YANG modules.
 
-How the operations (the cblink family in `share/arcana/arcana.yaml`,
-its wire the YANG module written from it) fall under the Archives:
+How the operations (each a YANG module's now, `share/arcana/yang-ops`
+names them) fall under the Archives:
 
 | Operations | Archive |
 |---|---|

@@ -332,7 +332,7 @@ hardening_json(void)
 
 void
 do_system(struct work *w, const char *const *names, size_t n,
-    struct arc_system_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	static const char *const mac[] = { "mac_bsdextended", "mac_portacl",
 	    "mac_seeotheruids", "mac_partition", "mac_ifoff", "mac_ntpd",

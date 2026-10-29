@@ -1,0 +1,802 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-speeder",
+    "module-revision": "2026-10-29",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "85800",
+        "size": "160"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-speeder",
+        "sid": "85800"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder",
+        "sid": "85801"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read",
+        "sid": "85802"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/input",
+        "sid": "85803"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/input/jail",
+        "sid": "85804"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output",
+        "sid": "85805"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/enabled",
+        "sid": "85806"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/extra",
+        "sid": "85807"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/fec",
+        "sid": "85808"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/fec-group",
+        "sid": "85809"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/fec-group/redundant",
+        "sid": "85810"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/fec-group/size",
+        "sid": "85811"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/fifo",
+        "sid": "85812"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/flags",
+        "sid": "85813"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/installed",
+        "sid": "85814"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/jail",
+        "sid": "85815"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/key",
+        "sid": "85816"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/listen",
+        "sid": "85817"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/log",
+        "sid": "85818"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/log-path",
+        "sid": "85819"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/mode",
+        "sid": "85820"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/mtu",
+        "sid": "85821"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/period",
+        "sid": "85822"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/period/plain-to-client",
+        "sid": "85823"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/period/plain-to-server",
+        "sid": "85824"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/period/time",
+        "sid": "85825"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/period/to-client",
+        "sid": "85826"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/period/to-server",
+        "sid": "85827"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile",
+        "sid": "85828"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/extra",
+        "sid": "85829"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/fec",
+        "sid": "85830"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/fec-group",
+        "sid": "85831"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/fec-group/redundant",
+        "sid": "85832"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/fec-group/size",
+        "sid": "85833"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/fifo",
+        "sid": "85834"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/flags",
+        "sid": "85835"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/key",
+        "sid": "85836"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/listen",
+        "sid": "85837"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/log",
+        "sid": "85838"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/mode",
+        "sid": "85839"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/mtu",
+        "sid": "85840"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/name",
+        "sid": "85841"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/period",
+        "sid": "85842"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/period/plain-to-client",
+        "sid": "85843"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/period/plain-to-server",
+        "sid": "85844"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/period/time",
+        "sid": "85845"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/period/to-client",
+        "sid": "85846"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/period/to-server",
+        "sid": "85847"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/remote",
+        "sid": "85848"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report",
+        "sid": "85849"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report-every",
+        "sid": "85850"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/client-to-server",
+        "sid": "85851"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/client-to-server/fec-bytes",
+        "sid": "85852"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/client-to-server/fec-packets",
+        "sid": "85853"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/client-to-server/fec-rate",
+        "sid": "85854"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/client-to-server/overhead",
+        "sid": "85855"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/client-to-server/overhead-now",
+        "sid": "85856"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/client-to-server/plain-bytes",
+        "sid": "85857"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/client-to-server/plain-packets",
+        "sid": "85858"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/client-to-server/plain-rate",
+        "sid": "85859"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/interval",
+        "sid": "85860"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/server-to-client",
+        "sid": "85861"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/server-to-client/fec-bytes",
+        "sid": "85862"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/server-to-client/fec-packets",
+        "sid": "85863"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/server-to-client/fec-rate",
+        "sid": "85864"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/server-to-client/overhead",
+        "sid": "85865"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/server-to-client/overhead-now",
+        "sid": "85866"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/server-to-client/plain-bytes",
+        "sid": "85867"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/server-to-client/plain-packets",
+        "sid": "85868"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/server-to-client/plain-rate",
+        "sid": "85869"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/report/time",
+        "sid": "85870"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/role",
+        "sid": "85871"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/running",
+        "sid": "85872"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/svcj",
+        "sid": "85873"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/svcj-ipaddrs",
+        "sid": "85874"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/svcj-options",
+        "sid": "85875"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profile/timeout",
+        "sid": "85876"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/profiles-supported",
+        "sid": "85877"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/remote",
+        "sid": "85878"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report",
+        "sid": "85879"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report-every",
+        "sid": "85880"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/client-to-server",
+        "sid": "85881"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/client-to-server/fec-bytes",
+        "sid": "85882"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/client-to-server/fec-packets",
+        "sid": "85883"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/client-to-server/fec-rate",
+        "sid": "85884"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/client-to-server/overhead",
+        "sid": "85885"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/client-to-server/overhead-now",
+        "sid": "85886"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/client-to-server/plain-bytes",
+        "sid": "85887"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/client-to-server/plain-packets",
+        "sid": "85888"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/client-to-server/plain-rate",
+        "sid": "85889"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/interval",
+        "sid": "85890"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/server-to-client",
+        "sid": "85891"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/server-to-client/fec-bytes",
+        "sid": "85892"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/server-to-client/fec-packets",
+        "sid": "85893"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/server-to-client/fec-rate",
+        "sid": "85894"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/server-to-client/overhead",
+        "sid": "85895"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/server-to-client/overhead-now",
+        "sid": "85896"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/server-to-client/plain-bytes",
+        "sid": "85897"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/server-to-client/plain-packets",
+        "sid": "85898"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/server-to-client/plain-rate",
+        "sid": "85899"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/report/time",
+        "sid": "85900"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/role",
+        "sid": "85901"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/running",
+        "sid": "85902"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2",
+        "sid": "85903"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/enabled",
+        "sid": "85904"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/extra",
+        "sid": "85905"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/fec",
+        "sid": "85906"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/fec-group",
+        "sid": "85907"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/fec-group/redundant",
+        "sid": "85908"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/fec-group/size",
+        "sid": "85909"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/fifo",
+        "sid": "85910"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/flags",
+        "sid": "85911"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/key",
+        "sid": "85912"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/listen",
+        "sid": "85913"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/log",
+        "sid": "85914"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/mode",
+        "sid": "85915"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/mtu",
+        "sid": "85916"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/period",
+        "sid": "85917"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/period/plain-to-client",
+        "sid": "85918"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/period/plain-to-server",
+        "sid": "85919"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/period/time",
+        "sid": "85920"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/period/to-client",
+        "sid": "85921"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/period/to-server",
+        "sid": "85922"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/remote",
+        "sid": "85923"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report",
+        "sid": "85924"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report-every",
+        "sid": "85925"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/client-to-server",
+        "sid": "85926"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/client-to-server/fec-bytes",
+        "sid": "85927"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/client-to-server/fec-packets",
+        "sid": "85928"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/client-to-server/fec-rate",
+        "sid": "85929"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/client-to-server/overhead",
+        "sid": "85930"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/client-to-server/overhead-now",
+        "sid": "85931"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/client-to-server/plain-bytes",
+        "sid": "85932"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/client-to-server/plain-packets",
+        "sid": "85933"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/client-to-server/plain-rate",
+        "sid": "85934"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/interval",
+        "sid": "85935"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/server-to-client",
+        "sid": "85936"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/server-to-client/fec-bytes",
+        "sid": "85937"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/server-to-client/fec-packets",
+        "sid": "85938"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/server-to-client/fec-rate",
+        "sid": "85939"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/server-to-client/overhead",
+        "sid": "85940"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/server-to-client/overhead-now",
+        "sid": "85941"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/server-to-client/plain-bytes",
+        "sid": "85942"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/server-to-client/plain-packets",
+        "sid": "85943"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/server-to-client/plain-rate",
+        "sid": "85944"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/report/time",
+        "sid": "85945"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/role",
+        "sid": "85946"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/running",
+        "sid": "85947"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/svcj",
+        "sid": "85948"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/svcj-ipaddrs",
+        "sid": "85949"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/svcj-options",
+        "sid": "85950"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/speederv2/timeout",
+        "sid": "85951"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/svcj",
+        "sid": "85952"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/svcj-ipaddrs",
+        "sid": "85953"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/svcj-options",
+        "sid": "85954"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-speeder:speeder/read/output/timeout",
+        "sid": "85955"
+      }
+    ]
+  }
+}

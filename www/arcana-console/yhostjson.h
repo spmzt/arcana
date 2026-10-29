@@ -8,16 +8,28 @@
 #define	_ARCANA_YHOSTJSON_H_
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <cblink.h>
+#include <cbl_schema.h>
 #include <ucl.h>
+
+struct arcana_jobs_step;
 
 /*
  * The host and its agent through arcana-host, arcana-jail-files and
  * arcana-agent (yhostjson.c), the console's and arcanactl's, as the
  * JSON the operations gave it.  Each takes conn and gives 0 with *data,
  * or an errno and err (the agent's words).
+ *
+ * yh_hello(): what the host is and the agent that answers, a read of
+ * arcana-host's host, as hello gave it: {"hostname", "sysname",
+ * "release", "machine", "ncpu", "physmem", "boottime", "time",
+ * "securelevel", "privileged", "version", "build", "plugins",
+ * "safe_wait", "features"}, the times seconds of the epoch; an agent
+ * that has no features has none.  yh_takes_gzip(): whether that host's
+ * agent takes its program compressed (zprog.h's feature).
  *
  * yh_stats(): how busy the host is, a read of arcana-host's host,
  * {"cpu_pct", "load1", "load5", "load15", "mem_total", "mem_used",
@@ -30,8 +42,14 @@
  * "org", "country", "issuer", "not_before", "not_after", "sha256",
  * "key", "ca", "self_signed", "local"}, the times seconds of the epoch.
  */
+int	yh_hello(cbl_conn *conn, ucl_object_t **data, char *err,
+	    size_t errlen);
+bool	yh_takes_gzip(const ucl_object_t *host);
 int	yh_stats(cbl_conn *conn, ucl_object_t **data, char *err,
 	    size_t errlen);
+/* yh_stats_of(): the same of arcana-host's data, as a push held it. */
+struct arcana_host;
+ucl_object_t *yh_stats_of(const struct arcana_host *d);
 int	yh_certs(cbl_conn *conn, const char *jail, ucl_object_t **data,
 	    char *err, size_t errlen);
 /*
@@ -53,6 +71,46 @@ int	yh_jail_files(cbl_conn *conn, ucl_object_t **data, char *err,
 int	yh_source_log(cbl_conn *conn, const char *source, const char *ref,
 	    const char *host_keys, const char *ssh_key, uint32_t count,
 	    ucl_object_t **data, char *err, size_t errlen);
+/*
+ * The fleet's update through arcana-agent's actions, a repository as
+ * yh_source_log() fetches it.  Each fetch the server refused (its host
+ * keys to confirm, the deploy key to give access) is EPERM, err why,
+ * *data {"host_keys", "fingerprints", "deploy_key"}.
+ *
+ * yh_source_head(): the head of the branch, {"commit"}.
+ * yh_console_update(): the tree built and installed, the console and
+ * the agent restarting, {"commit", "restarting"}.
+ * yh_agent_build(): arcana-agent built, {"version", "sha256",
+ * "commit"}, the program into *progp (malloc(3)), *lenp bytes, sent
+ * compressed with compress (to an agent that takes it so, yh_hello())
+ * and inflated here; its SHA-256 is the caller's to check.
+ * yh_agent_update(): the program, len bytes, put in place, sha256 its
+ * SHA-256, sig its signature by the CA key; sent compressed with gzip,
+ * as it is otherwise, waited for timeout_ms (-1: the connection's
+ * longest); {"version", "restarting"}.  EFBIG and err: too big for an
+ * update to carry.
+ */
+int	yh_source_head(cbl_conn *conn, const char *source, const char *ref,
+	    const char *host_keys, const char *ssh_key, ucl_object_t **data,
+	    char *err, size_t errlen);
+int	yh_console_update(cbl_conn *conn, const char *source, const char *ref,
+	    const char *host_keys, const char *ssh_key, ucl_object_t **data,
+	    char *err, size_t errlen);
+int	yh_agent_build(cbl_conn *conn, const char *source, const char *ref,
+	    const char *host_keys, const char *ssh_key, bool compress,
+	    ucl_object_t **data, uint8_t **progp, size_t *lenp, char *err,
+	    size_t errlen);
+int	yh_agent_update(cbl_conn *conn, const uint8_t *prog, size_t len,
+	    const char *sha256, const uint8_t *sig, size_t siglen,
+	    bool restart, bool gzip, int timeout_ms, ucl_object_t **data,
+	    char *err, size_t errlen);
+/*
+ * The steps of a request as the agent tells them (arcana-jobs' steps,
+ * on group notify), msg one notification heard: NULL where it is
+ * another; otherwise its steps, *np of them, in a.
+ */
+const struct arcana_jobs_step *yh_steps_of(const cbl_msg *msg, cbl_yarena *a,
+	    size_t *np);
 /*
  * yh_config_export(): the host as a bundle, arcana-agent's
  * config-export (with secrets, their texts), as bundle.c writes it:

@@ -208,7 +208,7 @@ includes_confdir(struct work *w, const char *main, const char *dir)
 
 	if ((fp = fopen(main, "r")) == NULL)
 		return (false);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "read",
+	step = step_begin(w, STEP_FILE, "read",
 	    "%s: look for .include of %s/", main, dir);
 	dlen = strlen(dir);
 	line = NULL;

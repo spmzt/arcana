@@ -21,7 +21,6 @@
 #include "collect.h"
 
 typedef struct arcana_jobs_jobs_job yjob;
-typedef struct arcana_jobs_step ystep;
 
 /* What a job is and where it is, job-info's: the values the job's own. */
 #define	JOB_INFO(y, j) do {						\
@@ -44,44 +43,17 @@ typedef struct arcana_jobs_step ystep;
 		(y)->confirm_by = (j)->confirm_by;			\
 } while (0)
 
-/* Job j with its trace as the read action's output; strings j's. */
-int
-yjobs_read(const struct arc_job *j, cbl_yarena *a,
-    struct arcana_jobs_jobs_job_read_output *out)
+/* Job j with its trace (steps) as the read action's output; strings
+ * theirs. */
+void
+yjobs_read(const struct arc_job *j, const struct arcana_jobs_step *steps,
+    size_t nsteps, struct arcana_jobs_jobs_job_read_output *out)
 {
-	ystep *s = NULL;
 
 	memset(out, 0, sizeof(*out));
 	JOB_INFO(out, j);
-	if (j->trace.n > 0 && (s = cbl_yarena_alloc(a, j->trace.n *
-	    sizeof(*s))) == NULL)
-		return (ENOMEM);
-	for (size_t i = 0; i < j->trace.n; i++) {
-		const struct arc_step *t = &j->trace.v[i];
-
-		memset(&s[i], 0, sizeof(s[i]));
-		/* A step without its number is numbered by its place. */
-		s[i].id = t->has_id ? t->id : (uint32_t)i;
-		if ((s[i].has_parent = t->has_parent))
-			s[i].parent = t->parent;
-		if ((s[i].has_kind = t->has_kind))
-			s[i].kind = (enum arcana_jobs_step_kind)t->kind;
-		s[i].label = t->label;
-		s[i].detail = t->detail;
-		if ((s[i].has_status = t->has_status))
-			s[i].status = (enum arcana_jobs_step_status)t->status;
-		if ((s[i].has_duration = t->has_duration_us))
-			s[i].duration = t->duration_us;
-		s[i].argv.n = t->argv.n;
-		s[i].argv.v = t->argv.v;
-		if ((s[i].has_exit = t->has_exit))
-			s[i].exit = t->exit;
-		s[i].output = t->output;
-		s[i].error_output = t->error_output;
-	}
-	out->step.n = j->trace.n;
-	out->step.v = s;
-	return (0);
+	out->step.n = nsteps;
+	out->step.v = steps;
 }
 
 /*

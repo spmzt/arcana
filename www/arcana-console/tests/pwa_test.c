@@ -1254,11 +1254,10 @@ part_hosts(void)
 	run("document.querySelector('.step-pane .close').click()");
 	wait_js("!document.querySelector('.step-pane .step-detail')", 5);
 	/* Beside the operation, once asked for ({ }, off by default), what
-	 * it is on the wire: a job is arcana-jobs' (3.1.4), its module a
-	 * tab beside the CBOR, as RFC 8340 draws it. */
+	 * it is on the wire: a job is arcana-jobs', its module as RFC 8340
+	 * draws it. */
 	ATF_CHECK(js_true("!document.querySelector('.schema pre.cddl')"));
 	run("document.querySelector('.trace button[data-act=schema]').click()");
-	click_when(".schema-tabs button[data-arg=yang]", 10);
 	wait_js("[...document.querySelectorAll('.schema h4')].some(h => "
 	    "h.textContent.includes('YANG model'))", 10);
 	ATF_CHECK(js_true("(() => { const t = document.querySelector("
@@ -5182,15 +5181,21 @@ part_firewall(void)
 	run("document.querySelector('table.fw-dyn tbody tr').click()");
 	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1001\"]"
 	    "')", 10);
-	/* That file loaded as the kept rules' text, not kept until Keep. */
+	/*
+	 * That file loaded as the kept rules' text, not kept until Keep:
+	 * the migration's dry run, rc.firewall's own rules (as the kernel
+	 * has them) before the file's.
+	 */
 	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
 	    "click()");
 	click_when("button[data-act=fw-load-rc]", 10);
 	wait_js("document.querySelector('form[data-form=fw-text] textarea')"
-	    ".value === '# left out, applying does it: -f flush\\nadd 100 "
-	    "allow ip from any to any via lo0\\n' && document.querySelector("
-	    "'.notice.info').textContent.includes('host.rules, not kept yet')",
-	    10);
+	    ".value.startsWith('# rc.firewall\\'s own, as the kernel has "
+	    "them:\\n') && document.querySelector('form[data-form=fw-text] "
+	    "textarea').value.endsWith('# left out, applying does it: -f "
+	    "flush\\nadd 100 allow ip from any to any via lo0\\n') && "
+	    "document.querySelector('.notice.info').textContent.includes("
+	    "'host.rules, with rc.firewall')", 10);
 	shot("7p-firewall-load-rc");
 	ATF_CHECK(system("grep -q 'add 01500 allow' ipfw.rules && ! grep -q "
 	    "'via lo0' ipfw.rules") == 0);
@@ -7552,16 +7557,14 @@ part_routes(void)
 	click_when("table.devices tr[data-act=select-server]", 10);
 	wait_js("[...document.querySelectorAll('.dock [data-act=trace]')]"
 	    ".some(t => t.textContent.includes('list jails'))", 20);
-	/* list is converted to YANG: its task shows arcana-jails beside
-	 * its CBOR schema, as RFC 8340 draws the module. */
+	/* list's task shows arcana-jails, as RFC 8340 draws the module,
+	 * on asking ({ }, off by default). */
 	run("[...document.querySelectorAll('.dock [data-act=trace]')].find(t "
 	    "=> t.textContent.includes('list jails')).click()");
-	/* The schema shown on asking ({ }, off by default): its CBOR
-	 * first, what is on the wire today; the module a tab. */
 	click_when(".trace button[data-act=schema]", 10);
-	click_when(".schema-tabs button[data-arg=yang]", 10);
-	wait_js("[...document.querySelectorAll('.schema h4')].some(h => "
-	    "h.textContent.includes('YANG model'))", 10);
+	/* The tree, not the heading over the loader (yang.json read). */
+	wait_js("[...document.querySelectorAll('.schema pre.cddl')].some(p => "
+	    "p.textContent.includes('module: arcana-jails'))", 10);
 	ATF_CHECK(js_true("(() => { const s = [...document.querySelectorAll("
 	    "'.schema')].find(x => x.querySelector('h4').textContent."
 	    "includes('YANG model')); const t = s.textContent; return "
@@ -7569,10 +7572,6 @@ part_routes(void)
 	    "t.includes('module: arcana-jails') && t.includes('+---x start') "
 	    "&& t.includes('+--rw jail* [name]'); })()"));
 	shot("3d-yang");
-	run("document.querySelector('.schema-tabs button[data-arg=cbor]')."
-	    "click()");
-	wait_js("[...document.querySelectorAll('.schema h4')].some(h => "
-	    "h.textContent.includes('CBOR schema'))", 5);
 	go("/#/usage");
 	run("window.before = 1; location.reload();");
 	wait_js("window.before === undefined && location.hash === '#/usage' && "

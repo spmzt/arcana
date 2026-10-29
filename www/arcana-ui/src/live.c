@@ -104,7 +104,7 @@ live_read(const char *sid, const char *read, const char *url, int opid,
 		n = strcspn(read, "/?");
 		p = strncmp(read, "jails", n) == 0 && n == 5 ? "list" :
 		    strncmp(read, "net", n) == 0 && n == 3 ? "network" : read;
-		snprintf(l->fn, sizeof(l->fn), "libcblink arc_%.*s()",
+		snprintf(l->fn, sizeof(l->fn), "libcblink YANG %.*s",
 		    (int)(p == read ? n : strlen(p)), p);
 	}
 	if (op != NULL) {

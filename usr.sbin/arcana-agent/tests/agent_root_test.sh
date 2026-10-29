@@ -290,13 +290,13 @@ routes_body()
 	fi
 	touch mine
 	start_daemon
-	atf_check -o match:'"interface-name":"lo0"' -o match:'"metric":[0-9]+,"weight":[0-9]+,"fib":0,"prefixlen":[0-9]+' \
+	atf_check -o match:'"interface-name":"lo0"' -o match:'"fib":0,"flags":"[A-Z]*","gateway":"[^"]*","interface-name":"[^"]*","metric":[0-9]+' \
 	    "$JGC" -c "$SOCK" net routes
 	last=$("$JGC" -c "$SOCK" events | sed -E 's/^\{"last":([0-9]+).*/\1/')
 	# Read by the daemon itself, from the kernel's own lists, as
 	# netstat and sockstat would list them: what sockstat has, this has,
 	# and in parts too.
-	atf_check -o match:'"statistics":\{"socket":\[' "$JGC" -c "$SOCK" net connections
+	atf_check -o match:'^\{"socket":\[' "$JGC" -c "$SOCK" net connections
 	pid=$(sockstat -46w | awk 'NR > 1 && $3 ~ /^[0-9]+$/ { print $3; exit }')
 	atf_check -o match:"\"pid\":$pid," -o match:'"user":"' \
 	    "$JGC" -c "$SOCK" net sockets
@@ -305,9 +305,9 @@ routes_body()
 
 	atf_check -o match:'done +route add 198.51.100.0/24 via 127.0.0.1' \
 	    "$JGC" -c "$SOCK" route add 198.51.100.0/24 127.0.0.1 metric 7 weight 3
-	atf_check -o match:'"destination":"198.51.100.0/24","gateway":"127.0.0.1","flags":"UGS",[^}]*"interface-name":"lo0","metric":7,"weight":3' \
+	atf_check -o match:'"destination":"198.51.100.0/24","fib":0,"flags":"UGS","gateway":"127.0.0.1","interface-name":"lo0","metric":7,[^}]*"weight":3' \
 	    "$JGC" -c "$SOCK" net routes -4 198.51.100.
-	atf_check -o match:'"best":\{"to":"198.51.100.9","destination":"198.51.100.0","prefixlen":24,"gateway":"127.0.0.1"' \
+	atf_check -o match:'"best":\{"destination":"198.51.100.0",[^}]*"gateway":"127.0.0.1",[^}]*"prefixlen":24,"to":"198.51.100.9"' \
 	    -o match:'"candidates":\[.*"destination":"198.51.100.0/24"' \
 	    "$JGC" -c "$SOCK" route get 198.51.100.9
 	atf_check -o match:'198.51.100.0/24 +127.0.0.1' netstat -rn4
@@ -338,8 +338,8 @@ routes_body()
 	atf_check -o match:'done +route add 198.51.100.0/24 via 127.0.77.2@2,127.0.77.3' \
 	    "$JGC" -c "$SOCK" route add 198.51.100.0/24 127.0.77.2@2,127.0.77.3
 	atf_check -o save:ecmp.json "$JGC" -c "$SOCK" net routes -4 198.51.100.
-	atf_check -o match:'"gateway":"127.0.77.2",[^}]*"weight":2,[^}]*"path":[12],"paths":2' \
-	    -o match:'"gateway":"127.0.77.3",[^}]*"weight":1,[^}]*"path":[12],"paths":2' \
+	atf_check -o match:'"gateway":"127.0.77.2",[^}]*"path":[12],"paths":2,[^}]*"weight":2' \
+	    -o match:'"gateway":"127.0.77.3",[^}]*"path":[12],"paths":2,[^}]*"weight":1' \
 	    cat ecmp.json
 	atf_check -o match:'"nh-gw":"127.0.77.[23]"' "$JGC" -c "$SOCK" net nhgroups
 	# One of its ways deleted by its gateway: the other stays.
@@ -360,8 +360,8 @@ routes_body()
 	atf_check ifconfig "$ep" inet 192.0.2.201/24 up
 	atf_check arp -s 192.0.2.202 02:00:00:77:02:02
 	sleep 0.5
-	atf_check -o match:"\"address\":\"192.0.2.202\",\"lladdr\":\"02:00:00:77:02:02\",\"interface-name\":\"$ep\",\"state\":\"permanent\"" \
-	    -o match:'"total":[1-9]' "$JGC" -c "$SOCK" net neighbours -4 192.0.2.202
+	atf_check -o match:"\"address\":\"192.0.2.202\",\"family\":\"inet\",\"interface-name\":\"$ep\",\"lladdr\":\"02:00:00:77:02:02\",[^}]*\"state\":\"permanent\"" \
+	    -o match:'"total":"[1-9]' "$JGC" -c "$SOCK" net neighbours -4 192.0.2.202
 	atf_check -o match:'"kind":"neigh","data":\{"family":"inet","address":"192.0.2.202"' \
 	    "$JGC" -c "$SOCK" events "$last"
 	atf_check -o ignore arp -d 192.0.2.202
@@ -695,7 +695,7 @@ sdwan_jail_edge_body()
 	    "$JGC" -c "$SOCK" events
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '{"jail":"arcw_sdj","targets":[]}'
 	# Its network's multicast state, its own: lo0 alone, in 224.0.0.1.
-	atf_check -o match:'"interfaces":\[\{"name":"lo0",.*"group":"224.0.0.1"' \
+	atf_check -o match:'"interfaces":\[\{"groups":\[\{"family":"inet","group":"224.0.0.1".*"name":"lo0"\}\]' \
 	    -o not-match:'"name":"(vtnet|em|igb|ix)[0-9]' \
 	    -o match:'"settings":\[\{"name":"net.inet.igmp.default_version"' \
 	    "$JGC" -c "$SOCK" -j arcw_sdj net multicast
@@ -1381,16 +1381,16 @@ carp_body()
 	atf_check < stdin.in -o match:'done' \
 	    "$JGC" -c "$SOCK" -j arcw_c2 carp add "${ep%a}b" 192.0.2.1/24 vhid=7 advskew=100 key
 	sleep 4
-	atf_check -o match:'"carp":true' -o match:'"carp":\[\{"vhid":7,"state":"MASTER","version":2,"advbase":1,"advskew":0' \
-	    -o match:'"address":"192.0.2.1","prefixlen":24,"broadcast":"192.0.2.255","vhid":7' \
+	atf_check -o match:'"carp":true' -o match:'"carp":\[\{"advbase":1,"advskew":0,[^}]*"state":"MASTER","version":2,"vhid":7\}' \
+	    -o match:'"address":"192.0.2.1","broadcast":"192.0.2.255","family":"inet","prefixlen":24,"vhid":7' \
 	    "$JGC" -c "$SOCK" -j arcw_c1 net interfaces
-	atf_check -o match:'"state":"BACKUP","version":2,"advbase":1,"advskew":100' \
+	atf_check -o match:'"advbase":1,"advskew":100,[^}]*"state":"BACKUP","version":2' \
 	    "$JGC" -c "$SOCK" -j arcw_c2 net interfaces
 	# Told to step back: the other takes it.
 	atf_check -o match:'done' "$JGC" -c "$SOCK" -j arcw_c1 carp set "${ep%a}a" vhid=7 state=backup
 	sleep 5
 	atf_check -o match:'"state":"BACKUP"' "$JGC" -c "$SOCK" -j arcw_c1 net interfaces
-	atf_check -o match:'"state":"MASTER","version":2,"advbase":1,"advskew":100' \
+	atf_check -o match:'"advbase":1,"advskew":100,[^}]*"state":"MASTER","version":2' \
 	    "$JGC" -c "$SOCK" -j arcw_c2 net interfaces
 	# Changed: what is not given stays.
 	atf_check -o match:'done' "$JGC" -c "$SOCK" -j arcw_c2 carp set "${ep%a}b" vhid=7 advskew=50
@@ -3039,7 +3039,7 @@ console_group_body()
 	DAEMON_ARGS="-l unix:/tmp/arcana-g57.sock"
 	start_daemon
 	chmod 666 /tmp/arcana-g57.sock
-	atf_check -s exit:1 -e match:'Permission denied' \
+	atf_check -s exit:1 -e match:'may not say whom it asks for' \
 	    su -m nobody -c "$JGC -c unix:/tmp/arcana-g57.sock -u admin hello"
 }
 console_group_cleanup()

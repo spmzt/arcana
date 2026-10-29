@@ -846,13 +846,38 @@ target_conf(const struct arcana_probe_probes *p, const char *jail,
 	return (NULL);
 }
 
+/* What a target's or a monitor's configuration says of its probing. */
+struct probe_conf {
+	const struct arcana_probe_tca	*tca;
+	bool				 has_history;
+	uint32_t			 history;
+	bool				 has_down;
+	uint8_t				 down;
+	bool				 has_up;
+	uint8_t				 up;
+	const char			*interface;
+};
+
+#define	PROBE_CONF(pc, c) do {						\
+	(pc)->tca = (c)->tca;						\
+	(pc)->has_history = (c)->has_history;				\
+	(pc)->history = (c)->history;					\
+	(pc)->has_down = (c)->has_down;					\
+	(pc)->down = (c)->down;						\
+	(pc)->has_up = (c)->has_up;					\
+	(pc)->up = (c)->up;						\
+} while (0)
+
+/*
+ * A target as probe.c's target_json() put it, the settings of its
+ * configuration, c (NULL: none, the prober's own).
+ */
 static ucl_object_t *
-target_json(const struct arcana_probe_probes *p,
-    const struct arcana_probe_target_state *t)
+target_obj(const struct arcana_probe_target_state *t,
+    const struct probe_conf *c)
 {
 	static const char *const states[] = { "unknown", "up", "down",
 	    "ended", "error" };
-	const struct arcana_probe_target	*c;
 	ucl_object_t				*o, *now, *arr, *row;
 
 	o = ucl_object_typed_new(UCL_OBJECT);
@@ -903,9 +928,10 @@ target_json(const struct arcana_probe_probes *p,
 	}
 	put(o, "samples", arr);
 	PUT_INT(o, "kept", t, kept);
+	if (c != NULL)
+		put_str(o, "interface", c->interface);
 	/* The settings its edge's configuration has, the prober's own
 	 * where it says none. */
-	c = target_conf(p, t->jail, t->id);
 	if (c != NULL && c->tca != NULL && ((c->tca->has_delay &&
 	    c->tca->delay > 0) || (c->tca->has_ipdv && c->tca->ipdv > 0) ||
 	    (c->tca->has_loss && c->tca->loss > 0))) {
@@ -922,6 +948,107 @@ target_json(const struct arcana_probe_probes *p,
 	    3));
 	put(o, "up", ucl_object_fromint(c != NULL && c->has_up ? c->up : 3));
 	return (o);
+}
+
+static ucl_object_t *
+target_json(const struct arcana_probe_probes *p,
+    const struct arcana_probe_target_state *t)
+{
+	const struct arcana_probe_target	*c;
+	struct probe_conf			 pc;
+
+	memset(&pc, 0, sizeof(pc));
+	if ((c = target_conf(p, t->jail, t->id)) == NULL)
+		return (target_obj(t, NULL));
+	PROBE_CONF(&pc, c);
+	return (target_obj(t, &pc));
+}
+
+/* A monitor's settings as its edge's configuration has them. */
+static const struct arcana_probe_monitor *
+monitor_conf(const struct arcana_probe_probes *p, const char *jail,
+    const char *id)
+{
+	size_t		 n = 0;
+	const struct arcana_probe_monitor *v = NULL;
+
+	if (p == NULL)
+		return (NULL);
+	if (jail == NULL) {
+		n = p->monitor.n;
+		v = p->monitor.v;
+	} else
+		for (size_t i = 0; i < p->jail.n; i++)
+			if (strcmp(p->jail.v[i].name, jail) == 0) {
+				n = p->jail.v[i].monitor.n;
+				v = p->jail.v[i].monitor.v;
+			}
+	for (size_t i = 0; i < n; i++)
+		if (strcmp(v[i].name, id) == 0)
+			return (&v[i]);
+	return (NULL);
+}
+
+int
+ysdwan_monitors(cbl_conn *conn, bool has_after, uint64_t after,
+    ucl_object_t **data, char *err, size_t errlen)
+{
+	struct arcana_probe_probes_read_input	 in;
+	struct arcana_probe_probes_read_output	 rd;
+	const struct arcana_probe_monitor	*m;
+	const struct cbl_ynode			*np, *act;
+	struct arcana_probe			 pr;
+	struct probe_conf			 pc;
+	ucl_object_t				*top, *arr;
+	struct tm				 tm;
+	time_t					 t;
+	cbl_yarena				*a;
+	char					 when[32];
+	int					 error;
+
+	*data = NULL;
+	err[0] = '\0';
+	if ((np = yq_top("arcana-probe", "probes")) == NULL || (act =
+	    yq_child(np, "read")) == NULL) {
+		snprintf(err, errlen, "arcana-probe is not in the tables");
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&pr, 0, sizeof(pr));
+	memset(&in, 0, sizeof(in));
+	memset(&rd, 0, sizeof(rd));
+	in.has_monitors = true;
+	in.monitors = true;
+	t = (time_t)after;
+	if (has_after && gmtime_r(&t, &tm) != NULL && strftime(when,
+	    sizeof(when), "%Y-%m-%dT%H:%M:%SZ", &tm) > 0)
+		in.after = when;
+	if ((error = yq_get(conn, np, CBL_YDS_RUNNING, &pr, a, err,
+	    errlen)) == 0 && (error = yq_call(conn, np, NULL, act, &in, &rd, a,
+	    err, errlen)) == 0) {
+		/* As probe.c's do_monitors() put them. */
+		top = ucl_object_typed_new(UCL_OBJECT);
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		for (size_t i = 0; i < rd.target.n; i++) {
+			m = monitor_conf(pr.probes, rd.target.v[i].jail,
+			    rd.target.v[i].id);
+			memset(&pc, 0, sizeof(pc));
+			if (m != NULL) {
+				PROBE_CONF(&pc, m);
+				pc.interface = m->interface;
+			}
+			ucl_array_append(arr, target_obj(&rd.target.v[i],
+			    m != NULL ? &pc : NULL));
+		}
+		put(top, "monitors", arr);
+		put(top, "time", ucl_object_fromint(rd.time != NULL ?
+		    epoch(rd.time) : time(NULL)));
+		put(top, "probing", ucl_object_frombool(rd.probing));
+		*data = top;
+	}
+	cbl_yarena_free(a);
+	return (error);
 }
 
 /* An edge's rules and steering, as edge_json() put them. */
@@ -1429,4 +1556,33 @@ ysdwan_read(cbl_conn *conn, bool has_after, uint64_t after,
 		*data = read_json(sd.sdwan, pr.probes, &rd);
 	cbl_yarena_free(a);
 	return (error);
+}
+
+ucl_object_t *
+ysdwan_held(const struct arcana_sdwan *sd, const struct arcana_probe *pr,
+    const struct arcana_probe_probes_read_output *rd, uint64_t after)
+{
+	struct arcana_probe_probes_read_output	 out;
+	struct arcana_probe_target_state	*v;
+	ucl_object_t				*o;
+	size_t					 k;
+
+	/* Each target with the samples after the time, as the read
+	 * action gives them. */
+	out = *rd;
+	if ((v = calloc(rd->target.n + 1, sizeof(*v))) == NULL)
+		return (NULL);
+	for (size_t i = 0; i < rd->target.n; i++) {
+		v[i] = rd->target.v[i];
+		for (k = 0; k < v[i].sample.n && v[i].sample.v[k].time !=
+		    NULL && (uint64_t)epoch(v[i].sample.v[k].time) <= after;
+		    k++)
+			;
+		v[i].sample.v += k;
+		v[i].sample.n -= k;
+	}
+	out.target.v = v;
+	o = read_json(sd->sdwan, pr->probes, &out);
+	free(v);
+	return (o);
 }

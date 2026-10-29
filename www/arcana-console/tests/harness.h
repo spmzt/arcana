@@ -67,6 +67,7 @@ bool		 run_prog(char *const []);
 void		 start(const atf_tc_t *, int, const char *);
 void		 stop(void);
 void		 restart_console(void);
+void		 agent_restart(void);
 void		 console_stop(void);
 void		 console_start(void);
 void		 http_abandon(const char *);

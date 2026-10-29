@@ -358,7 +358,7 @@ do_sdwan_dns(struct work *w, const char *json, const char **errp)
 			if (strcmp(ni[k].name, instances[i].name) == 0)
 				break;
 		if (k == n) {
-			step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+			step = step_begin(w, STEP_DAEMON, "arcana-agent",
 			    "unbound %s stopped", instances[i].name);
 			inst_down(w, instances[i].name);
 			step_end(w, step, true, NULL);
@@ -371,7 +371,7 @@ do_sdwan_dns(struct work *w, const char *json, const char **errp)
 		    true);
 		conf = confs[k];
 		was = inst_pid(w, ni[k].name) != 0;
-		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		step = step_begin(w, STEP_DAEMON, "arcana-agent",
 		    "unbound %s in fib %d: %s", ni[k].name, ni[k].fib, was ?
 		    "started again" : "started");
 		/* Its response policy zones, files of their own; its key

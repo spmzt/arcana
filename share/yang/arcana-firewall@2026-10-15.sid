@@ -2,9 +2,13 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-firewall",
     "module-revision": "2026-10-15",
-    "sid-file-version": 1,
+    "sid-file-version": 4,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
+      {
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
+      },
       {
         "module-name": "ietf-inet-types",
         "module-revision": "2025-12-22"
@@ -15,6 +19,10 @@
       }
     ],
     "assignment-range": [
+      {
+        "entry-point": "84700",
+        "size": "100"
+      },
       {
         "entry-point": "70200",
         "size": "300"
@@ -1135,6 +1143,306 @@
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/seconds",
         "sid": "70422"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/check",
+        "sid": "84700"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/check/input",
+        "sid": "84701"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/check/input/jail",
+        "sid": "84702"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/check/input/text",
+        "sid": "84703"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/check/output",
+        "sid": "84704"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/from-rc",
+        "sid": "84705"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/from-rc/input",
+        "sid": "84706"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/from-rc/input/jail",
+        "sid": "84707"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/from-rc/output",
+        "sid": "84708"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/from-rc/output/rc-file",
+        "sid": "84709"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/from-rc/output/sha256",
+        "sid": "84710"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/from-rc/output/text",
+        "sid": "84711"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/jail",
+        "sid": "84712"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/jail/name",
+        "sid": "84713"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/jail/sha256",
+        "sid": "84714"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/jail/text",
+        "sid": "84715"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/rule/norm",
+        "sid": "84716"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/pipes",
+        "sid": "84717"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/rule/norm",
+        "sid": "84718"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/pipes",
+        "sid": "84719"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/check",
+        "sid": "84720"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/check/input",
+        "sid": "84721"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/check/input/jail",
+        "sid": "84722"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/check/input/text",
+        "sid": "84723"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/check/output",
+        "sid": "84724"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/from-rc",
+        "sid": "84725"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/from-rc/input",
+        "sid": "84726"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/from-rc/input/jail",
+        "sid": "84727"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/from-rc/output",
+        "sid": "84728"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/from-rc/output/rc-file",
+        "sid": "84729"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/from-rc/output/sha256",
+        "sid": "84730"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/from-rc/output/text",
+        "sid": "84731"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/jail",
+        "sid": "84732"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/jail/name",
+        "sid": "84733"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/jail/sha256",
+        "sid": "84734"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/jail/text",
+        "sid": "84735"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/modules",
+        "sid": "84736"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/modules/dummynet",
+        "sid": "84737"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/modules/ipfw-nat",
+        "sid": "84738"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/modules/ipfw-nat64",
+        "sid": "84739"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/modules/ipfw-nptv6",
+        "sid": "84740"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/table/set",
+        "sid": "84741"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/tunable",
+        "sid": "84742"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/tunable/name",
+        "sid": "84743"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/tunable/needed",
+        "sid": "84744"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/tunable/value",
+        "sid": "84745"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/tunable/want",
+        "sid": "84746"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/tunable/why",
+        "sid": "84747"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/modules",
+        "sid": "84748"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/modules/dummynet",
+        "sid": "84749"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/modules/ipfw-nat",
+        "sid": "84750"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/modules/ipfw-nat64",
+        "sid": "84751"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/modules/ipfw-nptv6",
+        "sid": "84752"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/table/set",
+        "sid": "84753"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/tunable",
+        "sid": "84754"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/tunable/name",
+        "sid": "84755"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/tunable/needed",
+        "sid": "84756"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/tunable/value",
+        "sid": "84757"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/tunable/want",
+        "sid": "84758"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/tunable/why",
+        "sid": "84759"
       }
     ]
   }

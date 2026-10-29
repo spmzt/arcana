@@ -1,0 +1,22 @@
+module: arcana-crashes
+  +--ro crashes
+     +---x read
+        +---w input
+        |  +---w backtrace?   string
+        |  +---w program?     string
+        +--ro output
+           +--ro corefile?    string
+           +--ro directory?   string
+           +--ro other*       string
+           +--ro core-file* [directory name]
+           |  +--ro directory    string
+           |  +--ro name         string
+           |  +--ro program?     string
+           |  +--ro pid?         uint32
+           |  +--ro size?        uint64
+           |  +--ro time?        yang:date-and-time
+           +--ro note*        string
+           +--ro core?        string
+           +--ro program?     string
+           +--ro backtrace?   string
+           +--ro truncated?   boolean

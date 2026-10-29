@@ -672,7 +672,7 @@ listed_in(struct work *w, const char *list, const char *name)
  * them all at once, of the host or of the jail worked in.
  */
 int
-do_kept_routes(struct work *w, struct arc_network_rsp *rsp)
+do_kept_routes(struct work *w, struct net_rsp *rsp)
 {
 	static const char *const pfxs[] = { "", "ipv6_" };
 	struct execres	 res;

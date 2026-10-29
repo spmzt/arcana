@@ -134,9 +134,14 @@ LDADD.kmsg+=	${CBLINK_LIBS} -ljail -lpthread
 PROGS+=		notifrecv
 SRCS.notifrecv=	notifrecv.c
 LDADD.notifrecv+=	-lssl -lcrypto
-# zupdate: agent-update with what a sender lies about (an inflate bomb).
+# ystreamc: an arcana-stream stream opened as a certificate's peer.
+PROGS+=		ystreamc
+SRCS.ystreamc=	ystreamc.c ystream.c ymodel_schema.c
+LDADD.ystreamc+=	${CBLINK_LIBS}
+# zupdate: arcana-agent's update with what a sender lies about (an
+# inflate bomb).
 PROGS+=		zupdate
-SRCS.zupdate=	zupdate.c arcana_v2_schema.c
+SRCS.zupdate=	zupdate.c ymodel_schema.c
 LDADD.zupdate+=	${CBLINK_LIBS}
 # fwmatch: a packet walked through an ipfw ruleset.
 PROGS+=		fwmatch
@@ -146,7 +151,7 @@ CFLAGS.fwmatch_test.c+=	-I${.CURDIR}/../invidia
 		${.CURDIR}/../luxuria \
 		${.CURDIR}/../superbia ${.CURDIR}/../gula ${.CURDIR}/.. ${YOBJ} \
 		${.CURDIR}/../../../www/arcana-console
-CFLAGS+=	-I${.CURDIR}/../invidia ${CBLINK_CFLAGS}
+CFLAGS+=	-I${.CURDIR}/../invidia -I${.CURDIR}/../ira ${CBLINK_CFLAGS}
 MAN=
 
 # No mtree(8) hierarchy outside the tree: create the directory first.
