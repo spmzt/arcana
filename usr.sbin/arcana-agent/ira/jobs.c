@@ -94,7 +94,8 @@ static pthread_mutex_t	jobs_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t	jobs_cv = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t	confirm_cv = PTHREAD_COND_INITIALIZER;
 /* Jobs of pkg in jails at work in lanes of their own, and how many
- * lanes there are (jobs-set, kept in jobs.conf); under jobs_lock. */
+ * lanes there are (arcana-jobs' lanes, kept in jobs.conf); under
+ * jobs_lock. */
 static int		lanes_busy;
 static int		lanes_max = PKG_LANES;
 static uint64_t		nextid = 1;
@@ -1969,7 +1970,8 @@ jobs_set_lanes(int n)
 	snprintf(tmp, sizeof(tmp), "%s.new", opts.jobs_conf);
 	if ((fp = fopen(tmp, "we")) == NULL)
 		return ("jobs.conf could not be written");
-	fprintf(fp, "# Written by arcana-agent: jobs-set.\nlanes=%d\n", n);
+	fprintf(fp, "# Written by arcana-agent: arcana-jobs' lanes.\n"
+	    "lanes=%d\n", n);
 	if (fclose(fp) != 0 || rename(tmp, opts.jobs_conf) == -1) {
 		(void)unlink(tmp);
 		return ("jobs.conf could not be written");

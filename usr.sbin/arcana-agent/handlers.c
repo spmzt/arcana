@@ -352,7 +352,6 @@ worker(void *arg)
 	struct arc_ssh_rsp	 sshr;
 	struct arc_capture_req	 capq;
 	struct arc_capture_rsp	 capr;
-	struct arc_zfs_key_rsp	 zkr;
 	struct arc_tls_rsp	 tlr;
 	struct arc_transport_rsp tpr;
 	struct arc_config_export_rsp cxr;
@@ -366,9 +365,6 @@ worker(void *arg)
 	struct arc_fw_trace_rsp	 ftr;
 	struct arc_history_rsp	 hsr;
 	struct arc_events_rsp	 evr;
-	struct arc_storage_rsp	 stg;
-	struct arc_fstab_req	 fq;
-	struct arc_fstab_rsp	 fr;
 	struct arc_agent_update_rsp aur;
 	struct arc_agent_build_rsp abr;
 	struct arc_source_head_rsp shr;
@@ -390,7 +386,6 @@ worker(void *arg)
 	case ARC_CMD_NOTIFY:
 	case ARC_CMD_CONFIG_APPLY:
 	case ARC_CMD_TRANSPORT:
-	case ARC_CMD_ZFS_KEY:
 	case ARC_CMD_TLS:
 	case ARC_CMD_SDWAN_PROBES:
 	case ARC_CMD_SDWAN_RULES:
@@ -598,54 +593,6 @@ worker(void *arg)
 		trace_steps(&w, &evr.trace.v, &evr.trace.n);
 		rc = arc_events_reply(j->req, &evr);
 		break;
-	case ARC_CMD_STORAGE:
-		what = "storage";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "storage");
-		memset(&stg, 0, sizeof(stg));
-		/* A jail's: what its own zfs sees, the datasets given it. */
-		if (j->jail != NULL && j->action != ARC_STORAGE_KIND_DATASETS &&
-		    j->action != ARC_STORAGE_KIND_SNAPSHOTS) {
-			stg.has_ok = true;
-			stg.error = "of a jail, its datasets and snapshots only";
-		} else if (scope_enter_jail(&w, j->jail, &stg.error, false) ==
-		    0)
-			do_storage(&w, j->action, j->source, &stg);
-		ok = stg.ok;
-		error = stg.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &stg.trace.v, &stg.trace.n);
-		rc = arc_storage_reply(j->req, &stg);
-		break;
-	case ARC_CMD_FSTAB:
-		/* The text rides in ref, its checksum in sha256. */
-		what = wfmt(&w, "fstab %s", j->ref == NULL ? "read" :
-		    j->refresh ? "check" : "write");
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "%s", what);
-		memset(&fq, 0, sizeof(fq));
-		memset(&fr, 0, sizeof(fr));
-		fq.conf_text = j->ref;
-		fq.sha256 = j->sha256;
-		fq.dry_run = j->refresh;
-		fr.has_ok = true;
-		if (j->ref == NULL || j->refresh)
-			do_fstab(&w, &fq, &fr);
-		else {
-			pthread_mutex_lock(&change_lock);
-			if (change_note("%s", what))
-				do_fstab(&w, &fq, &fr);
-			else
-				fr.error = STOPPING;
-			change_note(NULL);
-			pthread_mutex_unlock(&change_lock);
-		}
-		ok = fr.ok;
-		error = fr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &fr.trace.v, &fr.trace.n);
-		rc = arc_fstab_reply(j->req, &fr);
-		break;
 	case ARC_CMD_CERTS:
 		what = j->jail != NULL ? wfmt(&w, "certificates of %s", j->jail) :
 		    "certificates";
@@ -660,40 +607,6 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &cer.trace.v, &cer.trace.n);
 		rc = arc_certs_reply(j->req, &cer);
-		break;
-	case ARC_CMD_ZFS_KEY:
-		/* The keys ride in source and ref: in nothing logged. */
-		what = wfmt(&w, "zfs key of %s", j->sha256);
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "%s", what);
-		memset(&zkr, 0, sizeof(zkr));
-		zkr.has_ok = true;
-		{
-			struct arc_zfs_key_req	zq;
-
-			memset(&zq, 0, sizeof(zq));
-			zq.zfs_dataset = j->sha256;
-			zq.zfs_key = j->source;
-			zq.zfs_new_key = j->ref;
-			/* Made encrypted so, where it is asked. */
-			zq.zfs_create = j->host_keys;
-			pthread_mutex_lock(&change_lock);
-			if (change_note("%s", what))
-				do_zfs_key(&w, &zq, &zkr);
-			else
-				zkr.error = STOPPING;
-			change_note(NULL);
-			pthread_mutex_unlock(&change_lock);
-		}
-		if (j->source != NULL)
-			explicit_bzero(j->source, strlen(j->source));
-		if (j->ref != NULL)
-			explicit_bzero(j->ref, strlen(j->ref));
-		ok = zkr.ok;
-		error = zkr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &zkr.trace.v, &zkr.trace.n);
-		rc = arc_zfs_key_reply(j->req, &zkr);
 		break;
 	case ARC_CMD_TLS:
 		/* The verb in sha256, the PEMs in source, ref and host_keys. */
@@ -1863,31 +1776,6 @@ arc_bird_config_doit(cbl_req *req, const struct arc_bird_config_req *rq,
 }
 
 int
-arc_storage_doit(cbl_req *req, const struct arc_storage_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->storage_kind > ARC_STORAGE_KIND_HEALTH)
-		return (reject(req, "no such kind of storage"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_STORAGE;
-	j->action = rq->storage_kind;
-	if (rq->jail != NULL && rq->jail[0] != '\0') {
-		if (!valid_jail(rq->jail)) {
-			free(j);
-			return (reject(req, "invalid jail name"));
-		}
-		j->jail = xstrdup(rq->jail);
-	}
-	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
-	    xstrdup(rq->net_filter) : NULL;
-	return (start(j));
-}
-
-int
 arc_ipfw_rules_doit(cbl_req *req, const struct arc_ipfw_rules_req *rq,
     void *arg __unused)
 {
@@ -2170,22 +2058,6 @@ arc_network_dumpit(cbl_req *req, const struct arc_network_dump_req *rq,
 }
 
 int
-arc_fstab_doit(cbl_req *req, const struct arc_fstab_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_FSTAB;
-	j->ref = rq->conf_text != NULL ? xstrdup(rq->conf_text) : NULL;
-	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
-	j->refresh = rq->dry_run;
-	return (start(j));
-}
-
-int
 arc_certs_doit(cbl_req *req, const struct arc_certs_req *rq,
     void *arg __unused)
 {
@@ -2199,23 +2071,6 @@ arc_certs_doit(cbl_req *req, const struct arc_certs_req *rq,
 	j->cmd = ARC_CMD_CERTS;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
-	return (start(j));
-}
-
-int
-arc_zfs_key_doit(cbl_req *req, const struct arc_zfs_key_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_ZFS_KEY;
-	j->sha256 = xstrdup(rq->zfs_dataset);
-	j->source = rq->zfs_key != NULL ? xstrdup(rq->zfs_key) : NULL;
-	j->ref = rq->zfs_new_key != NULL ? xstrdup(rq->zfs_new_key) : NULL;
-	j->host_keys = rq->zfs_create != NULL ? xstrdup(rq->zfs_create) : NULL;
 	return (start(j));
 }
 
@@ -2993,8 +2848,8 @@ cuts_off(cbl_req *req, const struct arc_job_spec *sp)
 /*
  * A batch of jobs req asks for, checked and queued: each spec's own
  * checks, what would cut its sender off, the queue's room; the jobs
- * into *v, *n, w's.  -1 and *errp: none queued.  job-submit's, and
- * arcana-jobs' submit's (yarcana.c).
+ * into *v, *n, w's.  -1 and *errp: none queued.  arcana-jobs' submit's
+ * (yarcana.c).
  */
 int
 jobs_submit_checked(cbl_req *req, const struct arc_job_spec *specs, size_t n,
@@ -3016,130 +2871,4 @@ jobs_submit_checked(cbl_req *req, const struct arc_job_spec *specs, size_t n,
 	jobs_submit(specs, n, peer, w, v, nv);
 	free(peer);
 	return (0);
-}
-
-/* Jobs are queued, listed and read on the loop: none of it waits. */
-int
-arc_job_submit_doit(cbl_req *req, const struct arc_job_submit_req *rq,
-    void *arg __unused)
-{
-	struct arc_job_submit_rsp	 rsp;
-	struct work			 w;
-	const char			*e;
-	int				 error;
-
-	work_init(&w);
-	memset(&rsp, 0, sizeof(rsp));
-	if (jobs_submit_checked(req, rq->batch.v, rq->batch.n, &w,
-	    &rsp.jobs.v, &rsp.jobs.n, &e) != 0) {
-		work_free(&w);
-		return (reject(req, e));
-	}
-	rsp.has_ok = true;
-	rsp.ok = true;
-	error = arc_job_submit_reply(req, &rsp);
-	work_free(&w);
-	return (error);
-}
-
-int
-arc_jobs_doit(cbl_req *req, void *arg __unused)
-{
-	struct arc_jobs_rsp	rsp;
-	struct work		w;
-	time_t			since;
-	int			error;
-
-	work_init(&w);
-	memset(&rsp, 0, sizeof(rsp));
-	rsp.has_ok = true;
-	rsp.ok = true;
-	jobs_list(&w, &rsp.jobs.v, &rsp.jobs.n);
-	if ((rsp.activity = changes_current(&w, &since)) != NULL) {
-		rsp.has_since = true;
-		rsp.since = since;
-	}
-	rsp.stopping = changes_stopping();
-	rsp.has_lanes = true;
-	rsp.lanes = (uint8_t)jobs_lanes();
-	error = arc_jobs_reply(req, &rsp);
-	work_free(&w);
-	return (error);
-}
-
-int
-arc_jobs_set_doit(cbl_req *req, const struct arc_jobs_set_req *rq,
-    void *arg __unused)
-{
-	struct arc_jobs_set_rsp	rsp;
-	const char		*e;
-
-	memset(&rsp, 0, sizeof(rsp));
-	rsp.has_ok = true;
-	e = jobs_set_lanes((int)rq->lanes);
-	rsp.ok = e == NULL;
-	rsp.error = e;
-	rsp.has_lanes = true;
-	rsp.lanes = (uint8_t)jobs_lanes();
-	return (arc_jobs_set_reply(req, &rsp));
-}
-
-int
-arc_job_doit(cbl_req *req, const struct arc_job_req *rq, void *arg __unused)
-{
-	struct arc_job_rsp	rsp;
-	struct work		w;
-	int			error;
-
-	work_init(&w);
-	memset(&rsp, 0, sizeof(rsp));
-	rsp.has_ok = true;
-	rsp.job = jobs_get(&w, rq->id);
-	rsp.ok = rsp.job != NULL;
-	if (!rsp.ok)
-		rsp.error = "no such job; the daemon keeps the last finished "
-		    "ones and forgets all when it restarts";
-	error = arc_job_reply(req, &rsp);
-	work_free(&w);
-	return (error);
-}
-
-int
-arc_job_confirm_doit(cbl_req *req, const struct arc_job_confirm_req *rq,
-    void *arg __unused)
-{
-	struct arc_job_confirm_rsp	rsp;
-	struct work			w;
-	int				error;
-
-	work_init(&w);
-	memset(&rsp, 0, sizeof(rsp));
-	rsp.has_ok = true;
-	rsp.job = jobs_confirm(&w, rq->id, &rsp.error);
-	rsp.ok = rsp.job != NULL;
-	if (rsp.ok)
-		rsp.error = NULL;
-	error = arc_job_confirm_reply(req, &rsp);
-	work_free(&w);
-	return (error);
-}
-
-int
-arc_job_cancel_doit(cbl_req *req, const struct arc_job_cancel_req *rq,
-    void *arg __unused)
-{
-	struct arc_job_cancel_rsp	rsp;
-	struct work			w;
-	int				error;
-
-	work_init(&w);
-	memset(&rsp, 0, sizeof(rsp));
-	rsp.has_ok = true;
-	rsp.job = jobs_cancel(&w, rq->id, &rsp.error);
-	rsp.ok = rsp.job != NULL;
-	if (rsp.ok)
-		rsp.error = NULL;
-	error = arc_job_cancel_reply(req, &rsp);
-	work_free(&w);
-	return (error);
 }

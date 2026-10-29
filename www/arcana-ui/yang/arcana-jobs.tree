@@ -1,5 +1,6 @@
 module: arcana-jobs
-  +--ro jobs
+  +--rw jobs
+     +--rw lanes?      uint8
      +--ro activity?   string
      +--ro since?      int64
      +--ro stopping?   boolean
@@ -15,393 +16,389 @@ module: arcana-jobs
         +--ro finished?     int64
         +--ro peer?         string
         +--ro confirm-by?   int64
-        +--ro step* [id]
-        |  +--ro id              uint32
-        |  +--ro parent?         int32
-        |  +--ro kind?           enumeration
-        |  +--ro label?          string
-        |  +--ro detail?         string
-        |  +--ro status?         enumeration
-        |  +--ro duration?       uint64
-        |  +--ro argv*           string
-        |  +--ro exit?           int32
-        |  +--ro output?         binary
-        |  +--ro error-output?   binary
         +---x cancel
         |  +--ro output
         |     +--ro state?   job-state
         +---x confirm
+        |  +--ro output
+        |     +--ro state?   job-state
+        +---x read
            +--ro output
-              +--ro state?   job-state
+              +--ro kind?         job-kind
+              +--ro title?        string
+              +--ro state?        job-state
+              +--ro ok?           boolean
+              +--ro error?        string
+              +--ro created?      int64
+              +--ro started?      int64
+              +--ro finished?     int64
+              +--ro peer?         string
+              +--ro confirm-by?   int64
+              +--ro step* [id]
+                 +--ro id              uint32
+                 +--ro parent?         int32
+                 +--ro kind?           enumeration
+                 +--ro label?          string
+                 +--ro detail?         string
+                 +--ro status?         enumeration
+                 +--ro duration?       uint64
+                 +--ro argv*           string
+                 +--ro exit?           int32
+                 +--ro output?         binary
+                 +--ro error-output?   binary
 
   rpcs:
     +---x submit
        +---w input
        |  +---w change*
        |     +---w (kind)
-       |        +--:(jail-action)
-       |        |  +---w jail-action!
-       |        |     +---w jail      string
-       |        |     +---w action    enumeration
-       |        +--:(address)
-       |        |  +---w address!
-       |        |     +---w jail         string
-       |        |     +---w address      string
-       |        |     +---w interface?   string
-       |        |     +---w remove?      boolean
-       |        |     +---w live?        boolean
-       |        |     +---w persist?     boolean
-       |        +--:(service-action)
-       |        |  +---w service-action!
-       |        |     +---w service    string
-       |        |     +---w action     enumeration
-       |        |     +---w safe?      boolean
-       |        +--:(service-config)
-       |        |  +---w service-config!
-       |        |     +---w service    string
-       |        |     +---w set* [name]
-       |        |     |  +---w name     string
-       |        |     |  +---w value?   string
-       |        |     +---w unset*     string
-       |        |     +---w safe?      boolean
-       |        +--:(pkg-upgrade)
-       |        |  +---w pkg-upgrade!
-       |        |     +---w jail?       string
-       |        |     +---w packages*   string
-       |        |     +---w force?      boolean
-       |        |     +---w pkg-ip?     uint32
-       |        |     +---w pkg-repo?   string
-       |        +--:(if-address)
-       |        |  +---w if-address!
-       |        |     +---w interface    string
-       |        |     +---w address      string
-       |        |     +---w jail?        string
-       |        |     +---w remove?      boolean
-       |        |     +---w live?        boolean
-       |        |     +---w persist?     boolean
-       |        |     +---w safe?        boolean
-       |        +--:(if-state)
-       |        |  +---w if-state!
-       |        |     +---w interface    string
-       |        |     +---w up           boolean
-       |        |     +---w jail?        string
-       |        |     +---w persist?     boolean
-       |        |     +---w safe?        boolean
-       |        +--:(route)
-       |        |  +---w route!
-       |        |     +---w destination    string
-       |        |     +---w jail?          string
-       |        |     +---w gateway?       string
-       |        |     +---w remove?        boolean
-       |        |     +---w fib?           uint32
-       |        |     +---w metric?        uint32
-       |        |     +---w weight?        uint32
-       |        |     +---w source?        string
-       |        |     +---w route-name*    string
-       |        |     +---w verb?          enumeration
-       |        |     +---w persist?       boolean
-       |        |     +---w safe?          boolean
-       |        +--:(if-set)
-       |        |  +---w if-set!
-       |        |     +---w interface      string
-       |        |     +---w jail?          string
-       |        |     +---w mtu?           uint32
-       |        |     +---w description?   string
-       |        |     +---w fib?           uint32
-       |        |     +---w tunnelfib?     uint32
-       |        |     +---w addressing?    string
-       |        |     +---w persist?       boolean
-       |        |     +---w safe?          boolean
-       |        +--:(if-create)
-       |        |  +---w if-create!
-       |        |     +---w interface        string
-       |        |     +---w jail?            string
-       |        |     +---w tunnel-local?    string
-       |        |     +---w tunnel-remote?   string
-       |        |     +---w address?         string
-       |        |     +---w destination?     string
-       |        |     +---w description?     string
-       |        |     +---w mtu?             uint32
-       |        |     +---w fib?             uint32
-       |        |     +---w tunnelfib?       uint32
-       |        |     +---w id?              uint32
-       |        |     +---w parent?          string
-       |        |     +---w reqid?           uint32
-       |        |     +---w persist?         boolean
-       |        |     +---w safe?            boolean
-       |        +--:(if-destroy)
-       |        |  +---w if-destroy!
-       |        |     +---w interface    string
-       |        |     +---w jail?        string
-       |        |     +---w persist?     boolean
-       |        |     +---w safe?        boolean
-       |        +--:(netgraph)
-       |        |  +---w netgraph!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        |     +---w jail?   string
-       |        +--:(wireguard)
-       |        |  +---w wireguard!
-       |        |     +---w interface        string
-       |        |     +---w verb             enumeration
-       |        |     +---w jail?            string
-       |        |     +---w peer?            string
-       |        |     +---w endpoint?        string
-       |        |     +---w allowed-ips?     string
-       |        |     +---w keepalive?       uint32
-       |        |     +---w listen-port?     uint32
-       |        |     +---w persist?         boolean
-       |        |     +---w preshared-key?   string
-       |        |     +---w safe?            boolean
-       |        +--:(bird)
-       |        |  +---w bird!
-       |        |     +---w verb    enumeration
-       |        |     +---w jail?   string
-       |        |     +---w args*   string
-       |        |     +---w safe?   boolean
-       |        +--:(if-vnet)
-       |        |  +---w if-vnet!
-       |        |     +---w interface    string
-       |        |     +---w jail         string
-       |        |     +---w remove?      boolean
-       |        |     +---w parent?      string
-       |        |     +---w persist?     boolean
-       |        +--:(kmod)
-       |        |  +---w kmod!
-       |        |     +---w verb       enumeration
-       |        |     +---w args*      string
-       |        |     +---w persist?   boolean
-       |        |     +---w safe?      boolean
-       |        +--:(ntp)
-       |        |  +---w ntp!
-       |        |     +---w args*      string
-       |        |     +---w remove?    boolean
-       |        |     +---w persist?   boolean
-       |        +--:(rtadvd)
-       |        |  +---w rtadvd!
-       |        |     +---w interface    string
-       |        |     +---w args*        string
-       |        |     +---w remove?      boolean
-       |        |     +---w persist?     boolean
-       |        +--:(ipsec-sa)
-       |        |  +---w ipsec-sa!
-       |        |     +---w verb             enumeration
-       |        |     +---w interface        string
-       |        |     +---w reqid?           uint32
-       |        |     +---w tunnel-local?    string
-       |        |     +---w tunnel-remote?   string
-       |        |     +---w args*            string
-       |        |     +---w safe?            boolean
-       |        +--:(zfs)
-       |        |  +---w zfs!
-       |        |     +---w verb         string
-       |        |     +---w args*        string
-       |        |     +---w recursive?   boolean
-       |        |     +---w force?       boolean
-       |        +--:(zpool)
-       |        |  +---w zpool!
-       |        |     +---w verb     string
-       |        |     +---w args*    string
-       |        |     +---w force?   boolean
-       |        +--:(mount)
-       |        |  +---w mount!
-       |        |     +---w verb     string
-       |        |     +---w args*    string
-       |        |     +---w force?   boolean
-       |        +--:(gpart)
-       |        |  +---w gpart!
-       |        |     +---w verb     string
-       |        |     +---w args*    string
-       |        |     +---w force?   boolean
-       |        +--:(cam)
-       |        |  +---w cam!
-       |        |     +---w verb    string
-       |        |     +---w args*   string
-       |        +--:(sysctl)
-       |        |  +---w sysctl!
-       |        |     +---w args*      string
-       |        |     +---w jail?      string
-       |        |     +---w persist?   boolean
-       |        |     +---w safe?      boolean
-       |        +--:(ipfw)
-       |        |  +---w ipfw!
-       |        |     +---w verb       string
-       |        |     +---w args*      string
-       |        |     +---w jail?      string
-       |        |     +---w persist?   boolean
-       |        |     +---w safe?      boolean
-       |        |     +---w text?      string
-       |        +--:(bridge)
-       |        |  +---w bridge!
-       |        |     +---w verb       string
-       |        |     +---w args*      string
-       |        |     +---w jail?      string
-       |        |     +---w persist?   boolean
-       |        |     +---w safe?      boolean
-       |        +--:(geneve)
-       |        |  +---w geneve!
-       |        |     +---w verb       string
-       |        |     +---w args*      string
-       |        |     +---w jail?      string
-       |        |     +---w persist?   boolean
-       |        |     +---w safe?      boolean
-       |        +--:(process)
-       |        |  +---w process!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        +--:(pkg-clean)
-       |        |  +---w pkg-clean!
-       |        |     +---w jail?    string
-       |        |     +---w force?   boolean
-       |        +--:(ipsec)
-       |        |  +---w ipsec!
-       |        |     +---w verb             enumeration
-       |        |     +---w jail?            string
-       |        |     +---w conn?            string
-       |        |     +---w child?           string
-       |        |     +---w tunnel-local?    string
-       |        |     +---w tunnel-remote?   string
-       |        |     +---w ipsec-mode?      enumeration
-       |        |     +---w pubkey?          string
-       |        |     +---w local-cert?      string
-       |        |     +---w remote-cert?     string
-       |        |     +---w remote-ca?       string
-       |        |     +---w local-ts?        string
-       |        |     +---w remote-ts?       string
-       |        |     +---w reqid?           uint32
-       |        |     +---w start-action?    enumeration
-       |        |     +---w local-id?        string
-       |        |     +---w remote-id?       string
-       |        |     +---w persist?         boolean
-       |        |     +---w safe?            boolean
-       |        +--:(pkg-install)
-       |        |  +---w pkg-install!
-       |        |     +---w packages*   string
-       |        |     +---w jail?       string
-       |        |     +---w force?      boolean
-       |        |     +---w pkg-ip?     uint32
-       |        |     +---w pkg-repo?   string
-       |        +--:(jail-base)
-       |        |  +---w jail-base!
-       |        |     +---w jail        string
-       |        |     +---w verb        enumeration
-       |        |     +---w packages*   string
-       |        |     +---w release?    string
-       |        |     +---w force?      boolean
-       |        |     +---w pkg-ip?     uint32
-       |        |     +---w pkg-repo?   string
-       |        +--:(reboot)
-       |        |  +---w reboot!
-       |        +--:(jail-conf)
-       |        |  +---w jail-conf!
-       |        |     +---w verb        enumeration
-       |        |     +---w jail?       string
-       |        |     +---w dataset?    string
-       |        |     +---w snapshot?   string
-       |        |     +---w copy?       enumeration
-       |        |     +---w path?       string
-       |        |     +---w text?       string
-       |        |     +---w start?      boolean
-       |        |     +---w args*       string
-       |        +--:(jail-allow)
-       |        |  +---w jail-allow!
-       |        |     +---w jail       string
-       |        |     +---w args*      string
-       |        |     +---w live?      boolean
-       |        |     +---w persist?   boolean
-       |        |     +---w safe?      boolean
-       |        +--:(carp)
-       |        |  +---w carp!
-       |        |     +---w verb             enumeration
-       |        |     +---w interface        string
-       |        |     +---w jail?            string
-       |        |     +---w address?         string
-       |        |     +---w args*            string
-       |        |     +---w preshared-key?   string
-       |        |     +---w persist?         boolean
-       |        |     +---w safe?            boolean
-       |        +--:(neighbour)
-       |        |  +---w neighbour!
-       |        |     +---w verb         enumeration
-       |        |     +---w address      string
-       |        |     +---w jail?        string
-       |        |     +---w lladdr?      string
-       |        |     +---w temporary?   boolean
-       |        |     +---w live?        boolean
-       |        |     +---w persist?     boolean
-       |        +--:(cert)
-       |        |  +---w cert!
-       |        |     +---w verb    enumeration
-       |        |     +---w jail?   string
-       |        |     +---w path?   string
-       |        |     +---w text?   string
-       |        +--:(ssh)
-       |        |  +---w ssh!
-       |        |     +---w verb    enumeration
-       |        |     +---w jail?   string
-       |        |     +---w path?   string
-       |        |     +---w args*   string
-       |        |     +---w text?   string
-       |        |     +---w user?   string
-       |        |     +---w safe?   boolean
-       |        +--:(poudriere)
-       |        |  +---w poudriere!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        |     +---w text?   string
-       |        +--:(clamav)
-       |        |  +---w clamav!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        |     +---w text?   string
-       |        +--:(suricata)
-       |        |  +---w suricata!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        |     +---w text?   string
-       |        +--:(nfs)
-       |        |  +---w nfs!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        |     +---w text?   string
-       |        +--:(iscsi)
-       |        |  +---w iscsi!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        |     +---w text?   string
-       |        +--:(hast)
-       |        |  +---w hast!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        |     +---w text?   string
-       |        +--:(sysfile)
-       |        |  +---w sysfile!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        |     +---w text?   string
-       |        |     +---w safe?   boolean
-       |        +--:(geom)
-       |        |  +---w geom!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        |     +---w text?   string
-       |        +--:(smtpd)
-       |        |  +---w smtpd!
-       |        |     +---w verb     enumeration
-       |        |     +---w jail?    string
-       |        |     +---w args*    string
-       |        |     +---w text?    string
-       |        |     +---w force?   boolean
-       |        +--:(monitor)
-       |        |  +---w monitor!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        |     +---w jail?   string
-       |        +--:(speeder)
-       |           +---w speeder!
-       |              +---w verb    enumeration
-       |              +---w jail?   string
-       |              +---w args*   string
-       |              +---w safe?   boolean
+       |     |  +--:(jail-action)
+       |     |  |  +---w jail-action!
+       |     |  |     +---w jail      string
+       |     |  |     +---w action    enumeration
+       |     |  +--:(address)
+       |     |  |  +---w address!
+       |     |  |     +---w jail         string
+       |     |  |     +---w address      string
+       |     |  |     +---w interface?   string
+       |     |  |     +---w remove?      boolean
+       |     |  |     +---w live?        boolean
+       |     |  |     +---w persist?     boolean
+       |     |  +--:(service-action)
+       |     |  |  +---w service-action!
+       |     |  |     +---w service    string
+       |     |  |     +---w action     enumeration
+       |     |  +--:(service-config)
+       |     |  |  +---w service-config!
+       |     |  |     +---w service    string
+       |     |  |     +---w set* [name]
+       |     |  |     |  +---w name     string
+       |     |  |     |  +---w value?   string
+       |     |  |     +---w unset*     string
+       |     |  +--:(pkg-upgrade)
+       |     |  |  +---w pkg-upgrade!
+       |     |  |     +---w jail?       string
+       |     |  |     +---w packages*   string
+       |     |  |     +---w force?      boolean
+       |     |  |     +---w pkg-ip?     uint32
+       |     |  |     +---w pkg-repo?   string
+       |     |  +--:(if-address)
+       |     |  |  +---w if-address!
+       |     |  |     +---w interface    string
+       |     |  |     +---w address      string
+       |     |  |     +---w jail?        string
+       |     |  |     +---w remove?      boolean
+       |     |  |     +---w live?        boolean
+       |     |  |     +---w persist?     boolean
+       |     |  +--:(if-state)
+       |     |  |  +---w if-state!
+       |     |  |     +---w interface    string
+       |     |  |     +---w up           boolean
+       |     |  |     +---w jail?        string
+       |     |  |     +---w persist?     boolean
+       |     |  +--:(route)
+       |     |  |  +---w route!
+       |     |  |     +---w destination    string
+       |     |  |     +---w jail?          string
+       |     |  |     +---w gateway?       string
+       |     |  |     +---w remove?        boolean
+       |     |  |     +---w fib?           uint32
+       |     |  |     +---w metric?        uint32
+       |     |  |     +---w weight?        uint32
+       |     |  |     +---w source?        string
+       |     |  |     +---w route-name*    string
+       |     |  |     +---w verb?          enumeration
+       |     |  |     +---w persist?       boolean
+       |     |  +--:(if-set)
+       |     |  |  +---w if-set!
+       |     |  |     +---w interface      string
+       |     |  |     +---w jail?          string
+       |     |  |     +---w mtu?           uint32
+       |     |  |     +---w description?   string
+       |     |  |     +---w fib?           uint32
+       |     |  |     +---w tunnelfib?     uint32
+       |     |  |     +---w addressing?    string
+       |     |  |     +---w persist?       boolean
+       |     |  +--:(if-create)
+       |     |  |  +---w if-create!
+       |     |  |     +---w interface        string
+       |     |  |     +---w jail?            string
+       |     |  |     +---w tunnel-local?    string
+       |     |  |     +---w tunnel-remote?   string
+       |     |  |     +---w address?         string
+       |     |  |     +---w destination?     string
+       |     |  |     +---w description?     string
+       |     |  |     +---w mtu?             uint32
+       |     |  |     +---w fib?             uint32
+       |     |  |     +---w tunnelfib?       uint32
+       |     |  |     +---w id?              uint32
+       |     |  |     +---w parent?          string
+       |     |  |     +---w reqid?           uint32
+       |     |  |     +---w persist?         boolean
+       |     |  +--:(if-destroy)
+       |     |  |  +---w if-destroy!
+       |     |  |     +---w interface    string
+       |     |  |     +---w jail?        string
+       |     |  |     +---w persist?     boolean
+       |     |  +--:(netgraph)
+       |     |  |  +---w netgraph!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w args*   string
+       |     |  |     +---w jail?   string
+       |     |  +--:(wireguard)
+       |     |  |  +---w wireguard!
+       |     |  |     +---w interface        string
+       |     |  |     +---w verb             enumeration
+       |     |  |     +---w jail?            string
+       |     |  |     +---w peer?            string
+       |     |  |     +---w endpoint?        string
+       |     |  |     +---w allowed-ips?     string
+       |     |  |     +---w keepalive?       uint32
+       |     |  |     +---w listen-port?     uint32
+       |     |  |     +---w persist?         boolean
+       |     |  |     +---w preshared-key?   string
+       |     |  +--:(bird)
+       |     |  |  +---w bird!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w jail?   string
+       |     |  |     +---w args*   string
+       |     |  +--:(if-vnet)
+       |     |  |  +---w if-vnet!
+       |     |  |     +---w interface    string
+       |     |  |     +---w jail         string
+       |     |  |     +---w remove?      boolean
+       |     |  |     +---w parent?      string
+       |     |  |     +---w persist?     boolean
+       |     |  +--:(kmod)
+       |     |  |  +---w kmod!
+       |     |  |     +---w verb       enumeration
+       |     |  |     +---w args*      string
+       |     |  |     +---w persist?   boolean
+       |     |  +--:(ntp)
+       |     |  |  +---w ntp!
+       |     |  |     +---w args*      string
+       |     |  |     +---w remove?    boolean
+       |     |  |     +---w persist?   boolean
+       |     |  +--:(rtadvd)
+       |     |  |  +---w rtadvd!
+       |     |  |     +---w interface    string
+       |     |  |     +---w args*        string
+       |     |  |     +---w remove?      boolean
+       |     |  |     +---w persist?     boolean
+       |     |  +--:(ipsec-sa)
+       |     |  |  +---w ipsec-sa!
+       |     |  |     +---w verb             enumeration
+       |     |  |     +---w interface        string
+       |     |  |     +---w reqid?           uint32
+       |     |  |     +---w tunnel-local?    string
+       |     |  |     +---w tunnel-remote?   string
+       |     |  |     +---w args*            string
+       |     |  +--:(zfs)
+       |     |  |  +---w zfs!
+       |     |  |     +---w verb         string
+       |     |  |     +---w args*        string
+       |     |  |     +---w recursive?   boolean
+       |     |  |     +---w force?       boolean
+       |     |  +--:(zpool)
+       |     |  |  +---w zpool!
+       |     |  |     +---w verb     string
+       |     |  |     +---w args*    string
+       |     |  |     +---w force?   boolean
+       |     |  +--:(mount)
+       |     |  |  +---w mount!
+       |     |  |     +---w verb     string
+       |     |  |     +---w args*    string
+       |     |  |     +---w force?   boolean
+       |     |  +--:(gpart)
+       |     |  |  +---w gpart!
+       |     |  |     +---w verb     string
+       |     |  |     +---w args*    string
+       |     |  |     +---w force?   boolean
+       |     |  +--:(cam)
+       |     |  |  +---w cam!
+       |     |  |     +---w verb    string
+       |     |  |     +---w args*   string
+       |     |  +--:(sysctl)
+       |     |  |  +---w sysctl!
+       |     |  |     +---w args*      string
+       |     |  |     +---w jail?      string
+       |     |  |     +---w persist?   boolean
+       |     |  +--:(ipfw)
+       |     |  |  +---w ipfw!
+       |     |  |     +---w verb       string
+       |     |  |     +---w args*      string
+       |     |  |     +---w jail?      string
+       |     |  |     +---w live?      boolean
+       |     |  |     +---w persist?   boolean
+       |     |  |     +---w text?      string
+       |     |  +--:(bridge)
+       |     |  |  +---w bridge!
+       |     |  |     +---w verb         string
+       |     |  |     +---w interface    string
+       |     |  |     +---w args*        string
+       |     |  |     +---w jail?        string
+       |     |  |     +---w persist?     boolean
+       |     |  +--:(geneve)
+       |     |  |  +---w geneve!
+       |     |  |     +---w verb         string
+       |     |  |     +---w interface    string
+       |     |  |     +---w args*        string
+       |     |  |     +---w jail?        string
+       |     |  |     +---w persist?     boolean
+       |     |  +--:(process)
+       |     |  |  +---w process!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w args*   string
+       |     |  |     +---w jail?   string
+       |     |  +--:(pkg-clean)
+       |     |  |  +---w pkg-clean!
+       |     |  |     +---w jail?    string
+       |     |  |     +---w force?   boolean
+       |     |  +--:(ipsec)
+       |     |  |  +---w ipsec!
+       |     |  |     +---w verb             enumeration
+       |     |  |     +---w jail?            string
+       |     |  |     +---w conn?            string
+       |     |  |     +---w child?           string
+       |     |  |     +---w tunnel-local?    string
+       |     |  |     +---w tunnel-remote?   string
+       |     |  |     +---w ipsec-mode?      enumeration
+       |     |  |     +---w pubkey?          string
+       |     |  |     +---w local-cert?      string
+       |     |  |     +---w remote-cert?     string
+       |     |  |     +---w remote-ca?       string
+       |     |  |     +---w local-ts?        string
+       |     |  |     +---w remote-ts?       string
+       |     |  |     +---w reqid?           uint32
+       |     |  |     +---w start-action?    enumeration
+       |     |  |     +---w local-id?        string
+       |     |  |     +---w remote-id?       string
+       |     |  |     +---w persist?         boolean
+       |     |  +--:(pkg-install)
+       |     |  |  +---w pkg-install!
+       |     |  |     +---w packages*   string
+       |     |  |     +---w jail?       string
+       |     |  |     +---w force?      boolean
+       |     |  |     +---w pkg-ip?     uint32
+       |     |  |     +---w pkg-repo?   string
+       |     |  +--:(jail-base)
+       |     |  |  +---w jail-base!
+       |     |  |     +---w jail        string
+       |     |  |     +---w verb        enumeration
+       |     |  |     +---w packages*   string
+       |     |  |     +---w release?    string
+       |     |  |     +---w force?      boolean
+       |     |  |     +---w pkg-ip?     uint32
+       |     |  |     +---w pkg-repo?   string
+       |     |  +--:(reboot)
+       |     |  |  +---w reboot!
+       |     |  +--:(jail-conf)
+       |     |  |  +---w jail-conf!
+       |     |  |     +---w verb        enumeration
+       |     |  |     +---w jail?       string
+       |     |  |     +---w dataset?    string
+       |     |  |     +---w snapshot?   string
+       |     |  |     +---w copy?       enumeration
+       |     |  |     +---w path?       string
+       |     |  |     +---w text?       string
+       |     |  |     +---w start?      boolean
+       |     |  |     +---w args*       string
+       |     |  +--:(jail-allow)
+       |     |  |  +---w jail-allow!
+       |     |  |     +---w jail       string
+       |     |  |     +---w args*      string
+       |     |  |     +---w live?      boolean
+       |     |  |     +---w persist?   boolean
+       |     |  +--:(carp)
+       |     |  |  +---w carp!
+       |     |  |     +---w verb             enumeration
+       |     |  |     +---w interface        string
+       |     |  |     +---w jail?            string
+       |     |  |     +---w address?         string
+       |     |  |     +---w args*            string
+       |     |  |     +---w preshared-key?   string
+       |     |  |     +---w persist?         boolean
+       |     |  +--:(neighbour)
+       |     |  |  +---w neighbour!
+       |     |  |     +---w verb         enumeration
+       |     |  |     +---w address      string
+       |     |  |     +---w jail?        string
+       |     |  |     +---w lladdr?      string
+       |     |  |     +---w temporary?   boolean
+       |     |  |     +---w live?        boolean
+       |     |  |     +---w persist?     boolean
+       |     |  +--:(cert)
+       |     |  |  +---w cert!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w jail?   string
+       |     |  |     +---w path?   string
+       |     |  |     +---w text?   string
+       |     |  +--:(ssh)
+       |     |  |  +---w ssh!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w jail?   string
+       |     |  |     +---w path?   string
+       |     |  |     +---w args*   string
+       |     |  |     +---w text?   string
+       |     |  |     +---w user?   string
+       |     |  +--:(poudriere)
+       |     |  |  +---w poudriere!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w args*   string
+       |     |  |     +---w text?   string
+       |     |  +--:(clamav)
+       |     |  |  +---w clamav!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w args*   string
+       |     |  |     +---w text?   string
+       |     |  +--:(suricata)
+       |     |  |  +---w suricata!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w args*   string
+       |     |  |     +---w text?   string
+       |     |  +--:(nfs)
+       |     |  |  +---w nfs!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w args*   string
+       |     |  |     +---w text?   string
+       |     |  +--:(iscsi)
+       |     |  |  +---w iscsi!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w args*   string
+       |     |  |     +---w text?   string
+       |     |  +--:(hast)
+       |     |  |  +---w hast!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w args*   string
+       |     |  |     +---w text?   string
+       |     |  +--:(sysfile)
+       |     |  |  +---w sysfile!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w args*   string
+       |     |  |     +---w text?   string
+       |     |  +--:(geom)
+       |     |  |  +---w geom!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w args*   string
+       |     |  |     +---w text?   string
+       |     |  +--:(smtpd)
+       |     |  |  +---w smtpd!
+       |     |  |     +---w verb     enumeration
+       |     |  |     +---w jail?    string
+       |     |  |     +---w args*    string
+       |     |  |     +---w text?    string
+       |     |  |     +---w force?   boolean
+       |     |  +--:(monitor)
+       |     |  |  +---w monitor!
+       |     |  |     +---w verb    enumeration
+       |     |  |     +---w args*   string
+       |     |  |     +---w jail?   string
+       |     |  +--:(speeder)
+       |     |     +---w speeder!
+       |     |        +---w verb    enumeration
+       |     |        +---w jail?   string
+       |     |        +---w args*   string
+       |     +---w safe?        boolean
+       |     +---w safe-wait?   uint32
        +--ro output
           +--ro id*   uint64

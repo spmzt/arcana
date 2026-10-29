@@ -34,6 +34,8 @@
 #include "console.h"
 #include "restconf.h"
 #include "ytrans.h"
+#include "yqueue.h"
+#include "ystore.h"
 
 enum op {
 	OP_HELLO,
@@ -1460,14 +1462,11 @@ static int
 jail_boot_job(struct arc_client *cl, const struct call *c, bool *ok,
     char *err, size_t errlen)
 {
-	struct arc_job_submit_req	 sq;
-	struct arc_job_submit_rsp	*sr;
-	struct arc_job_req		 jq;
-	struct arc_job_rsp		*jr;
-	struct arc_job_spec		 sp;
-	const struct arc_job		*j;
-	uint64_t			 id;
-	int				 error;
+	struct arc_job_spec	 sp;
+	struct arc_job		*v, j;
+	cbl_yarena		*a;
+	uint64_t		 id;
+	size_t			 n;
 
 	*ok = false;
 	memset(&sp, 0, sizeof(sp));
@@ -1476,39 +1475,33 @@ jail_boot_job(struct arc_client *cl, const struct call *c, bool *ok,
 	sp.jail = c->jail;
 	sp.has_action = true;
 	sp.action = c->action;
-	memset(&sq, 0, sizeof(sq));
-	sq.batch.v = &sp;
-	sq.batch.n = 1;
-	if ((error = arc_job_submit(cl, &sq, &sr)) != 0)
-		return (error);
-	if (!sr->ok || sr->jobs.n != 1 || !sr->jobs.v[0].has_id) {
-		snprintf(err, errlen, "%s", sr->error != NULL ? sr->error :
-		    "not queued");
-		arc_job_submit_rsp_free(sr);
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	if (yq_submit(cl->conn, &sp, 1, a, &v, &n, err, errlen) != 0 ||
+	    n != 1) {
+		cbl_yarena_free(a);
 		return (0);
 	}
-	id = sr->jobs.v[0].id;
-	arc_job_submit_rsp_free(sr);
+	id = v[0].id;
 	/* rc.conf's two variables: done in a moment, else said so. */
 	for (int i = 0; i < 600; i++) {
-		memset(&jq, 0, sizeof(jq));
-		jq.has_id = true;
-		jq.id = id;
-		if ((error = arc_job(cl, &jq, &jr)) != 0)
-			return (error);
-		if ((j = jr->job) != NULL && j->has_state && j->state !=
-		    ARC_JOB_STATE_QUEUED && j->state != ARC_JOB_STATE_RUNNING) {
-			*ok = j->state == ARC_JOB_STATE_DONE && (!j->has_ok ||
-			    j->ok);
-			if (!*ok)
-				snprintf(err, errlen, "%s", j->error != NULL ?
-				    j->error : "failed");
-			arc_job_rsp_free(jr);
+		if (yq_job(cl->conn, id, a, &j, err, errlen) != 0) {
+			cbl_yarena_free(a);
 			return (0);
 		}
-		arc_job_rsp_free(jr);
+		if (j.has_state && j.state != ARC_JOB_STATE_QUEUED &&
+		    j.state != ARC_JOB_STATE_RUNNING) {
+			*ok = j.state == ARC_JOB_STATE_DONE && (!j.has_ok ||
+			    j.ok);
+			if (!*ok)
+				snprintf(err, errlen, "%s", j.error != NULL ?
+				    j.error : "failed");
+			cbl_yarena_free(a);
+			return (0);
+		}
 		usleep(50000);
 	}
+	cbl_yarena_free(a);
 	snprintf(err, errlen, "job %ju is not done yet", (uintmax_t)id);
 	return (0);
 }
@@ -1903,8 +1896,6 @@ call_run(struct task *t)
 	struct arc_ssh_rsp	*sshr;
 	struct arc_capture_req	 capq;
 	struct arc_capture_rsp	*capr;
-	struct arc_zfs_key_req	 zkq;
-	struct arc_zfs_key_rsp	*zkr;
 	struct arc_tls_req	 tlq;
 	struct arc_tls_rsp	*tlr;
 	struct arc_transport_req tpq;
@@ -1930,23 +1921,12 @@ call_run(struct task *t)
 	struct arc_fw_trace_rsp	*ftr;
 	struct pooled		 kept;
 	struct tellbox		*box;
-	struct arc_storage_req	 sgq;
-	struct arc_storage_rsp	*sgr;
-	struct arc_fstab_req	 fsq;
-	struct arc_fstab_rsp	*fsr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp *irr;
-	struct arc_job_submit_req jsq;
-	struct arc_job_submit_rsp *jsr;
-	struct arc_jobs_rsp	*jlr;
-	struct arc_job_req	 jq;
-	struct arc_job_rsp	*jr;
-	struct arc_job_cancel_req jcq;
-	struct arc_job_cancel_rsp *jcr;
-	struct arc_jobs_set_req	lnq;
-	struct arc_jobs_set_rsp	*lnr;
-	struct arc_job_confirm_req jfq;
-	struct arc_job_confirm_rsp *jfr;
+	struct yq_jobs		 yqj;
+	struct arc_job		 yjob, *yjobs;
+	size_t			 nyjobs;
+	cbl_yarena		*ya;
 	struct arc_agent_update_req auq;
 	struct arc_agent_update_rsp *aur;
 	struct arc_agent_build_req abq;
@@ -1995,6 +1975,7 @@ call_run(struct task *t)
 	int			 error;
 
 	c = (struct call *)t;
+	ywhy[0] = '\0';
 	memset(&ys, 0, sizeof(ys));
 	pthread_mutex_init(&ys.lock, NULL);
 	top = ucl_object_typed_new(UCL_OBJECT);
@@ -2026,7 +2007,6 @@ call_run(struct task *t)
 	cer = NULL;
 	sshr = NULL;
 	capr = NULL;
-	zkr = NULL;
 	tlr = NULL;
 	tpr = NULL;
 	cxr = NULL;
@@ -2040,14 +2020,8 @@ call_run(struct task *t)
 	evr = NULL;
 	ftr = NULL;
 	reused = again = false;
-	sgr = NULL;
-	fsr = NULL;
 	irr = NULL;
-	jsr = NULL;
-	jlr = NULL;
-	jr = NULL;
-	jcr = NULL;
-	lnr = NULL;
+	ya = NULL;
 	aur = NULL;
 	abr = NULL;
 	cur = NULL;
@@ -2234,51 +2208,54 @@ connected:
 			put_str(top, "error", ywhy);
 		break;
 	case OP_JOB_SUBMIT:
-		memset(&jsq, 0, sizeof(jsq));
-		jsq.batch.v = c->specs;
-		jsq.batch.n = c->nspecs;
+		/* arcana-jobs' submit (yqueue.c); refused, as job-submit's
+		 * refusal was. */
 		/* A safe change waits as long as the host's timer says. */
 		for (i = 0; c->safe_wait > 0 && i < c->nspecs; i++)
 			if (c->specs[i].safe) {
 				c->specs[i].has_safe_wait = true;
 				c->specs[i].safe_wait = (uint32_t)c->safe_wait;
 			}
-		if ((error = arc_job_submit(&cl, &jsq, &jsr)) != 0)
+		if ((ya = cbl_yarena_new()) == NULL)
+			goto fail;
+		if ((error = yq_submit(cl.conn, c->specs, c->nspecs, ya,
+		    &yjobs, &nyjobs, ywhy, sizeof(ywhy))) != 0)
 			goto rpcfail;
-		ok = jsr->ok;
-		put_str(top, "error", jsr->error);
+		ok = true;
 		a = ucl_object_typed_new(UCL_ARRAY);
-		for (i = 0; i < jsr->jobs.n; i++)
-			ucl_array_append(a, job_object(c, &jsr->jobs.v[i], false,
-			    0));
+		for (i = 0; i < nyjobs; i++)
+			ucl_array_append(a, job_object(c, &yjobs[i], false, 0));
 		put(top, "jobs", a);
 		break;
 	case OP_JOBS:
-		if ((error = arc_jobs(&cl, &jlr)) != 0)
+		/* arcana-jobs' state, the traces left out. */
+		if ((ya = cbl_yarena_new()) == NULL)
+			goto fail;
+		if ((error = yq_list(cl.conn, ya, &yqj, ywhy,
+		    sizeof(ywhy))) != 0)
 			goto rpcfail;
-		ok = jlr->ok;
+		ok = true;
 		a = ucl_object_typed_new(UCL_ARRAY);
-		for (i = 0; i < jlr->jobs.n; i++)
-			ucl_array_append(a, job_object(c, &jlr->jobs.v[i], false,
-			    0));
+		for (i = 0; i < yqj.n; i++)
+			ucl_array_append(a, job_object(c, &yqj.v[i], false, 0));
 		put(top, "jobs", a);
 		/* What the agent is at that is not a job. */
-		if (jlr->activity != NULL) {
-			put_str(top, "activity", jlr->activity);
-			put(top, "since", ucl_object_fromint(jlr->since));
+		if (yqj.activity != NULL) {
+			put_str(top, "activity", yqj.activity);
+			put(top, "since", ucl_object_fromint(yqj.since));
 		}
-		put(top, "stopping", ucl_object_frombool(jlr->stopping));
-		if (jlr->has_lanes)
-			put(top, "lanes", ucl_object_fromint(jlr->lanes));
+		put(top, "stopping", ucl_object_frombool(yqj.stopping));
+		if (yqj.lanes > 0)
+			put(top, "lanes", ucl_object_fromint(yqj.lanes));
 		break;
 	case OP_JOB:
-		memset(&jq, 0, sizeof(jq));
-		jq.has_id = true;
-		jq.id = c->jobid;
-		if ((error = arc_job(&cl, &jq, &jr)) != 0)
-			goto rpcfail;
-		ok = jr->ok;
-		put_str(top, "error", jr->error);
+		/* The job with its trace, by its read action. */
+		if ((ya = cbl_yarena_new()) == NULL)
+			goto fail;
+		if ((error = yq_job(cl.conn, c->jobid, ya, &yjob, ywhy,
+		    sizeof(ywhy))) != 0)
+			goto yfail;
+		ok = true;
 		/*
 		 * A safe change waits to hear from the console again, and
 		 * here the console is: the change stays.  The proof is a
@@ -2288,20 +2265,17 @@ connected:
 		 * No new connection, no confirmation: the host undoes the
 		 * change by itself.
 		 */
-		if (jr->job != NULL && jr->job->state ==
-		    ARC_JOB_STATE_UNCONFIRMED) {
+		if (yjob.has_state && yjob.state == ARC_JOB_STATE_UNCONFIRMED) {
 			struct arc_client	 fcl;
 			cbl_conn		*fconn;
 			cbl_tls			*ftls;
 			const char		*fe;
+			char			 fwhy[256];
 
-			memset(&jfq, 0, sizeof(jfq));
-			jfq.has_id = true;
-			jfq.id = c->jobid;
 			if ((fe = hosts_dial(c->uri, c->peer, &fconn, &ftls,
 			    &fcl)) == NULL) {
-				if (arc_job_confirm(&fcl, &jfq, &jfr) == 0)
-					arc_job_confirm_rsp_free(jfr);
+				(void)yq_confirm(fcl.conn, c->jobid, fwhy,
+				    sizeof(fwhy));
 				hosts_release(c->uri, c->peer, fconn, ftls,
 				    &fcl, true);
 			} else
@@ -2309,36 +2283,31 @@ connected:
 				    "no new connection to the host: %s", c->uri,
 				    (uintmax_t)c->jobid, fe);
 		}
-		if (jr->job != NULL) {
-			put(top, "job", job_object(c, jr->job, true,
-			    now_us() - t1));
-			/* The job's own trace is the reply's. */
-			put(top, "ok", ucl_object_frombool(ok));
-			c->status = 200;
-			goto done;
-		}
-		break;
+		put(top, "job", job_object(c, &yjob, true, now_us() - t1));
+		/* The job's own trace is the reply's. */
+		put(top, "ok", ucl_object_frombool(ok));
+		c->status = 200;
+		goto done;
 	case OP_JOBS_SET:
-		memset(&lnq, 0, sizeof(lnq));
-		lnq.has_lanes = true;
-		lnq.lanes = (uint8_t)c->fib;
-		if ((error = arc_jobs_set(&cl, &lnq, &lnr)) != 0)
-			goto rpcfail;
-		ok = lnr->ok;
-		put_str(top, "error", lnr->error);
-		if (lnr->has_lanes)
-			put(top, "lanes", ucl_object_fromint(lnr->lanes));
+		/* arcana-jobs' lanes, by an EDIT of the candidate and a
+		 * commit; what the agent has after. */
+		if ((error = yq_lanes(cl.conn, (int)c->fib, ywhy,
+		    sizeof(ywhy))) != 0)
+			goto yfail;
+		ok = true;
+		if ((ya = cbl_yarena_new()) != NULL && yq_list(cl.conn, ya,
+		    &yqj, ywhy, sizeof(ywhy)) == 0 && yqj.lanes > 0)
+			put(top, "lanes", ucl_object_fromint(yqj.lanes));
 		break;
 	case OP_JOB_CANCEL:
-		memset(&jcq, 0, sizeof(jcq));
-		jcq.has_id = true;
-		jcq.id = c->jobid;
-		if ((error = arc_job_cancel(&cl, &jcq, &jcr)) != 0)
-			goto rpcfail;
-		ok = jcr->ok;
-		put_str(top, "error", jcr->error);
-		if (jcr->job != NULL)
-			put(top, "job", job_object(c, jcr->job, false, 0));
+		/* Its cancel action, the job as the queue has it after. */
+		if ((ya = cbl_yarena_new()) == NULL)
+			goto fail;
+		if ((error = yq_cancel(cl.conn, c->jobid, ya, &yjob, ywhy,
+		    sizeof(ywhy))) != 0)
+			goto yfail;
+		ok = true;
+		put(top, "job", job_object(c, &yjob, false, 0));
 		break;
 	case OP_STATS:
 		if ((error = arc_stats(&cl, &str)) != 0)
@@ -2656,36 +2625,27 @@ connected:
 		nsteps = sdr3->trace.n;
 		break;
 	case OP_STORAGE:
-		/* The dataset rides where a jail's name does. */
-		memset(&sgq, 0, sizeof(sgq));
-		sgq.has_storage_kind = true;
-		sgq.storage_kind = c->action;
-		sgq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
-		sgq.jail = c->scope[0] != '\0' ? c->scope : NULL;
-		if ((error = arc_storage(&cl, &sgq, &sgr)) != 0)
-			goto rpcfail;
-		ok = sgr->ok;
-		put_str(top, "error", sgr->error);
-		if (sgr->has_total) {
-			put(top, "total", ucl_object_fromint(
-			    (int64_t)sgr->total));
-			put(top, "truncated", ucl_object_frombool(
-			    sgr->truncated));
-		}
-		e = NULL;
-		if (sgr->json != NULL) {
-			struct ucl_parser *p;
+		/* arcana-storage's read (ystore.c); the dataset rides where a
+		 * jail's name does. */
+		{
+			uint64_t	stotal;
+			bool		strunc;
 
-			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
-			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
-			if (ucl_parser_add_string(p, sgr->json, 0))
-				e = ucl_parser_get_object(p);
-			ucl_parser_free(p);
+			ysteps_begin(&cl, c, &ys);
+			ok = ystore_read(cl.conn, c->action, c->jail, c->scope,
+			    &e, &stotal, &strunc, ywhy, sizeof(ywhy)) == 0;
+			ysteps_end(&cl, &ys, &steps, &nsteps);
+			if (!ok)
+				put_str(top, "error", ywhy);
+			if (ok && strunc) {
+				put(top, "total", ucl_object_fromint(
+				    (int64_t)stotal));
+				put(top, "truncated",
+				    ucl_object_frombool(true));
+			}
+			if (e != NULL)
+				put(top, "data", e);
 		}
-		if (e != NULL)
-			put(top, "data", e);
-		steps = sgr->trace.v;
-		nsteps = sgr->trace.n;
 		break;
 	case OP_IPFW_RULES:
 		/* As fstab: the checksum rides where an address does. */
@@ -2706,19 +2666,28 @@ connected:
 		nsteps = irr->trace.n;
 		break;
 	case OP_FSTAB:
-		/* The checksum rides where an address does. */
-		memset(&fsq, 0, sizeof(fsq));
-		fsq.conf_text = c->text;
-		fsq.sha256 = c->address[0] != '\0' ? c->address : NULL;
-		fsq.dry_run = c->dry_run;
-		if ((error = arc_fstab(&cl, &fsq, &fsr)) != 0)
-			goto rpcfail;
-		ok = fsr->ok;
-		put_str(top, "error", fsr->error);
-		put_str(top, "text", fsr->conf_text);
-		put_str(top, "sha256", fsr->sha256);
-		steps = fsr->trace.v;
-		nsteps = fsr->trace.n;
+		/* arcana-storage's fstab: read with what is mounted, or its
+		 * replace; the checksum rides where an address does. */
+		{
+			char	*ftext, *fsha;
+
+			ftext = fsha = NULL;
+			ysteps_begin(&cl, c, &ys);
+			if (c->text == NULL)
+				ok = ystore_fstab(cl.conn, &ftext, &fsha, ywhy,
+				    sizeof(ywhy)) == 0;
+			else
+				ok = ystore_fstab_put(cl.conn, c->text,
+				    c->address, c->dry_run, &fsha, ywhy,
+				    sizeof(ywhy)) == 0;
+			ysteps_end(&cl, &ys, &steps, &nsteps);
+			if (!ok)
+				put_str(top, "error", ywhy);
+			put_str(top, "text", ftext);
+			put_str(top, "sha256", fsha);
+			free(ftext);
+			free(fsha);
+		}
 		break;
 	case OP_PATH_CHECK:
 		memset(&pcq, 0, sizeof(pcq));
@@ -3235,17 +3204,11 @@ connected:
 		nsteps = tlr->trace.n;
 		break;
 	case OP_ZFS_KEY:
-		memset(&zkq, 0, sizeof(zkq));
-		zkq.zfs_dataset = c->text;
-		zkq.zfs_key = c->key;
-		zkq.zfs_new_key = c->new_key;
-		zkq.zfs_create = c->zcreate[0] != '\0' ? c->zcreate : NULL;
-		if ((error = arc_zfs_key(&cl, &zkq, &zkr)) != 0)
-			goto rpcfail;
-		ok = zkr->ok;
-		put_str(top, "error", zkr->error);
-		steps = zkr->trace.v;
-		nsteps = zkr->trace.n;
+		/* arcana-storage's load-key, change-key, create-encrypted. */
+		ok = ystore_key(cl.conn, c->text, c->key, c->new_key,
+		    c->zcreate, ywhy, sizeof(ywhy)) == 0;
+		if (!ok)
+			put_str(top, "error", ywhy);
 		break;
 	case OP_CAPTURE:
 		/* The source rides where an address does, the filter in
@@ -3467,12 +3430,24 @@ connected:
 		nsteps = scr->trace.n;
 		break;
 	}
+answered:
 	us = now_us() - t1;
 	put(top, "ok", ucl_object_frombool(ok));
 	put(top, "trace", trace_object(c, steps, nsteps, detail, true, us));
 	c->status = 200;
 	c->moved = c->op == OP_HELLO && ok;
 	goto done;
+yfail:
+	/*
+	 * Refused by the agent, the connection still open: its words, as
+	 * an operation's ok and error had them.  Otherwise as a call that
+	 * failed.
+	 */
+	if (!cbl_conn_is_open(cl.conn))
+		goto rpcfail;
+	ok = false;
+	put_str(top, "error", ywhy);
+	goto answered;
 
 rpcfail:
 	/*
@@ -3492,7 +3467,8 @@ rpcfail:
 		goto connect;
 	}
 	msg = cl.err != NULL && cbl_msg_err_str(cl.err) != NULL ?
-	    cbl_msg_err_str(cl.err) : strerror(error);
+	    cbl_msg_err_str(cl.err) : ywhy[0] != '\0' ? ywhy :
+	    strerror(error);
 	c->status = 502;
 	e = ucl_object_typed_new(UCL_OBJECT);
 	put_str(e, "code", "rejected");
@@ -3553,8 +3529,6 @@ done:
 		arc_ssh_rsp_free(sshr);
 	if (capr != NULL)
 		arc_capture_rsp_free(capr);
-	if (zkr != NULL)
-		arc_zfs_key_rsp_free(zkr);
 	if (tlr != NULL)
 		arc_tls_rsp_free(tlr);
 	if (tpr != NULL)
@@ -3578,22 +3552,10 @@ done:
 		arc_events_rsp_free(evr);
 	if (ftr != NULL)
 		arc_fw_trace_rsp_free(ftr);
-	if (sgr != NULL)
-		arc_storage_rsp_free(sgr);
-	if (fsr != NULL)
-		arc_fstab_rsp_free(fsr);
 	if (irr != NULL)
 		arc_ipfw_rules_rsp_free(irr);
-	if (jsr != NULL)
-		arc_job_submit_rsp_free(jsr);
-	if (jlr != NULL)
-		arc_jobs_rsp_free(jlr);
-	if (jr != NULL)
-		arc_job_rsp_free(jr);
-	if (jcr != NULL)
-		arc_job_cancel_rsp_free(jcr);
-	if (lnr != NULL)
-		arc_jobs_set_rsp_free(lnr);
+	if (ya != NULL)
+		cbl_yarena_free(ya);
 	if (aur != NULL)
 		arc_agent_update_rsp_free(aur);
 	if (abr != NULL)

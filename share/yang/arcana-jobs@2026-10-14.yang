@@ -9,6 +9,10 @@ module arcana-jobs {
       "RFC 8341: Network Configuration Access Control Model";
   }
 
+  import cblink-gen {
+    prefix cg;
+  }
+
   include arcana-jobs-kinds {
     revision-date 2026-10-14;
   }
@@ -21,8 +25,12 @@ module arcana-jobs {
     "The agent's jobs: the changes it is given, queued and run one
      after another in the order given, whether or not the client stays,
      their outcomes kept; each with its trace, the steps it took, a
-     flat list each naming its parent.  A change a safe-mode job made
-     waits, unconfirmed, for confirm, and is undone without it in time.
+     flat list each naming its parent, read by the job's read action (a
+     read of every job would carry every trace).  A change a safe-mode
+     job made waits, unconfirmed, for confirm, and is undone without it
+     in time.  How many jobs of pkg in jails run at once, lanes, is the
+     configuration, kept in jobs.conf beside the agent's other kept
+     files.
 
      The kinds of change are arcana-jobs-kinds's, made from
      share/arcana/jobs.yaml.";
@@ -65,12 +73,81 @@ module arcana-jobs {
       "Where a job is.";
   }
 
-  container jobs {
-    config false;
+  grouping job-info {
     description
-      "The queued, running and recent jobs.";
+      "What a job is and where it is.";
+    leaf kind {
+      type job-kind;
+      description
+        "Its kind.";
+    }
+    leaf title {
+      type string;
+      description
+        "What it does, in words.";
+    }
+    leaf state {
+      type job-state;
+      description
+        "Where it is.";
+    }
+    leaf ok {
+      type boolean;
+      description
+        "Done: whether it succeeded.";
+    }
+    leaf error {
+      type string;
+      description
+        "Done and failed: why.";
+    }
+    leaf created {
+      type int64;
+      units "seconds";
+      description
+        "When it was queued, in seconds since the Epoch.";
+    }
+    leaf started {
+      type int64;
+      units "seconds";
+      description
+        "When it began.";
+    }
+    leaf finished {
+      type int64;
+      units "seconds";
+      description
+        "When it ended.";
+    }
+    leaf peer {
+      type string;
+      description
+        "Who gave it.";
+    }
+    leaf confirm-by {
+      type int64;
+      units "seconds";
+      description
+        "Unconfirmed: when it is undone without confirm.";
+    }
+  }
+
+  container jobs {
+    description
+      "The queued, running and recent jobs, and how many jobs of pkg in
+       jails run at once.";
+    leaf lanes {
+      type uint8 {
+        range "1..32";
+      }
+      default "4";
+      description
+        "How many jobs of pkg in jails run at once; a lane at work
+         finishes its job.";
+    }
     leaf activity {
       type string;
+      config false;
       description
         "What the agent does now that is not a job: a request a client
          waits for, which holds up changes as a job does.";
@@ -78,169 +155,27 @@ module arcana-jobs {
     leaf since {
       type int64;
       units "seconds";
+      config false;
       description
         "When it began, in seconds since the Epoch.";
     }
     leaf stopping {
       type boolean;
+      config false;
       description
         "Whether the agent is stopping: no job is taken.";
     }
     list job {
       key "id";
+      config false;
       description
-        "A job.";
+        "A job, without its trace.";
       leaf id {
         type uint64;
         description
           "Its number, the agent's.";
       }
-      leaf kind {
-        type job-kind;
-        description
-          "Its kind.";
-      }
-      leaf title {
-        type string;
-        description
-          "What it does, in words.";
-      }
-      leaf state {
-        type job-state;
-        description
-          "Where it is.";
-      }
-      leaf ok {
-        type boolean;
-        description
-          "Done: whether it succeeded.";
-      }
-      leaf error {
-        type string;
-        description
-          "Done and failed: why.";
-      }
-      leaf created {
-        type int64;
-        units "seconds";
-        description
-          "When it was queued, in seconds since the Epoch.";
-      }
-      leaf started {
-        type int64;
-        units "seconds";
-        description
-          "When it began.";
-      }
-      leaf finished {
-        type int64;
-        units "seconds";
-        description
-          "When it ended.";
-      }
-      leaf peer {
-        type string;
-        description
-          "Who gave it.";
-      }
-      leaf confirm-by {
-        type int64;
-        units "seconds";
-        description
-          "Unconfirmed: when it is undone without confirm.";
-      }
-      list step {
-        key "id";
-        description
-          "A step of its trace, in the order taken; each names its
-           parent, the tree in a flat list.";
-        leaf id {
-          type uint32;
-          description
-            "Its number in the trace.";
-        }
-        leaf parent {
-          type int32 {
-            range "-1..max";
-          }
-          description
-            "The step it is part of; -1, the root.";
-        }
-        leaf kind {
-          type enumeration {
-            enum daemon {
-              value 0;
-            }
-            enum lib {
-              value 1;
-            }
-            enum syscall {
-              value 2;
-            }
-            enum file {
-              value 3;
-            }
-            enum exec {
-              value 4;
-            }
-          }
-          description
-            "What it was: the agent's own, a library's call, a system
-             call, a file read or written, a program run.";
-        }
-        leaf label {
-          type string;
-          description
-            "What it was, named.";
-        }
-        leaf detail {
-          type string;
-          description
-            "What it was, said.";
-        }
-        leaf status {
-          type enumeration {
-            enum ok {
-              value 0;
-            }
-            enum failed {
-              value 1;
-            }
-            enum incomplete {
-              value 2;
-            }
-          }
-          description
-            "How it went.";
-        }
-        leaf duration {
-          type uint64;
-          units "microseconds";
-          description
-            "How long it took.";
-        }
-        leaf-list argv {
-          type string;
-          ordered-by user;
-          description
-            "A program run: its arguments.";
-        }
-        leaf exit {
-          type int32;
-          description
-            "A program run: its exit status.";
-        }
-        leaf output {
-          type binary;
-          description
-            "A program run: what it wrote to its standard output.";
-        }
-        leaf error-output {
-          type binary;
-          description
-            "And to its standard error.";
-        }
-      }
+      uses job-info;
       action cancel {
         nacm:default-deny-all;
         description
@@ -266,6 +201,108 @@ module arcana-jobs {
           }
         }
       }
+      action read {
+        description
+          "The job with its trace so far: the steps it took, in the
+           order taken, each naming its parent, the tree in a flat
+           list.";
+        output {
+          uses job-info;
+          list step {
+            cg:struct "step";
+            key "id";
+            description
+              "A step of its trace, in the order taken; each names its
+               parent, the tree in a flat list.";
+            leaf id {
+              type uint32;
+              description
+                "Its number in the trace.";
+            }
+            leaf parent {
+              type int32 {
+                range "-1..max";
+              }
+              description
+                "The step it is part of; -1, the root.";
+            }
+            leaf kind {
+              type enumeration {
+                enum daemon {
+                  value 0;
+                }
+                enum lib {
+                  value 1;
+                }
+                enum syscall {
+                  value 2;
+                }
+                enum file {
+                  value 3;
+                }
+                enum exec {
+                  value 4;
+                }
+              }
+              description
+                "What it was: the agent's own, a library's call, a system
+                 call, a file read or written, a program run.";
+            }
+            leaf label {
+              type string;
+              description
+                "What it was, named.";
+            }
+            leaf detail {
+              type string;
+              description
+                "What it was, said.";
+            }
+            leaf status {
+              type enumeration {
+                enum ok {
+                  value 0;
+                }
+                enum failed {
+                  value 1;
+                }
+                enum incomplete {
+                  value 2;
+                }
+              }
+              description
+                "How it went.";
+            }
+            leaf duration {
+              type uint64;
+              units "microseconds";
+              description
+                "How long it took.";
+            }
+            leaf-list argv {
+              type string;
+              ordered-by user;
+              description
+                "A program run: its arguments.";
+            }
+            leaf exit {
+              type int32;
+              description
+                "A program run: its exit status.";
+            }
+            leaf output {
+              type binary;
+              description
+                "A program run: what it wrote to its standard output.";
+            }
+            leaf error-output {
+              type binary;
+              description
+                "And to its standard error.";
+            }
+          }
+        }
+      }
     }
   }
 
@@ -279,6 +316,24 @@ module arcana-jobs {
         description
           "A change.";
         uses change;
+        leaf safe {
+          type boolean;
+          description
+            "Undo the change unless confirm comes in time: the client
+             that still reaches the host after it confirms, one it cut
+             off cannot, and the host comes back by itself.  A kind,
+             or a verb of one, that cannot be undone refuses it, saying
+             why.";
+        }
+        leaf safe-wait {
+          type uint32 {
+            range "10..max";
+          }
+          units "seconds";
+          description
+            "With safe: how long the change waits to be confirmed
+             before it is undone, in place of the agent's own (-w).";
+        }
       }
     }
     output {

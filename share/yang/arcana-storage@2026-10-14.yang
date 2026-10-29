@@ -8,6 +8,9 @@ module arcana-storage {
     reference
       "RFC 8341: Network Configuration Access Control Model";
   }
+  import cblink-gen {
+    prefix cg;
+  }
 
   organization
     "Arcana";
@@ -38,11 +41,11 @@ module arcana-storage {
       "A size.";
   }
 
-  container storage {
-    config false;
+  grouping storage-state {
     description
-      "The host's storage.";
+      "The host's storage, or the part of it read asks for.";
     list disk {
+      cg:struct "disk";
       key "name";
       description
         "A disk, GEOM's.";
@@ -135,6 +138,11 @@ module arcana-storage {
           type uint64;
           description
             "Its last.";
+        }
+        leaf mounted {
+          type string;
+          description
+            "Where it is mounted, when it is.";
         }
       }
       container health {
@@ -231,6 +239,7 @@ module arcana-storage {
       }
     }
     list pool {
+      cg:struct "pool";
       key "name";
       description
         "An imported ZFS pool.";
@@ -347,6 +356,7 @@ module arcana-storage {
       }
     }
     list importable {
+      cg:struct "importable";
       key "id";
       description
         "A pool zpool import finds on the host's devices, not imported.";
@@ -474,42 +484,15 @@ module arcana-storage {
         description
           "The snapshot a clone was made of.";
       }
-      action load-key {
-        nacm:default-deny-all;
+      leaf volsize {
+        type bytes;
         description
-          "zfs load-key, the key on its standard input: on no disk, in
-           no job, no trace, no log.";
-        input {
-          leaf key {
-            type string;
-            mandatory true;
-            description
-              "The key, as it is typed.";
-          }
-        }
+          "A volume's size.";
       }
-      action unload-key {
-        nacm:default-deny-all;
+      leaf keystatus {
+        type string;
         description
-          "zfs unload-key.";
-      }
-      action change-key {
-        nacm:default-deny-all;
-        description
-          "zfs change-key, loaded first with key where it is not.";
-        input {
-          leaf key {
-            type string;
-            description
-              "The key now, where it is not loaded.";
-          }
-          leaf new-key {
-            type string;
-            mandatory true;
-            description
-              "The new key.";
-          }
-        }
+          "An encrypted one's key: available or unavailable.";
       }
     }
     leaf snapshots-total {
@@ -542,28 +525,9 @@ module arcana-storage {
         description
           "When it was made, in seconds since the Epoch.";
       }
-      action send {
-        nacm:default-deny-all;
-        description
-          "zfs send of it, its bytes the request's stream, each data
-           message the next; half-closed when send ended well.";
-        input {
-          leaf from {
-            type string;
-            description
-              "A snapshot of the same dataset: only what changed since
-               it (zfs send -i).";
-          }
-          leaf recursive {
-            type boolean;
-            default "false";
-            description
-              "The datasets under it too (-R).";
-          }
-        }
-      }
     }
     list mount {
+      cg:struct "mount";
       description
         "What is mounted.";
       leaf from {
@@ -659,42 +623,9 @@ module arcana-storage {
             "Whether it is mounted now.";
         }
       }
-      action replace {
-        nacm:default-deny-all;
-        description
-          "A new text put in its place: it has to be an fstab, sha256
-           that of the text it was made from; the one before is kept
-           beside it.";
-        input {
-          leaf text {
-            type string;
-            mandatory true;
-            description
-              "The new text.";
-          }
-          leaf sha256 {
-            type string;
-            mandatory true;
-            description
-              "The SHA-256 of the text it was made from.";
-          }
-          leaf dry-run {
-            type boolean;
-            default "false";
-            description
-              "Only checked.";
-          }
-        }
-        output {
-          leaf sha256 {
-            type string;
-            description
-              "The SHA-256 of the text now.";
-          }
-        }
-      }
     }
     list swap {
+      cg:struct "swap";
       key "device";
       description
         "A swap device.";
@@ -712,6 +643,195 @@ module arcana-storage {
         type bytes;
         description
           "What is used of it.";
+      }
+    }
+  }
+
+  container storage {
+    config false;
+    description
+      "The host's storage.";
+    uses storage-state {
+      augment "dataset" {
+        description
+          "What is done to a dataset's key.";
+        action load-key {
+          nacm:default-deny-all;
+          description
+            "zfs load-key, the key on its standard input: on no disk, in
+             no job, no trace, no log.";
+          input {
+            leaf key {
+              type string;
+              mandatory true;
+              description
+                "The key, as it is typed.";
+            }
+          }
+        }
+        action unload-key {
+          nacm:default-deny-all;
+          description
+            "zfs unload-key.";
+        }
+        action change-key {
+          nacm:default-deny-all;
+          description
+            "zfs change-key, loaded first with key where it is not.";
+          input {
+            leaf key {
+              type string;
+              description
+                "The key now, where it is not loaded.";
+            }
+            leaf new-key {
+              type string;
+              mandatory true;
+              description
+                "The new key.";
+            }
+          }
+        }
+      }
+      augment "snapshot" {
+        description
+          "A snapshot sent.";
+        action send {
+          nacm:default-deny-all;
+          description
+            "zfs send of it, its bytes the request's stream, each data
+             message the next; half-closed when send ended well.";
+          input {
+            leaf from {
+              type string;
+              description
+                "A snapshot of the same dataset: only what changed since
+                 it (zfs send -i).";
+            }
+            leaf recursive {
+              type boolean;
+              default "false";
+              description
+                "The datasets under it too (-R).";
+            }
+          }
+        }
+      }
+      augment "fstab" {
+        description
+          "fstab(5) written.";
+        action replace {
+          nacm:default-deny-all;
+          description
+            "A new text put in its place: it has to be an fstab, sha256
+             that of the text it was made from; the one before is kept
+             beside it.";
+          input {
+            leaf text {
+              type string;
+              mandatory true;
+              description
+                "The new text.";
+            }
+            leaf sha256 {
+              type string;
+              mandatory true;
+              description
+                "The SHA-256 of the text it was made from.";
+            }
+            leaf dry-run {
+              type boolean;
+              default "false";
+              description
+                "Only checked.";
+            }
+          }
+          output {
+            leaf sha256 {
+              type string;
+              description
+                "The SHA-256 of the text now.";
+            }
+          }
+        }
+      }
+    }
+    action create-encrypted {
+      nacm:default-deny-all;
+      description
+        "A dataset made encrypted, its passphrase the key, typed when
+         it is loaded (zfs create -o encryption= -o
+         keyformat=passphrase -o keylocation=prompt, the key on its
+         standard input): on no disk, in no job, no trace, no log.";
+      input {
+        leaf dataset {
+          type string;
+          mandatory true;
+          description
+            "The dataset made; it is not there yet.";
+        }
+        leaf encryption {
+          type enumeration {
+            enum on;
+            enum aes-128-ccm;
+            enum aes-192-ccm;
+            enum aes-256-ccm;
+            enum aes-128-gcm;
+            enum aes-192-gcm;
+            enum aes-256-gcm;
+          }
+          default "on";
+          description
+            "Its cipher; on, ZFS's default.";
+        }
+        leaf key {
+          type string;
+          mandatory true;
+          description
+            "The passphrase.";
+        }
+      }
+    }
+    action read {
+      description
+        "A part of the storage read, as a page asks for it: the disks
+         and their partitions, the pools, the datasets or the
+         snapshots (of the dataset filter names and those under it,
+         or of all; with jail, those that jail's own zfs sees), what is
+         mounted with fstab(5) and the swap, the pools a scan finds to
+         import, or how the disks say they are.  More datasets or
+         snapshots than a reply carries come as the first of them,
+         with their total.";
+      input {
+        leaf kind {
+          type enumeration {
+            enum disks;
+            enum pools;
+            enum datasets;
+            enum snapshots;
+            enum mounts;
+            enum importable;
+            enum health;
+          }
+          mandatory true;
+          description
+            "The part.";
+        }
+        leaf filter {
+          type string;
+          description
+            "For datasets and snapshots: the dataset, and those under
+             it.";
+        }
+        leaf jail {
+          type string;
+          description
+            "For datasets and snapshots: what that jail's own zfs
+             sees.";
+        }
+      }
+      output {
+        uses storage-state;
       }
     }
   }

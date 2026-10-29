@@ -56,14 +56,14 @@ static void
 show(const struct arcana_storage_storage *st)
 {
 	for (size_t i = 0; i < st->disk.n; i++) {
-		const struct arcana_storage_storage_disk *d = &st->disk.v[i];
+		const struct arcana_storage_disk *d = &st->disk.v[i];
 
 		printf("disk %s size=%ju sectorsize=%ju ident=%s descr=%s "
 		    "rotation=%s scheme=%s first=%ju last=%ju\n", d->name,
 		    U(d, size), U(d, sectorsize), str(d->ident), str(d->descr),
 		    str(d->rotation), str(d->scheme), U(d, first), U(d, last));
 		for (size_t k = 0; k < d->partition.n; k++) {
-			const struct arcana_storage_storage_disk_partition *p =
+			const struct arcana_storage_disk_partition *p =
 			    &d->partition.v[k];
 
 			printf("  partition %s index=%ju size=%ju type=%s "
@@ -82,7 +82,7 @@ show(const struct arcana_storage_storage *st)
 			    str(d->health->note));
 	}
 	for (size_t i = 0; i < st->pool.n; i++) {
-		const struct arcana_storage_storage_pool *p = &st->pool.v[i];
+		const struct arcana_storage_pool *p = &st->pool.v[i];
 
 		printf("pool %s size=%ju alloc=%ju free=%ju frag=%ju cap=%ju "
 		    "dedup=%s health=%s state=%s status=%s scan=%s "

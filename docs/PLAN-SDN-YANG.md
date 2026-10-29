@@ -904,13 +904,54 @@ whose first part is served.
   ytrans_pkg_upgrade()); arcanactl's packages and pkg-upgrade are the
   actions.  The second SID range is 79 500.  Check: `packages`,
   `yang_packages`; the console's `churn`, `services`; `pwa_hosts`.
-- 3.1.4 A: `arcana-jobs`: the job-submit, jobs, job, job-cancel and
-  job-confirm operations retired; check: the jobs tests; the trace
-  tree rebuilt in the page.
+- 3.1.4 A (done): `arcana-jobs`: the job-submit, jobs, job, job-cancel
+  and job-confirm operations retired; check: the jobs tests; the trace
+  tree rebuilt in the page.  Done (ira/yjobs.c, yarcana.c), jobs-set
+  with them: the jobs are state without their traces (a read of every
+  job would carry every trace), one job with its trace the job's `read`
+  action (a flat list of steps each naming its parent, the page's tree
+  rebuilt from it as from the operation's); `lanes` is configuration,
+  written to jobs.conf by a commit; `safe` and `safe-wait` are the
+  change's own beside its kind, so that a kind that cannot be undone
+  still refuses safe mode with its own words (the kinds' `safe` leaves
+  obsolete).  arcana.yaml's job and job-spec stay as structures for the
+  agent's queue (`structure: true`, wire.awk), no operation carrying
+  them.  The console and arcanactl make job-specs as before and send
+  them as changes (yqueue.c, ychange.c from jobs.awk's out=ychange),
+  a field the kind has no leaf for refused rather than lost ("kmod
+  takes no jail", where the agent said why in its words before; a word
+  none of a field's values, as "verb is a, b or c"): jobs.yaml gained
+  what arcanactl sent and the kinds lacked (ipfw's live, bridge's and
+  geneve's interface, process's jail);
+  the console's job-submit, jobs, job, job-cancel and lanes replies
+  keep their shapes, a submit's jobs said queued as job-submit said
+  them; a safe change's confirm still comes over a connection dialled
+  for it.  Check: `jobs`, `safe_mode`, agent_tls_test's `mtls`; the
+  console's `nacm_user`, `workflows`, the sdwan cases; `pwa_hosts`,
+  `pwa_plugins`.
 - 3.1.5 A: `arcana-storage`: a snapshot sent and one received
   (streams) as actions; the storage, fstab, zfs-send, zfs-receive and
   zfs-key operations retired; check: the storage tests, the root ZFS
-  test.
+  test.  Done, but the streams (acedia/ystorage.c, yarcana.c): the
+  storage, fstab and zfs-key operations retired.  A page reads a part
+  of the storage at a time, of a dataset and those under it, of what a
+  jail's zfs sees, which a GET of every part cannot say: the storage's
+  `read` action (kind, filter, jail; its output the state's grouping,
+  the actions the state's alone, by the uses' augments), mounts with
+  fstab(5)'s text and SHA-256 that its replace is given back; a
+  dataset made encrypted is the storage's `create-encrypted` (zfs-key's
+  zfs-create).  The state gained what the operation's JSON had and it
+  did not: a partition's mountpoint, a dataset's volsize and keystatus.
+  The agent's own structs for the reads (storage_rsp, fstab_req and
+  _rsp, zfskey_req and _rsp, agent.h) in place of the operations'.  The
+  console and arcanactl make the operation's JSON of a part from the
+  read's output (ystore.c, the order of each tool's reading kept), so
+  the pages' storage, fstab and key replies keep their shapes.  The
+  second SID range is 79 600.  Left: zfs-send and zfs-receive, the
+  snapshot's send action and the receive rpc, which wait for the
+  streams (3.4): the operations stay.  Check: `storage`,
+  `yang_storage`, agent_root_test's `zfs_key`; the console's
+  `services` (its storage part); `pwa_storage`.
 - 3.1.6 A (done): `arcana-sysctl` (`running` ↔ sysctl.conf) and
   `arcana-kernel` (`kld_list` in `running`); the sysctl, sysctl-parts
   and kernel operations retired; check: tests.  Done

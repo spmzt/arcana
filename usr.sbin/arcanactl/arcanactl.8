@@ -1228,7 +1228,11 @@ changed: the key it has first (when it is not loaded), then the new
 one.
 At a terminal each is asked for; otherwise each is a line of the
 input.
-The key is never an argument, nor kept in a job.
+The key is never an argument, nor kept in a job: arcana-storage's
+.Ic load-key
+and
+.Ic change-key
+actions.
 .It Cm tls Oo Cm status | Cm csr | Cm install Ar certfile Ns | Ns - Oo Ar cafile Oc Oc
 The agent's own TLS files:
 .Cm status
@@ -1947,7 +1951,9 @@ has them, the ZFS pools with their devices, the datasets, the
 snapshots (the newest first, of all or of one dataset and those under
 it), and what is mounted beside what
 .Xr fstab 5
-says to mount.
+says to mount: arcana-storage's
+.Ic read
+action, a part at a time.
 .It Cm zfs snapshot | destroy | rollback Oo Fl r Oc Ar name
 .It Cm zfs create Ar dataset Op Ar property Ns = Ns Ar value ...
 .It Cm zfs set Ar dataset Ar property Ns = Ns Ar value ...
@@ -2135,20 +2141,27 @@ also packages built for a newer FreeBSD; with
 .Fl r ,
 from that repository alone.
 .It Cm jobs
-The host's queued, running and recently finished jobs.
+The host's queued, running and recently finished jobs, arcana-jobs'
+state.
 .It Cm jobs Cm lanes Ar number
-How many jobs of pkg in jails run at once, 1 to 32, kept for the
-agent's next start in
+How many jobs of pkg in jails run at once, 1 to 32: arcana-jobs'
+.Ic lanes
+in the candidate, committed, kept for the agent's next start in
 .Pa jobs.conf
 beside its other kept files;
 .Cm jobs
 says the number.
 .It Cm job Oo Fl w Oc Ar id
-One job with the trace of what it has done so far;
+One job with the trace of what it has done so far, its
+.Ic read
+action;
 .Fl w
-waits until it has finished.
+waits until it has finished, confirming a change made in safe mode
+.Pq its Ic confirm action .
 .It Cm job-cancel Ar id
-Take a job that has not started out of the queue.
+Take a job that has not started out of the queue, its
+.Ic cancel
+action.
 .It Cm interface Ar name Cm up | down
 Bring a network interface up or down.
 .It Cm interface Ar name Cm add | remove Ar address
@@ -2752,6 +2765,9 @@ actions and variable changes, and
 are queued as a job instead of waited for:
 .Nm
 prints the job's number and returns.
+A job is queued by arcana-jobs'
+.Ic submit
+rpc, and read from its state.
 The host runs its jobs one after another in the order they were queued,
 whether or not anyone stays connected, which is what a change that cuts
 the connection it was asked over needs.

@@ -363,19 +363,20 @@ kinds:
   - kind: ipfw
     title: The firewall
     needs: verb args
-    uses: jail persist safe text
+    uses: jail live persist safe text
     destroys: verb=delete|flush|replace
   - kind: bridge
     title: A bridge
-    needs: verb args
+    needs: verb interface args
     uses: jail persist safe
   - kind: geneve
     title: A geneve tunnel
-    needs: verb args
+    needs: verb interface args
     uses: jail persist safe
   - kind: process
     title: A process signalled or reniced
     needs: verb args
+    uses: jail
     values: verb=signal|renice
     destroys: verb=signal
   - kind: pkg-clean

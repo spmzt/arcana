@@ -275,15 +275,18 @@ int	ypackages_upgraded(const struct pkg_upgraded *rsp,
 
 /*
  * arcana-jobs (ira/yjobs.c): yjobs_from() jobs as the module has them,
- * each with its trace, a flat list of steps; the change going on
- * (activity, since), and whether the agent is stopping.  Its submit
+ * without their traces; the change going on (activity, since), whether
+ * the agent is stopping, and its lanes.  yjobs_read() one job with its
+ * trace, a flat list of steps, as its read action gives it.  Its submit
  * makes changes job-specs, as jobs.yaml says.
  */
 struct arc_job;
 struct arc_job_spec;
 int	yjobs_from(const struct arc_job *v, size_t n, const char *activity,
-	    int64_t since, bool stopping, cbl_yarena *a,
+	    int64_t since, bool stopping, int lanes, cbl_yarena *a,
 	    struct arcana_jobs *out);
+int	yjobs_read(const struct arc_job *j, cbl_yarena *a,
+	    struct arcana_jobs_jobs_job_read_output *out);
 /* A submit's change made a job-spec (yjobs_spec.c, jobs.awk's), and
  * all of them (*bad, the one refused). */
 int	yjobs_spec(const struct arcana_jobs_submit_input_change *in,

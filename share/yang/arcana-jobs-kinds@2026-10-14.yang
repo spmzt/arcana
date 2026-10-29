@@ -12,7 +12,8 @@ submodule arcana-jobs-kinds {
     "The kinds of job, a change each: made from share/arcana/jobs.yaml
      by share/arcana/jobs.awk (out=yang), not to be edited.  A kind
      is a case, its fields leaves: those it needs mandatory, those
-     whose values jobs.yaml lists an enumeration.";
+     whose values jobs.yaml lists an enumeration.  safe is the
+     change's own, beside its kind (arcana-jobs).";
 
   revision 2026-10-14 {
     description
@@ -278,11 +279,6 @@ submodule arcana-jobs-kinds {
             description
               "Action";
           }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
-          }
         }
       }
       case service-config {
@@ -317,11 +313,6 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Variables to unset";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -397,11 +388,6 @@ submodule arcana-jobs-kinds {
             description
               "Kept for a boot";
           }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
-          }
         }
       }
       case if-state {
@@ -431,11 +417,6 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Kept for a boot";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -504,11 +485,6 @@ submodule arcana-jobs-kinds {
             description
               "Kept for a boot";
           }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
-          }
         }
       }
       case if-set {
@@ -557,11 +533,6 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Kept for a boot";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -642,11 +613,6 @@ submodule arcana-jobs-kinds {
             description
               "Kept for a boot";
           }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
-          }
         }
       }
       case if-destroy {
@@ -670,11 +636,6 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Kept for a boot";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -771,11 +732,6 @@ submodule arcana-jobs-kinds {
             description
               "Preshared key";
           }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
-          }
         }
       }
       case bird {
@@ -806,11 +762,6 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Arguments";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -876,11 +827,6 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Kept for a boot";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -982,11 +928,6 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Arguments";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -1137,11 +1078,6 @@ submodule arcana-jobs-kinds {
             description
               "Kept for a boot";
           }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
-          }
         }
       }
       case ipfw {
@@ -1167,15 +1103,15 @@ submodule arcana-jobs-kinds {
             description
               "Jail";
           }
+          leaf live {
+            type boolean;
+            description
+              "Live";
+          }
           leaf persist {
             type boolean;
             description
               "Kept for a boot";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
           leaf text {
             type string;
@@ -1196,6 +1132,12 @@ submodule arcana-jobs-kinds {
             description
               "Verb";
           }
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
           leaf-list args {
             type string;
             ordered-by user;
@@ -1211,11 +1153,6 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Kept for a boot";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -1231,6 +1168,12 @@ submodule arcana-jobs-kinds {
             description
               "Verb";
           }
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
           leaf-list args {
             type string;
             ordered-by user;
@@ -1246,11 +1189,6 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Kept for a boot";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -1274,6 +1212,11 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Arguments";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
           }
         }
       }
@@ -1407,11 +1350,6 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Kept for a boot";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -1599,11 +1537,6 @@ submodule arcana-jobs-kinds {
             description
               "Kept for a boot";
           }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
-          }
         }
       }
       case carp {
@@ -1653,11 +1586,6 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Kept for a boot";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -1789,11 +1717,6 @@ submodule arcana-jobs-kinds {
             type string;
             description
               "User";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }
@@ -2020,11 +1943,6 @@ submodule arcana-jobs-kinds {
             description
               "The file";
           }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
-          }
         }
       }
       case geom {
@@ -2173,11 +2091,6 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Arguments";
-          }
-          leaf safe {
-            type boolean;
-            description
-              "Safe, undone unless confirmed";
           }
         }
       }

@@ -74,7 +74,7 @@ putnum(ucl_object_t *o, const char *key, const char *v)
 }
 
 static int
-emit(struct work *w, ucl_object_t *top, struct arc_storage_rsp *rsp)
+emit(struct work *w, ucl_object_t *top, struct storage_rsp *rsp)
 {
 	unsigned char	*json;
 
@@ -177,7 +177,7 @@ conf(struct gconf *gc, const char *name)
  * start, end, first and last are in sectors.
  */
 static int
-disks(struct work *w, struct arc_storage_rsp *rsp)
+disks(struct work *w, struct storage_rsp *rsp)
 {
 	struct gmesh	 mesh;
 	struct gclass	*cls, *part;
@@ -488,7 +488,7 @@ pool_status(struct work *w, ucl_object_t *pools)
  * "health", and what pool_status() adds}]}, from zpool list -j.
  */
 static int
-pools(struct work *w, struct arc_storage_rsp *rsp)
+pools(struct work *w, struct storage_rsp *rsp)
 {
 	struct execres		 res;
 	const ucl_object_t	*jp;
@@ -574,7 +574,7 @@ snapshot_ok(struct work *w, const char *s)
  */
 static int
 datasets(struct work *w, bool snaps, const char *filter,
-    struct arc_storage_rsp *rsp)
+    struct storage_rsp *rsp)
 {
 	/* What is asked of zfs, and what each is called in the reply. */
 	static const struct {
@@ -706,7 +706,7 @@ mount_flags(struct work *w, uint64_t fl)
  * "freq", "passno", "mounted"}]}.
  */
 static int
-mounts(struct work *w, struct arc_storage_rsp *rsp)
+mounts(struct work *w, struct storage_rsp *rsp)
 {
 	struct statfs	*mnt;
 	struct fstab	*fs;
@@ -767,11 +767,11 @@ mounts(struct work *w, struct arc_storage_rsp *rsp)
 	return (emit(w, top, rsp));
 }
 
-static int	importable(struct work *, struct arc_storage_rsp *);
+static int	importable(struct work *, struct storage_rsp *);
 
 int
 do_storage(struct work *w, uint8_t kind, const char *filter,
-    struct arc_storage_rsp *rsp)
+    struct storage_rsp *rsp)
 {
 
 	rsp->has_ok = true;
@@ -921,7 +921,7 @@ vdev_word(const char *s)
  * finds on the host's devices that are not imported.
  */
 static int
-importable(struct work *w, struct arc_storage_rsp *rsp)
+importable(struct work *w, struct storage_rsp *rsp)
 {
 	struct execres	 res;
 	ucl_object_t	*top, *arr, *o;
@@ -1790,8 +1790,8 @@ fstab_wrong(struct work *w, const char *text)
  * SHA-256 of that says so.  The one before is kept beside it.
  */
 int
-do_fstab(struct work *w, const struct arc_fstab_req *rq,
-    struct arc_fstab_rsp *rsp)
+do_fstab(struct work *w, const struct fstab_req *rq,
+    struct fstab_rsp *rsp)
 {
 	const char	*path, *sha, *bad;
 	char		*old, *tmp, *bak;

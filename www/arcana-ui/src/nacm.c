@@ -293,7 +293,7 @@ view_rulelist(struct html *h, const ucl_object_t *rl, int64_t li)
 	    "rpc</option><option value=\"path\">data path</option><option "
 	    "value=\"notification-name\">notification</option></select>"
 	    "</label><label>Named <input name=\"what\" size=\"14\" "
-	    "placeholder=\"job-submit, /if:interfaces\"></label><label>"
+	    "placeholder=\"submit, /if:interfaces\"></label><label>"
 	    "Operations <input name=\"ops\" value=\"*\" size=\"14\" "
 	    "title=\"* or some of create read update delete exec\"></label>"
 	    "<label>Action ", (long long)li);

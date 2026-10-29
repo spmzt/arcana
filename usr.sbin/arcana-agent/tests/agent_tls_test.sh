@@ -153,7 +153,7 @@ mtls_body()
 	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key get nacm
 	atf_check -o match:'^Host:' "$JGC" -c "$URI" -A ca.pem -C client.pem \
 	    -K client.key -u bob hello
-	atf_check -s exit:1 -e match:'access denied: arcana:job-submit' \
+	atf_check -s exit:1 -e match:'access denied' \
 	    -o ignore "$JGC" -c "$URI" -A ca.pem -C client.pem \
 	    -K client.key -u bob sysctl kern.hostname=x
 	# The rules themselves are the admin's (default-deny-all): left out

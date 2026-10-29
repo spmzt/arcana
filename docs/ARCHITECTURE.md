@@ -59,8 +59,8 @@ The core operations, and what each runs on the host (the rest are in
 | `stats` | CPU, load, memory, swap, ZFS pools | `kern.cp_time` between requests, `vm.loadavg`, `vm.stats.vm.*`, `swapinfo -k`, `zpool list -Hp` |
 | `packages` | pending upgrades of the host or a running jail | `pkg [-j jail] update -q`, `pkg [-j jail] version -vRl '<'` |
 | `pkg-upgrade` | upgrade all or named packages, or show what would be | `pkg [-j jail] upgrade -y|-n [names]`, then `pkg version` again |
-| `job-submit` | queue a batch of changes | the job queue, below |
-| `jobs`, `job`, `job-cancel` | list jobs, read one with its trace so far, take a queued one back | the job queue |
+| arcana-jobs `submit` | queue a batch of changes | the job queue, below |
+| arcana-jobs `jobs`, its `read`, `cancel`, `confirm` | list jobs, read one with its trace so far, take a queued one back, keep a safe change | the job queue |
 
 Every operation requires an authenticated peer: a client certificate
 from the arcana CA over TCP, or access to the 0600 AF_UNIX socket.
@@ -168,7 +168,7 @@ unprintable characters as vis(3) escapes (the `-e` separator shows as
 A change that is asked for and waited on dies with its connection. That
 is wrong for exactly the changes that matter most: restarting the jail
 the console runs in, or the interface it is reached through. So every
-change can instead be **queued as a job** (`job-submit`, one or a batch
+change can instead be **queued as a job** (arcana-jobs' `submit`, one or a batch
 of up to 64).
 
 The daemon keeps a queue and one thread that runs it, in the order

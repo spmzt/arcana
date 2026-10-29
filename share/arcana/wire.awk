@@ -19,7 +19,8 @@
 # operation is an rpc whose input and output use the family set's
 # attributes one grouping each; a dump's forms are an rpc of their own;
 # an event is a structure of its multicast group; a stream's payload is
-# a structure.  Enums travel as uint8 with their names in the
+# a structure, and so is a set with "structure: true" that no operation
+# carries any more, kept for the programs' own use (the agent's jobs).  Enums travel as uint8 with their names in the
 # description, so that the C member stays a uint8_t.
 
 function die(msg) {
@@ -162,7 +163,9 @@ function ydesc(doc, ind,    n, i, a, out) {
 			nset++
 			setname[nset] = setcur
 			nattr[setcur] = 0
-		} else if (ind == 4 && key == "doc") {
+		} else if (ind == 4 && key == "structure")
+			setkept[setcur] = value(line) == "true"
+		else if (ind == 4 && key == "doc") {
 			if (line ~ /\|[ \t]*$/) {
 				docind = 4
 				dockey = "set:" setcur
@@ -299,6 +302,9 @@ function mark_structs(    i, j, s, ak) {
 	}
 	for (i = 1; i <= nst; i++)
 		isstruct[stprop[stname[i], "payload"]] = 1
+	for (i = 1; i <= nset; i++)
+		if (setkept[setname[i]])
+			isstruct[setname[i]] = 1
 }
 
 # Has the spec a dump form of any operation?
@@ -527,6 +533,18 @@ function out_yang(    i, j, s, op, famset, st, cmd) {
 		printf "  sx:structure %s {\n", s
 		printf "    cg:struct %s;\n", ystr(sname(s))
 		ydesc("A data message of a stream of " s "s.", "    ")
+		printf "    uses set-%s;\n", s
+		printf "  }\n\n"
+	}
+	# The sets kept for the programs' own use.
+	for (i = 1; i <= nset; i++) {
+		s = setname[i]
+		if (!setkept[s] || done[s])
+			continue
+		done[s] = 1
+		printf "  sx:structure %s {\n", s
+		printf "    cg:struct %s;\n", ystr(sname(s))
+		ydesc(docs["set:" s], "    ")
 		printf "    uses set-%s;\n", s
 		printf "  }\n\n"
 	}

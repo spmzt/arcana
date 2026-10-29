@@ -1626,7 +1626,11 @@ attribute-sets:
         doc: ZFS pools, from zpool list.
 
   - name: job-spec
-    doc: One change to queue; the attributes its kind needs.
+    doc: |
+      One change to queue; the attributes its kind needs.  arcana-jobs'
+      submit carries it now, a change made one by the agent: kept a
+      structure for the agent's queue.
+    structure: true
     attributes:
       - name: kind
         type: u8
@@ -1970,6 +1974,10 @@ attribute-sets:
         checks:
           max-len: 16
   - name: job
+    doc: |
+      A job, as the agent's queue keeps it; arcana-jobs has it now:
+      kept a structure for the queue.
+    structure: true
     attributes:
       - name: id
         type: u64
@@ -2313,109 +2321,22 @@ operations:
     retired: true
 
   - name: job-submit
-    attribute-set: arcana
-    auth: true
-    doc: |
-      Queue changes.  The daemon runs them one after another in the order
-      given, whether or not the client stays connected, and keeps their
-      outcome for job and jobs.
-    do:
-      request:
-        attributes:
-          - batch
-        required:
-          - batch
-      reply:
-        attributes:
-          - ok
-          - error
-          - jobs
+    retired: true
 
   - name: jobs
-    attribute-set: arcana
-    auth: true
-    doc: |
-      The queued, running and recent jobs, without their traces; and
-      what the daemon is doing now that is not a job: a request a client
-      waits for, which holds up changes and a stop as a job does.
-    do:
-      reply:
-        attributes:
-          - ok
-          - jobs
-          - activity
-          - since
-          - stopping
-          - lanes
+    retired: true
 
   - name: jobs-set
-    attribute-set: arcana
-    auth: true
-    doc: |
-      How many jobs of pkg in jails run at once: lanes, 1 to 32, kept
-      for the next start (jobs.conf beside the agent's other kept
-      files).  The reply says what it is now.
-    do:
-      request:
-        attributes:
-          - lanes
-        required:
-          - lanes
-      reply:
-        attributes:
-          - ok
-          - error
-          - lanes
+    retired: true
 
   - name: job
-    attribute-set: arcana
-    auth: true
-    doc: One job with its trace so far.
-    do:
-      request:
-        attributes:
-          - id
-        required:
-          - id
-      reply:
-        attributes:
-          - ok
-          - error
-          - job
+    retired: true
 
   - name: job-cancel
-    attribute-set: arcana
-    auth: true
-    doc: Take a job that has not started out of the queue.
-    do:
-      request:
-        attributes:
-          - id
-        required:
-          - id
-      reply:
-        attributes:
-          - ok
-          - error
-          - job
+    retired: true
 
   - name: job-confirm
-    attribute-set: arcana
-    auth: true
-    doc: |
-      Confirm a job that is unconfirmed: the change stays.  That the
-      request arrived is the point: the client still reaches the host.
-    do:
-      request:
-        attributes:
-          - id
-        required:
-          - id
-      reply:
-        attributes:
-          - ok
-          - error
-          - job
+    retired: true
 
   - name: agent-update
     attribute-set: arcana
@@ -2568,51 +2489,10 @@ operations:
           - confirm-by
 
   - name: storage
-    attribute-set: arcana
-    auth: true
-    doc: |
-      The host's storage, as a JSON object, of the kind asked for.  More
-      datasets or snapshots than a reply carries come as the first of
-      them, with total and truncated.  With jail, the datasets or the
-      snapshots that jail's own zfs list sees: those given to it.
-    do:
-      request:
-        attributes:
-          - storage-kind
-          - net-filter
-          - jail
-        required:
-          - storage-kind
-      reply:
-        attributes:
-          - ok
-          - error
-          - json
-          - total
-          - truncated
-          - trace
+    retired: true
 
   - name: fstab
-    attribute-set: arcana
-    auth: true
-    doc: |
-      fstab(5).  Without conf-text, read it, with the SHA-256 of its
-      text.  With conf-text, put that in its place: it has to be an
-      fstab, and sha256 that of the text it was made from.  The one
-      before is kept beside it.  With dry-run it is only checked.
-    do:
-      request:
-        attributes:
-          - conf-text
-          - sha256
-          - dry-run
-      reply:
-        attributes:
-          - ok
-          - error
-          - conf-text
-          - sha256
-          - trace
+    retired: true
 
   - name: transport
     attribute-set: arcana
@@ -3437,31 +3317,7 @@ operations:
           - trace
 
   - name: zfs-key
-    attribute-set: arcana
-    auth: true
-    doc: |
-      The key of an encrypted dataset whose keylocation is prompt, as
-      it is typed: with zfs-key, loaded (zfs load-key, which reads it
-      on its standard input, through a pipe); with zfs-new-key, changed
-      (zfs change-key, the same), and loaded first with zfs-key when it
-      is not; with zfs-create and zfs-new-key, the dataset made
-      encrypted, its passphrase the new key (zfs create -o encryption= -o
-      keyformat=passphrase -o keylocation=prompt).  A key is on no disk,
-      in no job, no trace and no log.
-    do:
-      request:
-        attributes:
-          - zfs-dataset
-          - zfs-key
-          - zfs-new-key
-          - zfs-create
-        required:
-          - zfs-dataset
-      reply:
-        attributes:
-          - ok
-          - error
-          - trace
+    retired: true
 
   - name: tls
     attribute-set: arcana

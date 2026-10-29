@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.231.2"
+#define	ARCANA_AGENT_VERSION	"0.232.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -418,9 +418,23 @@ const char	*cert_check(const struct arc_job_spec *);
 int		 do_cert(struct work *, const struct arc_job_spec *,
 		    const char **);
 
-/* acedia/zfskey.c: a dataset's key, typed */
-void		 do_zfs_key(struct work *, const struct arc_zfs_key_req *,
-		    struct arc_zfs_key_rsp *);
+/*
+ * acedia/zfskey.c: a dataset's key, typed: loaded, changed (new_key),
+ * or a dataset made encrypted with new_key (create, its encryption).
+ */
+struct zfskey_req {
+	const char	*zfs_dataset;
+	const char	*zfs_key;
+	const char	*zfs_new_key;
+	const char	*zfs_create;
+};
+struct zfskey_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+};
+void		 do_zfs_key(struct work *, const struct zfskey_req *,
+		    struct zfskey_rsp *);
 
 /* invidia/capture.c: packets taken with tcpdump */
 void		 do_capture(struct work *, const struct arc_capture_req *,
@@ -944,11 +958,36 @@ bool		 kmod_loaded(const char *);
 bool		 prefix_covers(const uint8_t *, const uint8_t *, int);
 int		 if_fib(const char *);
 
-/* acedia/storage.c: disks, pools, datasets, mounts. */
+/*
+ * acedia/storage.c: disks, pools, datasets, mounts, as JSON of a kind
+ * (ARC_STORAGE_KIND_*) that arcana-storage's read makes typed lists
+ * (ystorage.c); fstab(5) read or put in place.
+ */
+struct storage_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+	const char	*json;
+	bool		 has_total;
+	uint64_t	 total;		/* rows on the host, more than sent */
+	bool		 truncated;
+};
+struct fstab_req {
+	const char	*conf_text;	/* NULL: read */
+	const char	*sha256;	/* of the text it was made from */
+	bool		 dry_run;
+};
+struct fstab_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+	const char	*conf_text;
+	const char	*sha256;
+};
 int		 do_storage(struct work *, uint8_t, const char *,
-		    struct arc_storage_rsp *);
-int		 do_fstab(struct work *, const struct arc_fstab_req *,
-		    struct arc_fstab_rsp *);
+		    struct storage_rsp *);
+int		 do_fstab(struct work *, const struct fstab_req *,
+		    struct fstab_rsp *);
 char		**storage_argv(struct work *, const struct arc_job_spec *,
 		    const char **);
 const char	*storage_check(const struct arc_job_spec *);
@@ -1006,7 +1045,7 @@ int		 network_routes(const char *, struct arc_route **, size_t *,
 void		 network_routes_free(struct ucl_object_s *);
 int		 zfs_pipe(int, char **);
 const char	*tool(struct work *, const char *);
-int		 do_health(struct work *, struct arc_storage_rsp *);
+int		 do_health(struct work *, struct storage_rsp *);
 struct ucl_object_s;
 struct ucl_object_s *swap_list(struct work *);
 void		 route_watch_start(void);

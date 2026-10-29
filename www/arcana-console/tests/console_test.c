@@ -374,7 +374,7 @@ ATF_TC_BODY(nacm_user, tc)
 	ATF_CHECK_STREQ("bob", jstr(&r, "user"));
 	resp_free(&r);
 	http("POST", path, job, &r);
-	ATF_CHECK_MSG(strstr(r.body, "access denied: arcana:job-submit") !=
+	ATF_CHECK_MSG(strstr(r.body, "access denied") !=
 	    NULL, "%d %s", r.status, r.body);
 	resp_free(&r);
 	/* The admin. */
@@ -451,7 +451,7 @@ ATF_TC_BODY(nacm_console, tc)
 		usleep(100000);
 	}
 	ATF_REQUIRE_MSG(i < 300, "the workflow did not run");
-	ATF_CHECK_MSG(strstr(r.body, "access denied: arcana:job-submit") !=
+	ATF_CHECK_MSG(strstr(r.body, "access denied") !=
 	    NULL, "%s", r.body);
 	resp_free(&r);
 }

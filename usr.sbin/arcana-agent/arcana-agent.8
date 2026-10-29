@@ -375,7 +375,7 @@ Off a terminal pkg prints a dot for each tenth of a download.
 Default 600.
 .It Fl -jobs-conf Ar file
 Where how many jobs of pkg in jails run at once is kept
-.Pq Cm jobs-set ;
+.Pq arcana-jobs' Li lanes , written by a commit ;
 .Pa /usr/local/etc/arcana/jobs.conf
 by default.
 .It Fl -nacm Ar file
@@ -763,6 +763,10 @@ NACM's rules
 .It
 the configured subscriptions
 .Pq Fl -subscriptions ;
+.It
+how many jobs of pkg in jails run at once, arcana-jobs'
+.Ic lanes
+.Pq Fl -jobs-conf ;
 .El
 anything else is refused as not supported yet.
 .Pp
@@ -895,7 +899,7 @@ Without that within the wait
 .Pq Fl w , 60 seconds
 the daemon undoes the change, as it also does when it is stopped while
 waiting, or when the job is cancelled while it waits
-.Pq job-cancel :
+.Pq its Li cancel action :
 an address is put back with the prefix length it had, an
 interface brought back up or down, a route deleted or added again, a
 sysctl set to the value it had and its line in

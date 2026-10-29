@@ -64,6 +64,20 @@ jobs_spec.h: ${ARC_TOP}/share/arcana/jobs.yaml ${ARC_TOP}/share/arcana/jobs.awk 
 	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
 hosts.o: jobs_spec.h
+# arcana-jobs over the YANG family (yqueue.c): a job-spec made the
+# change submit takes as jobs.yaml says, by jobs.awk over the wire's
+# header (which members have a has_); arcana-storage's parts as the
+# pages read them (ystore.c).  arcanactl builds the same.
+SRCS+=		yqueue.c ychange.c ystore.c
+CFLAGS.ychange.c+= -I${.CURDIR}
+CLEANFILES+=	ychange.c ychange.c.tmp
+ychange.c: ${ARC_TOP}/share/arcana/jobs.awk ${ARC_TOP}/share/arcana/jobs.yaml \
+    ${ARC_TOP}/share/arcana/arcana.yaml arcana_v2.h ymodel.h
+	awk -v out=ychange -f ${ARC_TOP}/share/arcana/jobs.awk \
+	    ${ARC_TOP}/share/arcana/arcana.yaml \
+	    ${ARC_TOP}/share/arcana/jobs.yaml ${.OBJDIR}/arcana_v2.h \
+	    > ${.TARGET}.tmp
+	mv ${.TARGET}.tmp ${.TARGET}
 
 HAS_TESTS=
 SUBDIR.${MK_TESTS}+= tests

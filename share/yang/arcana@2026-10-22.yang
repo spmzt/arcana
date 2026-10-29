@@ -1104,7 +1104,9 @@ module arcana {
 
   grouping set-job-spec {
     description
-      "One change to queue; the attributes its kind needs.";
+      "One change to queue; the attributes its kind needs.  arcana-jobs'
+       submit carries it now, a change made one by the agent: kept a
+       structure for the agent's queue.";
     leaf kind {
       type uint8 {
         range "0..50";
@@ -1542,6 +1544,9 @@ module arcana {
   }
 
   grouping set-job {
+    description
+      "A job, as the agent's queue keeps it; arcana-jobs has it now:
+       kept a structure for the queue.";
     leaf id {
       type uint64;
     }
@@ -3137,123 +3142,6 @@ module arcana {
     }
   }
 
-  rpc job-submit {
-    fam:command 12;
-    fam:auth;
-    description
-      "Queue changes.  The daemon runs them one after another in the order
-       given, whether or not the client stays connected, and keeps their
-       outcome for job and jobs.";
-    input {
-      uses attr-batch {
-        refine batch {
-          min-elements 1;
-        }
-      }
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-jobs;
-    }
-  }
-
-  rpc jobs {
-    fam:command 13;
-    fam:auth;
-    description
-      "The queued, running and recent jobs, without their traces; and
-       what the daemon is doing now that is not a job: a request a client
-       waits for, which holds up changes and a stop as a job does.";
-    output {
-      uses attr-ok;
-      uses attr-jobs;
-      uses attr-activity;
-      uses attr-since;
-      uses attr-stopping;
-      uses attr-lanes;
-    }
-  }
-
-  rpc jobs-set {
-    fam:command 14;
-    fam:auth;
-    description
-      "How many jobs of pkg in jails run at once: lanes, 1 to 32, kept
-       for the next start (jobs.conf beside the agent's other kept
-       files).  The reply says what it is now.";
-    input {
-      uses attr-lanes {
-        refine lanes {
-          mandatory true;
-        }
-      }
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-lanes;
-    }
-  }
-
-  rpc job {
-    fam:command 15;
-    fam:auth;
-    description
-      "One job with its trace so far.";
-    input {
-      uses attr-id {
-        refine id {
-          mandatory true;
-        }
-      }
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-job;
-    }
-  }
-
-  rpc job-cancel {
-    fam:command 16;
-    fam:auth;
-    description
-      "Take a job that has not started out of the queue.";
-    input {
-      uses attr-id {
-        refine id {
-          mandatory true;
-        }
-      }
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-job;
-    }
-  }
-
-  rpc job-confirm {
-    fam:command 17;
-    fam:auth;
-    description
-      "Confirm a job that is unconfirmed: the change stays.  That the
-       request arrived is the point: the client still reaches the host.";
-    input {
-      uses attr-id {
-        refine id {
-          mandatory true;
-        }
-      }
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-job;
-    }
-  }
-
   rpc agent-update {
     fam:command 18;
     fam:auth;
@@ -3412,55 +3300,6 @@ module arcana {
       uses attr-files;
       uses attr-trace;
       uses attr-confirm-by;
-    }
-  }
-
-  rpc storage {
-    fam:command 23;
-    fam:auth;
-    description
-      "The host's storage, as a JSON object, of the kind asked for.  More
-       datasets or snapshots than a reply carries come as the first of
-       them, with total and truncated.  With jail, the datasets or the
-       snapshots that jail's own zfs list sees: those given to it.";
-    input {
-      uses attr-storage-kind {
-        refine storage-kind {
-          mandatory true;
-        }
-      }
-      uses attr-net-filter;
-      uses attr-jail;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-json;
-      uses attr-total;
-      uses attr-truncated;
-      uses attr-trace;
-    }
-  }
-
-  rpc fstab {
-    fam:command 24;
-    fam:auth;
-    description
-      "fstab(5).  Without conf-text, read it, with the SHA-256 of its
-       text.  With conf-text, put that in its place: it has to be an
-       fstab, and sha256 that of the text it was made from.  The one
-       before is kept beside it.  With dry-run it is only checked.";
-    input {
-      uses attr-conf-text;
-      uses attr-sha256;
-      uses attr-dry-run;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-conf-text;
-      uses attr-sha256;
-      uses attr-trace;
     }
   }
 
@@ -4322,35 +4161,6 @@ module arcana {
     }
   }
 
-  rpc zfs-key {
-    fam:command 52;
-    fam:auth;
-    description
-      "The key of an encrypted dataset whose keylocation is prompt, as
-       it is typed: with zfs-key, loaded (zfs load-key, which reads it
-       on its standard input, through a pipe); with zfs-new-key, changed
-       (zfs change-key, the same), and loaded first with zfs-key when it
-       is not; with zfs-create and zfs-new-key, the dataset made
-       encrypted, its passphrase the new key (zfs create -o encryption= -o
-       keyformat=passphrase -o keylocation=prompt).  A key is on no disk,
-       in no job, no trace and no log.";
-    input {
-      uses attr-zfs-dataset {
-        refine zfs-dataset {
-          mandatory true;
-        }
-      }
-      uses attr-zfs-key;
-      uses attr-zfs-new-key;
-      uses attr-zfs-create;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-trace;
-    }
-  }
-
   rpc tls {
     fam:command 53;
     fam:auth;
@@ -4883,6 +4693,23 @@ module arcana {
     description
       "A data message of a stream of chunks.";
     uses set-chunk;
+  }
+
+  sx:structure job-spec {
+    cg:struct "job-spec";
+    description
+      "One change to queue; the attributes its kind needs.  arcana-jobs'
+       submit carries it now, a change made one by the agent: kept a
+       structure for the agent's queue.";
+    uses set-job-spec;
+  }
+
+  sx:structure job {
+    cg:struct "job";
+    description
+      "A job, as the agent's queue keeps it; arcana-jobs has it now:
+       kept a structure for the queue.";
+    uses set-job;
   }
 
 }

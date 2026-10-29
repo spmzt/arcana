@@ -1254,19 +1254,17 @@ part_hosts(void)
 	run("document.querySelector('.step-pane .close').click()");
 	wait_js("!document.querySelector('.step-pane .step-detail')", 5);
 	/* Beside the operation, once asked for ({ }, off by default), what
-	 * it is on the wire: its request and reply as CBOR maps, and the
-	 * sets they nest. */
+	 * it is on the wire: a job is arcana-jobs' (3.1.4), its module a
+	 * tab beside the CBOR, as RFC 8340 draws it. */
 	ATF_CHECK(js_true("!document.querySelector('.schema pre.cddl')"));
 	run("document.querySelector('.trace button[data-act=schema]').click()");
-	wait_js("document.querySelector('.schema pre.cddl')", 10);
+	click_when(".schema-tabs button[data-arg=yang]", 10);
+	wait_js("[...document.querySelectorAll('.schema h4')].some(h => "
+	    "h.textContent.includes('YANG model'))", 10);
 	ATF_CHECK(js_true("(() => { const t = document.querySelector("
-	    "'.schema').textContent; return t.includes('arcana') && "
-	    "t.includes('command') && t.includes('request = {') && "
-	    "t.includes('reply = {') && t.includes('=> uint') && "
-	    "t.includes('; id'); })()"));
-	/* A job's operation is not one converted to YANG: no model. */
-	ATF_CHECK(js_true("![...document.querySelectorAll('.schema h4')]."
-	    "some(h => h.textContent.includes('YANG model'))"));
+	    "'.schema').textContent; return "
+	    "t.includes('module: arcana-jobs') && t.includes('+---x read') "
+	    "&& t.includes('+---x submit') && t.includes('lanes?'); })()"));
 	shot("3c-schema");
 	run("document.querySelector('.trace button[data-act=schema]').click()");
 	wait_js("!document.querySelector('.step-pane')", 5);

@@ -12,9 +12,10 @@
  * reply the module's structs (y*.c).  An action is its operation too:
  * a jail's start, stop, restart and kill as the action operation's, a
  * service's as service-action's, a process's signal and renice as the
- * proc job's, a job's cancel and confirm, the packages' refresh, a
- * log's read, BIRD's routes; arcana-jobs' submit as job-submit, its
- * changes the job-specs jobs.yaml makes them (yjobs_spec.c).  What
+ * proc job's, a job's cancel, confirm and read, the packages' refresh,
+ * a log's read, BIRD's routes; arcana-jobs' submit queues jobs, its
+ * changes the job-specs jobs.yaml makes them (yjobs_spec.c), and its
+ * lanes are written to jobs.conf by an edit.  What
  * changes the host is one change at a time, as the agent's own
  * (change_lock).  The other edits, actions and rpcs answer
  * operation-not-supported.
@@ -225,8 +226,8 @@ static int
 zfs_key(cbl_req *req, const struct cbl_bytes *target, const char *key,
     const char *new_key, cbl_yarena *a)
 {
-	struct arc_zfs_key_req	 q;
-	struct arc_zfs_key_rsp	 r;
+	struct zfskey_req	 q;
+	struct zfskey_rsp	 r;
 	const void		**k;
 	struct work		*w;
 
@@ -1129,7 +1130,43 @@ arcana_jobs_jobs_get(cbl_req *req, struct arcana_jobs *data, cbl_yarena *a)
 	since = 0;
 	activity = changes_current(w, &since);
 	return (yjobs_from(v, n, activity, (int64_t)since, changes_stopping(),
-	    a, data));
+	    jobs_lanes(), a, data));
+}
+
+/* lanes, kept in jobs.conf; the default where it is taken out. */
+int
+arcana_jobs_jobs_edit(cbl_req *req, const struct arcana_jobs *before,
+    const struct arcana_jobs *after)
+{
+	const char	*e;
+	int		 n;
+
+	(void)before;
+	n = after != NULL && after->jobs != NULL && after->jobs->has_lanes ?
+	    after->jobs->lanes : PKG_LANES;
+	if (n == jobs_lanes())
+		return (0);
+	return ((e = jobs_set_lanes(n)) != NULL ? said(req, e) : 0);
+}
+
+int
+arcana_jobs_jobs_job_read_action(cbl_req *req, const struct cbl_bytes *target,
+    const struct arcana_jobs_jobs_job_read_input *in,
+    struct arcana_jobs_jobs_job_read_output *out, cbl_yarena *a)
+{
+	const struct arc_job	*j;
+	const void		**k;
+	struct work		*w;
+
+	(void)in;
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (EINVAL);
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	if ((j = jobs_get(w, *(const uint64_t *)k[0])) == NULL)
+		return (said(req, "no such job; the agent keeps the last "
+		    "finished ones and forgets all when it restarts"));
+	return (yjobs_read(j, a, out));
 }
 
 int
@@ -1186,7 +1223,7 @@ arcana_jobs_submit_rpc(cbl_req *req, const struct arcana_jobs_submit_input *in,
 		    "no kind of job, or not the one it names"));
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
-	/* As job-submit: each change checked, the queue's room. */
+	/* Each change checked, the queue's room. */
 	if (jobs_submit_checked(req, specs, n, w, &v, &nv, &e) != 0)
 		return (said(req, e));
 	if ((ids = cbl_yarena_alloc(a, (nv > 0 ? nv : 1) * sizeof(*ids))) ==
@@ -1792,6 +1829,43 @@ arcana_storage_storage_dataset_change_key_action(cbl_req *req,
 	return (zfs_key(req, target, in->key, in->new_key, a));
 }
 
+/* A dataset made encrypted, as zfs-key's zfs-create made one. */
+int
+arcana_storage_storage_create_encrypted_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_storage_storage_create_encrypted_input *in,
+    struct arcana_storage_storage_create_encrypted_output *out,
+    cbl_yarena *a)
+{
+	static const char *const ciphers[] = { "on", "aes-128-ccm",
+	    "aes-192-ccm", "aes-256-ccm", "aes-128-gcm", "aes-192-gcm",
+	    "aes-256-gcm" };
+	struct zfskey_req	 q;
+	struct zfskey_rsp	 r;
+	struct work		*w;
+
+	(void)target;
+	(void)out;
+	if (in->dataset == NULL || in->key == NULL)
+		return (said(req, "the dataset and its key are needed"));
+	if (in->has_encryption && (size_t)in->encryption >= nitems(ciphers))
+		return (EINVAL);
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&q, 0, sizeof(q));
+	q.zfs_dataset = in->dataset;
+	q.zfs_new_key = in->key;
+	q.zfs_create = ciphers[in->has_encryption ? in->encryption : 0];
+	memset(&r, 0, sizeof(r));
+	r.has_ok = true;
+	if (!change_begin(wfmt(w, "zfs key of %s", q.zfs_dataset)))
+		return (said(req, "not done: arcana-agent is stopping"));
+	do_zfs_key(w, &q, &r);
+	change_end();
+	explicit_bzero((void *)(uintptr_t)in->key, strlen(in->key));
+	return (r.ok ? 0 : said(req, r.error));
+}
+
 int
 arcana_storage_storage_dataset_load_key_action(cbl_req *req,
     const struct cbl_bytes *target,
@@ -1844,8 +1918,8 @@ arcana_storage_storage_fstab_replace_action(cbl_req *req,
     const struct arcana_storage_storage_fstab_replace_input *in,
     struct arcana_storage_storage_fstab_replace_output *out, cbl_yarena *a)
 {
-	struct arc_fstab_req	 q;
-	struct arc_fstab_rsp	 r;
+	struct fstab_req	 q;
+	struct fstab_rsp	 r;
 	struct work		*w;
 	bool			 dry;
 
@@ -1883,7 +1957,7 @@ arcana_storage_storage_get(cbl_req *req, struct arcana_storage *data,
 	    ARC_STORAGE_KIND_POOLS, ARC_STORAGE_KIND_DATASETS,
 	    ARC_STORAGE_KIND_SNAPSHOTS, ARC_STORAGE_KIND_MOUNTS,
 	    ARC_STORAGE_KIND_HEALTH };
-	struct arc_storage_rsp		 r;
+	struct storage_rsp		 r;
 	struct arcana_storage_storage	*o;
 	struct work			*w;
 	size_t				 i;
@@ -1907,6 +1981,93 @@ arcana_storage_storage_get(cbl_req *req, struct arcana_storage *data,
 			return (error);
 	}
 	data->storage = o;
+	return (0);
+}
+
+/*
+ * One part of the storage, as the storage operation read it for a page:
+ * datasets and snapshots under filter's dataset, those jail's zfs sees.
+ * read's kind is the operation's storage-kind.
+ */
+int
+arcana_storage_storage_read_action(cbl_req *req, const struct cbl_bytes *target,
+    const struct arcana_storage_storage_read_input *in,
+    struct arcana_storage_storage_read_output *out, cbl_yarena *a)
+{
+	struct storage_rsp		 r;
+	struct arcana_storage_storage	 st;
+	struct work			*w;
+	const char			*e;
+	uint8_t				 kind;
+	int				 error;
+
+	(void)target;
+	if (!in->has_kind)
+		return (said(req, "which part of the storage"));
+	kind = (uint8_t)in->kind;
+	if (in->jail != NULL && in->jail[0] != '\0') {
+		if (!valid_jail(in->jail))
+			return (said(req, "invalid jail name"));
+		if (kind != ARC_STORAGE_KIND_DATASETS &&
+		    kind != ARC_STORAGE_KIND_SNAPSHOTS)
+			return (said(req, "of a jail, its datasets and "
+			    "snapshots only"));
+	}
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	e = NULL;
+	if (scope_enter_jail(w, in->jail != NULL && in->jail[0] != '\0' ?
+	    in->jail : NULL, &e, false) != 0)
+		return (said(req, e));
+	memset(&r, 0, sizeof(r));
+	(void)do_storage(w, kind, in->filter != NULL && in->filter[0] !=
+	    '\0' ? in->filter : NULL, &r);
+	if (!r.ok)
+		return (said(req, r.error != NULL ? r.error : "not read"));
+	memset(&st, 0, sizeof(st));
+	if ((error = ystorage_from_json(kind, r.json, r.total, r.truncated, a,
+	    &st)) != 0)
+		return (error);
+	/* With what is mounted, fstab(5)'s text and its SHA-256, which
+	 * fstab's replace is given back. */
+	if (kind == ARC_STORAGE_KIND_MOUNTS) {
+		struct fstab_req	fq;
+		struct fstab_rsp	fr;
+
+		memset(&fq, 0, sizeof(fq));
+		memset(&fr, 0, sizeof(fr));
+		(void)do_fstab(w, &fq, &fr);
+		if (fr.ok && (error = ystorage_fstab(fr.conf_text, fr.sha256,
+		    a, &st)) != 0)
+			return (error);
+	}
+	out->disk.n = st.disk.n;
+	out->disk.v = st.disk.v;
+	out->pool.n = st.pool.n;
+	out->pool.v = st.pool.v;
+	out->importable.n = st.importable.n;
+	out->importable.v = st.importable.v;
+	/*
+	 * The dataset, snapshot and fstab of the state carry actions, the
+	 * output's do not: a struct each, of the same members (actions are
+	 * none), which the state's are read as.
+	 */
+	_Static_assert(sizeof(*out->dataset.v) == sizeof(*st.dataset.v) &&
+	    sizeof(*out->snapshot.v) == sizeof(*st.snapshot.v) &&
+	    sizeof(*out->fstab) == sizeof(*st.fstab), "read's own structs");
+	out->has_datasets_total = st.has_datasets_total;
+	out->datasets_total = st.datasets_total;
+	out->dataset.n = st.dataset.n;
+	out->dataset.v = (const void *)st.dataset.v;
+	out->has_snapshots_total = st.has_snapshots_total;
+	out->snapshots_total = st.snapshots_total;
+	out->snapshot.n = st.snapshot.n;
+	out->snapshot.v = (const void *)st.snapshot.v;
+	out->mount.n = st.mount.n;
+	out->mount.v = st.mount.v;
+	out->fstab = (const void *)st.fstab;
+	out->swap.n = st.swap.n;
+	out->swap.v = st.swap.v;
 	return (0);
 }
 

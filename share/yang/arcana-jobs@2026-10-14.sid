@@ -2,8 +2,18 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-jobs",
     "module-revision": "2026-10-14",
-    "sid-file-version": 13,
+    "sid-file-version": 17,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 400, 1 000.",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-netconf-acm",
+        "module-revision": "2018-02-14"
+      },
+      {
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
+      }
+    ],
     "assignment-range": [
       {
         "entry-point": "62400",
@@ -124,61 +134,73 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step",
+        "status": "obsolete",
         "sid": "62422"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step/argv",
+        "status": "obsolete",
         "sid": "62423"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step/detail",
+        "status": "obsolete",
         "sid": "62424"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step/duration",
+        "status": "obsolete",
         "sid": "62425"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step/error-output",
+        "status": "obsolete",
         "sid": "62426"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step/exit",
+        "status": "obsolete",
         "sid": "62427"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step/id",
+        "status": "obsolete",
         "sid": "62428"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step/kind",
+        "status": "obsolete",
         "sid": "62429"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step/label",
+        "status": "obsolete",
         "sid": "62430"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step/output",
+        "status": "obsolete",
         "sid": "62431"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step/parent",
+        "status": "obsolete",
         "sid": "62432"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:jobs/job/step/status",
+        "status": "obsolete",
         "sid": "62433"
       },
       {
@@ -344,6 +366,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/carp/safe",
+        "status": "obsolete",
         "sid": "62466"
       },
       {
@@ -459,6 +482,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/if-address/safe",
+        "status": "obsolete",
         "sid": "62489"
       },
       {
@@ -594,6 +618,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/if-set/safe",
+        "status": "obsolete",
         "sid": "62516"
       },
       {
@@ -624,6 +649,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/if-state/safe",
+        "status": "obsolete",
         "sid": "62522"
       },
       {
@@ -684,6 +710,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/ipfw/safe",
+        "status": "obsolete",
         "sid": "62534"
       },
       {
@@ -1129,6 +1156,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/route/safe",
+        "status": "obsolete",
         "sid": "62623"
       },
       {
@@ -1234,6 +1262,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/ssh/safe",
+        "status": "obsolete",
         "sid": "62644"
       },
       {
@@ -1544,26 +1573,31 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/bird/safe",
+        "status": "obsolete",
         "sid": "62706"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/bridge/safe",
+        "status": "obsolete",
         "sid": "62707"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/geneve/safe",
+        "status": "obsolete",
         "sid": "62708"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/if-create/safe",
+        "status": "obsolete",
         "sid": "62709"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/if-destroy/safe",
+        "status": "obsolete",
         "sid": "62710"
       },
       {
@@ -1579,11 +1613,13 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/ipsec-sa/safe",
+        "status": "obsolete",
         "sid": "62713"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/ipsec/safe",
+        "status": "obsolete",
         "sid": "62714"
       },
       {
@@ -1614,6 +1650,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/jail-allow/safe",
+        "status": "obsolete",
         "sid": "62720"
       },
       {
@@ -1659,6 +1696,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/kmod/safe",
+        "status": "obsolete",
         "sid": "62729"
       },
       {
@@ -1699,11 +1737,13 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/service-action/safe",
+        "status": "obsolete",
         "sid": "62737"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/service-config/safe",
+        "status": "obsolete",
         "sid": "62738"
       },
       {
@@ -1754,6 +1794,7 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/speeder/safe",
+        "status": "obsolete",
         "sid": "62748"
       },
       {
@@ -1769,22 +1810,185 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/sysctl/safe",
+        "status": "obsolete",
         "sid": "62751"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/sysfile/safe",
+        "status": "obsolete",
         "sid": "62752"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/wireguard/safe",
+        "status": "obsolete",
         "sid": "62753"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/suricata/text",
         "sid": "62754"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read",
+        "sid": "62755"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/input",
+        "sid": "62756"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output",
+        "sid": "62757"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/confirm-by",
+        "sid": "62758"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/created",
+        "sid": "62759"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/error",
+        "sid": "62760"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/finished",
+        "sid": "62761"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/kind",
+        "sid": "62762"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/ok",
+        "sid": "62763"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/peer",
+        "sid": "62764"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/started",
+        "sid": "62765"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/state",
+        "sid": "62766"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step",
+        "sid": "62767"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step/argv",
+        "sid": "62768"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step/detail",
+        "sid": "62769"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step/duration",
+        "sid": "62770"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step/error-output",
+        "sid": "62771"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step/exit",
+        "sid": "62772"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step/id",
+        "sid": "62773"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step/kind",
+        "sid": "62774"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step/label",
+        "sid": "62775"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step/output",
+        "sid": "62776"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step/parent",
+        "sid": "62777"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/step/status",
+        "sid": "62778"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/read/output/title",
+        "sid": "62779"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/lanes",
+        "sid": "62780"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/safe-wait",
+        "sid": "62781"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/safe",
+        "sid": "62782"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/bridge/interface",
+        "sid": "62783"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/geneve/interface",
+        "sid": "62784"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipfw/live",
+        "sid": "62785"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/process/jail",
+        "sid": "62786"
       }
     ]
   }

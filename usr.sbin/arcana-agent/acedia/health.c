@@ -196,7 +196,7 @@ smart(struct work *w, ucl_object_t *o, const char *name)
 
 /* {"disks":[{"name","by","ok","temperature",...}]}: each of kern.disks. */
 int
-do_health(struct work *w, struct arc_storage_rsp *rsp)
+do_health(struct work *w, struct storage_rsp *rsp)
 {
 	ucl_object_t	*top, *arr, *o;
 	unsigned char	*json;

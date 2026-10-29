@@ -9,10 +9,15 @@
 #	awk -v out=yspec -f jobs.awk arcana.yaml jobs.yaml arcana_v2.h > \
 #	    yjobs_spec.c
 #
+#	awk -v out=ychange -f jobs.awk arcana.yaml jobs.yaml arcana_v2.h > \
+#	    ychange.c
+#
 # out=yspec writes yjobs_spec(), a change of arcana-jobs' submit (its C
 # struct, as cblink-gen makes it from that submodule) made the job-spec
 # the agent's queue takes; arcana_v2.h, the wire's C header, says which
-# of job-spec's members have a has_ beside them.
+# of job-spec's members have a has_ beside them.  out=ychange writes the
+# other way, yq_change(), for the console and arcanactl: a job-spec as
+# they make it, the change submit takes.
 #
 # arcana.yaml first: its job-kind entries and job-spec attributes are
 # what jobs.yaml must agree with.  A kind in the one and not the other,
@@ -237,6 +242,10 @@ END {
 		yspec()
 		exit
 	}
+	if (out == "ychange") {
+		ychange()
+		exit
+	}
 	if (out == "spec") {
 		spec()
 		exit
@@ -289,7 +298,8 @@ function yang(    i, j, n, a, k, ind) {
 	print "    \"The kinds of job, a change each: made from share/arcana/jobs.yaml"
 	print "     by share/arcana/jobs.awk (out=yang), not to be edited.  A kind"
 	print "     is a case, its fields leaves: those it needs mandatory, those"
-	print "     whose values jobs.yaml lists an enumeration.\";"
+	print "     whose values jobs.yaml lists an enumeration.  safe is the"
+	print "     change's own, beside its kind (arcana-jobs).\";"
 	print ""
 	print "  revision 2026-10-14 {"
 	print "    description"
@@ -325,11 +335,11 @@ function yang(    i, j, n, a, k, ind) {
 		ind = "          "
 		n = split(kn[k], a, " ")
 		for (j = 1; j <= n; j++)
-			if ((i = fidx(a[j])) > 0)
+			if ((i = fidx(a[j])) > 0 && a[j] != "safe")
 				yfield(k, i, 1, ind)
 		n = split(ku[k], a, " ")
 		for (j = 1; j <= n; j++)
-			if ((i = fidx(a[j])) > 0)
+			if ((i = fidx(a[j])) > 0 && a[j] != "safe")
 				yfield(k, i, 0, ind)
 		print "        }"
 		print "      }"
@@ -470,29 +480,7 @@ function yspec(    k, i, j, n, a, nv, w, f, vals, fields, nf2, seen, tab, line, 
 	print ""
 	print "#include \"collect.h\""
 	print ""
-	# The enumerations whose words the job-spec takes as text.
-	for (k = 1; k <= nk; k++) {
-		n = split(kv[k], a, " ")
-		for (j = 1; j <= n; j++) {
-			split(a[j], w, "=")
-			if (w[1] == "action")
-				continue
-			tab = cname(kk[k]) "_" w[1]
-			nv = split(w[2], vals, "|")
-			printf "static const char *const %s[] = {\n", tab
-			line = "\t"
-			for (i = 1; i <= nv; i++) {
-				w2 = "\"" vals[i] "\","
-				if (length(line) + length(w2) > 70) {
-					print line
-					line = "\t"
-				}
-				line = line (line == "\t" ? "" : " ") w2
-			}
-			print line
-			print "};"
-		}
-	}
+	enum_tables()
 	print ""
 	print "/*"
 	print " * Change c made job-spec sp, its arrays a's.  0, or EINVAL: no kind,"
@@ -525,8 +513,10 @@ function yspec(    k, i, j, n, a, nv, w, f, vals, fields, nf2, seen, tab, line, 
 		}
 		nf2 = split(fields, a, " ")
 		delete seen
+		# safe is the change's own (arcana-jobs), not its kind's.
 		for (j = 1; j <= nf2; j++)
-			if ((i = fidx(a[j])) > 0 && !(a[j] in seen)) {
+			if ((i = fidx(a[j])) > 0 && a[j] != "safe" &&
+			    !(a[j] in seen)) {
 				seen[a[j]] = 1
 				yspec_field(k, i)
 			}
@@ -541,4 +531,227 @@ function yspec(    k, i, j, n, a, nv, w, f, vals, fields, nf2, seen, tab, line, 
 	print "\t\treturn (EINVAL);"
 	print "\t}"
 	print "}"
+}
+
+# The enumerations whose words the job-spec takes as text, a table of
+# the words each, named kind_field.
+function enum_tables(    k, j, n, a, w, tab, nv, vals, line, i, w2) {
+	for (k = 1; k <= nk; k++) {
+		n = split(kv[k], a, " ")
+		for (j = 1; j <= n; j++) {
+			split(a[j], w, "=")
+			if (w[1] == "action")
+				continue
+			tab = cname(kk[k]) "_" w[1]
+			nv = split(w[2], vals, "|")
+			printf "static const char *const %s[] = {\n", tab
+			line = "\t"
+			for (i = 1; i <= nv; i++) {
+				w2 = "\"" vals[i] "\","
+				if (length(line) + length(w2) > 70) {
+					print line
+					line = "\t"
+				}
+				line = line (line == "\t" ? "" : " ") w2
+			}
+			print line
+			print "};"
+		}
+	}
+}
+
+# Field i of kind k from the job-spec sp into the change c: the C to do
+# it.  A word not among its kind's values is refused, *bad its name.
+function ychange_field(k, i,    f, m, vals, tab, t) {
+	f = ff[i]
+	m = fa[i] != "" ? cname(fa[i]) : f
+	vals = kvals(k, f)
+	if (f == "set") {
+		print "\t\tfor (size_t i = 0; i < sp->variables.n; i++)"
+		print "\t\t\tif (!sp->variables.v[i].remove)"
+		print "\t\t\t\tns++;"
+		print "\t\tif (ns > 0 && (set = cbl_yarena_alloc(a, ns *"
+		print "\t\t    sizeof(*set))) == NULL)"
+		print "\t\t\treturn (ENOMEM);"
+		print "\t\tns = 0;"
+		print "\t\tfor (size_t i = 0; i < sp->variables.n; i++)"
+		print "\t\t\tif (!sp->variables.v[i].remove) {"
+		print "\t\t\t\tset[ns].name = sp->variables.v[i].key;"
+		print "\t\t\t\tset[ns++].value = sp->variables.v[i].value;"
+		print "\t\t\t}"
+		print "\t\tc->set.n = ns;"
+		print "\t\tc->set.v = set;"
+		return
+	}
+	if (f == "unset") {
+		print "\t\tif ((unset = cbl_yarena_alloc(a, (sp->variables.n + 1) *"
+		print "\t\t    sizeof(*unset))) == NULL)"
+		print "\t\t\treturn (ENOMEM);"
+		print "\t\tfor (size_t i = 0; i < sp->variables.n; i++)"
+		print "\t\t\tif (sp->variables.v[i].remove)"
+		print "\t\t\t\tunset[nu++] = sp->variables.v[i].key;"
+		print "\t\tc->unset.n = nu;"
+		print "\t\tc->unset.v = unset;"
+		return
+	}
+	if (ft[i] == "list") {
+		printf "\t\tc->%s.n = sp->%s.n;\n", f, m
+		printf "\t\tc->%s.v = sp->%s.v;\n", f, m
+		return
+	}
+	if (vals != "") {
+		if (f == "action") {
+			m = kk[k] == "service-action" ? "service_action" : "action"
+			printf "\t\tif ((c->has_%s = sp->has_%s))\n", f, m
+			printf "\t\t\tc->%s = sp->%s;\n", f, m
+			return
+		}
+		tab = cname(kk[k]) "_" f
+		printf "\t\tif (sp->%s != NULL) {\n", m
+		printf "\t\t\tif ((w = word_of(%s, nitems(%s), sp->%s)) < 0) {\n", tab, tab, m
+		printf "\t\t\t\t*bad = %s;\n", cstr(f " is " orlist(vals))
+		print "\t\t\t\treturn (EINVAL);"
+		print "\t\t\t}"
+		printf "\t\t\tc->has_%s = true;\n", f
+		printf "\t\t\tc->%s = w;\n", f
+		print "\t\t}"
+		return
+	}
+	if (ft[i] == "number" || (ft[i] == "bool" && (m in shas))) {
+		printf "\t\tif ((c->has_%s = sp->has_%s))\n", f, m
+		printf "\t\t\tc->%s = sp->%s;\n", f, m
+		return
+	}
+	if (ft[i] == "bool") {
+		printf "\t\tc->has_%s = c->%s = sp->%s;\n", f, f, m
+		return
+	}
+	printf "\t\tc->%s = sp->%s;\n", f, m
+}
+
+function ychange(    k, i, j, a, fields, nf2, seen, vars) {
+	print "/*"
+	print " * Made from share/arcana/jobs.yaml by share/arcana/jobs.awk"
+	print " * (out=ychange): not to be edited.  A job-spec as the console and"
+	print " * arcanactl make it, made a change of arcana-jobs' submit (its"
+	print " * struct, as cblink-gen makes it from arcana-jobs-kinds), field by"
+	print " * field as jobs.yaml names them for its kind."
+	print " */"
+	print ""
+	print "#include <sys/param.h>"
+	print ""
+	print "#include <errno.h>"
+	print "#include <stdbool.h>"
+	print "#include <string.h>"
+	print ""
+	print "#include <arcana.h>"
+	print ""
+	print "#include \"ymodel.h\""
+	print "#include \"yqueue.h\""
+	print ""
+	enum_tables()
+	print ""
+	print "/* The place of word s among v's n, -1 where it is none of them. */"
+	print "static int"
+	print "word_of(const char *const *v, size_t n, const char *s)"
+	print "{"
+	print ""
+	print "\tfor (size_t i = 0; i < n; i++)"
+	print "\t\tif (strcmp(v[i], s) == 0)"
+	print "\t\t\treturn ((int)i);"
+	print "\treturn (-1);"
+	print "}"
+	print ""
+	print "/*"
+	print " * Job-spec sp made change ch, the arrays a's (the strings sp's).  0;"
+	print " * EINVAL, no kind, a word none of its field's, or a field its kind"
+	print " * has none of (*bad says which); or ENOMEM."
+	print " */"
+	print "int"
+	print "yq_change(const struct arc_job_spec *sp, cbl_yarena *a,"
+	print "    struct arcana_jobs_submit_input_change *ch, const char **bad)"
+	print "{"
+	print "\tint w;"
+	print ""
+	print "\t(void)w;"
+	print "\tmemset(ch, 0, sizeof(*ch));"
+	print "\t*bad = \"no kind of job\";"
+	print "\tif (!sp->has_kind)"
+	print "\t\treturn (EINVAL);"
+	print "\tch->has_safe = ch->safe = sp->safe;"
+	print "\tif ((ch->has_safe_wait = sp->has_safe_wait))"
+	print "\t\tch->safe_wait = sp->safe_wait;"
+	print "\tswitch (sp->kind) {"
+	for (k = 1; k <= nk; k++) {
+		fields = kn[k] " " ku[k]
+		vars = fields ~ /(^| )(set|unset)( |$)/
+		printf "\tcase ARC_JOB_KIND_%s: {\n", uname(kk[k])
+		printf "\t\tstruct arcana_jobs_submit_input_change_%s *c;\n", cname(kk[k])
+		if (fields ~ /(^| )set( |$)/) {
+			printf "\t\tstruct arcana_jobs_submit_input_change_%s_set *set = NULL;\n", cname(kk[k])
+			print "\t\tsize_t ns = 0;"
+		}
+		if (fields ~ /(^| )unset( |$)/) {
+			print "\t\tconst char **unset;"
+			print "\t\tsize_t nu = 0;"
+		}
+		print ""
+		print "\t\tif ((c = cbl_yarena_alloc(a, sizeof(*c))) == NULL)"
+		print "\t\t\treturn (ENOMEM);"
+		print "\t\tmemset(c, 0, sizeof(*c));"
+		printf "\t\tch->kind = ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_%s;\n", uname(kk[k])
+		printf "\t\tch->%s = c;\n", cname(kk[k])
+		nf2 = split(fields, a, " ")
+		delete seen
+		for (j = 1; j <= nf2; j++)
+			if ((i = fidx(a[j])) > 0 && a[j] != "safe" &&
+			    !(a[j] in seen)) {
+				seen[a[j]] = 1
+				ychange_field(k, i)
+			}
+		ychange_rest(k, fields)
+		print "\t\treturn (0);"
+		print "\t}"
+	}
+	print "\tdefault:"
+	print "\t\treturn (EINVAL);"
+	print "\t}"
+	print "}"
+}
+
+# "a|b|c" as "a, b or c".
+function orlist(s,    n, w, i, r) {
+	n = split(s, w, "|")
+	r = w[1]
+	for (i = 2; i <= n; i++)
+		r = r (i == n ? " or " : ", ") w[i]
+	return r
+}
+
+# A member of the job-spec that kind k's change has no leaf for, given,
+# refused rather than lost: *bad says so.  safe is the change's own;
+# action is its kind's enumeration, in the kinds that take one.
+function ychange_rest(k, fields,    n, a, j, i, m, mine, done) {
+	n = split(fields, a, " ")
+	for (j = 1; j <= n; j++)
+		if ((i = fidx(a[j])) > 0)
+			mine[fa[i] != "" ? cname(fa[i]) : ff[i]] = 1
+	for (i = 1; i <= nf; i++) {
+		m = fa[i] != "" ? cname(fa[i]) : ff[i]
+		if (m in mine || m in done || ff[i] == "safe" ||
+		    ff[i] == "action")
+			continue
+		done[m] = 1
+		if (ft[i] == "list" || ft[i] == "map")
+			printf "\t\tif (sp->%s.n > 0) {\n", m
+		else if (ft[i] == "number")
+			printf "\t\tif (sp->has_%s) {\n", m
+		else if (ft[i] == "bool")
+			printf "\t\tif (sp->%s) {\n", m
+		else
+			printf "\t\tif (sp->%s != NULL) {\n", m
+		printf "\t\t\t*bad = %s;\n", cstr(kk[k] " takes no " ff[i])
+		print "\t\t\treturn (EINVAL);"
+		print "\t\t}"
+	}
 }

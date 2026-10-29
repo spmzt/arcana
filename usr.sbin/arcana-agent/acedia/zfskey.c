@@ -126,8 +126,8 @@ zfs_keyed(struct work *w, const char *verb, const char *ds, const char *key,
 }
 
 void
-do_zfs_key(struct work *w, const struct arc_zfs_key_req *rq,
-    struct arc_zfs_key_rsp *rsp)
+do_zfs_key(struct work *w, const struct zfskey_req *rq,
+    struct zfskey_rsp *rsp)
 {
 	const char	*e;
 	char		 loc[MAXPATHLEN], status[64], format[64];

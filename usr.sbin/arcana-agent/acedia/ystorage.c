@@ -6,10 +6,10 @@
 
 /*
  * Acedia: the storage as arcana-storage has it,
- * typed lists where the storage operation gives a JSON object of each
- * kind (storage.c, health.c): each kind's object read back and put in
- * its place; health's on its disk.  fstab(5)'s text and its SHA-256 are
- * the fstab operation's.
+ * typed lists where do_storage() gives a JSON object of each kind
+ * (storage.c, health.c): each kind's object read back and put in its
+ * place; health's on its disk.  fstab(5)'s text and its SHA-256 are
+ * do_fstab()'s.
  */
 
 #include <errno.h>
@@ -27,7 +27,7 @@ static int
 disks(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 {
 	const ucl_object_t *arr = ucl_object_lookup(top, "disks"), *d, *p;
-	struct arcana_storage_storage_disk *v;
+	struct arcana_storage_disk *v;
 	ucl_object_iter_t it, pit;
 	size_t i = 0;
 
@@ -36,8 +36,8 @@ disks(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 	if ((v = cbl_yarena_alloc(a, yj_count(arr) * sizeof(*v))) == NULL)
 		return (ENOMEM);
 	YJ_EACH(arr, it, d) {
-		struct arcana_storage_storage_disk *y = &v[i++];
-		struct arcana_storage_storage_disk_partition *pv = NULL;
+		struct arcana_storage_disk *y = &v[i++];
+		struct arcana_storage_disk_partition *pv = NULL;
 		const ucl_object_t *parts = ucl_object_lookup(d, "parts");
 		size_t k = 0;
 
@@ -56,7 +56,7 @@ disks(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 		    sizeof(*pv))) == NULL)
 			return (ENOMEM);
 		YJ_EACH(parts, pit, p) {
-			struct arcana_storage_storage_disk_partition *q =
+			struct arcana_storage_disk_partition *q =
 			    &pv[k++];
 
 			memset(q, 0, sizeof(*q));
@@ -67,6 +67,7 @@ disks(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 			q->label = yj_str(a, p, "label");
 			YJ_NUM(p, "start", q, start);
 			YJ_NUM(p, "end", q, end);
+			q->mounted = yj_str(a, p, "mounted");
 		}
 		y->partition.n = k;
 		y->partition.v = pv;
@@ -81,7 +82,7 @@ static int
 health(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 {
 	const ucl_object_t *arr = ucl_object_lookup(top, "disks"), *d;
-	struct arcana_storage_storage_disk *v;
+	struct arcana_storage_disk *v;
 	ucl_object_iter_t it;
 	size_t nd = st->disk.n;
 
@@ -91,7 +92,7 @@ health(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 	if (nd > 0)
 		memcpy(v, st->disk.v, nd * sizeof(*v));
 	YJ_EACH(arr, it, d) {
-		struct arcana_storage_storage_disk_health *h;
+		struct arcana_storage_disk_health *h;
 		const char *name = yj_str(a, d, "name");
 		size_t k;
 		bool has;
@@ -136,7 +137,7 @@ static int
 pools(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 {
 	const ucl_object_t *arr = ucl_object_lookup(top, "pools"), *p, *d;
-	struct arcana_storage_storage_pool *v;
+	struct arcana_storage_pool *v;
 	ucl_object_iter_t it, vit;
 	size_t i = 0;
 
@@ -145,8 +146,8 @@ pools(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 	if ((v = cbl_yarena_alloc(a, yj_count(arr) * sizeof(*v))) == NULL)
 		return (ENOMEM);
 	YJ_EACH(arr, it, p) {
-		struct arcana_storage_storage_pool *y = &v[i++];
-		struct arcana_storage_storage_pool_vdev *dv = NULL;
+		struct arcana_storage_pool *y = &v[i++];
+		struct arcana_storage_pool_vdev *dv = NULL;
 		const ucl_object_t *vd = ucl_object_lookup(p, "vdevs");
 		size_t k = 0;
 
@@ -169,7 +170,7 @@ pools(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 		    sizeof(*dv))) == NULL)
 			return (ENOMEM);
 		YJ_EACH(vd, vit, d) {
-			struct arcana_storage_storage_pool_vdev *q = &dv[k++];
+			struct arcana_storage_pool_vdev *q = &dv[k++];
 
 			memset(q, 0, sizeof(*q));
 			q->name = yj_str(a, d, "name");
@@ -192,7 +193,7 @@ static int
 importable(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 {
 	const ucl_object_t *arr = ucl_object_lookup(top, "importable"), *p;
-	struct arcana_storage_storage_importable *v;
+	struct arcana_storage_importable *v;
 	ucl_object_iter_t it;
 	size_t i = 0;
 
@@ -282,6 +283,8 @@ datasets(const ucl_object_t *top, cbl_yarena *a, ystorage *st,
 		y->jailed = yj_yes(d, "jailed", &has);
 		y->has_jailed = has;
 		y->origin = yj_str(a, d, "origin");
+		YJ_NUM(d, "volsize", y, volsize);
+		y->keystatus = yj_str(a, d, "keystatus");
 	}
 	st->dataset.n = i;
 	st->dataset.v = v;
@@ -321,9 +324,9 @@ static int
 mounts(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 {
 	const ucl_object_t *arr, *d;
-	struct arcana_storage_storage_mount *mv = NULL;
+	struct arcana_storage_mount *mv = NULL;
 	struct arcana_storage_storage_fstab_entry *fv = NULL;
-	struct arcana_storage_storage_swap *sv = NULL;
+	struct arcana_storage_swap *sv = NULL;
 	struct arcana_storage_storage_fstab *fs;
 	ucl_object_iter_t it;
 	size_t i;
@@ -334,7 +337,7 @@ mounts(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 		return (ENOMEM);
 	i = 0;
 	YJ_EACH(arr, it, d) {
-		struct arcana_storage_storage_mount *y = &mv[i++];
+		struct arcana_storage_mount *y = &mv[i++];
 
 		memset(y, 0, sizeof(*y));
 		y->from = yj_str(a, d, "from");
@@ -381,7 +384,7 @@ mounts(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 		return (ENOMEM);
 	i = 0;
 	YJ_EACH(arr, it, d) {
-		struct arcana_storage_storage_swap *y = &sv[i++];
+		struct arcana_storage_swap *y = &sv[i++];
 
 		memset(y, 0, sizeof(*y));
 		y->device = yj_str(a, d, "device");

@@ -8315,7 +8315,7 @@ netstore_body()
 	atf_check -s exit:1 -e match:'role is init, primary or secondary' "$JGC" -c "$SOCK" hast role leader shared
 	atf_check -s exit:1 -e match:'a hast resource is named' "$JGC" -c "$SOCK" hast create '../x'
 	# The host's alone.
-	atf_check -s exit:1 -e match:"the host's storage services are the host's" \
+	atf_check -s exit:1 -e match:'iscsi takes no jail' \
 	    "$JGC" -j web -c "$SOCK" iscsi enable yes
 }
 netstore_cleanup()
@@ -8446,16 +8446,16 @@ MASQUERADE arcana@example.org
 	atf_check -o match:'^geom eli init -J .*/arcana-geli\.[0-9]+ -s 4096 /dev/md3$' tail -1 geom.log
 	atf_check -o inline:'correct horse' cat geom.pass
 	test -z "$(ls root | grep arcana-geli)" || atf_fail "the passphrase file stayed"
-	atf_check -s exit:1 -e match:"a geom job's verb is its class" "$JGC" -c "$SOCK" geom gpart add x
+	atf_check -s exit:1 -e match:'verb is mirror, stripe' "$JGC" -c "$SOCK" geom gpart add x
 	atf_check -s exit:1 -e match:'not a subcommand of the class' "$JGC" -c "$SOCK" geom mirror rm gm0
 	atf_check -s exit:1 -e match:'a word is a flag or a name' "$JGC" -c "$SOCK" geom mirror label 'gm0;reboot' /dev/md1
 	atf_check -s exit:1 -e match:"a passphrase is geli init's" "$JGC" -c "$SOCK" geom mirror label gm0 /dev/md1 -P pass.txt
 	# What it does not write, and what it does not take.
-	atf_check -s exit:1 -e match:"a sysfile job's verb names its file" "$JGC" -c "$SOCK" sysfile passwd syslog.new
+	atf_check -s exit:1 -e match:'verb is devfs.rules, devd' "$JGC" -c "$SOCK" sysfile passwd syslog.new
 	printf 'bad\001\n' > ctl.new
 	atf_check -s exit:1 -e match:'lines of printable characters' "$JGC" -c "$SOCK" sysfile krb5.conf ctl.new
 	atf_check -s exit:1 -e match:'name_enable=YES or NO' "$JGC" -c "$SOCK" sysfile periodic daily_x=1
-	atf_check -s exit:1 -e match:"the system's files are the host's" "$JGC" -j web -c "$SOCK" sysfile krb5.conf syslog.new
+	atf_check -s exit:1 -e match:'sysfile takes no jail' "$JGC" -j web -c "$SOCK" sysfile krb5.conf syslog.new
 	# Safe: the file is kept to be put back (safe_sysfile, which also
 	# has dma refused as safe).
 	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" sysfile krb5.conf syslog.new
@@ -8860,7 +8860,7 @@ EOS
 	    "$JGC" -c "$SOCK" kmod load ../evil
 	atf_check -s exit:1 -e match:'the kernel itself is not unloaded' \
 	    -o ignore "$JGC" -c "$SOCK" kmod unload kernel
-	atf_check -s exit:1 -e match:'a jail has no kernel' -o ignore \
+	atf_check -s exit:1 -e match:'kmod takes no jail' -o ignore \
 	    "$JGC" -j web -c "$SOCK" kmod load sctp
 	atf_check -o empty cat kld.log
 	# In safe mode, unconfirmed, what was loaded is unloaded again;
@@ -10322,7 +10322,7 @@ zfs rename tank/data@b.resnap tank/data@b
 	done
 	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
 	    "$JGC" -s -c "$SOCK" zfs snapshot tank/data@s
-	atf_check -s exit:1 -e match:"storage is the host's" -o ignore \
+	atf_check -s exit:1 -e match:'zfs takes no jail' -o ignore \
 	    "$JGC" -j web -c "$SOCK" zfs snapshot tank/data@s
 	atf_check -o empty cat storage.log
 
@@ -10879,7 +10879,7 @@ clamav_body()
 	    -o ignore "$JGC" -c "$SOCK" clamav mirrors 'ftp://x/y'
 	atf_check -s exit:1 -e match:'host name, or an http or https' \
 	    -o ignore "$JGC" -c "$SOCK" clamav mirrors 'a b'
-	atf_check -s exit:1 -e match:"freshclam is the host's" -o ignore \
+	atf_check -s exit:1 -e match:'clamav takes no jail' -o ignore \
 	    "$JGC" -c "$SOCK" -j web clamav mirrors database.clamav.net
 	# Neither the file nor its sample: ClamAV is not there.
 	rm fc/freshclam.conf fc/freshclam.conf.sample
@@ -11647,7 +11647,7 @@ EOF
 	    "$JGC" -c "$SOCK" poudriere jail-update name=src15 method=http
 	atf_check -s exit:1 -e match:'key=value' -o ignore \
 	    "$JGC" -c "$SOCK" poudriere bulk net/bird3
-	atf_check -s exit:1 -e match:"the host's" -o ignore \
+	atf_check -s exit:1 -e match:'poudriere takes no jail' -o ignore \
 	    "$JGC" -c "$SOCK" -j web poudriere jail-update name=x
 	atf_check -s exit:1 -e match:'URL is one word' -o ignore \
 	    "$JGC" -c "$SOCK" poudriere ports-create name=p 'url=http://x/ y'

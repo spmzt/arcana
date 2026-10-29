@@ -2,11 +2,25 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-storage",
     "module-revision": "2026-10-14",
-    "sid-file-version": 1,
-    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 63 400, 200.",
+    "sid-file-version": 3,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 63 400, 200, and 79 600, 200.",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-netconf-acm",
+        "module-revision": "2018-02-14"
+      },
+      {
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
+      }
+    ],
     "assignment-range": [
       {
         "entry-point": "63400",
+        "size": "200"
+      },
+      {
+        "entry-point": "79600",
         "size": "200"
       }
     ],
@@ -730,6 +744,666 @@
         "namespace": "data",
         "identifier": "/arcana-storage:storage/swap/used",
         "sid": "63543"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/dataset/keystatus",
+        "sid": "63544"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/dataset/volsize",
+        "sid": "63545"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/disk/partition/mounted",
+        "sid": "63546"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read",
+        "sid": "63547"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/input",
+        "sid": "63548"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/input/filter",
+        "sid": "63549"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/input/jail",
+        "sid": "63550"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/input/kind",
+        "sid": "63551"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output",
+        "sid": "63552"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset",
+        "sid": "63553"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/avail",
+        "sid": "63554"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/canmount",
+        "sid": "63555"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/compression",
+        "sid": "63556"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/encryption",
+        "sid": "63557"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/jailed",
+        "sid": "63558"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/keylocation",
+        "sid": "63559"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/keystatus",
+        "sid": "63560"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/mounted",
+        "sid": "63561"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/mountpoint",
+        "sid": "63562"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/name",
+        "sid": "63563"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/origin",
+        "sid": "63564"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/quota",
+        "sid": "63565"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/ratio",
+        "sid": "63566"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/readonly",
+        "sid": "63567"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/refer",
+        "sid": "63568"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/reservation",
+        "sid": "63569"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/type",
+        "sid": "63570"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/used",
+        "sid": "63571"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/dataset/volsize",
+        "sid": "63572"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/datasets-total",
+        "sid": "63573"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk",
+        "sid": "63574"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/cam",
+        "sid": "63575"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/descr",
+        "sid": "63576"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/first",
+        "sid": "63577"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health",
+        "sid": "63578"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/by",
+        "sid": "63579"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/crc-errors",
+        "sid": "63580"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/life-left",
+        "sid": "63581"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/media-errors",
+        "sid": "63582"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/media-wearout",
+        "sid": "63583"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/note",
+        "sid": "63584"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/ok",
+        "sid": "63585"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/pending",
+        "sid": "63586"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/power-cycles",
+        "sid": "63587"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/power-on-hours",
+        "sid": "63588"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/reallocated",
+        "sid": "63589"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/spare-pct",
+        "sid": "63590"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/temperature",
+        "sid": "63591"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/uncorrectable",
+        "sid": "63592"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/unsafe-shutdowns",
+        "sid": "63593"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/used-pct",
+        "sid": "63594"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/health/wear-level",
+        "sid": "63595"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/ident",
+        "sid": "63596"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/last",
+        "sid": "63597"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/name",
+        "sid": "63598"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/partition",
+        "sid": "63599"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/partition/end",
+        "sid": "79600"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/partition/index",
+        "sid": "79601"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/partition/label",
+        "sid": "79602"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/partition/mounted",
+        "sid": "79603"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/partition/name",
+        "sid": "79604"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/partition/size",
+        "sid": "79605"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/partition/start",
+        "sid": "79606"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/partition/type",
+        "sid": "79607"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/rotation",
+        "sid": "79608"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/scheme",
+        "sid": "79609"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/sectorsize",
+        "sid": "79610"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/disk/size",
+        "sid": "79611"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab",
+        "sid": "79612"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab/entry",
+        "sid": "79613"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab/entry/file",
+        "sid": "79614"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab/entry/freq",
+        "sid": "79615"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab/entry/mntops",
+        "sid": "79616"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab/entry/mounted",
+        "sid": "79617"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab/entry/passno",
+        "sid": "79618"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab/entry/spec",
+        "sid": "79619"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab/entry/type",
+        "sid": "79620"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab/entry/vfstype",
+        "sid": "79621"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab/sha256",
+        "sid": "79622"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/fstab/text",
+        "sid": "79623"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/importable",
+        "sid": "79624"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/importable/id",
+        "sid": "79625"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/importable/name",
+        "sid": "79626"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/importable/state",
+        "sid": "79627"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/importable/status",
+        "sid": "79628"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/mount",
+        "sid": "79629"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/mount/avail",
+        "sid": "79630"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/mount/from",
+        "sid": "79631"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/mount/on",
+        "sid": "79632"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/mount/options",
+        "sid": "79633"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/mount/size",
+        "sid": "79634"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/mount/type",
+        "sid": "79635"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/mount/used",
+        "sid": "79636"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool",
+        "sid": "79637"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/action",
+        "sid": "79638"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/alloc",
+        "sid": "79639"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/cap",
+        "sid": "79640"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/dedup",
+        "sid": "79641"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/errors",
+        "sid": "79642"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/frag",
+        "sid": "79643"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/free",
+        "sid": "79644"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/health",
+        "sid": "79645"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/name",
+        "sid": "79646"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/scan",
+        "sid": "79647"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/see",
+        "sid": "79648"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/size",
+        "sid": "79649"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/state",
+        "sid": "79650"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/status",
+        "sid": "79651"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/vdev",
+        "sid": "79652"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/vdev/cksum",
+        "sid": "79653"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/vdev/depth",
+        "sid": "79654"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/vdev/name",
+        "sid": "79655"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/vdev/note",
+        "sid": "79656"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/vdev/read",
+        "sid": "79657"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/vdev/state",
+        "sid": "79658"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/pool/vdev/write",
+        "sid": "79659"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/snapshot",
+        "sid": "79660"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/snapshot/creation",
+        "sid": "79661"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/snapshot/name",
+        "sid": "79662"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/snapshot/refer",
+        "sid": "79663"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/snapshot/used",
+        "sid": "79664"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/snapshots-total",
+        "sid": "79665"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/swap",
+        "sid": "79666"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/swap/device",
+        "sid": "79667"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/swap/size",
+        "sid": "79668"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/read/output/swap/used",
+        "sid": "79669"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/create-encrypted",
+        "sid": "79670"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/create-encrypted/input",
+        "sid": "79671"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/create-encrypted/input/dataset",
+        "sid": "79672"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/create-encrypted/input/encryption",
+        "sid": "79673"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/create-encrypted/input/key",
+        "sid": "79674"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-storage:storage/create-encrypted/output",
+        "sid": "79675"
       }
     ]
   }

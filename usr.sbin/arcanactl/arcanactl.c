@@ -37,6 +37,8 @@
 #include <ucl.h>
 
 #include "yjsonin.h"
+#include "yqueue.h"
+#include "ystore.h"
 
 #define	PATH_SOCKET	"unix:/var/run/arcana-agent.sock"
 #define	MAX_FRAME	(8 * 1024 * 1024)
@@ -3584,21 +3586,19 @@ cmd_carp(struct arc_client *cl, int argc, char **argv)
 static int
 cmd_zfskey(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_zfs_key_req	 rq;
-	struct arc_zfs_key_rsp	*rs;
-	char			 key[513], nkey[513], again[513];
+	char			 key[513], nkey[513], again[513], err[512];
+	const char		*k, *nk;
 	bool			 change;
 	int			 error;
 
 	change = argc == 3 && strcmp(argv[1], "-n") == 0;
 	if (argc != 2 && !change)
 		usage();
-	memset(&rq, 0, sizeof(rq));
-	rq.zfs_dataset = argv[argc - 1];
+	nk = NULL;
 	if (key_read(change ? "Key now (empty when it is loaded): " : "Key: ",
 	    key, sizeof(key)) == NULL)
 		errx(1, "no key");
-	rq.zfs_key = key[0] != '\0' ? key : NULL;
+	k = key[0] != '\0' ? key : NULL;
 	if (change) {
 		if (key_read("New key: ", nkey, sizeof(nkey)) == NULL)
 			errx(1, "no new key");
@@ -3608,20 +3608,17 @@ cmd_zfskey(struct arc_client *cl, int argc, char **argv)
 				errx(1, "the new keys differ");
 			explicit_bzero(again, sizeof(again));
 		}
-		rq.zfs_new_key = nkey;
+		nk = nkey;
 	}
-	error = arc_zfs_key(cl, &rq, &rs);
+	/* arcana-storage's load-key and change-key. */
+	error = ystore_key(cl->conn, argv[argc - 1], k, nk, NULL, err,
+	    sizeof(err));
 	explicit_bzero(key, sizeof(key));
 	if (change)
 		explicit_bzero(nkey, sizeof(nkey));
 	if (error != 0)
-		fail(cl, error, "zfs key");
-	if (!rs->ok && rs->error != NULL)
-		warnx("%s", rs->error);
-	emit_trace(rs->trace.v, rs->trace.n);
-	error = rs->ok ? 0 : 1;
-	arc_zfs_key_rsp_free(rs);
-	return (error);
+		warnx("%s", err);
+	return (error != 0 ? 1 : 0);
 }
 
 /*
@@ -5354,10 +5351,12 @@ cmd_storage(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "disks", "pools", "datasets",
 	    "snapshots", "mounts", "importable", "health" };
-	struct arc_storage_req	 req;
-	struct arc_storage_rsp	*rsp;
-	size_t			 i;
-	int			 error;
+	ucl_object_t	*data;
+	unsigned char	*json;
+	uint64_t	 total;
+	size_t		 i;
+	char		 err[512];
+	bool		 truncated;
 
 	if (argc < 2 || argc > 3)
 		usage();
@@ -5366,27 +5365,23 @@ cmd_storage(struct arc_client *cl, int argc, char **argv)
 			break;
 	if (i == nitems(kinds) || (argc == 3 && i != 3))
 		usage();
-	memset(&req, 0, sizeof(req));
-	req.has_storage_kind = true;
-	req.storage_kind = (uint8_t)i;
-	req.net_filter = argc == 3 ? argv[2] : NULL;
-	/* -j: what that jail's own zfs sees. */
-	req.jail = netjail;
-	if ((error = arc_storage(cl, &req, &rsp)) != 0)
-		fail(cl, error, "storage");
-	if (rsp->json != NULL)
-		xo_emit("{:json/%s}\n", rsp->json);
-	if (rsp->truncated)
+	/* arcana-storage's read; -j: what that jail's own zfs sees. */
+	ytold_begin(cl);
+	if (ystore_read(cl->conn, (int)i, argc == 3 ? argv[2] : NULL, netjail,
+	    &data, &total, &truncated, err, sizeof(err)) != 0) {
+		ytold_end(true);
+		xo_warnx("storage %s: %s", kinds[i], err);
+		return (1);
+	}
+	ytold_end(true);
+	if ((json = ucl_object_emit(data, UCL_EMIT_JSON_COMPACT)) != NULL)
+		xo_emit("{:json/%s}\n", json);
+	free(json);
+	ucl_object_unref(data);
+	if (truncated)
 		xo_warnx("storage %s: there are %ju, more than a reply "
-		    "carries: these are the first", kinds[i],
-		    (uintmax_t)rsp->total);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("storage %s: %s", kinds[i], rsp->error != NULL ?
-		    rsp->error : "failed");
-	arc_storage_rsp_free(rsp);
-	return (error);
+		    "carries: these are the first", kinds[i], (uintmax_t)total);
+	return (0);
 }
 
 /*
@@ -5443,21 +5438,20 @@ cmd_storage_job(struct arc_client *cl, int argc, char **argv)
 static int
 cmd_fstab(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_fstab_req	 req;
-	struct arc_fstab_rsp	*rsp, *cur;
 	struct stat		 sb;
 	const char		*from;
-	char			*text;
+	char			*text, *cur, *sha, err[512];
 	int			 ch, error, fd;
+	bool			 dry;
 
 	from = NULL;
-	memset(&req, 0, sizeof(req));
+	dry = false;
 	optind = 1;
 	optreset = 1;
 	while ((ch = getopt(argc, argv, "nw:")) != -1) {
 		switch (ch) {
 		case 'n':
-			req.dry_run = true;
+			dry = true;
 			break;
 		case 'w':
 			from = optarg;
@@ -5466,41 +5460,43 @@ cmd_fstab(struct arc_client *cl, int argc, char **argv)
 			usage();
 		}
 	}
-	if (argc != optind || (req.dry_run && from == NULL))
+	if (argc != optind || (dry && from == NULL))
 		usage();
 	text = NULL;
-	cur = NULL;
-	if (from != NULL) {
+	/* arcana-storage's fstab: read with what is mounted, put in place
+	 * by its replace action. */
+	if ((error = ystore_fstab(cl->conn, &cur, &sha, err, sizeof(err))) !=
+	    0)
+		xo_errx(1, "fstab: %s", err);
+	if (from == NULL) {
+		if (cur != NULL)
+			xo_emit("{:text/%s}", cur);
+		free(cur);
+		free(sha);
+		return (0);
+	}
+	free(cur);
+	{
 		if ((fd = fileargs_open(files, from)) == -1 || fstat(fd, &sb) == -1 ||
 		    (text = malloc((size_t)sb.st_size + 1)) == NULL ||
 		    read(fd, text, (size_t)sb.st_size) != sb.st_size)
 			xo_err(1, "%s", from);
 		close(fd);
 		text[sb.st_size] = '\0';
-		/* What is there now says what the new text replaces. */
-		if ((error = arc_fstab(cl, &req, &cur)) != 0)
-			fail(cl, error, "fstab");
-		req.sha256 = cur->sha256;
-		req.conf_text = text;
 	}
-	if ((error = arc_fstab(cl, &req, &rsp)) != 0)
-		fail(cl, error, "fstab");
-	if (from == NULL && rsp->conf_text != NULL)
-		xo_emit("{:text/%s}", rsp->conf_text);
-	else if (rsp->ok)
-		xo_emit("{:result/%s}\n", req.dry_run ? "it is an fstab; left "
-		    "as it was" : "in place; the one before is kept beside "
-		    "it");
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("fstab: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_fstab_rsp_free(rsp);
-	if (cur != NULL)
-		arc_fstab_rsp_free(cur);
+	/* What is there now says what the new text replaces. */
+	cur = NULL;
+	error = ystore_fstab_put(cl->conn, text, sha != NULL ? sha : "", dry,
+	    &cur, err, sizeof(err));
+	if (error == 0)
+		xo_emit("{:result/%s}\n", dry ? "it is an fstab; left as it "
+		    "was" : "in place; the one before is kept beside it");
+	else
+		xo_warnx("fstab: %s", err);
+	free(cur);
+	free(sha);
 	free(text);
-	return (error);
+	return (error == 0 ? 0 : 1);
 }
 
 static int
@@ -5702,28 +5698,31 @@ cmd_packages(struct arc_client *cl, int argc, char **argv)
 	return (0);
 }
 
-/* jobs lanes number: how many jobs of pkg in jails run at once. */
+/*
+ * jobs lanes number: how many jobs of pkg in jails run at once,
+ * arcana-jobs' lanes in the candidate, committed.
+ */
 static int
 cmd_jobs_set(struct arc_client *cl, const char *number)
 {
-	struct arc_jobs_set_req	 req;
-	struct arc_jobs_set_rsp	*rsp;
-	const char		*errstr;
-	int			 error;
+	struct yq_jobs	 q;
+	cbl_yarena	*a;
+	const char	*errstr;
+	char		 err[512];
+	int		 n;
 
-	memset(&req, 0, sizeof(req));
-	req.has_lanes = true;
-	req.lanes = (uint8_t)strtonum(number, 1, 32, &errstr);
+	n = (int)strtonum(number, 1, 32, &errstr);
 	if (errstr != NULL)
 		xo_errx(2, "lanes %s: %s", number, errstr);
-	if ((error = arc_jobs_set(cl, &req, &rsp)) != 0)
-		fail(cl, error, "jobs lanes");
-	if (!rsp->ok)
-		xo_errx(1, "jobs lanes: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	xo_emit("{T:Lanes}: {:lanes/%u} jobs of pkg in jails at once\n",
-	    rsp->lanes);
-	arc_jobs_set_rsp_free(rsp);
+	if (yq_lanes(cl->conn, n, err, sizeof(err)) != 0)
+		xo_errx(1, "jobs lanes: %s", err);
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "jobs lanes");
+	if (yq_list(cl->conn, a, &q, err, sizeof(err)) != 0)
+		xo_errx(1, "jobs: %s", err);
+	xo_emit("{T:Lanes}: {:lanes/%d} jobs of pkg in jails at once\n",
+	    q.lanes);
+	cbl_yarena_free(a);
 	return (0);
 }
 
@@ -5790,13 +5789,13 @@ cmd_jail_base(struct arc_client *cl, int argc, char **argv)
 static int
 cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_job_submit_req	 req;
-	struct arc_job_submit_rsp	*rsp;
 	const struct arcana_jails_jails	*js;
 	struct arc_job_spec		 sp, *v;
+	struct arc_job			*jv;
 	cbl_yarena			*a;
-	size_t				 i, n;
-	int				 ch, error;
+	char				 err[512];
+	size_t				 i, n, nj;
+	int				 ch;
 	bool				 jails;
 
 	memset(&sp, 0, sizeof(sp));
@@ -5845,23 +5844,15 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 		cbl_yarena_free(a);
 		return (1);
 	}
-	memset(&req, 0, sizeof(req));
-	req.batch.v = v;
-	req.batch.n = n;
-	if ((error = arc_job_submit(cl, &req, &rsp)) != 0)
-		fail(cl, error, "queue");
+	if (yq_submit(cl->conn, v, n, a, &jv, &nj, err, sizeof(err)) != 0)
+		xo_errx(1, "pkg-clean: %s", err);
 	xo_open_list("job");
-	for (i = 0; i < rsp->jobs.n; i++)
-		emit_job(&rsp->jobs.v[i]);
+	for (i = 0; i < nj; i++)
+		emit_job(&jv[i]);
 	xo_close_list("job");
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("pkg-clean: %s", rsp->error != NULL ? rsp->error :
-		    "not accepted");
-	arc_job_submit_rsp_free(rsp);
 	cbl_yarena_free(a);
 	free(v);
-	return (error);
+	return (0);
 }
 
 /* pkg-install [-O] [-4 | -6] [-r repo] [-j jail] package ...: a job. */
@@ -6119,29 +6110,26 @@ emit_job(const struct arc_job *j)
 static int
 submit(struct arc_client *cl, struct arc_job_spec *sp)
 {
-	struct arc_job_submit_req	 req;
-	struct arc_job_submit_rsp	*rsp;
-	char				 id[24], *jargv[4];
-	size_t				 i;
-	int				 error;
+	struct arc_job	*v;
+	cbl_yarena	*a;
+	char		 id[24], err[512], *jargv[4];
+	size_t		 i, n;
 
 	sp->safe = safe;
 	sp->has_safe_wait = safe && safe_wait > 0;
 	sp->safe_wait = safe_wait;
-	memset(&req, 0, sizeof(req));
-	req.batch.v = sp;
-	req.batch.n = 1;
-	if ((error = arc_job_submit(cl, &req, &rsp)) != 0)
-		fail(cl, error, "queue");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "queue");
+	if (yq_submit(cl->conn, sp, 1, a, &v, &n, err, sizeof(err)) != 0 ||
+	    n != 1) {
+		xo_warnx("%s", n != 1 && err[0] == '\0' ? "not accepted" :
+		    err);
+		cbl_yarena_free(a);
+		return (1);
+	}
 	if (!queue) {
-		if (!rsp->ok || rsp->jobs.n != 1) {
-			xo_warnx("%s", rsp->error != NULL ? rsp->error :
-			    "not accepted");
-			arc_job_submit_rsp_free(rsp);
-			return (1);
-		}
-		snprintf(id, sizeof(id), "%ju", (uintmax_t)rsp->jobs.v[0].id);
-		arc_job_submit_rsp_free(rsp);
+		snprintf(id, sizeof(id), "%ju", (uintmax_t)v[0].id);
+		cbl_yarena_free(a);
 		jargv[0] = (char *)(uintptr_t)"job";
 		jargv[1] = (char *)(uintptr_t)"-w";
 		jargv[2] = id;
@@ -6150,54 +6138,58 @@ submit(struct arc_client *cl, struct arc_job_spec *sp)
 		return (cmd_job(cl, 3, jargv));
 	}
 	xo_open_list("job");
-	for (i = 0; i < rsp->jobs.n; i++)
-		emit_job(&rsp->jobs.v[i]);
+	for (i = 0; i < n; i++)
+		emit_job(&v[i]);
 	xo_close_list("job");
-	error = rsp->ok ? 0 : 1;
-	arc_job_submit_rsp_free(rsp);
-	return (error);
-}
-
-static int
-cmd_jobs(struct arc_client *cl)
-{
-	struct arc_jobs_rsp	*rsp;
-	size_t			 i;
-	int			 error;
-
-	if ((error = arc_jobs(cl, &rsp)) != 0)
-		fail(cl, error, "jobs");
-	xo_emit("{T:/%4s} {T:/%-9s} {T:/%s}\n", "ID", "STATE", "JOB");
-	xo_open_list("job");
-	for (i = 0; i < rsp->jobs.n; i++)
-		emit_job(&rsp->jobs.v[i]);
-	xo_close_list("job");
-	if (rsp->has_lanes)
-		xo_emit("{T:Lanes}: {:lanes/%u} jobs of pkg in jails at once\n",
-		    rsp->lanes);
-	/* What is under way that is not a job, and a stop that waits. */
-	if (rsp->activity != NULL)
-		xo_emit("{Lwc:Under way}{:activity/%s}{d:/ (%jd s)}"
-		    "{e:since/%jd}\n", rsp->activity, (intmax_t)(time(NULL) -
-		    rsp->since), (intmax_t)rsp->since);
-	if (rsp->stopping)
-		xo_emit("{Lwc:Stopping}{:stopping/%s}\n", rsp->activity !=
-		    NULL || rsp->jobs.n > 0 ? "when what is under way ends" :
-		    "now");
-	arc_jobs_rsp_free(rsp);
+	cbl_yarena_free(a);
 	return (0);
 }
 
-/* job [-w] id: the job and its trace; -w waits for it to finish. */
+/* jobs: the queue, a GET of arcana-jobs' jobs. */
+static int
+cmd_jobs(struct arc_client *cl)
+{
+	struct yq_jobs	 q;
+	cbl_yarena	*a;
+	char		 err[512];
+
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "jobs");
+	if (yq_list(cl->conn, a, &q, err, sizeof(err)) != 0)
+		xo_errx(1, "jobs: %s", err);
+	xo_emit("{T:/%4s} {T:/%-9s} {T:/%s}\n", "ID", "STATE", "JOB");
+	xo_open_list("job");
+	for (size_t i = 0; i < q.n; i++)
+		emit_job(&q.v[i]);
+	xo_close_list("job");
+	if (q.lanes > 0)
+		xo_emit("{T:Lanes}: {:lanes/%d} jobs of pkg in jails at once\n",
+		    q.lanes);
+	/* What is under way that is not a job, and a stop that waits. */
+	if (q.activity != NULL)
+		xo_emit("{Lwc:Under way}{:activity/%s}{d:/ (%jd s)}"
+		    "{e:since/%jd}\n", q.activity, (intmax_t)(time(NULL) -
+		    q.since), (intmax_t)q.since);
+	if (q.stopping)
+		xo_emit("{Lwc:Stopping}{:stopping/%s}\n", q.activity !=
+		    NULL || q.n > 0 ? "when what is under way ends" : "now");
+	cbl_yarena_free(a);
+	return (0);
+}
+
+/*
+ * job [-w] id: the job and its trace, its read action; -w waits for it
+ * to finish.
+ */
 static int
 cmd_job(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_job_req	 req;
-	struct arc_job_rsp	*rsp;
-	struct arc_job_confirm_req creq;
-	struct arc_job_confirm_rsp *crsp;
-	bool			 wait, done, ok;
-	int			 ch, error;
+	struct arc_job	 j;
+	cbl_yarena	*a;
+	char		 err[512];
+	uint64_t	 id;
+	bool		 wait, done, ok;
+	int		 ch;
 
 	wait = false;
 	optind = 1;
@@ -6212,70 +6204,64 @@ cmd_job(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc - optind != 1)
 		usage();
-	memset(&req, 0, sizeof(req));
-	req.has_id = true;
-	req.id = strtoull(argv[optind], NULL, 10);
+	id = strtoull(argv[optind], NULL, 10);
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "job");
 	for (;;) {
-		if ((error = arc_job(cl, &req, &rsp)) != 0)
-			fail(cl, error, "job");
-		if (!rsp->ok || rsp->job == NULL) {
-			xo_warnx("job %s: %s", argv[optind], rsp->error != NULL ?
-			    rsp->error : "not found");
-			arc_job_rsp_free(rsp);
+		if (yq_job(cl->conn, id, a, &j, err, sizeof(err)) != 0) {
+			xo_warnx("job %s: %s", argv[optind], err);
+			cbl_yarena_free(a);
 			return (1);
 		}
-		done = rsp->job->state == ARC_JOB_STATE_DONE ||
-		    rsp->job->state == ARC_JOB_STATE_CANCELLED;
+		done = j.state == ARC_JOB_STATE_DONE ||
+		    j.state == ARC_JOB_STATE_CANCELLED;
 		if (done || !wait)
 			break;
 		/*
 		 * A safe change is made and waits to hear from us: that
 		 * this request gets through is what it waits for.
 		 */
-		if (rsp->job->state == ARC_JOB_STATE_UNCONFIRMED) {
-			memset(&creq, 0, sizeof(creq));
-			creq.has_id = true;
-			creq.id = req.id;
-			if (arc_job_confirm(cl, &creq, &crsp) == 0)
-				arc_job_confirm_rsp_free(crsp);
-		}
-		arc_job_rsp_free(rsp);
+		if (j.state == ARC_JOB_STATE_UNCONFIRMED)
+			(void)yq_confirm(cl->conn, id, err, sizeof(err));
+		/* Each read anew: the last one's go. */
+		cbl_yarena_free(a);
+		if ((a = cbl_yarena_new()) == NULL)
+			xo_err(1, "job");
 		usleep(300000);
 	}
 	xo_open_list("job");
-	emit_job(rsp->job);
+	emit_job(&j);
 	xo_close_list("job");
 	show_trace = true;
-	emit_trace(rsp->job->trace.v, rsp->job->trace.n);
-	ok = !done || (rsp->job->state == ARC_JOB_STATE_DONE && rsp->job->ok);
-	arc_job_rsp_free(rsp);
+	emit_trace(j.trace.v, j.trace.n);
+	ok = !done || (j.state == ARC_JOB_STATE_DONE && j.ok);
+	cbl_yarena_free(a);
 	return (ok ? 0 : 1);
 }
 
+/* job-cancel id: its cancel action. */
 static int
 cmd_job_cancel(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_job_cancel_req	 req;
-	struct arc_job_cancel_rsp	*rsp;
-	int				 error;
+	struct arc_job	 j;
+	cbl_yarena	*a;
+	char		 err[512];
 
 	if (argc != 2)
 		usage();
-	memset(&req, 0, sizeof(req));
-	req.has_id = true;
-	req.id = strtoull(argv[1], NULL, 10);
-	if ((error = arc_job_cancel(cl, &req, &rsp)) != 0)
-		fail(cl, error, "job-cancel");
-	if (rsp->ok && rsp->job != NULL) {
-		xo_open_list("job");
-		emit_job(rsp->job);
-		xo_close_list("job");
-	} else
-		xo_warnx("job %s: %s", argv[1], rsp->error != NULL ?
-		    rsp->error : "failed");
-	error = rsp->ok ? 0 : 1;
-	arc_job_cancel_rsp_free(rsp);
-	return (error);
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "job-cancel");
+	if (yq_cancel(cl->conn, strtoull(argv[1], NULL, 10), a, &j, err,
+	    sizeof(err)) != 0) {
+		xo_warnx("job %s: %s", argv[1], err);
+		cbl_yarena_free(a);
+		return (1);
+	}
+	xo_open_list("job");
+	emit_job(&j);
+	xo_close_list("job");
+	cbl_yarena_free(a);
+	return (0);
 }
 
 int
