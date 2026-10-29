@@ -708,7 +708,7 @@ addToLibrary({
 
 		/*
 		 * A game controller: the console used by one alone (a Steam
-		 * Deck in its Game Mode, the page a non-Steam game), by the
+		 * Deck with the page as a non-Steam game, say), by the
 		 * Gamepad API.  While one is in use the root has the class
 		 * pad: a visible focus, larger targets, and the buttons' words
 		 * at the foot of the screen.  The D-pad and the left stick
