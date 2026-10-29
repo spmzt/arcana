@@ -121,8 +121,12 @@ static struct setting {
 	{ "mail_runs", K_TEXT, "Workflow runs mailed",
 	    "failed, all or none.", v_which, NULL, NULL },
 	{ "mail_limits", K_BOOL, "Limits crossed mailed",
-	    "A figure of history (CPU, memory, a disk, a jail's) over its "
-	    "limit, and back under.", NULL, NULL, NULL },
+	    "A message when a host's usage goes over a limit set on its "
+	    "Usage tab, and again when it is back under: its CPU, memory, "
+	    "swap and disk space (90%, 90%, 50% and 90% unless changed there; "
+	    "back under at 5 points below), or a rule of yours there for an "
+	    "interface, a disk or a jail (back under below nine tenths of "
+	    "it). Measured only while the host keeps history.", NULL, NULL, NULL },
 	{ "telegram_chats", K_TEXT, "Telegram chats",
 	    "Where the bot writes: chat ids (a number; a group's is negative) "
 	    "or @channel names, a space between them; empty for none. Ask "
@@ -144,8 +148,12 @@ static struct setting {
 	{ "telegram_runs", K_TEXT, "Workflow runs to Telegram",
 	    "failed, all or none.", v_which, NULL, NULL },
 	{ "telegram_limits", K_BOOL, "Limits crossed to Telegram",
-	    "A figure of history over its limit, and back under.", NULL, NULL,
-	    NULL },
+	    "A message when a host's usage goes over a limit set on its "
+	    "Usage tab, and again when it is back under: its CPU, memory, "
+	    "swap and disk space (90%, 90%, 50% and 90% unless changed there; "
+	    "back under at 5 points below), or a rule of yours there for an "
+	    "interface, a disk or a jail (back under below nine tenths of "
+	    "it). Measured only while the host keeps history.", NULL, NULL, NULL },
 	{ "mail_sen", K_TEXT, "Security Event Notifications mailed to",
 	    "MEF 138's SENs (what the SD-WAN services' security functions "
 	    "block and tell): addresses, a comma between them; empty for "
