@@ -1277,18 +1277,32 @@ part_hosts(void)
 	    "etc/jail.conf -c web')", 5);
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.dock > header').click()");
-	/* Started at boot or not: rc.conf's jail_list, the jail as it is. */
+	/*
+	 * Started at boot or not: arcana-jails' boot, a confirmed commit;
+	 * refused until Arcana's rc.conf file is named in rc_conf_files,
+	 * which the jail's card offers to accept.  Then jail_list there,
+	 * the jail as it is.
+	 */
 	wait_js("document.querySelector('#j-web button[data-act=jail-boot]"
 	    "[data-value=enable]')", 20);
 	run("document.querySelector('#j-web button[data-act=jail-boot]')"
 	    ".click()");
-	click_when("button[data-act=queue-run]", 5);
-	for (i = 0; i < 100 && system("grep -q '^jail_list=\"web\"$' rc.conf && "
-	    "grep -q '^jail_enable=\"YES\"$' rc.conf") != 0; i++)
+	wait_js("document.querySelector('#j-web button[data-act=jail-yc-accept]')"
+	    " && document.querySelector('#j-web p.note').textContent.includes("
+	    "'rc-conf-files')", 20);
+	shot("4-jail-boot-accept");
+	run("document.querySelector('#j-web button[data-act=jail-yc-accept]')"
+	    ".click()");
+	for (i = 0; i < 100 && system("grep -q '^jail_list=\"web\"$' "
+	    "root/usr/local/etc/rc.conf.d/arcana && grep -q "
+	    "'^jail_enable=\"YES\"$' root/usr/local/etc/rc.conf.d/arcana") != 0;
+	    i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 100, "web is not in jail_list");
 	wait_js("document.querySelector('#j-web button[data-act=jail-boot].on"
-	    "[data-value=disable]')", 20);
+	    "[data-value=disable]') && document.querySelector('#j-web p.note')"
+	    ".textContent.includes('Saved')", 20);
+	ATF_CHECK(system("! grep -q jail_list rc.conf") == 0);
 
 	/* Previewing a persistent address change shows the diff. */
 	run("document.querySelector('#j-db').click()");
@@ -1355,6 +1369,40 @@ part_hosts(void)
 	    "t.textContent.includes('list services')) && !document."
 	    "querySelector('.dock .op.o-live')", 20);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * A service's configuration, a confirmed commit: sshd_flags is
+	 * yours (rc.conf; Arcana's file named in rc_conf_files already, by
+	 * the jail's boot), so the drawer offers to accept the conflict;
+	 * then Arcana's file has it, yours commented out.  A variable
+	 * taken out goes from there.
+	 */
+	run("document.querySelector('.svc[data-arg=sshd]').click()");
+	wait_js("document.querySelector('form[data-form=svc-config] "
+	    "input[name=\"v:sshd_flags\"]')", 20);
+	run("const f = document.querySelector('form[data-form=svc-config]'); "
+	    "f.querySelector('input[name=\"v:sshd_flags\"]').value = '-6'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('.drawer button[data-act=svc-yc-accept]')"
+	    " && document.querySelector('.drawer p.note').textContent.includes("
+	    "'Accept rc-conf-conflict')", 20);
+	shot("6b-service-accept");
+	click_when(".drawer button[data-act=svc-yc-accept]", 5);
+	wait_js("document.querySelector('.drawer p.note') && document."
+	    "querySelector('.drawer p.note').textContent.includes('Saved') && "
+	    "document.querySelector('form[data-form=svc-config] "
+	    "input[name=\"v:sshd_flags\"]').value === '-6'", 20);
+	ATF_CHECK(system("grep -q '^sshd_flags=\"-6\"$' "
+	    "root/usr/local/etc/rc.conf.d/arcana && grep -q "
+	    "'^#sshd_flags=\"-4\"  # taken by Arcana$' root/etc/rc.conf") == 0);
+	run("document.querySelector('.drawer button[data-act=svc-unset]"
+	    "[data-arg=sshd_flags]').click()");
+	wait_js("document.querySelector('.drawer p.note').textContent.includes("
+	    "'Saved') && !document.querySelector('form[data-form=svc-config] "
+	    "input[name=\"v:sshd_flags\"]')", 20);
+	ATF_CHECK(system("! grep -q sshd_flags root/usr/local/etc/rc.conf.d/"
+	    "arcana") == 0);
+	run("document.querySelector('.drawer button[data-act=close-drawer]')"
+	    ".click()");
 
 	/*
 	 * A reading that takes its time is waited for once: leaving its

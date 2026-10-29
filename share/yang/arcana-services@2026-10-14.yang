@@ -222,6 +222,41 @@ module arcana-services {
           uses now;
         }
       }
+      action read {
+        description
+          "The service as it is now, without the others' status read:
+           whether rc(8) starts it at boot (service <name> enabled, by
+           its rcvar, the defaults included), whether it runs, what it
+           says of itself and its extra commands.";
+        output {
+          leaf enabled {
+            type boolean;
+            description
+              "Whether rc(8) starts it at boot.";
+          }
+          leaf path {
+            type string;
+            description
+              "The script.";
+          }
+          leaf rcvar {
+            type string;
+            description
+              "The rc.conf variable that enables it, if it has one.";
+          }
+          uses now;
+          leaf description {
+            type string;
+            description
+              "What the script says of itself (service describe).";
+          }
+          leaf-list command {
+            type string;
+            description
+              "The script's extra commands (service extracommands).";
+          }
+        }
+      }
     }
   }
 }

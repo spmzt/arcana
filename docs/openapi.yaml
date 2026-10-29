@@ -704,8 +704,8 @@ paths:
     get:
       tags: [servers]
       summary: The host's rc.d services
-      description: One `service <name> status` per enabled script; the
-        reply carries the trace.
+      description: arcana-services' state, a GET; one `service <name>
+        status` per enabled script; the reply carries the trace.
       parameters:
         - $ref: "#/components/parameters/server"
       responses:
@@ -728,6 +728,13 @@ paths:
     post:
       tags: [servers]
       summary: start, stop, restart, reload, enable or disable a service
+      description: |
+        start, stop, restart and reload are arcana-services' actions;
+        enable and disable its `enabled` in the host's candidate,
+        committed confirmed and confirmed at once (the rcvar in Arcana's
+        rc.conf file).  A warning the host stops at is refused with
+        `error_tag`, its error-app-tag; the request again with it in
+        `accept` goes on.
       parameters:
         - $ref: "#/components/parameters/server"
         - name: service
@@ -745,6 +752,10 @@ paths:
                 action:
                   type: string
                   enum: [start, stop, restart, reload, enable, disable]
+                accept:
+                  type: array
+                  items: { type: string }
+                  example: [rc-conf-files, rc-conf-conflict]
       responses:
         "200":
           description: The outcome, with the service as it is now.
@@ -755,6 +766,9 @@ paths:
                 properties:
                   ok: { type: boolean }
                   error: { type: string, nullable: true }
+                  error_tag:
+                    type: string
+                    description: The warning that refused the commit.
                   service: { $ref: "#/components/schemas/Service" }
                   trace: { type: array }
         "400": { $ref: "#/components/responses/Error" }
@@ -773,7 +787,11 @@ paths:
         "200": { $ref: "#/components/responses/ServiceConfig" }
     post:
       tags: [servers]
-      summary: Set or unset variables with sysrc(8), then read them
+      summary: Set or unset variables, committed, then read them
+      description: |
+        arcana-services' variables of the service in the host's
+        candidate, committed confirmed and confirmed at once (Arcana's
+        rc.conf file); `accept` and `error_tag` as for enable.
       parameters:
         - $ref: "#/components/parameters/server"
         - name: service
@@ -792,6 +810,9 @@ paths:
                   additionalProperties: { type: string }
                   example: { sshd_flags: "-4" }
                 unset:
+                  type: array
+                  items: { type: string }
+                accept:
                   type: array
                   items: { type: string }
       responses:
@@ -3578,12 +3599,16 @@ paths:
   /api/servers/{server}/jails/{jail}/action:
     post:
       tags: [jails]
-      summary: Start, stop, restart or kill a jail
+      summary: Start, stop, restart or kill a jail; started at boot or not
       description: |
         start, stop and restart run jail(8) with `-c`, `-r` or `-rc` and
         the configuration file that defines the jail; kill removes it with
         jail_remove(2), without its stop scripts.  Interface aliases of
-        addresses added while the jail ran are removed with it.
+        addresses added while the jail ran are removed with it.  enable
+        and disable are arcana-jails' `boot` in the host's candidate,
+        committed confirmed and confirmed at once (jail_list in Arcana's
+        rc.conf file); a warning the host stops at is refused with
+        `error_tag`, and goes on with it in `accept`.
       parameters:
         - $ref: "#/components/parameters/server"
         - $ref: "#/components/parameters/jail"
@@ -3597,7 +3622,10 @@ paths:
               properties:
                 action:
                   type: string
-                  enum: [start, stop, restart, kill]
+                  enum: [start, stop, restart, kill, enable, disable]
+                accept:
+                  type: array
+                  items: { type: string }
       responses:
         "200": { $ref: "#/components/responses/JailChange" }
         "400": { $ref: "#/components/responses/Error" }
@@ -3699,6 +3727,7 @@ components:
             properties:
               ok: { type: boolean }
               error: { type: string, nullable: true }
+              error_tag: { type: string }
               service: { $ref: "#/components/schemas/Service" }
               variables:
                 type: object
@@ -4459,6 +4488,10 @@ components:
           properties:
             ok: { type: boolean }
             error: { type: [string, "null"] }
+            error_tag:
+              type: string
+              description: The warning that refused a commit (enable,
+                disable), for its accept.
             jail: { $ref: "#/components/schemas/Jail" }
 
     Host:

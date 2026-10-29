@@ -137,10 +137,14 @@ whether they are enabled is read from
 whether the enabled ones run from
 .Ql service name status ;
 they are started, stopped, restarted and reloaded with
-.Xr service 8 ,
-enabled and disabled, and their
+.Xr service 8
+(arcana-services' actions, its
+.Ic read
+the one service's state); enabled and disabled, and their
 .Xr rc.conf 5
-variables read and set, with
+variables set, by a commit of arcana-services
+.Pq Sx CONFIGURATION ,
+or by a job with
 .Xr sysrc 8 .
 The routing table, the nexthops, the active connections and the open
 sockets are what
@@ -711,6 +715,13 @@ what rtadvd sends now as
 .Xr rtadvctl 8
 .Cm show
 reports it;
+.It
+a service's rcvar, YES or NO, and its
+.Ar name Ns Va _*
+variables (arcana-services), a service at a time; and a jail started at
+boot or not, arcana-jails'
+.Ic boot
+.Pq Va jail_list , jail_enable ;
 .It
 the network instance an interface is in, its FIB
 .Pq Dq fib Ar N No first on Va ifconfig_ Ns Ar if ,

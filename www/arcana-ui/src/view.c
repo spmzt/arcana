@@ -708,6 +708,8 @@ card(struct html *h, struct server *s, const ucl_object_t *j)
 		h_txt(h, u->error);
 		h_raw(h, "</p>");
 	}
+	if (jstr(j, "name") != NULL)
+		jail_commit_note(h, s, jstr(j, "name"));
 	actions(h, s, j, u, false);
 	h_raw(h, "</article>");
 }
@@ -1221,6 +1223,7 @@ jail_page(struct html *h)
 		h_txt(h, u->error);
 		h_raw(h, "</p>");
 	}
+	jail_commit_note(h, s, app.jail);
 
 	h_raw(h, "<h4>Addresses</h4><ul class=\"chips\">");
 	for (k = 0; k < 2; k++) {
@@ -3581,8 +3584,11 @@ view_service_drawer(struct html *h, struct server *s)
 		h_txt(h, app.svc_error);
 		h_raw(h, "</p>");
 	}
+	/* Enabled or not and the variables: a confirmed commit's. */
+	service_commit_note(h);
 
-	h_raw(h, "<h4>rc.conf <span class=\"dim\">through sysrc(8)</span></h4>"
+	h_raw(h, "<h4>rc.conf <span class=\"dim\">arcana-services, committed to "
+	    "Arcana's file</span></h4>"
 	    "<form data-form=\"svc-config\" class=\"vars\">");
 	vars = jget(app.svc_config, "variables");
 	it = NULL;

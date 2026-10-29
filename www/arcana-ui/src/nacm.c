@@ -57,18 +57,6 @@ url_of(char *buf, size_t len, const char *ds, const char *tail)
 		    "arcana-fleet:fleet/host=%s%s", ds, nc.sid, tail);
 }
 
-/* The error a RESTCONF reply gives, or err. */
-static const char *
-rc_why(const ucl_object_t *o, const char *err)
-{
-	const char	*m;
-
-	if ((m = jstr(o, "ietf-restconf:errors.error.0.error-message")) !=
-	    NULL)
-		return (m);
-	return (err != NULL ? err : "the console did not answer");
-}
-
 static void
 read_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {

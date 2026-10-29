@@ -1002,6 +1002,9 @@ module arcana {
   }
 
   grouping set-service {
+    description
+      "An rc.d script, as the agent's services.c reads it; arcana-services
+       has it now: kept a structure for the agent's own use.";
     leaf name {
       type string;
     }
@@ -3008,68 +3011,6 @@ module arcana {
     }
   }
 
-  rpc services {
-    fam:command 5;
-    fam:auth;
-    description
-      "The rc.d scripts of the host with whether they are enabled, and for
-       the enabled ones whether they run.";
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-services;
-      uses attr-trace;
-    }
-  }
-
-  rpc service-action {
-    fam:command 6;
-    fam:auth;
-    input {
-      uses attr-service {
-        refine service {
-          mandatory true;
-        }
-      }
-      uses attr-service-action {
-        refine service-action {
-          mandatory true;
-        }
-      }
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-service-result;
-      uses attr-trace;
-    }
-  }
-
-  rpc service-config {
-    fam:command 7;
-    fam:auth;
-    description
-      "A service's rc.conf variables, read through sysrc(8); with
-       variables in the request, set or unset them first.";
-    input {
-      uses attr-service {
-        refine service {
-          mandatory true;
-        }
-      }
-      uses attr-variables;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-service-result;
-      uses attr-variables;
-      uses attr-description;
-      uses attr-commands;
-      uses attr-trace;
-    }
-  }
-
   rpc network {
     fam:command 8;
     fam:auth;
@@ -4693,6 +4634,14 @@ module arcana {
     description
       "A data message of a stream of chunks.";
     uses set-chunk;
+  }
+
+  sx:structure service {
+    cg:struct "service";
+    description
+      "An rc.d script, as the agent's services.c reads it; arcana-services
+       has it now: kept a structure for the agent's own use.";
+    uses set-service;
   }
 
   sx:structure job-spec {

@@ -509,6 +509,9 @@ tick(void *arg)
 			transport_tick(now);
 			nacm_tick(now);
 			ra_tick(now);
+			service_commit_tick(now);
+			jail_commit_tick(now);
+			sysview_tick(now);
 			ca_tick(now);
 			cluster_tick(now);
 			net_live_tick(now);
@@ -853,12 +856,13 @@ submit_form(const char *form, const ucl_object_t *f)
 	} else if (strcmp(form, "enrol-host") == 0) {
 		enrol_host(jstr(f, "name") != NULL ? jstr(f, "name") : "",
 		    jstr(f, "host") != NULL ? jstr(f, "host") : "");
-	} else if (strcmp(form, "svc-config") == 0 && app.service[0] != '\0') {
-		/* Fields v:<key> are the variables; key/value add one. */
+	} else if (strcmp(form, "svc-config") == 0 && app.service[0] != '\0' &&
+	    cur_server() != NULL) {
+		/* Fields v:<key> are the variables; key/value add one: set
+		 * in its configuration, committed. */
 		const ucl_object_t *f2;
 		ucl_object_iter_t it;
-		ucl_object_t *set, *top;
-		char *b;
+		ucl_object_t *set;
 
 		set = ucl_object_typed_new(UCL_OBJECT);
 		it = NULL;
@@ -874,12 +878,8 @@ submit_form(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(set, ucl_object_fromstring(
 			    jstr(f, "value") != NULL ? jstr(f, "value") : ""),
 			    s, 0, true);
-		top = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(top, set, "set", 0, false);
-		b = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
-		ucl_object_unref(top);
-		service_config(app.service, b);
-		free(b);
+		service_set_vars(cur_server(), app.service, set);
+		ucl_object_unref(set);
 	} else if (strcmp(form, "packages") == 0) {
 		/* Checked boxes p:<name>; the button says dry run or not. */
 		const ucl_object_t *f2;
@@ -1868,7 +1868,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "open-svc") == 0) {
 		close_service();
 		snprintf(app.service, sizeof(app.service), "%s", arg);
-		service_config(arg, NULL);
+		service_config(arg);
 	} else if (strcmp(act, "svc") == 0) {
 		/* value: the verb; stop and restart ask first. */
 		if (strcmp(value, "stop") == 0 || strcmp(value, "restart") == 0) {
@@ -1882,14 +1882,13 @@ dispatch(const char *act, const char *arg, const char *value)
 			service_action(arg, value);
 	} else if (strcmp(act, "do-svc") == 0) {
 		service_action(arg, value);
-	} else if (strcmp(act, "svc-unset") == 0 && app.service[0] != '\0') {
-		char *q = json_quote(arg), *b;
-
-		if (asprintf(&b, "{\"unset\":[%s]}", q) == -1)
-			abort();
-		service_config(app.service, b);
-		free(q);
-		free(b);
+	} else if (strcmp(act, "svc-unset") == 0 && app.service[0] != '\0' &&
+	    cur_server() != NULL) {
+		service_unset_var(cur_server(), app.service, arg);
+	} else if (strncmp(act, "svc-yc-", 7) == 0) {
+		(void)service_commit_action(act);
+	} else if (strncmp(act, "jail-yc-", 8) == 0) {
+		(void)jail_commit_action(act);
 	} else if (strcmp(act, "start") == 0) {
 		jail_action(arg, "start");
 	} else if (strcmp(act, "stop") == 0) {

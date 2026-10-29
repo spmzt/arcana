@@ -255,7 +255,7 @@ do_clamav_job(struct work *w, const struct arc_job_spec *sp,
 	enabled = running = false;
 	service_state(w, "clamav_freshclam", &running, &enabled);
 	if (running) {
-		struct arc_service_action_rsp	r;
+		struct service_action_rsp	r;
 
 		memset(&r, 0, sizeof(r));
 		(void)do_service_action(w, "clamav_freshclam",

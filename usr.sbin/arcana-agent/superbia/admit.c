@@ -44,9 +44,8 @@ static struct cbl_family_def	 def;
 /* The commands that change the host, or give out a packet capture, its
  * whole configuration or a dataset. */
 static const char *const changes[] = {
-	"address", "service-action", "service-config",
-	"agent-update", "agent-build", "console-update", "bird-config",
-	"ipfw-rules", "zfs-receive", "sdwan-probes", "sdwan-rules",
+	"address", "agent-update", "agent-build", "console-update",
+	"bird-config", "ipfw-rules", "zfs-receive", "sdwan-probes", "sdwan-rules",
 	"sdwan-steer", "sdwan-bird", "sdwan-dhcp", "sdwan-dns", "sdwan-proxy",
 	"sdwan-ids", "tls", "config-apply", "notify",
 	"builder-options", "capture", "config-export", "zfs-send",

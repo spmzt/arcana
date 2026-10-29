@@ -1563,6 +1563,10 @@ attribute-sets:
         multi-attr: true
 
   - name: service
+    doc: |
+      An rc.d script, as the agent's services.c reads it; arcana-services
+      has it now: kept a structure for the agent's own use.
+    structure: true
     attributes:
       - name: name
         type: text
@@ -2200,59 +2204,13 @@ operations:
           - trace
 
   - name: services
-    attribute-set: arcana
-    auth: true
-    doc: |
-      The rc.d scripts of the host with whether they are enabled, and for
-      the enabled ones whether they run.
-    do:
-      reply:
-        attributes:
-          - ok
-          - error
-          - services
-          - trace
+    retired: true
 
   - name: service-action
-    attribute-set: arcana
-    auth: true
-    do:
-      request:
-        attributes:
-          - service
-          - service-action
-        required:
-          - service
-          - service-action
-      reply:
-        attributes:
-          - ok
-          - error
-          - service-result
-          - trace
+    retired: true
 
   - name: service-config
-    attribute-set: arcana
-    auth: true
-    doc: |
-      A service's rc.conf variables, read through sysrc(8); with
-      variables in the request, set or unset them first.
-    do:
-      request:
-        attributes:
-          - service
-          - variables
-        required:
-          - service
-      reply:
-        attributes:
-          - ok
-          - error
-          - service-result
-          - variables
-          - description
-          - commands
-          - trace
+    retired: true
 
   - name: network
     attribute-set: arcana

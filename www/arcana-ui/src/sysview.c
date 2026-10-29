@@ -11,7 +11,8 @@
  * GELI, devfs), the Logs tab (syslog), the Sysctl tab (hardening) and
  * IPsec (setkey) show of it.  Its files are written whole by sysfile
  * jobs; the rest by the jobs that own it (ntp, kmod, sysctl,
- * service-action, service-config, geom).
+ * service-action, geom), a service's rcvar and variables (Linux, auditd,
+ * a service jail) by arcana-services' commit (ycommit.c).
  */
 
 #include <ctype.h>
@@ -28,7 +29,102 @@ static struct {
 	bool		 logconf;	/* the Logs tab: syslog's configuration */
 	bool		 hardening;	/* the Sysctl tab: the hardening helper */
 	int		 storage;	/* the Storage tab: 1 GEOM, 2 GELI, 3 devfs */
+	struct ycommit	 yc;		/* a service's configuration */
+	char		 ycfor[16];	/* its section: linux, svcj, auditd */
+	char		 ycsvc[64];	/* and service */
+	bool		 ycstart;	/* started once enabled */
 } sv;
+
+static struct server *sv_server(void);
+
+/* A service's configuration saved: started where asked; read again. */
+static void
+svc_saved(struct ycommit *yc, int how)
+{
+	struct server	*s = NULL;
+	char		 title[96], *q, *json;
+
+	for (int i = 0; s == NULL && i < app.nservers; i++)
+		if (strcmp(app.servers[i].id, yc->sid) == 0)
+			s = &app.servers[i];
+	if (s == NULL)
+		return;
+	if (how == YC_SAVED && sv.ycstart) {
+		q = json_quote(sv.ycsvc);
+		if (asprintf(&json, "{\"kind\":\"service-action\","
+		    "\"service\":%s,\"action\":\"start\"}", q) == -1)
+			abort();
+		free(q);
+		snprintf(title, sizeof(title), "service %s start", sv.ycsvc);
+		job_send(s, json, title, JOB_SYSTEM, s->name);
+	}
+	sv.ycstart = false;
+	if (how != YC_REFUSED)
+		refresh_system(s, true);
+}
+
+/* Service svc of host s, its entry merged with body and committed, for
+ * section what; with start, started once it is saved. */
+static void
+svc_commit(struct server *s, const char *what, const char *svc,
+    const char *body, bool start)
+{
+
+	sv.yc.act = "sv-yc";
+	sv.yc.saved = "Saved: Arcana's rc.conf file has it.";
+	sv.yc.undone = "Undone: as it was.";
+	sv.yc.done = svc_saved;
+	if (sv.yc.busy) {
+		toast(true, "A change of the configuration is on its way");
+		return;
+	}
+	snprintf(sv.ycfor, sizeof(sv.ycfor), "%s", what);
+	snprintf(sv.ycsvc, sizeof(sv.ycsvc), "%s", svc);
+	sv.ycstart = start;
+	(void)service_commit(s->id, svc, "PATCH", NULL, body, &sv.yc);
+}
+
+/* Service svc enabled or not, committed; on, started after. */
+static void
+svc_enable(struct server *s, const char *what, const char *svc, bool on)
+{
+	char	*q, *body;
+
+	q = json_quote(svc);
+	if (asprintf(&body, "{\"arcana-services:service\":[{\"name\":%s,"
+	    "\"enabled\":%s}]}", q, on ? "true" : "false") == -1)
+		abort();
+	free(q);
+	svc_commit(s, what, svc, body, on);
+	free(body);
+}
+
+/* A service stopped by its job (JOB_SVC_OFF): now disabled. */
+void
+sysview_svc_off(struct server *s, const char *svc)
+{
+
+	svc_enable(s, strcmp(svc, "auditd") == 0 ? "auditd" : "linux", svc,
+	    false);
+}
+
+/* How a section's commit went, under it. */
+static void
+yc_note(struct html *h, const char *what)
+{
+	const struct server	*s = sv_server();
+
+	if (s != NULL && strcmp(sv.yc.sid, s->id) == 0 &&
+	    strcmp(sv.ycfor, what) == 0)
+		ycommit_note(h, &sv.yc);
+}
+
+void
+sysview_tick(double now)
+{
+
+	ycommit_tick(&sv.yc, now);
+}
 
 /* Another tab's own view is shown: ours of it is not. */
 void
@@ -229,6 +325,7 @@ view_linux(struct html *h, const ucl_object_t *o)
 	    "own (debootstrap); Arcana installs none.</p>", jbool(l,
 	    "enabled") ? "off" : "on", jbool(l, "enabled") ? "Disable" :
 	    "Enable and start");
+	yc_note(h, "linux");
 }
 
 static void
@@ -269,6 +366,7 @@ view_svcj(struct html *h, const ucl_object_t *o)
 		    "", svcj_opts[i]);
 	h_raw(h, "</div><div class=\"actions\"><button type=\"submit\" class="
 	    "\"primary\">Save</button></div></form>");
+	yc_note(h, "svcj");
 }
 
 static void
@@ -431,6 +529,7 @@ view_hostsec(struct html *h, struct server *s)
 	    "/var/audit; auditreduce(1) and praudit(1) read it.</p>",
 	    jbool(ad, "running") ? "off" : "on", jbool(ad, "running") ?
 	    "Stop and disable" : "Enable and start");
+	yc_note(h, "auditd");
 	file_editor(h, o, "audit_control", "audit_control", "What is "
 	    "recorded of everyone (flags: lo, aa, ex...), where, how much", 6);
 	file_editor(h, o, "audit_user", "audit_user", "Of a user, more or less "
@@ -879,18 +978,22 @@ sysview_form(const char *form, const ucl_object_t *f)
 				strlcat(opts, svcj_opts[i], sizeof(opts));
 			}
 		}
+		/* Its variables in its configuration, committed; off,
+		 * NAME_svcj NO, as rc.subr reads it. */
 		qs = json_quote(svc);
 		if (jbool(f, "on")) {
-			if (asprintf(&json, "{\"kind\":\"service-config\","
-			    "\"service\":%s,\"set\":{\"%s_svcj\":\"YES\",\"%s_"
-			    "svcj_options\":\"%s\"}}", qs, svc, svc, opts) == -1)
+			if (asprintf(&json, "{\"arcana-services:service\":[{"
+			    "\"name\":%s,\"variable\":[{\"name\":\"%s_svcj\","
+			    "\"value\":\"YES\"},{\"name\":\"%s_svcj_options\","
+			    "\"value\":\"%s\"}]}]}", qs, svc, svc, opts) == -1)
 				abort();
-		} else if (asprintf(&json, "{\"kind\":\"service-config\","
-		    "\"service\":%s,\"unset\":[\"%s_svcj\",\"%s_svcj_options\"]}",
-		    qs, svc, svc) == -1)
+		} else if (asprintf(&json, "{\"arcana-services:service\":[{"
+		    "\"name\":%s,\"variable\":[{\"name\":\"%s_svcj\","
+		    "\"value\":\"NO\"}]}]}", qs, svc) == -1)
 			abort();
 		free(qs);
-		send(s, json, "service jail");
+		svc_commit(s, "svcj", svc, json, false);
+		free(json);
 		return (true);
 	}
 	if (strcmp(form, "sv-rctl") == 0) {
@@ -1030,6 +1133,8 @@ sysview_action(const char *act, const char *arg, const char *value)
 		sv.logconf = false;
 	if (strncmp(act, "sv-", 3) != 0)
 		return (false);
+	if (ycommit_action(&sv.yc, act))
+		return (true);
 	if ((s = sv_server()) == NULL)
 		return (true);
 	if (strcmp(act, "sv-retry") == 0) {
@@ -1047,20 +1152,21 @@ sysview_action(const char *act, const char *arg, const char *value)
 	    strcmp(act, "sv-auditd-yes") == 0) {
 		const char	*svc = strcmp(act, "sv-linux") == 0 ? "linux" :
 		    "auditd";
-		bool		 on = strcmp(arg, "on") == 0;
-		const char	*acts[2];
 
-		acts[0] = on ? "enable" : "stop";
-		acts[1] = on ? "start" : "disable";
-		for (i = 0; i < 2; i++) {
-			q = json_quote(svc);
-			if (asprintf(&json, "{\"kind\":\"service-action\","
-			    "\"service\":%s,\"action\":\"%s\"}", q, acts[i]) == -1)
-				abort();
-			free(q);
-			snprintf(a, sizeof(a), "service %s %s", svc, acts[i]);
-			send(s, json, a);
+		/* On: enabled by a commit, then started; off: stopped, then
+		 * disabled by a commit (JOB_SVC_OFF): rc.subr starts and
+		 * stops only an enabled service. */
+		if (strcmp(arg, "on") == 0) {
+			svc_enable(s, svc, svc, true);
+			return (true);
 		}
+		q = json_quote(svc);
+		if (asprintf(&json, "{\"kind\":\"service-action\","
+		    "\"service\":%s,\"action\":\"stop\"}", q) == -1)
+			abort();
+		free(q);
+		snprintf(a, sizeof(a), "service %s stop", svc);
+		job_send(s, json, a, JOB_SVC_OFF, svc);
 		return (true);
 	}
 	if (strcmp(act, "sv-securelevel-yes") == 0) {

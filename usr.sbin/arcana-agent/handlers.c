@@ -37,7 +37,6 @@ struct job {
 	char			*jail;
 	uint8_t			 action;
 	struct arc_address_req	 addr;
-	struct arc_service_config_req svc;
 	uint8_t			 family;
 	uint32_t		 fib;
 	uint32_t		 offset;		/* network: rows to leave out */
@@ -107,15 +106,6 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_MULTICAST] = "multicast",
 	[ARC_NET_KIND_BIRD_OSPF] = "bird-ospf",
 	[ARC_NET_KIND_KEPT_ROUTES] = "kept-routes",
-};
-
-static const char *service_action_names[] = {
-	[ARC_SERVICE_ACTION_START] = "start",
-	[ARC_SERVICE_ACTION_STOP] = "stop",
-	[ARC_SERVICE_ACTION_RESTART] = "restart",
-	[ARC_SERVICE_ACTION_RELOAD] = "reload",
-	[ARC_SERVICE_ACTION_ENABLE] = "enable",
-	[ARC_SERVICE_ACTION_DISABLE] = "disable",
 };
 
 static char	*peer_name(cbl_req *);
@@ -319,9 +309,6 @@ worker(void *arg)
 	struct job		*j;
 	struct work		 w;
 	struct arc_address_rsp	 dr;
-	struct arc_services_rsp	 sr;
-	struct arc_service_action_rsp sar;
-	struct arc_service_config_rsp scr;
 	struct arc_network_rsp	 nr;
 	struct arc_route_lookup_rsp rlr;
 	struct arc_traceroute_rsp trr;
@@ -391,12 +378,10 @@ worker(void *arg)
 	case ARC_CMD_SDWAN_RULES:
 	case ARC_CMD_SDWAN_STEER:
 	case ARC_CMD_SDWAN_IDS:
-	case ARC_CMD_SERVICE_ACTION:
 	case ARC_CMD_CONSOLE_UPDATE:
 	case ARC_CMD_AGENT_BUILD:
 	case ARC_CMD_AGENT_UPDATE:
 	case ARC_CMD_BIRD_CONFIG:
-	case ARC_CMD_SERVICE_CONFIG:
 		break;
 	default:
 		w.nice = true;
@@ -980,39 +965,6 @@ worker(void *arg)
 		trace_steps(&w, &sdr.trace.v, &sdr.trace.n);
 		rc = arc_sdwan_reply(j->req, &sdr);
 		break;
-	case ARC_CMD_SERVICES:
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "services");
-		what = "services";
-		memset(&sr, 0, sizeof(sr));
-		do_services(&w, &sr);
-		ok = sr.ok;
-		error = sr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &sr.trace.v, &sr.trace.n);
-		rc = arc_services_reply(j->req, &sr);
-		break;
-	case ARC_CMD_SERVICE_ACTION:
-		what = wfmt(&w, "service %s %s", j->jail,
-		    service_action_names[j->action]);
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&sar, 0, sizeof(sar));
-		pthread_mutex_lock(&change_lock);
-		if (change_note("%s", what))
-			do_service_action(&w, j->jail, j->action, &sar);
-		else {
-			sar.has_ok = true;
-			sar.error = STOPPING;
-		}
-		(void)change_note(NULL);
-		pthread_mutex_unlock(&change_lock);
-		ok = sar.ok;
-		error = sar.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &sar.trace.v, &sar.trace.n);
-		rc = arc_service_action_reply(j->req, &sar);
-		break;
 	case ARC_CMD_CONSOLE_UPDATE:
 		what = wfmt(&w, "console update from %s%s%s", j->source,
 		    j->ref != NULL ? " at " : "", j->ref != NULL ? j->ref : "");
@@ -1161,27 +1113,6 @@ worker(void *arg)
 		trace_steps(&w, &bcr.trace.v, &bcr.trace.n);
 		rc = arc_bird_config_reply(j->req, &bcr);
 		break;
-	case ARC_CMD_SERVICE_CONFIG:
-		what = wfmt(&w, "service %s config%s", j->jail,
-		    j->svc.variables.n > 0 ? " (set)" : "");
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&scr, 0, sizeof(scr));
-		pthread_mutex_lock(&change_lock);
-		if (change_note("%s", what))
-			do_service_config(&w, &j->svc, &scr);
-		else {
-			scr.has_ok = true;
-			scr.error = STOPPING;
-		}
-		(void)change_note(NULL);
-		pthread_mutex_unlock(&change_lock);
-		ok = scr.ok;
-		error = scr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &scr.trace.v, &scr.trace.n);
-		rc = arc_service_config_reply(j->req, &scr);
-		break;
 	default:
 		what = wfmt(&w, "address %s %s %s%s%s%s", j->addr.jail,
 		    j->addr.remove ? "remove" : "add", j->addr.address,
@@ -1251,11 +1182,6 @@ job_free(struct job *j)
 {
 	size_t	i;
 
-	for (i = 0; i < j->svc.variables.n; i++) {
-		free((char *)(uintptr_t)j->svc.variables.v[i].key);
-		free((char *)(uintptr_t)j->svc.variables.v[i].value);
-	}
-	free((void *)(uintptr_t)j->svc.variables.v);
 	free((char *)(uintptr_t)j->pkg.pkg_repo);
 	for (i = 0; i < j->pkg.names.n; i++)
 		free((char *)(uintptr_t)j->pkg.names.v[i]);
@@ -1349,37 +1275,6 @@ arc_address_doit(cbl_req *req, const struct arc_address_req *rq,
 	j->addr.jail = xstrdup(rq->jail);
 	j->addr.address = xstrdup(rq->address);
 	j->addr.interface = xstrdup(rq->interface);
-	return (start(j));
-}
-
-int
-arc_services_doit(cbl_req *req, void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SERVICES;
-	return (start(j));
-}
-
-int
-arc_service_action_doit(cbl_req *req, const struct arc_service_action_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (!valid_service(rq->service))
-		return (reject(req, "invalid service name"));
-	if (rq->service_action >= nitems(service_action_names))
-		return (reject(req, "invalid action"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SERVICE_ACTION;
-	j->jail = xstrdup(rq->service);
-	j->action = rq->service_action;
 	return (start(j));
 }
 
@@ -1485,39 +1380,6 @@ arc_agent_update_doit(cbl_req *req, const struct arc_agent_update_req *rq,
 	j->binlen = rq->binary.len;
 	j->sha256 = xstrdup(rq->sha256);
 	j->restart = rq->restart;
-	return (start(j));
-}
-
-int
-arc_service_config_doit(cbl_req *req, const struct arc_service_config_req *rq,
-    void *arg __unused)
-{
-	struct arc_variable	*v;
-	struct job		*j;
-	size_t			 i;
-
-	if (!valid_service(rq->service))
-		return (reject(req, "invalid service name"));
-	for (i = 0; i < rq->variables.n; i++)
-		if (rq->variables.v[i].key == NULL)
-			return (reject(req, "a variable without a key"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SERVICE_CONFIG;
-	j->jail = xstrdup(rq->service);
-	j->svc.service = j->jail;
-	if (rq->variables.n > 0) {
-		if ((v = calloc(rq->variables.n, sizeof(*v))) == NULL)
-			err(1, "calloc");
-		for (i = 0; i < rq->variables.n; i++) {
-			v[i].key = xstrdup(rq->variables.v[i].key);
-			v[i].value = xstrdup(rq->variables.v[i].value);
-			v[i].remove = rq->variables.v[i].remove;
-		}
-		j->svc.variables.v = v;
-		j->svc.variables.n = rq->variables.n;
-	}
 	return (start(j));
 }
 
@@ -2680,7 +2542,7 @@ check_spec(const struct arc_job_spec *sp)
 		if (sp->service == NULL || !valid_service(sp->service))
 			return ("invalid service name");
 		if (!sp->has_service_action ||
-		    sp->service_action >= nitems(service_action_names))
+		    sp->service_action > ARC_SERVICE_ACTION_DISABLE)
 			return ("invalid action");
 		if (sp->safe && (sp->service_action ==
 		    ARC_SERVICE_ACTION_RESTART || sp->service_action ==

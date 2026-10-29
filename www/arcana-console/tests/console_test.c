@@ -2205,6 +2205,27 @@ ATF_TC_BODY(jails, tc)
 	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	ATF_CHECK_STREQ("jail 'web' is not running", jstr(&r, "error"));
 	resp_free(&r);
+	/* Started at boot: arcana-jails' boot committed, refused for what
+	 * it has not accepted, the warning named; accepted, jail_list in
+	 * Arcana's rc.conf file. */
+	http("POST", path, "{\"action\":\"enable\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("rc-conf-files", jstr(&r, "error_tag"));
+	resp_free(&r);
+	http("POST", path, "{\"action\":\"enable\",\"accept\":"
+	    "[\"rc-conf-files\"]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("true", jstr(&r, "jail.boot"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^jail_list=\"web\"$' "
+	    "root/usr/local/etc/rc.conf.d/arcana") == 0);
+	http("POST", path, "{\"action\":\"disable\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("false", jstr(&r, "jail.boot"));
+	resp_free(&r);
 
 	snprintf(path, sizeof(path), "%s/jails/web/address", base);
 	http("POST", path, "{\"address\":\"10.0.0.11\",\"persist\":true,"
@@ -5433,7 +5454,8 @@ ATF_TC_BODY(mail, tc)
 }
 
 CONSOLE_TC(services, "Services listed, acted on and configured through "
-    "service(8) and sysrc(8)")
+    "arcana-services: a GET, its actions, its configuration committed with "
+    "the warnings accepted")
 ATF_TC_BODY(services, tc)
 {
 	struct authn	a;
@@ -5473,11 +5495,23 @@ ATF_TC_BODY(services, tc)
 	http("POST", path, "{\"action\":\"dance\"}", &r);
 	EXPECT(&r, 400);
 	resp_free(&r);
+	/* Enabled: a commit, refused for what it has not accepted, the
+	 * warning named; with it accepted, Arcana's rc.conf file has it. */
 	snprintf(path, sizeof(path), "%s/ntpd/action", base);
 	http("POST", path, "{\"action\":\"enable\"}", &r);
 	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("rc-conf-files", jstr(&r, "error_tag"));
+	ATF_CHECK_STREQ("false", jstr(&r, "service.enabled"));
+	resp_free(&r);
+	http("POST", path, "{\"action\":\"enable\",\"accept\":"
+	    "[\"rc-conf-files\"]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK_STREQ("true", jstr(&r, "service.enabled"));
 	resp_free(&r);
+	ATF_CHECK(system("grep -q '^ntpd_enable=\"YES\"$' "
+	    "root/usr/local/etc/rc.conf.d/arcana") == 0);
 
 	snprintf(path, sizeof(path), "%s/sshd/config", base);
 	http("GET", path, NULL, &r);
@@ -5485,13 +5519,26 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("-4", jstr(&r, "variables.sshd_flags"));
 	ATF_CHECK_STREQ("The sshd daemon.", jstr(&r, "description"));
 	ATF_CHECK_STREQ("reload", jstr(&r, "commands.0"));
+	ATF_CHECK_STREQ("true", jstr(&r, "service.enabled"));
 	resp_free(&r);
+	/* Yours sets it: taken by Arcana once accepted. */
 	http("POST", path, "{\"set\":{\"sshd_flags\":\"-6\"},\"unset\":"
 	    "[\"sshd_nothing\"]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("rc-conf-conflict", jstr(&r, "error_tag"));
+	ATF_CHECK_STREQ("-4", jstr(&r, "variables.sshd_flags"));
+	resp_free(&r);
+	http("POST", path, "{\"set\":{\"sshd_flags\":\"-6\"},\"unset\":"
+	    "[\"sshd_nothing\"],\"accept\":[\"rc-conf-conflict\"]}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK_STREQ("-6", jstr(&r, "variables.sshd_flags"));
 	resp_free(&r);
+	ATF_CHECK(system("grep -q '^sshd_flags=\"-6\"$' "
+	    "root/usr/local/etc/rc.conf.d/arcana && grep -q "
+	    "'^#sshd_flags=\"-4\"  # taken by Arcana$' root/etc/rc.conf") ==
+	    0);
 	http("POST", path, "{\"set\":{\"ntpd_flags\":\"x\"}}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("false", jstr(&r, "ok"));

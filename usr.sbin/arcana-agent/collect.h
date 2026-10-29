@@ -227,18 +227,19 @@ int	yjails_from_list(const struct jails_read *rsp, cbl_yarena *a,
 
 /*
  * arcana-services (ira/yservices.c, ira/services.c): yservices_from()
- * the services operation's reply as the module has it, each service with
- * its service-config reply where one is given; yservices_diff() what
- * makes have's configuration want's, as service-action (*enable) and
- * service-config (*vars) take it.  Its actions are service-action's
+ * do_services()' list as the module has it; yservices_read() the read
+ * action's output from service_read()'s; yservices_diff() what makes
+ * have's configuration want's, its rcvar YES or NO (*enable) and its
+ * variables set or unset (*vars).  Its actions are services.c's
  * (invidia/yarcana.c).
  */
-struct arc_services_rsp;
-struct arc_service_config_rsp;
+struct services_rsp;
+struct service_config_rsp;
 struct arc_variable;
-int	yservices_from(const struct arc_services_rsp *list,
-	    const struct arc_service_config_rsp *const *cfg, size_t ncfg,
-	    cbl_yarena *a, struct arcana_services *out);
+int	yservices_from(const struct services_rsp *list, cbl_yarena *a,
+	    struct arcana_services *out);
+void	yservices_read(const struct service_config_rsp *r,
+	    struct arcana_services_services_service_read_output *out);
 int	yservices_diff(const struct arcana_services_services_service *have,
 	    const struct arcana_services_services_service *want,
 	    cbl_yarena *a, int *enable, struct arc_variable **vars,

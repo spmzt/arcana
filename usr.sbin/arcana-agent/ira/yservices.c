@@ -5,13 +5,12 @@
  */
 
 /*
- * Ira: the services as arcana-services has them:
- * the services operation's reply (do_services(): the rc.d scripts, each
- * enabled or not, running or not), each with its service-config reply
- * where one was read (do_service_config(): its rc.conf variables as
- * sysrc(8) reads them, what it says of itself, its extra commands).
- * The actions are service-action's (services.c); a configuration wanted
- * becomes what service-config and service-action take, by
+ * Ira: the services as arcana-services has them: the list (do_services():
+ * the rc.d scripts, each enabled or not, running or not), the read
+ * action's one service (service_read(): enabled by its rcvar, its
+ * status, what it says of itself, its extra commands).  The other
+ * actions are a service's start, stop, restart and reload (services.c);
+ * a configuration wanted becomes what the commit writes, by
  * yservices_diff().
  */
 
@@ -20,31 +19,16 @@
 
 #include <arcana.h>
 
+#include "agent.h"
 #include "collect.h"
 
 typedef struct arcana_services_services_service yservice;
 typedef struct arcana_services_services_service_variable yvar;
 
-static void
-from_config(yservice *y, const struct arc_service_config_rsp *c, yvar *v)
-{
-
-	for (size_t k = 0; k < c->variables.n; k++) {
-		v[k].name = c->variables.v[k].key;
-		v[k].value = c->variables.v[k].value;
-	}
-	y->variable.n = c->variables.n;
-	y->variable.v = v;
-	y->description = c->description;
-	y->command.n = c->commands.n;
-	y->command.v = c->commands.v;
-}
-
-/* The strings point into the replies'; a's the rest. */
+/* The strings point into the list's; a's the rest. */
 int
-yservices_from(const struct arc_services_rsp *list,
-    const struct arc_service_config_rsp *const *cfg, size_t ncfg,
-    cbl_yarena *a, struct arcana_services *out)
+yservices_from(const struct services_rsp *list, cbl_yarena *a,
+    struct arcana_services *out)
 {
 	struct arcana_services_services *ss;
 	yservice *v = NULL;
@@ -70,25 +54,35 @@ yservices_from(const struct arc_services_rsp *list,
 		if ((y->has_pid = s->has_pid))
 			y->pid = s->pid;
 		y->status = s->status;
-		for (size_t k = 0; k < ncfg; k++) {
-			const struct arc_service_config_rsp *c = cfg[k];
-			yvar *vv = NULL;
-
-			if (c->service_result == NULL ||
-			    c->service_result->name == NULL ||
-			    strcmp(c->service_result->name, s->name) != 0)
-				continue;
-			if (c->variables.n > 0 && (vv = cbl_yarena_alloc(a,
-			    c->variables.n * sizeof(*vv))) == NULL)
-				return (ENOMEM);
-			from_config(y, c, vv);
-			break;
-		}
 	}
 	ss->service.n = list->services.n;
 	ss->service.v = v;
 	out->services = ss;
 	return (0);
+}
+
+/* The read action's output from service_read()'s r; its strings r's. */
+void
+yservices_read(const struct service_config_rsp *r,
+    struct arcana_services_services_service_read_output *out)
+{
+	const struct arc_service *s = r->service_result;
+
+	memset(out, 0, sizeof(*out));
+	if (s != NULL) {
+		if ((out->has_enabled = s->has_enabled))
+			out->enabled = s->enabled;
+		out->path = s->path;
+		out->rcvar = s->rcvar;
+		if ((out->has_running = s->has_running))
+			out->running = s->running;
+		if ((out->has_pid = s->has_pid))
+			out->pid = s->pid;
+		out->status = s->status;
+	}
+	out->description = r->description;
+	out->command.n = r->commands.n;
+	out->command.v = r->commands.v;
 }
 
 static const yvar *
@@ -104,7 +98,7 @@ var_of(const yservice *s, const char *name)
 /*
  * What makes service have's configuration want's: *enable 1 to enable
  * it, -1 to disable it, 0 neither; the variables to set, or unset
- * (remove), as service-config takes them, a's.  Its own rcvar is
+ * (remove), a's.  Its own rcvar is
  * enabled's alone, never a variable.  EINVAL: two different services.
  */
 int

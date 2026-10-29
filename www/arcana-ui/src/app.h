@@ -353,7 +353,6 @@ enum {
 	JOB_JAIL,
 	JOB_ADDRESS,
 	JOB_SERVICE,
-	JOB_SERVICE_CONFIG,
 	JOB_PACKAGES,
 	JOB_IFACE,
 	JOB_KERNEL,
@@ -370,6 +369,7 @@ enum {
 	JOB_MAIL,		/* a host's OpenSMTPD (mail.c) */
 	JOB_RELAY,		/* a host's FEC relay (relay.c) */
 	JOB_MONITOR,		/* a tunnel measured (monitors.c) */
+	JOB_SVC_OFF,		/* a service stopped, then disabled (sysview.c) */
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -641,7 +641,26 @@ void		 refresh_jails(struct server *, bool);
 void		 jail_action(const char *, const char *);
 void		 refresh_services(struct server *, bool);
 void		 service_action(const char *, const char *);
-void		 service_config(const char *, const char *);
+void		 service_config(const char *);
+/* A service's configuration, committed (ycommit.c): enabled, its
+ * variables set or one unset; service_commit() an edit of its entry,
+ * its own ycommit or (NULL) the Services drawer's. */
+struct ycommit;
+bool		 service_commit(const char *, const char *, const char *,
+		    const char *, const char *, struct ycommit *);
+void		 service_enable(struct server *, const char *, bool);
+void		 service_set_vars(struct server *, const char *,
+		    const ucl_object_t *);
+void		 service_unset_var(struct server *, const char *,
+		    const char *);
+void		 service_commit_note(struct html *);
+bool		 service_commit_action(const char *);
+void		 service_commit_tick(double);
+/* A jail's boot, committed: how it went, its buttons, its countdown. */
+void		 jail_commit_note(struct html *, const struct server *,
+		    const char *);
+bool		 jail_commit_action(const char *);
+void		 jail_commit_tick(double);
 void		 refresh_network(struct server *, bool);
 const char	*net_scope(void);
 bool		 net_jail_ok(const ucl_object_t *);
@@ -1081,6 +1100,39 @@ void		 view_nacm(struct html *, struct server *);
 bool		 nacm_action(const char *, const char *, const char *);
 bool		 nacm_form(const char *, const ucl_object_t *);
 void		 nacm_tick(double);
+/*
+ * ycommit.c: a change of a host's configuration saved by a confirmed
+ * commit, as the router advertisements, the services and a jail's boot
+ * save it.  ycommit_save() sends the edit (method, the candidate's url,
+ * body), then commits confirmed and confirms at once; ycommit_note()
+ * draws how it went, with "Accept <tag> and commit again" where a
+ * warning stopped it and "Undo now" while a commit waits; their
+ * buttons are act's "-accept" and "-cancel", ycommit_action()'s;
+ * ycommit_tick() counts the wait down.  done is told YC_SAVED,
+ * YC_REFUSED or YC_UNDONE.  rc_why(): a RESTCONF error's message, else
+ * err.
+ */
+#define	YC_TIMEOUT	120		/* seconds a commit waits */
+enum { YC_SAVED, YC_REFUSED, YC_UNDONE };
+struct ycommit {
+	const char	*act;		/* the buttons' data-act prefix */
+	const char	*saved;		/* the note once confirmed */
+	const char	*undone;	/* and once undone */
+	void		(*done)(struct ycommit *, int);
+	char		 sid[16];	/* the host */
+	bool		 busy;		/* a save on its way */
+	char		 note[512];	/* how the last save went */
+	char		 tag[64];	/* a warning to accept, its app-tag */
+	char		 token[40];	/* a commit waiting: its persist */
+	double		 until;		/* and when the host undoes it (ms) */
+	double		 last;		/* the countdown drawn last */
+};
+bool		 ycommit_save(struct ycommit *, const char *, const char *,
+		    const char *, const char *);
+void		 ycommit_note(struct html *, const struct ycommit *);
+bool		 ycommit_action(struct ycommit *, const char *);
+void		 ycommit_tick(struct ycommit *, double);
+const char	*rc_why(const ucl_object_t *, const char *);
 /* ra.c: an interface's router advertisements (rtadvd.conf(5)), on the
  * Network tab's Interfaces. */
 void		 view_ra(struct html *, struct server *);
@@ -1092,6 +1144,8 @@ void		 view_syslogconf(struct html *, struct server *);
 void		 view_hardening(struct html *, struct server *);
 void		 view_setkey(struct html *, struct server *);
 bool		 sysview_form(const char *, const ucl_object_t *);
+void		 sysview_svc_off(struct server *, const char *);
+void		 sysview_tick(double);
 void		 dma_settings(struct html *);
 bool		 sysview_action(const char *, const char *, const char *);
 bool		 sysview_shown(const char *);

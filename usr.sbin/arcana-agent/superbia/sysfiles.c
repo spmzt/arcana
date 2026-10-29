@@ -827,7 +827,7 @@ int
 do_sysfile_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
 {
-	struct arc_service_action_rsp	 r;
+	struct service_action_rsp	 r;
 	const struct sysfile		*f;
 	struct execres			 res;
 	const char			*path, *tmp, *old;
@@ -954,7 +954,7 @@ sysfile_path(struct work *w, const char *verb)
 int
 sysfile_tell(struct work *w, const char *verb, const char **errp)
 {
-	struct arc_service_action_rsp	 r;
+	struct service_action_rsp	 r;
 	const struct sysfile		*f;
 	bool				 enabled, running;
 

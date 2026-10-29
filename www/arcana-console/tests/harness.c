@@ -314,13 +314,16 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(chmod("rc.d/sshd", 0755) == 0);
 	ATF_REQUIRE(chmod("rc.d/ntpd", 0755) == 0);
 	put("rc.conf", "sshd_enable=\"YES\"\nsshd_flags=\"-4\"\n");
+	/* -n reads Arcana's rc.conf file after, as rc_conf_files has it:
+	 * what a commit wrote is what the host has. */
 	snprintf(buf, sizeof(buf), "#!/bin/sh\nconf=%s/rc.conf\n"
-	    "[ \"$1\" = -R ] && { conf=$2/etc/rc.conf; shift 2; }\n"
-	    "[ \"$1\" = -f ] && { conf=$2; touch \"$conf\"; shift 2; }\n"
+	    "a=%s/root/usr/local/etc/rc.conf.d/arcana; [ -f \"$a\" ] || a=\n"
+	    "[ \"$1\" = -R ] && { conf=$2/etc/rc.conf; a=; shift 2; }\n"
+	    "[ \"$1\" = -f ] && { conf=$2; a=; touch \"$conf\"; shift 2; }\n"
 	    "[ \"$1\" = -i ] && shift\n"
 	    "case \"$1\" in\n"
-	    "-n) grep -q \"^$2=\" \"$conf\" || exit 1; sed -n \"s/^$2=\\\""
-	    "\\(.*\\)\\\"\\$/\\1/p\" \"$conf\" ;;\n"
+	    "-n) cat \"$conf\" $a | grep -q \"^$2=\" || exit 1; cat \"$conf\" "
+	    "$a | sed -n \"s/^$2=\\\"\\(.*\\)\\\"\\$/\\1/p\" | tail -1 ;;\n"
 	    "-a|-A) sed -e 's/=\"\\(.*\\)\"$/: \\1/' \"$conf\" ;;\n"
 	    "-x) grep -v \"^$2=\" \"$conf\" > c.new; mv c.new \"$conf\" ;;\n"
 	    "*+=*|*-=*) k=${1%%%%[+-]=*}; v=${1#*=}; o=$(sed -n \"s/^$k=\\\"\\("
@@ -331,7 +334,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\"$n\" >> c.new; mv c.new \"$conf\" ;;\n"
 	    "*=*) k=${1%%%%=*}; v=${1#*=}; grep -v \"^$k=\" \"$conf\" > c.new; "
 	    "printf '%%s=\"%%s\"\\n' \"$k\" \"$v\" >> c.new; mv c.new \"$conf\" ;;\n"
-	    "esac\n", cwd);
+	    "esac\n", cwd, cwd);
 	put("fake-sysrc", buf);
 	ATF_REQUIRE(chmod("fake-sysrc", 0755) == 0);
 	snprintf(buf, sizeof(buf), "#!/bin/sh\nconf=%s/rc.conf\n"
@@ -341,7 +344,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "r=$1; [ \"$1\" = arcana_relay ] && r=$1${3:+_$3}\n"
 	    "case \"$2\" in\n"
 	    "rcvar) echo \"${1}_enable=\\\"NO\\\"\" ;;\n"
-	    "enabled) grep -q \"^${1}_enable=\\\"YES\\\"\" \"$conf\" ;;\n"
+	    "enabled) cat \"$conf\" %s/root/usr/local/etc/rc.conf.d/arcana "
+	    "2>/dev/null | grep \"^${1}_enable=\" | tail -1 | "
+	    "grep -q '=\"YES\"' ;;\n"
 	    "status|onestatus) while [ -f hold.status ]; do sleep 0.1; done; "
 	    "[ -f running.$r ] && { echo \"$r is running as pid 7.\"; "
 	    "exit 0; }; echo \"$r is not running.\"; exit 1 ;;\n"
@@ -350,7 +355,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "stop|onestop) rm -f running.$r ;;\n"
 	    "describe) echo \"The $1 daemon.\" ;;\n"
 	    "extracommands) echo reload ;;\n"
-	    "esac\n", cwd, cwd);
+	    "esac\n", cwd, cwd, cwd);
 	put("fake-service", buf);
 	ATF_REQUIRE(chmod("fake-service", 0755) == 0);
 	/* netstat -O: a group of two next hops, two shares to one. */
@@ -1390,9 +1395,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	}
 	put("root/etc/hosts", "127.0.0.1 localhost\n");
 	(void)mkdir("root/etc/defaults", 0755);
+	/* Where a commit puts Arcana's rc.conf file. */
+	(void)mkdir("root/usr", 0755);
+	(void)mkdir("root/usr/local", 0755);
+	(void)mkdir("root/usr/local/etc", 0755);
 	put("root/etc/defaults/periodic.conf", "daily_clean_tmps_enable=\"NO\"\n"
 	    "daily_status_disks_enable=\"YES\"\n");
-	put("root/etc/rc.conf", "hostname=\"lab\"\nsshd_enable=\"YES\"\n");
+	put("root/etc/rc.conf", "hostname=\"lab\"\nsshd_enable=\"YES\"\n"
+	    "sshd_flags=\"-4\"\n");
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);
 	snprintf(rtadvdconf, sizeof(rtadvdconf), "%s/rtadvd.conf", cwd);

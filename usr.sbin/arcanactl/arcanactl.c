@@ -162,9 +162,10 @@ usage(void)
 	    "    address add | remove [-lnp] [-i interface] jail address\n"
 	    "    services\n"
 	    "    services convert [-n] [-a warning]... [name ...]\n"
-	    "    service name start | stop | restart | reload | enable | "
-	    "disable\n"
-	    "    service name config [-x key ...] [key=value ...]\n"
+	    "    service [-a warning]... name start | stop | restart | reload |\n"
+	    "        enable | disable\n"
+	    "    service [-a warning]... name config [-x key ...] "
+	    "[key=value ...]\n"
 	    "    net routes | nexthops | connections | sockets | interfaces | "
 	    "netgraph |\n        wireguard | bird [-4 | -6]\n"
 	    "    net routes [-4 | -6] text\n"
@@ -1975,27 +1976,215 @@ emit_service(const struct arc_service *s, bool table)
 	xo_close_container("service");
 }
 
+typedef struct arcana_services_services_service yservice;
+typedef struct arcana_services_services_service_variable yservice_var;
+
+/* arcana-services' services, as datastore ds has them (a's). */
+static const struct arcana_services_services *
+yservices(struct arc_client *cl, int ds, cbl_yarena *a)
+{
+	static const struct arcana_services_services none;
+	const struct cbl_ynode	*n;
+	struct arcana_services	 d;
+
+	if ((n = ytop_named("services")) == NULL)
+		xo_errx(1, "services: arcana-services is not in the tables");
+	memset(&d, 0, sizeof(d));
+	yget_data(cl, n, ds, &d, a);
+	return (d.services != NULL ? d.services : &none);
+}
+
+/* A service of the module as the agent's own struct, for emit_service(). */
+static struct arc_service
+service_of(const yservice *y)
+{
+	struct arc_service	s;
+
+	memset(&s, 0, sizeof(s));
+	s.name = y->name;
+	s.path = y->path;
+	s.rcvar = y->rcvar;
+	s.has_enabled = y->has_enabled;
+	s.enabled = y->enabled;
+	s.has_running = y->has_running;
+	s.running = y->running;
+	s.has_pid = y->has_pid;
+	s.pid = y->pid;
+	s.status = y->status;
+	return (s);
+}
+
+/* services: the rc.d scripts, a GET of arcana-services' state. */
 static int
 cmd_services(struct arc_client *cl)
 {
-	struct arc_services_rsp	*rsp;
-	size_t			 i;
-	int			 error;
+	const struct arcana_services_services	*ss;
+	struct arc_service			 s;
+	cbl_yarena				*a;
 
-	if ((error = arc_services(cl, &rsp)) != 0)
-		fail(cl, error, "services");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "services");
+	ytold_begin(cl);
+	ss = yservices(cl, CBL_YDS_OPERATIONAL, a);
+	ytold_end(false);
 	xo_emit("{T:/%-24s} {T:/%-8s} {T:/%-8s} {T:/%s}\n", "NAME", "ENABLED",
 	    "STATE", "PID");
 	xo_open_list("service");
-	for (i = 0; i < rsp->services.n; i++)
-		emit_service(&rsp->services.v[i], true);
+	for (size_t i = 0; i < ss->service.n; i++) {
+		s = service_of(&ss->service.v[i]);
+		emit_service(&s, true);
+	}
 	xo_close_list("service");
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("%s", rsp->error != NULL ? rsp->error : "failed");
-	arc_services_rsp_free(rsp);
-	return (error);
+	ytold_end(true);
+	cbl_yarena_free(a);
+	return (0);
+}
+
+/*
+ * Service name as it is now, by its read action: enabled, running, what
+ * it says of itself and its commands; with vars, its rc.conf variables
+ * as running has them.
+ */
+static int
+service_show(struct arc_client *cl, const char *name, bool vars)
+{
+	struct arcana_services_services_service_read_output	 o;
+	const struct arcana_services_services			*ss;
+	const struct cbl_ynode					*n;
+	struct arc_service					 s;
+	const void						*vals[1];
+	cbl_yarena						*a;
+	char							 why[512];
+
+	if ((n = ytop_named("services")) == NULL || (n = ychild(n,
+	    "service")) == NULL)
+		xo_errx(1, "services: arcana-services is not in the tables");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "%s", name);
+	vals[0] = &name;
+	memset(&o, 0, sizeof(o));
+	if (ycall(cl, n, vals, 1, "read", NULL, &o, a, why, sizeof(why)) != 0) {
+		xo_warnx("service %s: %s", name, why);
+		cbl_yarena_free(a);
+		return (1);
+	}
+	memset(&s, 0, sizeof(s));
+	s.name = name;
+	s.path = o.path;
+	s.rcvar = o.rcvar;
+	s.has_enabled = o.has_enabled;
+	s.enabled = o.enabled;
+	s.has_running = o.has_running;
+	s.running = o.running;
+	s.has_pid = o.has_pid;
+	s.pid = o.pid;
+	s.status = o.status;
+	emit_service(&s, false);
+	if (vars) {
+		if (o.description != NULL)
+			xo_emit("{Lwc:Describe}{:description/%s}\n",
+			    o.description);
+		if (o.command.n > 0)
+			xo_emit("{Lwc:Commands}{d:/%s}\n", join(o.command.v,
+			    o.command.n));
+		for (size_t i = 0; i < o.command.n; i++)
+			xo_emit("{el:command/%s}", o.command.v[i]);
+		ss = yservices(cl, CBL_YDS_RUNNING, a);
+		xo_open_list("variable");
+		for (size_t i = 0; i < ss->service.n; i++) {
+			const yservice *y = &ss->service.v[i];
+
+			if (strcmp(y->name, name) != 0)
+				continue;
+			for (size_t k = 0; k < y->variable.n; k++) {
+				xo_open_instance("variable");
+				xo_emit("{P:  }{k:key/%s}{D:=}{:value/%s}\n",
+				    y->variable.v[k].name,
+				    y->variable.v[k].value != NULL ?
+				    y->variable.v[k].value : "");
+				xo_close_instance("variable");
+			}
+		}
+		xo_close_list("variable");
+	}
+	cbl_yarena_free(a);
+	return (0);
+}
+
+/*
+ * Service name's configuration changed in the candidate and committed:
+ * enabled with enable 1, disabled with -1; variables vars set, or unset
+ * (remove).  Every service of running goes with it, the one changed, so
+ * that the commit's undo has them all; the accepts given with -a.
+ * What the commit refuses leaves the candidate as running is.
+ */
+static void
+service_commit(struct arc_client *cl, const char *verb, const char *name,
+    int enable, const struct arc_variable *vars, size_t nv)
+{
+	struct ietf_netconf_commit_input		 cin;
+	struct ietf_netconf_discard_changes_input	 din;
+	const struct arcana_services_services		*ss;
+	const struct cbl_ynode				*n;
+	struct arcana_services				 d;
+	yservice					*y = NULL;
+	yservice_var					*v;
+	cbl_yarena					*a;
+	char						 err[512], tag[80];
+	uint64_t					 errsid;
+	size_t						 k, m;
+
+	if ((n = ytop_named("services")) == NULL)
+		xo_errx(1, "services: arcana-services is not in the tables");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "%s", verb);
+	ss = yservices(cl, CBL_YDS_RUNNING, a);
+	for (k = 0; k < ss->service.n; k++)
+		if (strcmp(ss->service.v[k].name, name) == 0)
+			y = (yservice *)(uintptr_t)&ss->service.v[k];
+	if (y == NULL)
+		xo_errx(1, "%s: no rc.d script '%s'", verb, name);
+	if (enable != 0) {
+		y->has_enabled = true;
+		y->enabled = enable > 0;
+	}
+	if (nv > 0) {
+		if ((v = cbl_yarena_alloc(a, (y->variable.n + nv) *
+		    sizeof(*v))) == NULL)
+			xo_err(1, "%s", verb);
+		m = 0;
+		for (k = 0; k < y->variable.n; k++)
+			v[m++] = y->variable.v[k];
+		for (size_t i = 0; i < nv; i++) {
+			for (k = 0; k < m && strcmp(v[k].name, vars[i].key) !=
+			    0; k++)
+				;
+			if (vars[i].remove) {
+				if (k < m)
+					v[k] = v[--m];
+				continue;
+			}
+			v[k].name = vars[i].key;
+			v[k].value = vars[i].value != NULL ? vars[i].value : "";
+			if (k == m)
+				m++;
+		}
+		y->variable.v = v;
+		y->variable.n = m;
+	}
+	memset(&d, 0, sizeof(d));
+	d.services = ss;
+	if (yedit_data(cl->conn, n, &d, CBL_YDS_CANDIDATE, accepts, naccepts,
+	    err, sizeof(err), &errsid, tag, sizeof(tag)) != 0)
+		refused(verb, err, tag);
+	memset(&cin, 0, sizeof(cin));
+	if (netconf_try(cl, "commit", &cin, err, sizeof(err), tag,
+	    sizeof(tag)) != 0) {
+		memset(&din, 0, sizeof(din));
+		(void)netconf_try(cl, "discard-changes", &din, NULL, 0, NULL, 0);
+		refused(verb, err, tag);
+	}
+	cbl_yarena_free(a);
 }
 
 /*
@@ -2093,21 +2282,39 @@ cmd_services_convert(struct arc_client *cl, int argc, char **argv)
 	return (0);
 }
 
-/* service name verb, or service name config [-x key] [key=value] */
+/*
+ * service [-a warning]... name verb, or service [-a warning]... name
+ * config [-x key] [key=value]: start, stop, restart and reload are
+ * arcana-services' actions; enable, disable and the variables its
+ * configuration, committed (service_commit()), the accepts given with
+ * -a; with -q or -s, each a job, as before.  The service as it is
+ * after, by its read action.
+ */
 static int
 cmd_service(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *verbs[] = { "start", "stop", "restart", "reload",
 	    "enable", "disable" };
-	struct arc_service_action_req	 areq;
-	struct arc_service_action_rsp	*arsp;
-	struct arc_service_config_req	 creq;
-	struct arc_service_config_rsp	*crsp;
-	struct arc_variable		*vars;
-	size_t				 i, nv;
-	char				*eq;
-	int				 error;
+	const struct cbl_ynode	*n;
+	struct arc_variable	*vars;
+	const void		*vals[1];
+	cbl_yarena		*a;
+	size_t			 i, nv;
+	char			 why[512], *eq;
+	int			 ch, error;
 
+	optind = 1;
+	optreset = 1;
+	while ((ch = getopt(argc, argv, "a:")) != -1) {
+		if (ch != 'a')
+			usage();
+		if (naccepts < nitems(accepts))
+			accepts[naccepts++] = optarg;
+	}
+	/* The command kept first, before the service. */
+	argv[optind - 1] = argv[0];
+	argc -= optind - 1;
+	argv += optind - 1;
 	if (argc < 3)
 		usage();
 	for (i = 0; i < nitems(verbs); i++)
@@ -2127,26 +2334,35 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 			sp.service_action = (uint8_t)i;
 			return (submit(cl, &sp));
 		}
-		memset(&areq, 0, sizeof(areq));
-		areq.service = argv[1];
-		areq.has_service_action = true;
-		areq.service_action = (uint8_t)i;
-		if ((error = arc_service_action(cl, &areq, &arsp)) != 0)
-			fail(cl, error, argv[2]);
-		if (arsp->service_result != NULL)
-			emit_service(arsp->service_result, false);
-		emit_trace(arsp->trace.v, arsp->trace.n);
-		error = arsp->ok ? 0 : 1;
-		if (!arsp->ok)
-			xo_warnx("service %s %s: %s", argv[1], argv[2],
-			    arsp->error != NULL ? arsp->error : "failed");
-		arc_service_action_rsp_free(arsp);
+		if (i == ARC_SERVICE_ACTION_ENABLE || i ==
+		    ARC_SERVICE_ACTION_DISABLE) {
+			service_commit(cl, argv[2], argv[1], i ==
+			    ARC_SERVICE_ACTION_ENABLE ? 1 : -1, NULL, 0);
+			return (service_show(cl, argv[1], false));
+		}
+		if ((n = ytop_named("services")) == NULL || (n = ychild(n,
+		    "service")) == NULL)
+			xo_errx(1, "services: arcana-services is not in the "
+			    "tables");
+		if ((a = cbl_yarena_new()) == NULL)
+			xo_err(1, "%s", argv[2]);
+		vals[0] = &argv[1];
+		ytold_begin(cl);
+		error = ycall(cl, n, vals, 1, argv[2], NULL, NULL, a, why,
+		    sizeof(why));
+		ytold_end(false);
+		cbl_yarena_free(a);
+		if (error != 0) {
+			ytold_end(true);
+			xo_warnx("service %s %s: %s", argv[1], argv[2], why);
+			return (1);
+		}
+		error = service_show(cl, argv[1], false);
+		ytold_end(true);
 		return (error);
 	}
 	if (strcmp(argv[2], "config") != 0)
 		usage();
-	memset(&creq, 0, sizeof(creq));
-	creq.service = argv[1];
 	if ((vars = calloc((size_t)argc, sizeof(*vars))) == NULL)
 		xo_err(1, "calloc");
 	nv = 0;
@@ -2162,8 +2378,6 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 			usage();
 		nv++;
 	}
-	creq.variables.v = vars;
-	creq.variables.n = nv;
 	if ((queue || safe) && nv > 0) {
 		struct arc_job_spec sp;
 
@@ -2177,34 +2391,10 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 		free(vars);
 		return (error);
 	}
-	if ((error = arc_service_config(cl, &creq, &crsp)) != 0)
-		fail(cl, error, "config");
-	if (crsp->service_result != NULL)
-		emit_service(crsp->service_result, false);
-	if (crsp->description != NULL)
-		xo_emit("{Lwc:Describe}{:description/%s}\n", crsp->description);
-	if (crsp->commands.n > 0)
-		xo_emit("{Lwc:Commands}{d:/%s}\n", join(crsp->commands.v,
-		    crsp->commands.n));
-	for (i = 0; i < crsp->commands.n; i++)
-		xo_emit("{el:command/%s}", crsp->commands.v[i]);
-	xo_open_list("variable");
-	for (i = 0; i < crsp->variables.n; i++) {
-		xo_open_instance("variable");
-		xo_emit("{P:  }{k:key/%s}{D:=}{:value/%s}\n",
-		    crsp->variables.v[i].key, crsp->variables.v[i].value !=
-		    NULL ? crsp->variables.v[i].value : "");
-		xo_close_instance("variable");
-	}
-	xo_close_list("variable");
-	emit_trace(crsp->trace.v, crsp->trace.n);
-	error = crsp->ok ? 0 : 1;
-	if (!crsp->ok)
-		xo_warnx("service %s config: %s", argv[1],
-		    crsp->error != NULL ? crsp->error : "failed");
-	arc_service_config_rsp_free(crsp);
+	if (nv > 0)
+		service_commit(cl, "config", argv[1], 0, vars, nv);
 	free(vars);
-	return (error);
+	return (service_show(cl, argv[1], true));
 }
 
 /*

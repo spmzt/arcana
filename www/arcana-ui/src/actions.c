@@ -625,17 +625,17 @@ job_finished(struct op *op, bool ok, const char *err)
 		refresh_jails(s, false);
 		break;
 	case JOB_SERVICE:
-	case JOB_SERVICE_CONFIG:
 		s->services_loading = false;
 		if (s->services != NULL)
 			refresh_services(s, false);
-		if (op->what == JOB_SERVICE_CONFIG &&
-		    strcmp(app.service, op->target) == 0) {
-			app.svc_loading = false;
-			snprintf(app.svc_error, sizeof(app.svc_error), "%s",
-			    ok ? "" : err != NULL ? err : "failed");
-			service_config(op->target, NULL);
-		}
+		if (strcmp(app.service, op->target) == 0)
+			service_config(op->target);
+		break;
+	case JOB_SVC_OFF:
+		/* Stopped: now not started at boot. */
+		refresh_system(s, true);
+		if (ok)
+			sysview_svc_off(s, op->target);
 		break;
 	case JOB_KERNEL:
 		refresh_kernel(s, true);
@@ -1408,7 +1408,83 @@ host_read(const struct server *s, const char *read, const char *title,
 	live_read(s->id, read, url, op->id, hread_cb, h);
 }
 
-/* start, stop, restart or kill a jail of the selected server: a job. */
+/*
+ * A jail started at boot or not: arcana-jails' boot in the host's
+ * candidate (RFC 8527), committed confirmed (ycommit.c); a warning the
+ * host stops at, offered to be accepted on the jail's card.  The jails
+ * read again once it is saved or undone.
+ */
+static struct ycommit jail_yc = {
+	.act = "jail-yc",
+	.saved = "Saved: Arcana's rc.conf file has it (jail_list).",
+	.undone = "Undone: started at boot as it was.",
+};
+static char jail_yc_name[256];
+
+static void
+jail_saved(struct ycommit *yc, int how)
+{
+	struct server	*s;
+
+	if (how == YC_REFUSED || (s = server_by_id(yc->sid)) == NULL)
+		return;
+	s->loading = false;
+	refresh_jails(s, false);
+}
+
+static void
+jail_boot(struct server *s, const char *jail, bool on)
+{
+	char	url[600], *qj, *body;
+
+	if (!url_word(jail)) {
+		toast(true, "%s: not a jail's name", jail);
+		return;
+	}
+	snprintf(url, sizeof(url), "/restconf/ds/ietf-datastores:candidate/"
+	    "arcana-fleet:fleet/host=%s/arcana-jails:jails/jail=%s", s->id,
+	    jail);
+	qj = json_quote(jail);
+	if (asprintf(&body, "{\"arcana-jails:jail\":[{\"name\":%s,"
+	    "\"boot\":%s}]}", qj, on ? "true" : "false") == -1)
+		abort();
+	free(qj);
+	jail_yc.done = jail_saved;
+	if (ycommit_save(&jail_yc, s->id, "PATCH", url, body))
+		snprintf(jail_yc_name, sizeof(jail_yc_name), "%s", jail);
+	else
+		toast(true, "A change of the configuration is on its way");
+	free(body);
+}
+
+/* How the commit of jail's boot went, on its card and its page. */
+void
+jail_commit_note(struct html *h, const struct server *s, const char *jail)
+{
+
+	if (strcmp(jail_yc.sid, s->id) == 0 && strcmp(jail_yc_name,
+	    jail) == 0)
+		ycommit_note(h, &jail_yc);
+}
+
+bool
+jail_commit_action(const char *act)
+{
+
+	return (ycommit_action(&jail_yc, act));
+}
+
+void
+jail_commit_tick(double now)
+{
+
+	ycommit_tick(&jail_yc, now);
+}
+
+/*
+ * start, stop, restart or kill a jail of the selected server: a job;
+ * enable or disable, its boot committed.
+ */
 void
 jail_action(const char *jail, const char *action)
 {
@@ -1417,15 +1493,17 @@ jail_action(const char *jail, const char *action)
 
 	if ((s = cur_server()) == NULL)
 		return;
+	if (strcmp(action, "enable") == 0 || strcmp(action, "disable") == 0) {
+		jail_boot(s, jail, strcmp(action, "enable") == 0);
+		return;
+	}
 	snprintf(title, sizeof(title), "%s %s", action, jail);
 	qj = json_quote(jail);
 	if (asprintf(&json, "{\"kind\":\"jail-action\",\"jail\":%s,"
 	    "\"action\":\"%s\"}", qj, action) == -1)
 		abort();
 	free(qj);
-	/* At boot or not changes rc.conf alone: the jail is as it was. */
-	if (!app.queue_on && strcmp(action, "enable") != 0 && strcmp(action,
-	    "disable") != 0) {
+	if (!app.queue_on) {
 		jailui(s, jail)->pending = strcmp(action, "start") == 0 ?
 		    PEND_START : strcmp(action, "stop") == 0 ? PEND_STOP :
 		    strcmp(action, "restart") == 0 ? PEND_RESTART : PEND_KILL;
@@ -1519,7 +1597,7 @@ merge_service(struct server *s, const ucl_object_t *j)
 	}
 }
 
-/* start, stop, restart, reload, enable or disable a service: a job. */
+/* start, stop, restart or reload a service: a job. */
 void
 service_action(const char *name, const char *action)
 {
@@ -1528,6 +1606,11 @@ service_action(const char *name, const char *action)
 
 	if ((s = cur_server()) == NULL)
 		return;
+	/* Started at boot or not: its configuration, committed. */
+	if (strcmp(action, "enable") == 0 || strcmp(action, "disable") == 0) {
+		service_enable(s, name, strcmp(action, "enable") == 0);
+		return;
+	}
 	snprintf(title, sizeof(title), "service %s %s", name, action);
 	qn = json_quote(name);
 	if (asprintf(&json, "{\"kind\":\"service-action\",\"service\":%s,"
@@ -1562,18 +1645,12 @@ service_config_cb(int status, const ucl_object_t *o, const char *err,
 	    err != NULL ? err : "failed");
 	if ((s = server_by_id(c->sid)) != NULL)
 		merge_service(s, jget(o, "service"));
-	if (c->user)
-		toast(ok ? false : true, "%s: %s", c->jail, ok ? "configured" :
-		    err != NULL ? err : "failed");
 	free(c);
 }
 
-/*
- * A service's rc.conf variables: read them (body NULL), or change them
- * with {"set": {...}, "unset": [...]} and read them back.
- */
+/* A service's rc.conf variables, read. */
 void
-service_config(const char *name, const char *body)
+service_config(const char *name)
 {
 	struct server	*s;
 	struct ctx	*c;
@@ -1582,26 +1659,10 @@ service_config(const char *name, const char *body)
 
 	if ((s = cur_server()) == NULL)
 		return;
-	if (body != NULL) {
-		/* {"set": ..} becomes {"kind": .., "service": .., "set": ..}. */
-		char *qn = json_quote(name), *json;
-
-		snprintf(title, sizeof(title), "service %s configure", name);
-		if (asprintf(&json, "{\"kind\":\"service-config\","
-		    "\"service\":%s,%s", qn, body + 1) == -1)
-			abort();
-		free(qn);
-		if (!app.queue_on)
-			app.svc_loading = true;
-		job_send(s, json, title, JOB_SERVICE_CONFIG, name);
-		return;
-	}
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	snprintf(c->jail, sizeof(c->jail), "%s", name);
-	c->user = body != NULL;
-	snprintf(title, sizeof(title), "service %s %s", name, body != NULL ?
-	    "configure" : "config");
+	snprintf(title, sizeof(title), "service %s config", name);
 	op = op_new(title, s->name);
 	c->op = op->id;
 	app.trace_op = op->id;
@@ -1615,7 +1676,148 @@ service_config(const char *name, const char *body)
 	}
 	snprintf(url, sizeof(url), "/api/servers/%s/services/%s/config",
 	    s->id, name);
-	api(body != NULL ? "POST" : "GET", url, body, service_config_cb, c);
+	api("GET", url, NULL, service_config_cb, c);
+}
+
+/*
+ * A service's configuration changed (arcana-services): its entry in the
+ * host's candidate edited (RFC 8527), committed confirmed (ycommit.c);
+ * a warning the host stops at, offered to be accepted in the drawer.
+ * The services read again once it is saved or undone.
+ */
+static struct ycommit svc_yc = {
+	.act = "svc-yc",
+	.saved = "Saved: Arcana's rc.conf file has it.",
+	.undone = "Undone: the service's configuration is as it was.",
+};
+static char svc_yc_name[64];
+
+static void
+svc_saved(struct ycommit *yc, int how)
+{
+	struct server	*s;
+
+	if (how == YC_REFUSED || (s = server_by_id(yc->sid)) == NULL)
+		return;
+	if (s->services != NULL)
+		refresh_services(s, false);
+	if (s == cur_server() && strcmp(app.service, svc_yc_name) == 0)
+		service_config(svc_yc_name);
+}
+
+/*
+ * Service name's entry of host sid's candidate (tail below it), method
+ * with body: the edit, then the commit.  Its own commit, done its way
+ * (NULL: the drawer's).
+ */
+bool
+service_commit(const char *sid, const char *name, const char *method,
+    const char *tail, const char *body, struct ycommit *yc)
+{
+	char	url[400];
+
+	if (!url_word(name)) {
+		toast(true, "%s: not a service's name", name);
+		return (false);
+	}
+	snprintf(url, sizeof(url), "/restconf/ds/ietf-datastores:candidate/"
+	    "arcana-fleet:fleet/host=%s/arcana-services:services/service=%s%s",
+	    sid, name, tail != NULL ? tail : "");
+	if (yc == NULL) {
+		yc = &svc_yc;
+		yc->done = svc_saved;
+		snprintf(svc_yc_name, sizeof(svc_yc_name), "%s", name);
+	}
+	if (!ycommit_save(yc, sid, method, url, body)) {
+		toast(true, "A change of the configuration is on its way");
+		return (false);
+	}
+	return (true);
+}
+
+/* Started at boot or not: its rcvar, arcana-services' enabled. */
+void
+service_enable(struct server *s, const char *name, bool on)
+{
+	char	*qn, *body;
+
+	qn = json_quote(name);
+	if (asprintf(&body, "{\"arcana-services:service\":[{\"name\":%s,"
+	    "\"enabled\":%s}]}", qn, on ? "true" : "false") == -1)
+		abort();
+	free(qn);
+	(void)service_commit(s->id, name, "PATCH", NULL, body, NULL);
+	free(body);
+}
+
+/* Its variables set: {"key": "value", ...}, merged into its own. */
+void
+service_set_vars(struct server *s, const char *name, const ucl_object_t *set)
+{
+	ucl_object_t		*top, *e, *vars, *v;
+	const ucl_object_t	*x;
+	ucl_object_iter_t	 it = NULL;
+	char			*body;
+
+	vars = ucl_object_typed_new(UCL_ARRAY);
+	while ((x = ucl_object_iterate(set, &it, true)) != NULL) {
+		v = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(v, ucl_object_fromstring(
+		    ucl_object_key(x)), "name", 0, true);
+		ucl_object_insert_key(v, ucl_object_fromstring(
+		    ucl_object_tostring_forced(x)), "value", 0, true);
+		ucl_array_append(vars, v);
+	}
+	e = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(e, ucl_object_fromstring(name), "name", 0, true);
+	ucl_object_insert_key(e, vars, "variable", 0, true);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	v = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(v, e);
+	ucl_object_insert_key(top, v, "arcana-services:service", 0, true);
+	body = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	(void)service_commit(s->id, name, "PATCH", NULL, body, NULL);
+	free(body);
+}
+
+/* One variable unset: taken out of its entry. */
+void
+service_unset_var(struct server *s, const char *name, const char *key)
+{
+	char	tail[160];
+
+	if (!url_word(key)) {
+		toast(true, "%s: not a variable's name", key);
+		return;
+	}
+	snprintf(tail, sizeof(tail), "/variable=%s", key);
+	(void)service_commit(s->id, name, "DELETE", tail, NULL, NULL);
+}
+
+/* The drawer's commit: how it went, its buttons and its countdown. */
+void
+service_commit_note(struct html *h)
+{
+	const struct server	*s = cur_server();
+
+	if (s != NULL && strcmp(svc_yc.sid, s->id) == 0 &&
+	    strcmp(svc_yc_name, app.service) == 0)
+		ycommit_note(h, &svc_yc);
+}
+
+bool
+service_commit_action(const char *act)
+{
+
+	return (ycommit_action(&svc_yc, act));
+}
+
+void
+service_commit_tick(double now)
+{
+
+	ycommit_tick(&svc_yc, now);
 }
 
 static void
@@ -3629,12 +3831,13 @@ service_busy(const struct server *s, const char *name)
 
 	for (i = 0; i < app.nops; i++) {
 		o = &app.ops[i];
-		if (o->state == OP_RUNNING && (o->what == JOB_SERVICE ||
-		    o->what == JOB_SERVICE_CONFIG) && strcmp(o->sid, s->id) ==
-		    0 && strcmp(o->target, name) == 0)
+		if (o->state == OP_RUNNING && o->what == JOB_SERVICE &&
+		    strcmp(o->sid, s->id) == 0 && strcmp(o->target, name) == 0)
 			return (true);
 	}
-	return (false);
+	/* Its configuration's commit on its way. */
+	return (svc_yc.busy && strcmp(svc_yc.sid, s->id) == 0 &&
+	    strcmp(svc_yc_name, name) == 0);
 }
 
 /* An upgrade of the packages shown, of this host or jail, is under way. */

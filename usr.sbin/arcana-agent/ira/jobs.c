@@ -1167,9 +1167,9 @@ undo(struct qjob *j)
 {
 	struct arc_address_req		 dq;
 	struct arc_address_rsp		 dr;
-	struct arc_service_action_rsp	 sar;
-	struct arc_service_config_req	 scq;
-	struct arc_service_config_rsp	 scr;
+	struct service_action_rsp	 sar;
+	struct service_config_req	 scq;
+	struct service_config_rsp	 scr;
 	struct route_more		 rm;
 	const struct arc_job_spec	*sp;
 	const char			*e;
@@ -1462,9 +1462,9 @@ run(struct qjob *j, bool lane)
 	struct jail_done		 ar;
 	struct arc_address_req		 dq;
 	struct arc_address_rsp		 dr;
-	struct arc_service_action_rsp	 sar;
-	struct arc_service_config_req	 scq;
-	struct arc_service_config_rsp	 scr;
+	struct service_action_rsp	 sar;
+	struct service_config_req	 scq;
+	struct service_config_rsp	 scr;
 	struct route_more		 rm;
 	struct pkg_upgrade		 uq;
 	struct pkg_upgraded		 ur;

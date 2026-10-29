@@ -376,7 +376,7 @@ The host's rc.d scripts: whether
 .Xr rc.conf 5
 enables them, and for the enabled ones whether they run, as
 .Xr service 8
-reports.
+reports; arcana-services' state, a GET.
 .It Cm services convert Oo Fl n Oc Oo Fl a Ar warning Oc ... Op Ar name ...
 The services' configuration of your
 .Xr rc.conf 5
@@ -404,7 +404,7 @@ It is a change like a commit's: what you have not accepted with
 .Fl a
 .Pq Cm rc-conf-files , rc-conf-conflict ; see Sx Warnings
 is refused, and failing, every file is put back.
-.It Cm service Ar name Cm start | stop | restart | reload | enable | disable
+.It Cm service Oo Fl a Ar warning Oc ... Ar name Cm start | stop | restart | reload | enable | disable
 Change a service:
 .Cm start ,
 .Cm stop ,
@@ -413,19 +413,50 @@ and
 .Cm reload
 through
 .Xr service 8 ,
+arcana-services' actions;
 .Cm enable
 and
 .Cm disable
-by setting its rcvar with
+its rcvar, YES or NO, arcana-services'
+.Va enabled
+in the candidate, committed: the variable in Arcana's rc.conf file,
+refused with a warning
+.Fl a
+accepts where that file is not named in
+.Va rc_conf_files
+yet or yours set it
+.Pq Cm rc-conf-files , rc-conf-conflict ; see Sx Warnings .
+What the commit refuses leaves the candidate as running is.
+With
+.Fl q
+or
+.Fl s ,
+the service-action job instead, its rcvar by
 .Xr sysrc 8 .
-.It Cm service Ar name Cm config Oo Fl x Ar key Oc ... Oo Ar key Ns = Ns Ar value Oc ...
+The service as it is after follows, by its
+.Ic read
+action.
+.It Cm service Oo Fl a Ar warning Oc ... Ar name Cm config Oo Fl x Ar key Oc ... Oo Ar key Ns = Ns Ar value Oc ...
 The service's
 .Xr rc.conf 5
-variables, with what the script says of itself and its extra commands.
+variables, as running has them, with what the script says of itself
+and its extra commands (its
+.Ic read
+action).
 .Ar key Ns = Ns Ar value
 sets one first,
 .Fl x
-unsets one; only the service's own variables are accepted.
+unsets one, committed as
+.Cm enable
+is; only the service's own variables are accepted, and no value
+.Xr rc.conf 5
+would read as more than a value.
+With
+.Fl q
+or
+.Fl s ,
+the service-config job instead, by
+.Xr sysrc 8 .
 .It Cm net routes | nexthops | connections | sockets | interfaces | netgraph | wireguard | bird | ipsec | multicast Op Fl 4 | Fl 6
 The host's routing table
 .Pq Nm netstat Fl rnW ,

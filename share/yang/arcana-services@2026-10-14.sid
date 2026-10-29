@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-services",
     "module-revision": "2026-10-14",
-    "sid-file-version": 2,
+    "sid-file-version": 3,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 200, 100.",
     "dependency-revision": [
       {
@@ -276,6 +276,61 @@
         "namespace": "data",
         "identifier": "/arcana-services:services/convert/output/service/variable/value",
         "sid": "62251"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/read",
+        "sid": "62252"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/read/input",
+        "sid": "62253"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/read/output",
+        "sid": "62254"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/read/output/command",
+        "sid": "62255"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/read/output/description",
+        "sid": "62256"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/read/output/enabled",
+        "sid": "62257"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/read/output/path",
+        "sid": "62258"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/read/output/pid",
+        "sid": "62259"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/read/output/rcvar",
+        "sid": "62260"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/read/output/running",
+        "sid": "62261"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/read/output/status",
+        "sid": "62262"
       }
     ]
   }

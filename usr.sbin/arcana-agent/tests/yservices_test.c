@@ -5,11 +5,12 @@
  */
 
 /*
- * yservices: the services operations' replies as arcana-services has
- * them (yservices.c), for agent_test.sh: a services reply of three
- * scripts and the service-config reply of one, written a field a line
- * and through YANG-CBOR and back; then what yservices_diff() makes of a
- * configuration wanted, a case a line.
+ * yservices: the services as arcana-services has them (yservices.c),
+ * for agent_test.sh: a list of three scripts, sshd's variables as the
+ * files rc(8) reads give them, written a field a line and through
+ * YANG-CBOR and back; one service as the read action gives it; then
+ * what yservices_diff() makes of a configuration wanted, a case a
+ * line.
  */
 
 #include <err.h>
@@ -18,6 +19,7 @@
 
 #include <arcana.h>
 
+#include "agent.h"
 #include "collect.h"
 
 typedef struct arcana_services_services_service yservice;
@@ -35,13 +37,11 @@ static const struct arc_service svcs[] = {
 	    .has_running = true, .running = false,
 	    .status = "bird is not running." },
 };
-static const struct arc_service sshd_after = { .name = "sshd" };
-static const struct arc_variable sshd_vars[] = {
-	{ .key = "sshd_flags", .value = "-o UseDNS=no" },
-	{ .key = "sshd_program", .value = "/usr/sbin/sshd" },
+static yvar sshd_vars[] = {
+	{ .name = "sshd_flags", .value = "-o UseDNS=no" },
+	{ .name = "sshd_program", .value = "/usr/sbin/sshd" },
 };
-static const char *const sshd_cmds[] = { "configtest", "keygen",
-    "reload" };
+static const char *sshd_cmds[] = { "configtest", "keygen", "reload" };
 
 static const char *
 str(const char *s)
@@ -99,9 +99,9 @@ diff(const char *what, const yservice *have, const yservice *want,
 int
 main(void)
 {
-	struct arc_services_rsp list;
-	struct arc_service_config_rsp cfg;
-	const struct arc_service_config_rsp *cfgs[] = { &cfg };
+	struct services_rsp list;
+	struct service_config_rsp rd;
+	struct arcana_services_services_service_read_output ro;
 	struct arcana_services d, back;
 	struct cbl_ybuf b1 = { 0 }, b2 = { 0 };
 	const yservice *sshd;
@@ -114,19 +114,15 @@ main(void)
 	memset(&list, 0, sizeof(list));
 	list.has_ok = list.ok = true;
 	list.services.n = 3;
-	list.services.v = svcs;
-	memset(&cfg, 0, sizeof(cfg));
-	cfg.has_ok = cfg.ok = true;
-	cfg.service_result = &sshd_after;
-	cfg.variables.n = 2;
-	cfg.variables.v = sshd_vars;
-	cfg.description = "Secure Shell Daemon";
-	cfg.commands.n = 3;
-	cfg.commands.v = sshd_cmds;
+	list.services.v = (struct arc_service *)(uintptr_t)svcs;
 	if ((a = cbl_yarena_new()) == NULL)
 		err(1, "cbl_yarena_new");
-	if ((error = yservices_from(&list, cfgs, 1, a, &d)) != 0)
+	if ((error = yservices_from(&list, a, &d)) != 0)
 		errc(1, error, "yservices_from");
+	/* As the files rc(8) reads give them (ysvcedit.c). */
+	((yservice *)(uintptr_t)&d.services->service.v[0])->variable.n = 2;
+	((yservice *)(uintptr_t)&d.services->service.v[0])->variable.v =
+	    sshd_vars;
 	show(&d);
 	if (arcana_services_services_encode(d.services, &b1) != 0)
 		errx(1, "encode");
@@ -144,6 +140,22 @@ main(void)
 	    memcmp(b1.p, b2.p, b1.len) == 0 ? "the same back" : "not the same");
 	printf("-- back\n");
 	show(&back);
+
+	/* One service as the read action has it. */
+	memset(&rd, 0, sizeof(rd));
+	rd.has_ok = rd.ok = true;
+	rd.service_result = (struct arc_service *)(uintptr_t)&svcs[0];
+	rd.description = "Secure Shell Daemon";
+	rd.commands.n = 3;
+	rd.commands.v = sshd_cmds;
+	yservices_read(&rd, &ro);
+	printf("read enabled=%s path=%s rcvar=%s running=%s pid=%u "
+	    "status=%s description=%s\n", ro.has_enabled ? (ro.enabled ?
+	    "yes" : "no") : "-", str(ro.path), str(ro.rcvar), ro.has_running ?
+	    (ro.running ? "yes" : "no") : "-", ro.has_pid ? ro.pid : 0,
+	    str(ro.status), str(ro.description));
+	for (size_t k = 0; k < ro.command.n; k++)
+		printf("  command %s\n", ro.command.v[k]);
 
 	/* What a configuration wanted makes of sshd's. */
 	sshd = &d.services->service.v[0];

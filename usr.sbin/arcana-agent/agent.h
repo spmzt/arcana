@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.232.0"
+#define	ARCANA_AGENT_VERSION	"0.233.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -483,16 +483,63 @@ int		 do_neigh(struct work *, const struct arc_job_spec *,
 int		 do_address(struct work *, const struct arc_address_req *,
 		    struct arc_address_rsp *);
 
-/* ira/services.c */
-int		 do_services(struct work *, struct arc_services_rsp *);
-void		 service_scripts(struct work *, struct arc_services_rsp *);
+/*
+ * ira/services.c: the rc.d scripts, by service(8) and sysrc(8), which
+ * arcana-services serves (yservices.c, ysvcedit.c) and the jobs'
+ * service-action and service-config change: the list, each enabled or
+ * not and running or not (do_services()); one changed (an action,
+ * ARC_SERVICE_ACTION_*) and as it is after; one's variables set or
+ * unset through sysrc(8) and read back, with what the script says of
+ * itself; one read as it is now (service_read()).
+ */
+struct services_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+	struct {
+		struct arc_service	*v;
+		size_t			 n;
+	} services;
+};
+struct service_action_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+	struct arc_service *service_result;
+};
+struct service_config_req {
+	const char	*service;
+	struct {
+		const struct arc_variable *v;
+		size_t			 n;
+	} variables;
+};
+struct service_config_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+	struct arc_service *service_result;
+	struct {
+		struct arc_variable	*v;
+		size_t			 n;
+	} variables;
+	const char	*description;
+	struct {
+		const char	**v;
+		size_t		 n;
+	} commands;
+};
+int		 do_services(struct work *, struct services_rsp *);
+void		 service_scripts(struct work *, struct services_rsp *);
 const char	*service_rcvar(struct work *, const char *, const char **);
 bool		 valid_var_name(const char *);
 int		 do_service_action(struct work *, const char *, uint8_t,
-		    struct arc_service_action_rsp *);
+		    struct service_action_rsp *);
 int		 do_service_config(struct work *,
-		    const struct arc_service_config_req *,
-		    struct arc_service_config_rsp *);
+		    const struct service_config_req *,
+		    struct service_config_rsp *);
+int		 service_read(struct work *, const char *,
+		    struct service_config_rsp *);
 void		 service_state(struct work *, const char *, bool *, bool *);
 
 /* invidia/network.c */

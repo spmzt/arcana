@@ -6,7 +6,7 @@
 
 /*
  * Ira: arcana-services served (PLAN-SDN-YANG 3.1.2).  A GET is the
- * services operation's read (services.c, yservices.c), with each
+ * scripts read by service(8) (services.c, yservices.c), with each
  * script's rc.conf variables from the files rc(8) reads for it
  * (libvarconf): <name>_enable as enabled, the other <name>_* as its
  * variables, the last file that sets one winning as rc(8) has it.
@@ -19,9 +19,9 @@
  * rcvar says which), a variable set or taken out (yservices_diff());
  * every file is put back where a later service's change fails.  A
  * variable is one of the service's, <name>_* or its rcvar's stem's, as
- * service-config takes them; the rcvar itself is enabled's alone.  The
- * service is left as it runs: the start, stop, restart and reload
- * actions change that (yarcana.c).
+ * the service-config job takes them; the rcvar itself is enabled's
+ * alone.  The service is left as it runs: the start, stop, restart and
+ * reload actions change that, and read says how it is (yarcana.c).
  */
 
 #include <sys/param.h>
@@ -143,24 +143,31 @@ int
 arcana_services_services_get(cbl_req *req, struct arcana_services *data,
     cbl_yarena *a)
 {
-	struct arc_services_rsp	 r;
+	struct services_rsp	 r;
 	struct work		*w;
 	yservice		*v;
-	int			 error;
+	bool			 state;
+	int			 error, root;
 
-	if ((w = ywork(a)) == NULL)
+	/* Its steps told, as the operation's trace was. */
+	state = cbl_req_ydatastore(req) == CBL_YDS_OPERATIONAL;
+	if ((w = ywork_told(req, a, state ? "services" : "services "
+	    "(configuration only)", &root)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
-	if (cbl_req_ydatastore(req) == CBL_YDS_OPERATIONAL) {
+	if (state) {
 		(void)do_services(w, &r);
+		step_end(w, root, r.ok, NULL);
 		if (!r.ok) {
 			logmsg(LOG_INFO, "a read of services for a model failed: "
 			    "%s", r.error != NULL ? r.error : "no reason given");
 			return (EIO);
 		}
-	} else
+	} else {
 		service_scripts(w, &r);
-	if ((error = yservices_from(&r, NULL, 0, a, data)) != 0)
+		step_end(w, root, true, NULL);
+	}
+	if ((error = yservices_from(&r, a, data)) != 0)
 		return (error);
 	/* Their rc.conf variables, from the files rc(8) reads. */
 	v = (yservice *)(uintptr_t)data->services->service.v;
@@ -406,7 +413,7 @@ int
 yservices_convert(cbl_req *req, const char *const *names, size_t n, bool dry,
     cbl_yarena *a, struct arcana_services_services_convert_output *out)
 {
-	struct arc_services_rsp	 r;
+	struct services_rsp	 r;
 	struct rca		*x;
 	struct work		 w;
 	ysvc_taken		*sv = NULL;

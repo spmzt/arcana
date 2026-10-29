@@ -36,7 +36,9 @@
  * here: the other tabs that read the agent's table keep asking it.
  *
  * And the pages' /sysctl and /kernel from arcana-sysctl and
- * arcana-kernel, their shapes kept (the end of this file).
+ * arcana-kernel, their jails, packages and services from their modules,
+ * their shapes kept; a change of a host's configuration committed
+ * confirmed (the end of this file).
  */
 
 #include <sys/param.h>
@@ -58,6 +60,8 @@
 #include <cbl_schema.h>
 #include <cbl_data.h>
 #include <ucl.h>
+
+#include <arcana.h>
 
 #include "ymodel.h"
 #include "ytrans.h"
@@ -1162,6 +1166,382 @@ ytrans_pkg_upgrade(cbl_conn *conn, const char *jail,
 	    ucl_object_fromint(uo.upgraded) : ucl_object_typed_new(UCL_NULL));
 	put(top, "packages", error == 0 ? pkg_rows(uo.package.v, uo.package.n,
 	    false) : ucl_object_typed_new(UCL_ARRAY));
+	cbl_yarena_free(a);
+	return (error);
+}
+
+/*
+ * A change of the configuration (PLAN-SDN-YANG 3.1.2): top-level node
+ * n's data put in the candidate, then committed confirmed (RFC 6241
+ * section 8.4) with a token of the console's and confirmed at once,
+ * the warnings acc (nacc of them) accepted.  The data is running's
+ * with the change, every entry of it: the commit's undo has them all.
+ * Refused, the candidate as running is; err the agent's words and tag
+ * its error-app-tag, "" none.
+ */
+#define	CONFIRM_TIMEOUT	120	/* s the host waits for the confirm */
+
+static int
+ask_tag(cbl_conn *conn, cbl_msg *req, const char *const *acc, size_t nacc,
+    char *err, size_t errlen, char *tag, size_t taglen)
+{
+	cbl_msg	*rep = NULL;
+	int	 error;
+
+	if (nacc > 0 && (error = cbl_msg_set_accept(req, acc, nacc)) != 0) {
+		cbl_msg_free(req);
+		snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	if ((error = cbl_request(conn, req, &rep, -1)) != 0) {
+		snprintf(err, errlen, "%s", rep != NULL &&
+		    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
+		    strerror(error));
+		if (rep != NULL && cbl_msg_err_apptag(rep) != NULL)
+			snprintf(tag, taglen, "%s", cbl_msg_err_apptag(rep));
+	}
+	cbl_msg_free(rep);
+	return (error);
+}
+
+/* ietf-netconf's rpc name, its input in. */
+static int
+netconf_rpc(cbl_conn *conn, const char *name, const void *in,
+    const char *const *acc, size_t nacc, char *err, size_t errlen, char *tag,
+    size_t taglen)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*rpc, *inode;
+	cbl_msg				*req = NULL;
+	int				 error;
+
+	if ((rpc = top_of("ietf-netconf", name, &m)) == NULL ||
+	    (inode = child_of(rpc, "input")) == NULL) {
+		snprintf(err, errlen, "%s: not in the tables", name);
+		return (ENOENT);
+	}
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_RPC, 0, &req)) != 0 || (error = cbl_msg_put_ynode(req,
+	    inode, in)) != 0) {
+		cbl_msg_free(req);
+		snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	return (ask_tag(conn, req, acc, nacc, err, errlen, tag, taglen));
+}
+
+static int
+ycommit(cbl_conn *conn, const struct cbl_ynode *n, const void *d,
+    const char *const *acc, size_t nacc, char *err, size_t errlen, char *tag,
+    size_t taglen)
+{
+	struct ietf_netconf_commit_input		 cin;
+	struct ietf_netconf_discard_changes_input	 din;
+	cbl_msg						*req;
+	char						 token[33], why[16], none[8];
+	int						 error;
+
+	err[0] = tag[0] = '\0';
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_EDIT, 0, &req)) != 0) {
+		snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	if ((error = cbl_msg_set_datastore(req, CBL_YDS_CANDIDATE)) != 0 ||
+	    (error = cbl_msg_put_ymember(req, n, d)) != 0) {
+		cbl_msg_free(req);
+		snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	if ((error = ask_tag(conn, req, acc, nacc, err, errlen, tag,
+	    taglen)) != 0)
+		return (error);
+	snprintf(token, sizeof(token), "%08x%08x%08x%08x", arc4random(),
+	    arc4random(), arc4random(), arc4random());
+	memset(&cin, 0, sizeof(cin));
+	cin.confirmed = true;
+	cin.has_confirm_timeout = true;
+	cin.confirm_timeout = CONFIRM_TIMEOUT;
+	cin.persist = token;
+	if ((error = netconf_rpc(conn, "commit", &cin, acc, nacc, err, errlen,
+	    tag, taglen)) != 0) {
+		memset(&din, 0, sizeof(din));
+		(void)netconf_rpc(conn, "discard-changes", &din, NULL, 0, why,
+		    sizeof(why), none, sizeof(none));
+		return (error);
+	}
+	/* Here still: the change stays. */
+	memset(&cin, 0, sizeof(cin));
+	cin.persist_id = token;
+	return (netconf_rpc(conn, "commit", &cin, NULL, 0, err, errlen, none,
+	    sizeof(none)));
+}
+
+/*
+ * arcana-services, as the Services page and the app have it: the
+ * services, service-action and service-config operations' replies, a
+ * service as hosts.c's service_object() made it.
+ */
+typedef struct arcana_services_services_service ysvc;
+
+static ucl_object_t *
+service_row(const char *name, const char *path, const char *rcvar,
+    bool has_enabled, bool enabled, bool has_running, bool running,
+    bool has_pid, uint32_t pid, const char *status)
+{
+	ucl_object_t	*o;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "name", ucl_object_fromstring(name));
+	put(o, "path", path != NULL ? ucl_object_fromstring(path) :
+	    ucl_object_typed_new(UCL_NULL));
+	put(o, "rcvar", rcvar != NULL ? ucl_object_fromstring(rcvar) :
+	    ucl_object_typed_new(UCL_NULL));
+	put(o, "enabled", has_enabled ? ucl_object_frombool(enabled) :
+	    ucl_object_typed_new(UCL_NULL));
+	put(o, "running", has_running ? ucl_object_frombool(running) :
+	    ucl_object_typed_new(UCL_NULL));
+	put(o, "pid", has_pid ? ucl_object_fromint(pid) :
+	    ucl_object_typed_new(UCL_NULL));
+	put(o, "status", status != NULL ? ucl_object_fromstring(status) :
+	    ucl_object_typed_new(UCL_NULL));
+	return (o);
+}
+
+/* arcana-services' services of datastore ds (-1: the state), d's. */
+static int
+services_get(cbl_conn *conn, int ds, struct arcana_services *d,
+    cbl_yarena *a, char *err, size_t errlen)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n;
+
+	if ((n = top_of("arcana-services", "services", &m)) == NULL) {
+		snprintf(err, errlen, "arcana-services is not in the tables");
+		return (ENOENT);
+	}
+	memset(d, 0, sizeof(*d));
+	return (yget_into(conn, n, ds, d, a, err, errlen));
+}
+
+int
+ytrans_services(cbl_conn *conn, ucl_object_t *top, char *err, size_t errlen)
+{
+	struct arcana_services	 d;
+	ucl_object_t		*rows;
+	cbl_yarena		*a;
+	int			 error;
+
+	err[0] = '\0';
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	rows = ucl_object_typed_new(UCL_ARRAY);
+	if ((error = services_get(conn, -1, &d, a, err, errlen)) == 0 &&
+	    d.services != NULL)
+		for (size_t i = 0; i < d.services->service.n; i++) {
+			const ysvc *y = &d.services->service.v[i];
+
+			ucl_array_append(rows, service_row(y->name, y->path,
+			    y->rcvar, y->has_enabled, y->enabled,
+			    y->has_running, y->running, y->has_pid, y->pid,
+			    y->status));
+		}
+	put(top, "services", rows);
+	cbl_yarena_free(a);
+	return (error);
+}
+
+int
+ytrans_service(cbl_conn *conn, const char *name, bool config,
+    ucl_object_t *top, char *err, size_t errlen)
+{
+	struct arcana_services_services_service_read_output	 o;
+	const struct cbl_ymodule				*m;
+	const struct cbl_ynode					*n, *act;
+	struct arcana_services					 d;
+	ucl_object_t						*vars, *cmds;
+	const void						*vals[1];
+	cbl_yarena						*a;
+	int							 error;
+
+	err[0] = '\0';
+	if ((n = top_of("arcana-services", "services", &m)) == NULL ||
+	    (n = child_of(n, "service")) == NULL || (act = child_of(n,
+	    "read")) == NULL) {
+		snprintf(err, errlen, "arcana-services is not in the tables");
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	vals[0] = &name;
+	memset(&o, 0, sizeof(o));
+	if ((error = yaction_at(conn, n, vals, 1, act, NULL, &o, a, err,
+	    errlen)) == 0)
+		put(top, "service", service_row(name, o.path, o.rcvar,
+		    o.has_enabled, o.enabled, o.has_running, o.running,
+		    o.has_pid, o.pid, o.status));
+	if (error == 0 && config) {
+		/* Its variables as running has them. */
+		vars = ucl_object_typed_new(UCL_OBJECT);
+		if ((error = services_get(conn, CBL_YDS_RUNNING, &d, a, err,
+		    errlen)) == 0 && d.services != NULL)
+			for (size_t i = 0; i < d.services->service.n; i++) {
+				const ysvc *y = &d.services->service.v[i];
+
+				if (strcmp(y->name, name) != 0)
+					continue;
+				for (size_t k = 0; k < y->variable.n; k++)
+					put(vars, y->variable.v[k].name,
+					    ucl_object_fromstring(
+					    y->variable.v[k].value != NULL ?
+					    y->variable.v[k].value : ""));
+			}
+		put(top, "variables", vars);
+		put(top, "description", o.description != NULL ?
+		    ucl_object_fromstring(o.description) :
+		    ucl_object_typed_new(UCL_NULL));
+		cmds = ucl_object_typed_new(UCL_ARRAY);
+		for (size_t i = 0; i < o.command.n; i++)
+			ucl_array_append(cmds, ucl_object_fromstring(
+			    o.command.v[i]));
+		put(top, "commands", cmds);
+	}
+	cbl_yarena_free(a);
+	return (error);
+}
+
+int
+ytrans_service_action(cbl_conn *conn, const char *name, const char *verb,
+    char *err, size_t errlen)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n, *act;
+	const void			*vals[1];
+	cbl_yarena			*a;
+	int				 error;
+
+	err[0] = '\0';
+	if ((n = top_of("arcana-services", "services", &m)) == NULL ||
+	    (n = child_of(n, "service")) == NULL || (act = child_of(n,
+	    verb)) == NULL) {
+		snprintf(err, errlen, "arcana-services has no %s", verb);
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	vals[0] = &name;
+	error = yaction_at(conn, n, vals, 1, act, NULL, NULL, a, err, errlen);
+	cbl_yarena_free(a);
+	return (error);
+}
+
+int
+ytrans_service_set(cbl_conn *conn, const char *name, int enable,
+    const struct arc_variable *v, size_t nv, const char *const *acc,
+    size_t nacc, char *err, size_t errlen, char *tag, size_t taglen)
+{
+	const struct cbl_ymodule			*m;
+	const struct cbl_ynode				*n;
+	struct arcana_services_services_service_variable *vv;
+	struct arcana_services				 d;
+	ysvc						*y = NULL;
+	cbl_yarena					*a;
+	size_t						 k, nn;
+	int						 error;
+
+	err[0] = tag[0] = '\0';
+	if ((n = top_of("arcana-services", "services", &m)) == NULL) {
+		snprintf(err, errlen, "arcana-services is not in the tables");
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	if ((error = services_get(conn, CBL_YDS_RUNNING, &d, a, err,
+	    errlen)) != 0)
+		goto out;
+	for (k = 0; d.services != NULL && k < d.services->service.n; k++)
+		if (strcmp(d.services->service.v[k].name, name) == 0)
+			y = (ysvc *)(uintptr_t)&d.services->service.v[k];
+	if (y == NULL) {
+		snprintf(err, errlen, "no rc.d script '%s'", name);
+		error = ENOENT;
+		goto out;
+	}
+	if (enable != 0) {
+		y->has_enabled = true;
+		y->enabled = enable > 0;
+	}
+	if (nv > 0) {
+		if ((vv = cbl_yarena_alloc(a, (y->variable.n + nv) *
+		    sizeof(*vv))) == NULL) {
+			error = ENOMEM;
+			goto out;
+		}
+		nn = 0;
+		for (k = 0; k < y->variable.n; k++)
+			vv[nn++] = y->variable.v[k];
+		for (size_t i = 0; i < nv; i++) {
+			for (k = 0; k < nn && strcmp(vv[k].name, v[i].key) != 0;
+			    k++)
+				;
+			if (v[i].remove) {
+				if (k < nn)
+					vv[k] = vv[--nn];
+				continue;
+			}
+			vv[k].name = v[i].key;
+			vv[k].value = v[i].value != NULL ? v[i].value : "";
+			if (k == nn)
+				nn++;
+		}
+		y->variable.v = vv;
+		y->variable.n = nn;
+	}
+	error = ycommit(conn, n, &d, acc, nacc, err, errlen, tag, taglen);
+out:
+	cbl_yarena_free(a);
+	return (error);
+}
+
+int
+ytrans_jail_boot(cbl_conn *conn, const char *name, bool on,
+    const char *const *acc, size_t nacc, char *err, size_t errlen, char *tag,
+    size_t taglen)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n;
+	struct arcana_jails		 d;
+	struct arcana_jails_jails_jail	*j = NULL;
+	cbl_yarena			*a;
+	int				 error;
+
+	err[0] = tag[0] = '\0';
+	if ((n = top_of("arcana-jails", "jails", &m)) == NULL) {
+		snprintf(err, errlen, "arcana-jails is not in the tables");
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&d, 0, sizeof(d));
+	if ((error = yget_into(conn, n, CBL_YDS_RUNNING, &d, a, err,
+	    errlen)) != 0)
+		goto out;
+	for (size_t i = 0; d.jails != NULL && i < d.jails->jail.n; i++)
+		if (strcmp(d.jails->jail.v[i].name, name) == 0)
+			j = (struct arcana_jails_jails_jail *)(uintptr_t)
+			    &d.jails->jail.v[i];
+	if (j == NULL) {
+		snprintf(err, errlen, "jail '%s' is not defined", name);
+		error = ENOENT;
+		goto out;
+	}
+	/* As it is already: nothing to commit. */
+	if (j->has_boot && j->boot == on)
+		goto out;
+	j->has_boot = true;
+	j->boot = on;
+	error = ycommit(conn, n, &d, acc, nacc, err, errlen, tag, taglen);
+out:
 	cbl_yarena_free(a);
 	return (error);
 }

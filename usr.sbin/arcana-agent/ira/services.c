@@ -47,6 +47,8 @@ static const char *svc_rcvar(struct work *, const char *, const char **);
 static bool	enabled_in(const struct execres *, const char *);
 static int	sysrc_all(struct work *, struct execres *);
 static const char *last_line(struct work *, const char *, size_t);
+static void	svc_about(struct work *, const char *,
+		    struct service_config_rsp *);
 
 static int
 cmp_script(const void *a, const void *b)
@@ -278,7 +280,7 @@ svc_rcvar(struct work *w, const char *name, const char **errp)
 
 /* The scripts there are, with their names and paths alone: running's. */
 void
-service_scripts(struct work *w, struct arc_services_rsp *rsp)
+service_scripts(struct work *w, struct services_rsp *rsp)
 {
 	struct arc_service	*v;
 	struct script		*sc;
@@ -311,7 +313,7 @@ valid_var_name(const char *s)
 }
 
 int
-do_services(struct work *w, struct arc_services_rsp *rsp)
+do_services(struct work *w, struct services_rsp *rsp)
 {
 	struct arc_service	*v;
 	struct script		*sc;
@@ -360,7 +362,7 @@ svc_current(struct work *w, const struct script *sc)
 
 int
 do_service_action(struct work *w, const char *name, uint8_t action,
-    struct arc_service_action_rsp *rsp)
+    struct service_action_rsp *rsp)
 {
 	const struct script	*sc;
 	struct script		*all;
@@ -430,6 +432,35 @@ out:
 	return (0);
 }
 
+/* What service name's script says of itself, and its extra commands. */
+static void
+svc_about(struct work *w, const char *name, struct service_config_rsp *rsp)
+{
+	struct execres	  res;
+	const char	**cmds;
+	char		 *copy, *it, *tok;
+	size_t		  ncmd;
+
+	if (svc_run(w, name, "describe", &res) == 0 && res.outlen > 0)
+		rsp->description = wtext(w, wstrndup(w, res.out, res.outlen -
+		    (res.out[res.outlen - 1] == '\n' ? 1 : 0)));
+	cmds = NULL;
+	ncmd = 0;
+	if (svc_run(w, name, "extracommands", &res) == 0 && res.outlen > 0) {
+		copy = wstrndup(w, res.out, res.outlen);
+		for (it = copy; (tok = strsep(&it, " \t\n")) != NULL; ) {
+			if (*tok == '\0')
+				continue;
+			if ((cmds = reallocarray(cmds, ncmd + 1,
+			    sizeof(*cmds))) == NULL)
+				err(1, "reallocarray");
+			cmds[ncmd++] = wtext(w, tok);
+		}
+	}
+	rsp->commands.v = wadopt(w, cmds);
+	rsp->commands.n = ncmd;
+}
+
 /*
  * The variables of a service: those in rc.conf whose name starts with
  * the script's name or with its rcvar's stem, as "sysrc -a" lists them.
@@ -437,17 +468,16 @@ out:
  * key) first; only such names are accepted.
  */
 int
-do_service_config(struct work *w, const struct arc_service_config_req *rq,
-    struct arc_service_config_rsp *rsp)
+do_service_config(struct work *w, const struct service_config_req *rq,
+    struct service_config_rsp *rsp)
 {
 	const struct script	*sc;
 	struct script		*all;
 	struct arc_variable	*vars;
 	struct execres		 res;
 	const char		*name, *rcvar, *stem, *e, *p, *nl, *sep;
-	const char		**cmds;
-	char			*argv[4], *copy, *it, *tok;
-	size_t			 n, i, nv, ncmd, stemlen, namelen;
+	char			*argv[4];
+	size_t			 n, i, nv, stemlen, namelen;
 
 	name = rq->service;
 	rsp->has_ok = true;
@@ -537,28 +567,50 @@ do_service_config(struct work *w, const struct arc_service_config_req *rq,
 	}
 	rsp->variables.v = wadopt(w, vars);
 	rsp->variables.n = nv;
-
-	if (svc_run(w, name, "describe", &res) == 0 && res.outlen > 0)
-		rsp->description = wtext(w, wstrndup(w, res.out, res.outlen -
-		    (res.out[res.outlen - 1] == '\n' ? 1 : 0)));
-	cmds = NULL;
-	ncmd = 0;
-	if (svc_run(w, name, "extracommands", &res) == 0 && res.outlen > 0) {
-		copy = wstrndup(w, res.out, res.outlen);
-		for (it = copy; (tok = strsep(&it, " \t\n")) != NULL; ) {
-			if (*tok == '\0')
-				continue;
-			if ((cmds = reallocarray(cmds, ncmd + 1,
-			    sizeof(*cmds))) == NULL)
-				err(1, "reallocarray");
-			cmds[ncmd++] = wtext(w, tok);
-		}
-	}
-	rsp->commands.v = wadopt(w, cmds);
-	rsp->commands.n = ncmd;
+	svc_about(w, name, rsp);
 	rsp->ok = true;
 out:
 	rsp->service_result = svc_current(w, sc);
+	return (0);
+}
+
+/*
+ * A service as it is now, without the others' status: enabled by
+ * rc.subr's own answer (its rcvar, the defaults included), running or
+ * not, what it says of itself and its extra commands.
+ */
+int
+service_read(struct work *w, const char *name, struct service_config_rsp *rsp)
+{
+	const struct script	*sc;
+	struct script		*all;
+	struct arc_service	*s;
+	struct execres		 res;
+	const char		*e;
+	size_t			 n;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	if (name == NULL || !valid_service(name)) {
+		rsp->error = "invalid service name";
+		return (0);
+	}
+	scan_scripts(w, &all, &n);
+	if ((sc = script_find(all, n, name)) == NULL) {
+		rsp->error = wfmt(w, "no rc.d script '%s' in %s", name,
+		    opts.rc_dirs);
+		return (0);
+	}
+	s = wcalloc(w, 1, sizeof(*s));
+	s->name = wtext(w, sc->name);
+	s->path = wtext(w, sc->path);
+	s->rcvar = svc_rcvar(w, name, &e);
+	s->has_enabled = true;
+	s->enabled = svc_run(w, name, "enabled", &res) == 0;
+	svc_status(w, s);
+	rsp->service_result = s;
+	svc_about(w, name, rsp);
+	rsp->ok = true;
 	return (0);
 }
 

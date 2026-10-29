@@ -151,6 +151,8 @@ struct call {
 	char			 zcreate[16];	/* zfs-key: made encrypted so */
 	struct arc_variable	*vars;		/* service-config: to set */
 	size_t			 nvars;
+	char			*accept[8];	/* a commit's warnings accepted */
+	size_t			 naccept;
 	bool			 reads;		/* changes nothing: may be asked twice */
 	bool			 retry;		/* transport: try SCTP again */
 	char			*listen;	/* transport: listen there too */
@@ -393,7 +395,6 @@ static ucl_object_t *strs(const char *const *, size_t);
 static ucl_object_t *output(const struct cbl_bytes *);
 static ucl_object_t *host_object(const struct arc_host *);
 static ucl_object_t *jail_object(const struct arc_jail *);
-static ucl_object_t *service_object(const struct arc_service *);
 static void	 call_free_vars(struct call *);
 static ucl_object_t *job_object(struct call *, const struct arc_job *, bool,
 		    uint64_t);
@@ -1210,25 +1211,6 @@ jail_object(const struct arc_jail *j)
 	return (o);
 }
 
-static ucl_object_t *
-service_object(const struct arc_service *s)
-{
-	ucl_object_t	*o;
-
-	o = ucl_object_typed_new(UCL_OBJECT);
-	put_str(o, "name", s->name);
-	put_str(o, "path", s->path);
-	put_str(o, "rcvar", s->rcvar);
-	put(o, "enabled", s->has_enabled ? ucl_object_frombool(s->enabled) :
-	    ucl_object_typed_new(UCL_NULL));
-	put(o, "running", s->has_running ? ucl_object_frombool(s->running) :
-	    ucl_object_typed_new(UCL_NULL));
-	put(o, "pid", s->has_pid ? ucl_object_fromint(s->pid) :
-	    ucl_object_typed_new(UCL_NULL));
-	put_str(o, "status", s->status);
-	return (o);
-}
-
 static void
 call_free_vars(struct call *c)
 {
@@ -1449,61 +1431,6 @@ ysteps_free(struct ysteps *ys)
 		ystep_free(&ys->v[i]);
 	free(ys->v);
 	pthread_mutex_destroy(&ys->lock);
-}
-
-/*
- * A jail started at boot or not, c->action: the jail-action job, waited
- * for, rc.conf by sysrc(8) as before arcana-jails (whose commit meets
- * rc-conf-conflict wherever /etc/rc.conf sets jail_list, which the page
- * does not ask to accept yet).  0 with *ok, why in err; or the call's
- * error.
- */
-static int
-jail_boot_job(struct arc_client *cl, const struct call *c, bool *ok,
-    char *err, size_t errlen)
-{
-	struct arc_job_spec	 sp;
-	struct arc_job		*v, j;
-	cbl_yarena		*a;
-	uint64_t		 id;
-	size_t			 n;
-
-	*ok = false;
-	memset(&sp, 0, sizeof(sp));
-	sp.has_kind = true;
-	sp.kind = ARC_JOB_KIND_JAIL_ACTION;
-	sp.jail = c->jail;
-	sp.has_action = true;
-	sp.action = c->action;
-	if ((a = cbl_yarena_new()) == NULL)
-		return (ENOMEM);
-	if (yq_submit(cl->conn, &sp, 1, a, &v, &n, err, errlen) != 0 ||
-	    n != 1) {
-		cbl_yarena_free(a);
-		return (0);
-	}
-	id = v[0].id;
-	/* rc.conf's two variables: done in a moment, else said so. */
-	for (int i = 0; i < 600; i++) {
-		if (yq_job(cl->conn, id, a, &j, err, errlen) != 0) {
-			cbl_yarena_free(a);
-			return (0);
-		}
-		if (j.has_state && j.state != ARC_JOB_STATE_QUEUED &&
-		    j.state != ARC_JOB_STATE_RUNNING) {
-			*ok = j.state == ARC_JOB_STATE_DONE && (!j.has_ok ||
-			    j.ok);
-			if (!*ok)
-				snprintf(err, errlen, "%s", j.error != NULL ?
-				    j.error : "failed");
-			cbl_yarena_free(a);
-			return (0);
-		}
-		usleep(50000);
-	}
-	cbl_yarena_free(a);
-	snprintf(err, errlen, "job %ju is not done yet", (uintmax_t)id);
-	return (0);
 }
 
 /*
@@ -1862,11 +1789,7 @@ call_run(struct task *t)
 	struct ysteps		 ys;
 	char			 ywhy[512];
 	bool			 dirty;
-	struct arc_services_rsp	*sr;
-	struct arc_service_action_req saq;
-	struct arc_service_action_rsp *sar;
-	struct arc_service_config_req scq;
-	struct arc_service_config_rsp *scr;
+	char			 ytag[80], yrd[256];
 	struct arc_network_req	 nq;
 	struct arc_network_rsp	*nr;
 	struct arc_route_lookup_req rlq;
@@ -1991,9 +1914,7 @@ call_run(struct task *t)
 	nsteps = 0;
 	hr = NULL;
 	dr = NULL;
-	sr = NULL;
-	sar = NULL;
-	scr = NULL;
+	ytag[0] = '\0';
 	nr = NULL;
 	rlr = NULL;
 	bcr = NULL;
@@ -2131,21 +2052,25 @@ connected:
 			put_str(top, "error", ywhy);
 		break;
 	case OP_ACTION:
-		/* Started at boot or not: the jail-action job, as before
-		 * (rc.conf by sysrc(8)); the rest arcana-jails' actions. */
+		/* Started at boot or not: arcana-jails' boot, committed
+		 * confirmed, the warnings the request accepts; the rest its
+		 * actions. */
+		ysteps_begin(&cl, c, &ys);
 		if (c->action == ARC_ACTION_ENABLE || c->action ==
-		    ARC_ACTION_DISABLE) {
-			if ((error = jail_boot_job(&cl, c, &ok, ywhy,
-			    sizeof(ywhy))) != 0)
-				goto rpcfail;
-		} else {
-			ysteps_begin(&cl, c, &ys);
+		    ARC_ACTION_DISABLE)
+			ok = ytrans_jail_boot(cl.conn, c->jail, c->action ==
+			    ARC_ACTION_ENABLE, (const char *const *)c->accept,
+			    c->naccept, ywhy, sizeof(ywhy), ytag,
+			    sizeof(ytag)) == 0;
+		else
 			ok = ytrans_jail_action(cl.conn, c->jail,
 			    action_names[c->action], ywhy, sizeof(ywhy)) == 0;
-			ysteps_end(&cl, &ys, &steps, &nsteps);
-		}
+		ysteps_end(&cl, &ys, &steps, &nsteps);
 		if (!ok)
 			put_str(top, "error", ywhy);
+		/* A warning the host stops at: what accepts it. */
+		if (!ok && ytag[0] != '\0')
+			put_str(top, "error_tag", ytag);
 		if ((e = ytrans_jail(cl.conn, c->jail)) != NULL)
 			put(top, "jail", e);
 		break;
@@ -2161,30 +2086,35 @@ connected:
 		nsteps = dr->trace.n;
 		break;
 	case OP_SERVICES:
-		if ((error = arc_services(&cl, &sr)) != 0)
-			goto rpcfail;
-		ok = sr->ok;
-		put_str(top, "error", sr->error);
-		a = ucl_object_typed_new(UCL_ARRAY);
-		for (i = 0; i < sr->services.n; i++)
-			ucl_array_append(a, service_object(&sr->services.v[i]));
-		put(top, "services", a);
-		steps = sr->trace.v;
-		nsteps = sr->trace.n;
+		/* arcana-services' state (ytrans.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = ytrans_services(cl.conn, top, ywhy, sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		break;
 	case OP_SERVICE_ACTION:
-		memset(&saq, 0, sizeof(saq));
-		saq.service = c->jail;
-		saq.has_service_action = true;
-		saq.service_action = c->action;
-		if ((error = arc_service_action(&cl, &saq, &sar)) != 0)
-			goto rpcfail;
-		ok = sar->ok;
-		put_str(top, "error", sar->error);
-		if (sar->service_result != NULL)
-			put(top, "service", service_object(sar->service_result));
-		steps = sar->trace.v;
-		nsteps = sar->trace.n;
+		/* Its actions; enabled or not its configuration, committed
+		 * confirmed, the warnings the request accepts.  The service
+		 * as it is after, by its read action. */
+		ysteps_begin(&cl, c, &ys);
+		if (c->action == ARC_SERVICE_ACTION_ENABLE || c->action ==
+		    ARC_SERVICE_ACTION_DISABLE)
+			ok = ytrans_service_set(cl.conn, c->jail, c->action ==
+			    ARC_SERVICE_ACTION_ENABLE ? 1 : -1, NULL, 0,
+			    (const char *const *)c->accept, c->naccept, ywhy,
+			    sizeof(ywhy), ytag, sizeof(ytag)) == 0;
+		else
+			ok = ytrans_service_action(cl.conn, c->jail,
+			    service_action_names[c->action], ywhy,
+			    sizeof(ywhy)) == 0;
+		(void)ytrans_service(cl.conn, c->jail, false, top, yrd,
+		    sizeof(yrd));
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (!ok && ytag[0] != '\0')
+			put_str(top, "error_tag", ytag);
 		break;
 	case OP_PACKAGES:
 		/* arcana-packages' read and refresh actions (ytrans.c). */
@@ -3409,25 +3339,21 @@ connected:
 		nsteps = aur->trace.n;
 		break;
 	default:
-		memset(&scq, 0, sizeof(scq));
-		scq.service = c->jail;
-		scq.variables.v = c->vars;
-		scq.variables.n = c->nvars;
-		if ((error = arc_service_config(&cl, &scq, &scr)) != 0)
-			goto rpcfail;
-		ok = scr->ok;
-		put_str(top, "error", scr->error);
-		if (scr->service_result != NULL)
-			put(top, "service", service_object(scr->service_result));
-		e = ucl_object_typed_new(UCL_OBJECT);
-		for (i = 0; i < scr->variables.n; i++)
-			put_str(e, scr->variables.v[i].key,
-			    scr->variables.v[i].value);
-		put(top, "variables", e);
-		put_str(top, "description", scr->description);
-		put(top, "commands", strs(scr->commands.v, scr->commands.n));
-		steps = scr->trace.v;
-		nsteps = scr->trace.n;
+		/* The variables set or unset first, committed confirmed as
+		 * enabled is; then the service by its read action, its
+		 * variables as running has them. */
+		ysteps_begin(&cl, c, &ys);
+		ok = c->nvars == 0 || ytrans_service_set(cl.conn, c->jail, 0,
+		    c->vars, c->nvars, (const char *const *)c->accept,
+		    c->naccept, ywhy, sizeof(ywhy), ytag, sizeof(ytag)) == 0;
+		if (ytrans_service(cl.conn, c->jail, true, top, ok ? ywhy :
+		    yrd, ok ? sizeof(ywhy) : sizeof(yrd)) != 0)
+			ok = false;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (!ok && ytag[0] != '\0')
+			put_str(top, "error_tag", ytag);
 		break;
 	}
 answered:
@@ -3497,12 +3423,6 @@ done:
 		arc_hello_rsp_free(hr);
 	if (dr != NULL)
 		arc_address_rsp_free(dr);
-	if (sr != NULL)
-		arc_services_rsp_free(sr);
-	if (sar != NULL)
-		arc_service_action_rsp_free(sar);
-	if (scr != NULL)
-		arc_service_config_rsp_free(scr);
 	if (nr != NULL)
 		arc_network_rsp_free(nr);
 	if (rlr != NULL)
@@ -3769,6 +3689,9 @@ call_release(struct call *c)
 	free(c->new_key);
 	c->key = c->new_key = NULL;
 	call_free_vars(c);
+	for (i = 0; i < c->naccept; i++)
+		free(c->accept[i]);
+	c->naccept = 0;
 	for (i = 0; i < c->nnames; i++)
 		free(c->names[i]);
 	free(c->names);
@@ -3781,6 +3704,31 @@ call_release(struct call *c)
 	c->nspecs = 0;
 }
 
+/*
+ * The warnings a change committed accepts: the request's "accept", an
+ * error-app-tag or a list of them (rc-conf-files, rc-conf-conflict), as
+ * a refusal's "error_tag" names one.
+ */
+static void
+accepts_of(struct call *c, const ucl_object_t *body)
+{
+	const ucl_object_t	*a, *v;
+	ucl_object_iter_t	 it = NULL;
+	const char		*t;
+
+	if (body == NULL || (a = ucl_object_lookup(body, "accept")) == NULL)
+		return;
+	while ((v = ucl_object_iterate(a, &it, true)) != NULL &&
+	    c->naccept < nitems(c->accept)) {
+		if (ucl_object_type(v) != UCL_STRING || (t =
+		    ucl_object_tostring(v))[0] == '\0' || strlen(t) > 64 ||
+		    strspn(t, "abcdefghijklmnopqrstuvwxyz0123456789-") !=
+		    strlen(t))
+			continue;
+		c->accept[c->naccept++] = xstrdup(t);
+	}
+}
+
 /* GET /api/servers/<id>/services */
 int
 api_services(struct http_request *req)
@@ -3789,7 +3737,10 @@ api_services(struct http_request *req)
 	return (read_route(req, OP_SERVICES, NULL));
 }
 
-/* POST /api/servers/<id>/services/<name>/action {"action": "restart"} */
+/*
+ * POST /api/servers/<id>/services/<name>/action {"action": "restart"};
+ * enable and disable with "accept", the warnings their commit accepts.
+ */
 int
 api_service_action(struct http_request *req)
 {
@@ -3807,6 +3758,7 @@ api_service_action(struct http_request *req)
 	for (i = 0; a != NULL && i < nitems(service_action_names); i++)
 		if (strcmp(a, service_action_names[i]) == 0)
 			break;
+	accepts_of(c, body);
 	ucl_object_unref(body);
 	if (a == NULL || i == nitems(service_action_names) ||
 	    !capture(req, 5, c->jail, sizeof(c->jail))) {
@@ -3889,8 +3841,8 @@ api_agent_update(struct http_request *req)
 
 /*
  * GET /api/servers/<id>/services/<name>/config: the variables.
- * POST, {"set": {"sshd_flags": "-4"}, "unset": ["sshd_x"]}: change them
- * first.
+ * POST, {"set": {"sshd_flags": "-4"}, "unset": ["sshd_x"], "accept":
+ * [...]}: change them first, committed.
  */
 int
 api_service_config(struct http_request *req)
@@ -3942,6 +3894,7 @@ api_service_config(struct http_request *req)
 				c->nvars++;
 			}
 		}
+		accepts_of(c, body);
 		ucl_object_unref(body);
 	}
 	return (call_start(req, c));
@@ -3973,7 +3926,10 @@ api_jails(struct http_request *req)
 	return (read_route(req, OP_LIST, setup_jails));
 }
 
-/* POST /api/servers/<id>/jails/<jail>/action {"action": "start"} */
+/*
+ * POST /api/servers/<id>/jails/<jail>/action {"action": "start"};
+ * enable and disable with "accept", the warnings their commit accepts.
+ */
 int
 api_action(struct http_request *req)
 {
@@ -3991,6 +3947,7 @@ api_action(struct http_request *req)
 	for (i = 0; a != NULL && i < nitems(action_names); i++)
 		if (strcmp(a, action_names[i]) == 0)
 			break;
+	accepts_of(c, body);
 	ucl_object_unref(body);
 	if (a == NULL || i == nitems(action_names) ||
 	    !capture(req, 5, c->jail, sizeof(c->jail))) {

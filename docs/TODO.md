@@ -20,9 +20,9 @@
   interim module's operations onto the standard models, a module at a
   time (3.1.6, arcana-sysctl and arcana-kernel, done: the first
   operations retired from the interim module; 3.1.2, arcana-services,
-  written through the datastores, its operations' retirement waiting
-  on how the console's enable, disable and config writes meet
-  rc-conf-conflict: the plan's 3.1.2 says).  Each operation
+  done: its operations retired, the console's and the pages' enable,
+  disable and config writes a confirmed commit whose warnings the page
+  offers to accept).  Each operation
   converted to YANG shows its YANG model beside
   the CBOR schema in its task's { } Schema panel, in the same commit.
   For the user: the CORECONF draft's examples number some

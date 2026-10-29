@@ -861,33 +861,52 @@ whose first part is served.
   operation's trace was (ywork_told()), which arcanactl -t and the
   console's trace collect.  The console's jails, action and address
   replies keep their shapes (ytrans_jails(), ytrans_jail(),
-  ytrans_jail_action()); its enable and disable stay the jail-action
-  job, waited for: by a commit they would meet rc-conf-conflict
-  wherever /etc/rc.conf sets jail_list, which the page does not ask to
-  accept yet (as 3.1.2's enable and disable).  arcanactl's list,
+  ytrans_jail_action()); its enable and disable commit `boot`
+  confirmed, the warnings the request accepts (3.1.2).  arcanactl's list,
   start, stop, restart and kill are the module's; enable and disable
   its `boot` by EDIT and commit, -a the accepts.  Check:
   `datastores_jails`, `jail_boot` (the job), `list`, `start`,
   `failures`, `trace`, `many_jails`, `yang_jails`, `yang_actions`; the
   console's `jails`; `pwa_hosts`.
-- 3.1.2 A: `arcana-services`: rcvars and rc.conf variables as leaves
-  in `running`; the services, service-action and service-config
-  operations retired; check: the services tests.  Done, the first
-  half (ira/ysvcedit.c): running is each script with `enabled`
+- 3.1.2 A (done): `arcana-services`: rcvars and rc.conf variables as
+  leaves in `running`; the services, service-action and service-config
+  operations retired; check: the services tests.  Done (ira/ysvcedit.c,
+  yservices.c): running is each script with `enabled`
   (`<name>_enable`) and its `<name>_*` variables from the files rc(8)
   reads (libvarconf), the operational read has them beside the
   operation's; a commit writes what differs to Arcana's rc.conf file
   by rcarcana.c's rules, a service at a time (its rcvar as `service
   <name> rcvar` names it, a variable of its own or its rcvar's stem's;
   the rcvar is `enabled`'s alone), every file put back where a later
-  one fails; check: `datastores_services`.  Left: the three
-  operations' retirement, which turns the console's enable, disable
-  and config writes into an EDIT and commit: those meet
-  `rc-conf-conflict` on every host whose /etc/rc.conf sets the
-  variable (sshd_enable does), so the console must carry the accept
-  from the page, or keep those writes as the service-action and
-  service-config jobs (3.1.4) and retire the operations alone.  A
-  decision for the user.
+  one fails.  The three operations retired, their command numbers kept
+  (wire.awk); arcana.yaml's service stays a structure for the agent's
+  services.c (`structure: true`), its replies agent-internal structs
+  (agent.h).  A service's `read` action is the one service as it is
+  now (enabled by `service <name> enabled`, its status, `describe`,
+  `extracommands`), service-config's read without the others' status.
+  The console's services, service action and config replies keep their
+  shapes (ytrans_services(), ytrans_service(), ytrans_service_action());
+  enable, disable and the variables, and a jail's enable and disable
+  (arcana-jails' `boot`; hosts.c's jail_boot_job gone), are running's
+  module data with the change put in the candidate and committed
+  confirmed, confirmed at once (ytrans_service_set(),
+  ytrans_jail_boot()), the request's `accept` the warnings accepted, a
+  refusal's `error_tag` the one to accept.  arcanactl's services and
+  service are the module's: a GET, the actions, read, enable, disable
+  and config by EDIT and commit, -a the accepts; -q and -s the jobs as
+  before.  The pages save as the router advertisements do, the edit
+  in the candidate (RFC 8527) and a confirmed commit, a warning
+  offered with "Accept <tag> and commit again" (www/arcana-ui's
+  ycommit.c, ra.c's factored out): the Services drawer's enable,
+  disable and variables, a jail's boot on its card, the System tab's
+  service jails, Linux and auditd (on: enabled, then started; off:
+  stopped, then disabled, rc.subr acting on an enabled service alone).
+  start, stop, restart and reload stay the service-action job, as the
+  jobs' service-action and service-config kinds stay (sysrc(8), safe
+  mode).  Check: `services`, `service_actions`, `service_config`,
+  `yang_services`, `datastores_services`, `jail_boot`, `jobs`,
+  `safe_mode`; the console's `services`, `jails`; `pwa_hosts`,
+  `pwa_ra`.
 - 3.1.3 A (done): `arcana-packages`: the packages and pkg-upgrade
   operations retired; check: the packages tests.  Done (ira/ypackages.c,
   yarcana.c): the host's packages and a jail's (arcana-jails' jail)

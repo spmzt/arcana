@@ -107,6 +107,37 @@ int	ytrans_pkg_upgrade(cbl_conn *conn, const char *jail,
 	    uint8_t ip, const char *repo, ucl_object_t *top, char *err,
 	    size_t errlen);
 
+/*
+ * The Services page's services and what is done to them, from
+ * arcana-services over conn, the shapes the services, service-action
+ * and service-config operations gave (hosts.c's service_object()):
+ * _services puts "services" in top; _service the one service, by its
+ * read action, as "service", and with config its "variables" as running
+ * has them, "description" and "commands"; _service_action its action
+ * (start, stop, restart, reload).
+ *
+ * A change of the configuration, running's with it put in the
+ * candidate, committed confirmed and confirmed at once, the warnings
+ * acc (nacc of them) accepted; refused, the candidate as running is and
+ * tag the error-app-tag to accept, "" none: _service_set, service
+ * name's rcvar (enable 1, -1 to disable, 0 as it is) and its variables
+ * v set or unset (remove); _jail_boot, jail name started at boot or not
+ * (arcana-jails' boot).  0, or an errno and err says why.
+ */
+struct arc_variable;
+int	ytrans_services(cbl_conn *conn, ucl_object_t *top, char *err,
+	    size_t errlen);
+int	ytrans_service(cbl_conn *conn, const char *name, bool config,
+	    ucl_object_t *top, char *err, size_t errlen);
+int	ytrans_service_action(cbl_conn *conn, const char *name,
+	    const char *verb, char *err, size_t errlen);
+int	ytrans_service_set(cbl_conn *conn, const char *name, int enable,
+	    const struct arc_variable *v, size_t nv, const char *const *acc,
+	    size_t nacc, char *err, size_t errlen, char *tag, size_t taglen);
+int	ytrans_jail_boot(cbl_conn *conn, const char *name, bool on,
+	    const char *const *acc, size_t nacc, char *err, size_t errlen,
+	    char *tag, size_t taglen);
+
 #include "yjsonin.h"
 
 #endif	/* !_ARCANA_YTRANS_H_ */

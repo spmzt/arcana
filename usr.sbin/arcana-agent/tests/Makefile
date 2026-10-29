@@ -112,8 +112,7 @@ LDADD.ystorage+=	${CBLINK_LIBS} ${UCL_LIBS}
 PROGS+=		ypackages
 SRCS.ypackages=	ypackages_test.c ypackages.c ymodel_schema.c
 LDADD.ypackages+=	${CBLINK_LIBS}
-# yservices: the services operations' replies as arcana-services has
-# them.
+# yservices: the services as arcana-services has them.
 PROGS+=		yservices
 SRCS.yservices=	yservices_test.c yservices.c ymodel_schema.c
 LDADD.yservices+=	${CBLINK_LIBS}

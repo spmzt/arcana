@@ -153,7 +153,10 @@ name=\$1; verb=\$2; r=\$name
 [ "\$name" = arcana_relay ] && r=\$name\${3:+_\$3} && echo "\$verb \$r" >> arcana_relay.verbs
 case "\$verb" in
 rcvar)		echo "# \$name"; echo "\${name}_enable=\"NO\""; echo '#   (default: "")' ;;
-enabled)	grep -q "^\${name}_enable=\"YES\"" "\$conf" ;;
+# rc.subr's answer: the last of rc.conf and Arcana's file (a case's
+# root) that sets it.
+enabled)	cat "\$conf" $(pwd)/root/usr/local/etc/rc.conf.d/arcana 2>/dev/null |
+		grep "^\${name}_enable=" | tail -1 | grep -q '="YES"' ;;
 status|onestatus)	[ -f "running.\$r" ] && { echo "\$r is running as pid 4242."; exit 0; }
 		echo "\$r is not running."; exit 1 ;;
 start|onestart)	touch "running.\$r"; echo "Starting \$r." ;;
@@ -2534,20 +2537,17 @@ EOF
 atf_test_case yang_services
 yang_services_head()
 {
-	atf_set "descr" "the services operations' replies as arcana-services" \
-	    "has them, through YANG-CBOR and back; a" \
-	    "configuration wanted made into service-action and" \
-	    "service-config's terms"
+	atf_set "descr" "the services as arcana-services has them," \
+	    "through YANG-CBOR and back; one as its read action" \
+	    "gives it; a configuration wanted made into its rcvar" \
+	    "and its variables set or unset"
 }
 yang_services_body()
 {
 	cat > want <<'EOF'
-service sshd enabled=yes path=/etc/rc.d/sshd rcvar=sshd_enable running=yes pid=yes status=sshd is running as pid 812. description=Secure Shell Daemon
+service sshd enabled=yes path=/etc/rc.d/sshd rcvar=sshd_enable running=yes pid=yes status=sshd is running as pid 812. description=-
   variable sshd_flags=-o UseDNS=no
   variable sshd_program=/usr/sbin/sshd
-  command configtest
-  command keygen
-  command reload
 service ntpd enabled=no path=/etc/rc.d/ntpd rcvar=ntpd_enable running=- pid=- status=- description=-
 service bird enabled=yes path=/usr/local/etc/rc.d/bird rcvar=bird_enable running=no pid=- status=bird is not running. description=-
 EOF
@@ -2562,7 +2562,14 @@ EOF
 	"$(atf_get_srcdir)/yservices" > out
 	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' cat out
 	atf_check -o file:want sh -c "sed -n '1,/^yang-cbor/p' out | sed '\$d'"
-	atf_check -o file:want sh -c "sed -n '/^-- back\$/,/^changed:/p' out | sed '1d;\$d'"
+	atf_check -o file:want sh -c "sed -n '/^-- back\$/,/^read /p' out | sed '1d;\$d'"
+	cat > read <<'EOF'
+read enabled=yes path=/etc/rc.d/sshd rcvar=sshd_enable running=yes pid=812 status=sshd is running as pid 812. description=Secure Shell Daemon
+  command configtest
+  command keygen
+  command reload
+EOF
+	atf_check -o file:read sh -c "sed -n '/^read /,/^changed:/p' out | sed '\$d'"
 	atf_check -o file:diffs sh -c "sed -n '/^changed:/,\$p' out"
 }
 
@@ -3061,6 +3068,12 @@ services_head()
 }
 services_body()
 {
+	# The files rc(8) reads, the case's own.
+	mkdir -p root/etc/defaults
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'sshd_enable="YES"\nsshd_flags="-4"\nntpd_enable="NO"\n' \
+	    > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
 	start_daemon
 	atf_check -o save:services.out "$JGC" -c "$SOCK" services
 	atf_check -o match:'^sshd +enabled +stopped' cat services.out
@@ -3082,18 +3095,36 @@ services_cleanup()
 atf_test_case service_actions cleanup
 service_actions_head()
 {
-	atf_set "descr" "start, stop, enable and disable through service(8) and sysrc(8)"
+	atf_set "descr" "start and stop through service(8), arcana-services'" \
+	    "actions; enable and disable its configuration, committed to" \
+	    "Arcana's rc.conf file"
 }
 service_actions_body()
 {
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'ntpd_enable="NO"\n' > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
 	start_daemon
 	atf_check -o match:'Running: yes' -o match:'pid 4242' \
 	    "$JGC" -c "$SOCK" service sshd start
 	atf_check -o match:'Running: no' "$JGC" -c "$SOCK" service sshd stop
-	atf_check -o match:'Enabled: yes' "$JGC" -c "$SOCK" service ntpd enable
-	atf_check -o match:'^ntpd_enable="YES"' cat rc.conf
+	# The commit's warnings, accepted with -a.
+	atf_check -s exit:1 -e match:'-a rc-conf-files' \
+	    "$JGC" -c "$SOCK" service ntpd enable
+	atf_check -s exit:1 -e match:'ntpd_enable .*rc.conf line 1.*-a rc-conf-conflict' \
+	    "$JGC" -c "$SOCK" service -a rc-conf-files ntpd enable
+	atf_check -o match:'Enabled: yes' "$JGC" -c "$SOCK" service \
+	    -a rc-conf-files -a rc-conf-conflict ntpd enable
+	atf_check -o match:'^ntpd_enable="YES"$' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^#ntpd_enable="NO"  # taken by Arcana$' \
+	    cat root/etc/rc.conf
 	atf_check -o match:'Enabled: no' "$JGC" -c "$SOCK" service ntpd disable
-	atf_check -o match:'^ntpd_enable="NO"' cat rc.conf
+	atf_check -o match:'^ntpd_enable="NO"$' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	# The rest as running has it, rc.conf by sysrc(8) untouched.
+	atf_check -o not-match:'ntpd' cat sysrc.log
 	atf_check -s exit:1 -o ignore -e match:"no rc.d script 'nope'" \
 	    "$JGC" -c "$SOCK" service nope start
 	atf_check -s exit:1 -e match:'invalid service name' \
@@ -3109,29 +3140,48 @@ service_actions_cleanup()
 atf_test_case service_config cleanup
 service_config_head()
 {
-	atf_set "descr" "rc.conf variables of a service read and set with sysrc(8)"
+	atf_set "descr" "rc.conf variables of a service as running has them," \
+	    "set and unset by arcana-services' configuration, committed"
 }
 service_config_body()
 {
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'rc_conf_files="/etc/rc.conf /etc/rc.conf.local /usr/local/etc/rc.conf.d/arcana"\nsshd_enable="YES"\nsshd_flags="-4"\nntpd_enable="NO"\n' \
+	    > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
 	start_daemon
 	atf_check -o save:cfg.out "$JGC" -c "$SOCK" service sshd config
-	atf_check -o match:'sshd_enable=YES' cat cfg.out
+	atf_check -o match:'Enabled: yes' cat cfg.out
 	atf_check -o match:'sshd_flags=-4' cat cfg.out
 	atf_check -o not-match:'ntpd' cat cfg.out
 	atf_check -o match:'Describe: The sshd daemon' cat cfg.out
 	atf_check -o match:'Commands: reload,configtest' cat cfg.out
-	atf_check -o match:'sshd_flags=-6 -D' \
-	    "$JGC" -c "$SOCK" service sshd config 'sshd_flags=-6 -D'
-	atf_check -o match:'^sshd_flags="-6 -D"' cat rc.conf
+	atf_check -o match:'sshd_flags=-6 -D' "$JGC" -c "$SOCK" service \
+	    -a rc-conf-conflict sshd config 'sshd_flags=-6 -D'
+	atf_check -o match:'^sshd_flags="-6 -D"$' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
 	atf_check -o not-match:'sshd_flags' \
 	    "$JGC" -c "$SOCK" service sshd config -x sshd_flags
-	atf_check -o not-match:'sshd_flags' cat rc.conf
-	# Only the service's own variables.
+	atf_check -o not-match:'sshd_flags' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	# Only the service's own variables, none more than a name, no value
+	# rc.conf would read as more than a value; one refused leaves the
+	# ones before it unwritten.
+	cp root/usr/local/etc/rc.conf.d/arcana arcana.before
 	atf_check -s exit:1 -o ignore \
 	    -e match:"'ntpd_enable' is not a variable of sshd" \
 	    "$JGC" -c "$SOCK" service sshd config ntpd_enable=YES
-	atf_check -s exit:1 -o ignore -e match:'is not a variable of sshd' \
+	atf_check -s exit:1 -o ignore -e match:'does not match pattern' \
 	    "$JGC" -c "$SOCK" service sshd config 'sshd_x;y=1'
+	atf_check -s exit:1 -o ignore -e match:'does not match pattern' \
+	    "$JGC" -c "$SOCK" service sshd config 'x:-$(id)=1'
+	atf_check -s exit:1 -e match:'rc.conf would read it as more' -o ignore \
+	    "$JGC" -c "$SOCK" service sshd config 'sshd_flags=$(id)'
+	atf_check -s exit:1 -e match:'is not a variable of sshd' -o ignore \
+	    "$JGC" -c "$SOCK" service sshd config sshd_first=1 other_x=2
+	atf_check cmp arcana.before root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o not-match:'sshd' cat sysrc.log
 }
 service_config_cleanup()
 {
@@ -6149,8 +6199,9 @@ safe_mode_body()
 	    "$JGC" -q -s -c "$SOCK" ng shutdown em0:
 
 	# A variable's name is given to sysrc(8), which evaluates it: one
-	# that is more than a name never gets there, in a job or without;
-	# nor does a value rc.conf would read as more than a value.
+	# that is more than a name never gets there in a job (without one,
+	# arcana-services' commit: service_config's case); nor does a value
+	# rc.conf would read as more than a value.
 	: > sysrc.log
 	atf_check -s exit:1 -e match:"name is letters, digits and _" -o ignore \
 	    "$JGC" -q -s -c "$SOCK" service sshd config 'x:-$(id)=1'
@@ -6158,14 +6209,7 @@ safe_mode_body()
 	    "$JGC" -q -s -c "$SOCK" service sshd config -x '-a'
 	atf_check -s exit:1 -e match:'rc.conf would read it as more' -o ignore \
 	    "$JGC" -q -c "$SOCK" service sshd config 'sshd_flags=a"; id; "'
-	atf_check -s exit:1 -e match:'is not a variable of sshd' -o ignore \
-	    "$JGC" -c "$SOCK" service sshd config 'x:-$(id)=1'
-	atf_check -s exit:1 -e match:'rc.conf would read it as more' -o ignore \
-	    "$JGC" -c "$SOCK" service sshd config 'sshd_flags=$(id)'
-	# One that is refused leaves the ones before it unwritten.
-	atf_check -s exit:1 -e match:'is not a variable of sshd' -o ignore \
-	    "$JGC" -c "$SOCK" service sshd config sshd_first=1 other_x=2
-	atf_check -o not-match:'id' -o not-match:'sshd_first' cat rc.conf
+	atf_check -o not-match:'id' cat rc.conf
 	atf_check -o not-match:'id' -o not-match:'x:' cat sysrc.log
 
 	# The queue has an end: jobs that wait hold memory.  The first holds

@@ -11,7 +11,8 @@
  * (do_list(), do_storage(), ...), and the module's collector makes its
  * reply the module's structs (y*.c).  An action is its operation too:
  * a jail's start, stop, restart and kill as the action operation's, a
- * service's as service-action's, a process's signal and renice as the
+ * service's start, stop, restart, reload and read by service(8)
+ * (services.c), a process's signal and renice as the
  * proc job's, a job's cancel, confirm and read, the packages' refresh,
  * a log's read, BIRD's routes; arcana-jobs' submit queues jobs, its
  * changes the job-specs jobs.yaml makes them (yjobs_spec.c), and its
@@ -315,28 +316,42 @@ jail_action(cbl_req *req, const struct cbl_bytes *target, uint8_t action,
 	return (0);
 }
 
-/* A service's action (ARC_SERVICE_ACTION_*) as service-action does it. */
+/* A service's action (ARC_SERVICE_ACTION_*), as services.c does it. */
 static int
 service_action(cbl_req *req, const struct cbl_bytes *target, uint8_t action,
     bool *has_running, bool *running, bool *has_pid, uint32_t *pid,
     const char **status, cbl_yarena *a)
 {
-	struct arc_service_action_rsp	 r;
+	static const char *const verbs[] = {
+		[ARC_SERVICE_ACTION_START] = "start",
+		[ARC_SERVICE_ACTION_STOP] = "stop",
+		[ARC_SERVICE_ACTION_RESTART] = "restart",
+		[ARC_SERVICE_ACTION_RELOAD] = "reload",
+	};
+	struct service_action_rsp	 r;
 	const struct arc_service	*sv;
 	const void			**k;
-	const char			*name;
+	const char			*name, *what;
 	struct work			*w;
+	int				 root;
 
 	if ((k = keys_of(target, 1, a)) == NULL)
 		return (EINVAL);
 	name = *(const char *const *)k[0];
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
+	what = wfmt(w, "service %s %s", name, action < nitems(verbs) ?
+	    verbs[action] : "action");
+	if ((w = ywork_told(req, a, what, &root)) == NULL)
+		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
-	if (!change_begin(wfmt(w, "service %s", name)))
+	if (!change_begin(what)) {
+		step_end(w, root, false, NULL);
 		return (said(req, "not done: arcana-agent is stopping"));
+	}
 	(void)do_service_action(w, name, action, &r);
 	change_end();
+	step_end(w, root, r.ok, NULL);
 	if (!r.ok)
 		return (said(req, r.error));
 	if ((sv = r.service_result) != NULL) {
@@ -1755,6 +1770,37 @@ arcana_services_services_service_stop_action(cbl_req *req,
 	return (service_action(req, target, ARC_SERVICE_ACTION_STOP,
 	    &out->has_running, &out->running, &out->has_pid, &out->pid,
 	    &out->status, a));
+}
+
+/* A service as it is now: a read, no change. */
+int
+arcana_services_services_service_read_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_services_services_service_read_input *in,
+    struct arcana_services_services_service_read_output *out, cbl_yarena *a)
+{
+	struct service_config_rsp	 r;
+	const void			**k;
+	const char			*name;
+	struct work			*w;
+	int				 root;
+
+	(void)in;
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (EINVAL);
+	name = *(const char *const *)k[0];
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	if ((w = ywork_told(req, a, wfmt(w, "service %s", name), &root)) ==
+	    NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	(void)service_read(w, name, &r);
+	step_end(w, root, r.ok, NULL);
+	if (!r.ok)
+		return (said(req, r.error));
+	yservices_read(&r, out);
+	return (0);
 }
 
 /* The services' rc.conf configuration moved under Arcana: a change of

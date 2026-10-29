@@ -557,7 +557,7 @@ netstore_title(const struct arc_job_spec *sp)
 static int
 service_onoff(struct work *w, const char *name, bool on, const char **errp)
 {
-	struct arc_service_action_rsp	 r;
+	struct service_action_rsp	 r;
 
 	memset(&r, 0, sizeof(r));
 	if (do_service_action(w, name, on ? ARC_SERVICE_ACTION_ENABLE :
@@ -581,7 +581,7 @@ service_onoff(struct work *w, const char *name, bool on, const char **errp)
 static int
 service_reload(struct work *w, const char *name, const char **errp)
 {
-	struct arc_service_action_rsp	 r;
+	struct service_action_rsp	 r;
 	bool				 enabled, running;
 
 	enabled = running = false;
@@ -682,7 +682,7 @@ nfs_server(struct work *w, const struct arc_job_spec *sp, const char **errp)
 
 		service_state(w, "nfsd", &running, &enabled);
 		if (running) {
-			struct arc_service_action_rsp	r;
+			struct service_action_rsp	r;
 
 			memset(&r, 0, sizeof(r));
 			(void)do_service_action(w, "nfsd",

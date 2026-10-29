@@ -102,7 +102,7 @@ svc_state(struct work *w, bool *enabled, bool *running)
 static int
 svc_do(struct work *w, const char *verb, const char **errp)
 {
-	struct arc_service_action_rsp	 r;
+	struct service_action_rsp	 r;
 	struct execres			 res;
 	char				*argv[4];
 

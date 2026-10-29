@@ -10,9 +10,9 @@
  * augments, as the host's rtadvd.conf(5) has them (rtadvd(8),
  * rtadvctl(8)).  Read from the host's running datastore, and beside it
  * what rtadvd sends now, from operational (rtadvctl show).  Edited
- * here, a copy; saved as the NACM page saves: the node put in the
- * host's candidate (RFC 8527), committed confirmed with a token of the
- * page's own, confirmed at once.  A warning the host stops at (its
+ * here, a copy; saved by ycommit.c: the node put in the host's
+ * candidate (RFC 8527), committed confirmed with a token of the page's
+ * own, confirmed at once.  A warning the host stops at (its
  * error-app-tag, rc-conf-files for one) is shown with a way to accept
  * it and commit again.
  */
@@ -28,7 +28,6 @@
 
 #define	RA_KEY		"ietf-ipv6-unicast-routing:ipv6-router-advertisements"
 #define	ST_KEY		"arcana-ra:rtadvd"
-#define	TIMEOUT		120		/* seconds a commit waits */
 
 static struct {
 	char		 sid[16];	/* the host */
@@ -38,39 +37,22 @@ static struct {
 	ucl_object_t	*oper;		/* operational's rtadvd; NULL: none */
 	ucl_object_t	*edit;		/* the copy edited, NULL: none */
 	bool		 loading;
-	bool		 busy;		/* a save on its way */
 	unsigned	 gen;
 	char		 error[512];
-	char		 note[512];	/* how the last save went */
-	char		 tag[64];	/* a warning to accept, its app-tag */
-	char		 token[40];	/* a commit waiting: its persist */
-	double		 until;		/* and when the host undoes it (ms) */
+	struct ycommit	 yc;		/* the save */
 } ra;
 
-/* The host's paths: the node below a datastore's root, or an rpc's. */
+static void	saved(struct ycommit *, int);
+
+/* The host's node below a datastore's root. */
 static void
 url_of(char *buf, size_t len, const char *ds, const char *tail)
 {
 
-	if (ds == NULL)
-		snprintf(buf, len, "/restconf/data/arcana-fleet:fleet/host=%s%s",
-		    ra.sid, tail);
-	else
-		snprintf(buf, len, "/restconf/ds/ietf-datastores:%s/"
-		    "arcana-fleet:fleet/host=%s/ietf-interfaces:interfaces/"
-		    "interface=%s/ietf-ip:ipv6/" RA_KEY "%s", ds, ra.sid,
-		    ra.ifname, tail);
-}
-
-static const char *
-rc_why(const ucl_object_t *o, const char *err)
-{
-	const char	*m;
-
-	if ((m = jstr(o, "ietf-restconf:errors.error.0.error-message")) !=
-	    NULL)
-		return (m);
-	return (err != NULL ? err : "the console did not answer");
+	snprintf(buf, len, "/restconf/ds/ietf-datastores:%s/"
+	    "arcana-fleet:fleet/host=%s/ietf-interfaces:interfaces/"
+	    "interface=%s/ietf-ip:ipv6/" RA_KEY "%s", ds, ra.sid, ra.ifname,
+	    tail);
 }
 
 static void
@@ -146,7 +128,8 @@ ra_open(const char *sid, const char *ifname)
 
 	if (strcmp(sid, ra.sid) != 0 || strcmp(ifname, ra.ifname) != 0) {
 		drop_all();
-		ra.error[0] = ra.note[0] = ra.token[0] = ra.tag[0] = '\0';
+		ra.error[0] = ra.yc.note[0] = ra.yc.token[0] =
+		    ra.yc.tag[0] = '\0';
 		snprintf(ra.sid, sizeof(ra.sid), "%s", sid);
 		snprintf(ra.ifname, sizeof(ra.ifname), "%s", ifname);
 	}
@@ -482,22 +465,7 @@ view_ra(struct html *h, struct server *s)
 		h_raw(h, " <button class=\"ghost small\" data-act=\"ra-retry\">"
 		    "Read again</button></p>");
 	}
-	if (ra.note[0] != '\0') {
-		h_raw(h, "<p class=\"note\">");
-		h_txt(h, ra.note);
-		if (ra.tag[0] != '\0' && !ra.busy) {
-			h_raw(h, " <button class=\"small\" data-act=\"ra-accept\">"
-			    "Accept ");
-			h_txt(h, ra.tag);
-			h_raw(h, " and commit again</button>");
-		}
-		if (ra.token[0] != '\0' && !ra.busy)
-			h_fmt(h, " <button class=\"ghost small\" data-act=\""
-			    "ra-cancel\">Undo now</button> <small class=\"dim\">"
-			    "%d s left</small>", (int)((ra.until - arc_now()) /
-			    1000));
-		h_raw(h, "</p>");
-	}
+	ycommit_note(h, &ra.yc);
 	if (ra.loading && ra.read == NULL && ra.edit == NULL) {
 		h_raw(h, "<p class=\"dim\">Reading…</p></section>");
 		return;
@@ -640,7 +608,7 @@ view_ra(struct html *h, struct server *s)
 		    "ra-discard\">Discard the changes</button> <small class=\""
 		    "dim\">Put in the host's candidate and committed confirmed, "
 		    "confirmed at once; undone by the host in %d s if not.</small>"
-		    "</p>", ra.busy ? " disabled" : "", TIMEOUT);
+		    "</p>", ra.yc.busy ? " disabled" : "", YC_TIMEOUT);
 	h_raw(h, "</div>");
 	view_state(h);
 	h_raw(h, "</div></section>");
@@ -648,113 +616,20 @@ view_ra(struct html *h, struct server *s)
 
 /* ---- Saving ------------------------------------------------------------ */
 
+/* How the save went: read again, the copy gone once it is the host's. */
 static void
-cancel_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+saved(struct ycommit *yc, int how)
 {
 
-	(void)arg;
-	ra.busy = false;
-	if (status == 204 || status == 200) {
-		ra.token[0] = '\0';
-		snprintf(ra.note, sizeof(ra.note), "Undone: the advertisements "
-		    "are as they were.");
-	} else
-		snprintf(ra.note, sizeof(ra.note), "Not undone: %s", rc_why(o,
-		    err));
-	ra_load();
-	render();
-}
-
-static void
-confirm_cb(int status, const ucl_object_t *o, const char *err, void *arg)
-{
-
-	(void)arg;
-	ra.busy = false;
-	if (status == 204 || status == 200) {
-		ra.token[0] = '\0';
-		snprintf(ra.note, sizeof(ra.note), "Saved: rtadvd.conf holds "
-		    "the record, and rtadvd(8) sends by it.");
+	(void)yc;
+	if (how == YC_SAVED) {
 		if (ra.edit != NULL)
 			ucl_object_unref(ra.edit);
 		ra.edit = NULL;
 		toast(false, "Router advertisements saved");
-	} else
-		snprintf(ra.note, sizeof(ra.note), "Not confirmed (%s): the "
-		    "host undoes the change at the timeout.", rc_why(o, err));
-	ra_load();
-	render();
-}
-
-static void
-commit_cb(int status, const ucl_object_t *o, const char *err, void *arg)
-{
-	char	url[320], body[160];
-
-	(void)arg;
-	if (status != 204 && status != 200) {
-		const char	*tag = jstr(o,
-		    "ietf-restconf:errors.error.0.error-app-tag");
-
-		ra.busy = false;
-		ra.token[0] = '\0';
-		/* A warning the host stops at: offered to be accepted, where
-		 * its tag is a plain word (it goes into a query). */
-		snprintf(ra.tag, sizeof(ra.tag), "%s", h_word(tag, ""));
-		snprintf(ra.note, sizeof(ra.note), "Not committed: %s",
-		    rc_why(o, err));
-		render();
-		return;
 	}
-	snprintf(ra.note, sizeof(ra.note), "Committed; confirming.");
-	url_of(url, sizeof(url), NULL, "/ietf-netconf:commit");
-	snprintf(body, sizeof(body), "{\"ietf-netconf:input\":{\"persist-id\":"
-	    "\"%s\"}}", ra.token);
-	api("POST", url, body, confirm_cb, NULL);
-	render();
-}
-
-/* The candidate committed confirmed, with the warnings accepted. */
-static void
-commit(const char *accept)
-{
-	uint8_t	r[16];
-	char	url[400], body[200];
-
-	if (getentropy(r, sizeof(r)) != 0) {
-		ra.busy = false;
-		snprintf(ra.note, sizeof(ra.note), "Not saved: no randomness "
-		    "for the commit's token");
-		render();
-		return;
-	}
-	for (size_t i = 0; i < sizeof(r); i++)
-		snprintf(ra.token + 2 * i, sizeof(ra.token) - 2 * i, "%02x",
-		    r[i]);
-	ra.until = arc_now() + TIMEOUT * 1000.0;
-	url_of(url, sizeof(url), NULL, "/ietf-netconf:commit");
-	if (h_word(accept, NULL) != NULL)
-		snprintf(url + strlen(url), sizeof(url) - strlen(url),
-		    "?arcana-accept=%s", accept);
-	snprintf(body, sizeof(body), "{\"ietf-netconf:input\":{\"confirmed\":"
-	    "[null],\"confirm-timeout\":%d,\"persist\":\"%s\"}}", TIMEOUT,
-	    ra.token);
-	api("POST", url, body, commit_cb, NULL);
-}
-
-static void
-put_cb(int status, const ucl_object_t *o, const char *err, void *arg)
-{
-
-	(void)arg;
-	if (status != 204 && status != 200 && status != 201) {
-		ra.busy = false;
-		snprintf(ra.note, sizeof(ra.note), "Not saved: %s", rc_why(o,
-		    err));
-		render();
-		return;
-	}
-	commit(NULL);
+	if (how != YC_REFUSED)
+		ra_load();
 }
 
 static void
@@ -763,16 +638,19 @@ save(void)
 	ucl_object_t	*top;
 	char		 url[320], *json;
 
-	if (ra.edit == NULL || ra.busy)
+	if (ra.edit == NULL || ra.yc.busy)
 		return;
-	ra.busy = true;
-	ra.note[0] = ra.tag[0] = '\0';
+	ra.yc.act = "ra";
+	ra.yc.saved = "Saved: rtadvd.conf holds the record, and rtadvd(8) "
+	    "sends by it.";
+	ra.yc.undone = "Undone: the advertisements are as they were.";
+	ra.yc.done = saved;
 	top = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(top, ucl_object_ref(ra.edit), RA_KEY, 0, false);
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
 	url_of(url, sizeof(url), "candidate", "");
-	api("PUT", url, json, put_cb, NULL);
+	(void)ycommit_save(&ra.yc, ra.sid, "PUT", url, json);
 	free(json);
 }
 
@@ -782,11 +660,12 @@ bool
 ra_action(const char *act, const char *arg, const char *value)
 {
 	struct server	*s;
-	char		 url[320], body[160];
 
 	if (strncmp(act, "ra-", 3) != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
+		return (true);
+	if (ycommit_action(&ra.yc, act))
 		return (true);
 	if (strcmp(act, "ra-open") == 0) {
 		ra_open(s->id, arg);
@@ -805,27 +684,10 @@ ra_action(const char *act, const char *arg, const char *value)
 		save();
 		return (true);
 	}
-	if (strcmp(act, "ra-accept") == 0 && ra.tag[0] != '\0' && !ra.busy) {
-		char	tag[64];
-
-		snprintf(tag, sizeof(tag), "%s", ra.tag);
-		ra.busy = true;
-		ra.tag[0] = '\0';
-		commit(tag);
-		return (true);
-	}
 	if (strcmp(act, "ra-discard") == 0) {
 		if (ra.edit != NULL)
 			ucl_object_unref(ra.edit);
 		ra.edit = NULL;
-		return (true);
-	}
-	if (strcmp(act, "ra-cancel") == 0 && ra.token[0] != '\0') {
-		ra.busy = true;
-		url_of(url, sizeof(url), NULL, "/ietf-netconf:cancel-commit");
-		snprintf(body, sizeof(body), "{\"ietf-netconf:input\":{"
-		    "\"persist-id\":\"%s\"}}", ra.token);
-		api("POST", url, body, cancel_cb, NULL);
 		return (true);
 	}
 	if (strcmp(act, "ra-del") == 0 && arg != NULL && value != NULL) {
@@ -1001,16 +863,6 @@ ra_form(const char *form, const ucl_object_t *f)
 void
 ra_tick(double now)
 {
-	static double	last;
 
-	if (ra.token[0] == '\0' || now - last < 1000)
-		return;
-	last = now;
-	if (now > ra.until + 2000) {
-		ra.token[0] = '\0';
-		snprintf(ra.note, sizeof(ra.note), "The host undid the change "
-		    "that was not confirmed.");
-		ra_load();
-	}
-	render();
+	ycommit_tick(&ra.yc, now);
 }
