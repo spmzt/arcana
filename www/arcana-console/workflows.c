@@ -81,6 +81,7 @@
 #include <unistd.h>
 
 #include "console.h"
+#include "ygula.h"
 #include "jobs_table.h"
 
 #define	WF_FILE		"workflows.json"
@@ -2196,19 +2197,28 @@ sub_catch_up(struct watched *x, const struct hostref *h)
 	return (true);
 }
 
-/* Told by the host: kept for the thread, which looks after each read. */
+/*
+ * Told by the host, an event of arcana-events' notification as the
+ * events reply has one (ygula.c): kept for the thread, which looks
+ * after each read.
+ */
 static void
-sub_heard(const struct arc_event_ntf *ntf, void *arg)
+sub_heard(cbl_conn *conn, cbl_msg *msg, void *arg)
 {
 	struct watched	*x = arg;
+	ucl_object_t	*o;
 	char		*text;
 
-	if (ntf->json == NULL || ntf->json[0] != '{')
+	(void)conn;
+	if ((o = ygula_event_of(msg)) == NULL)
 		return;
+	text = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(o);
 	pthread_mutex_lock(&x->qlock);
-	if (x->nqueue == SUB_QUEUE || (text = strdup(ntf->json)) == NULL)
+	if (x->nqueue == SUB_QUEUE || text == NULL) {
 		x->lost = true;
-	else
+		free(text);
+	} else
 		x->queue[x->nqueue++] = text;
 	pthread_mutex_unlock(&x->qlock);
 }
@@ -2268,7 +2278,6 @@ sub_pause(struct watched *x, int seconds)
 static void *
 sub_run(void *arg)
 {
-	static const struct arc_events_handlers hd = { .event = sub_heard };
 	struct watched		*x = arg;
 	struct hostref		 h;
 	struct arc_client	 cl;
@@ -2288,7 +2297,8 @@ sub_run(void *arg)
 			sub_pause(x, SUB_RETRY_S);
 			continue;
 		}
-		if (arc_events_subscribe(&cl, &hd, x, &sub) != 0) {
+		if (cbl_subscribe(conn, "cblink.yang", "notify", sub_heard, x,
+		    &sub) != 0) {
 			hosts_release(h.uri, h.peer, conn, tls, &cl, false);
 			sub_state(x, false);
 			sub_pause(x, SUB_RETRY_S);

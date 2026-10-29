@@ -41,11 +41,12 @@ static struct event	ring[EVENTS_KEPT];
 static size_t		ring_first, ring_n;
 static uint64_t		ev_last;
 static time_t		ev_since;	/* the first event's, or the start */
-static cbl_family	*ev_family;	/* what a subscriber hears it on */
+static cbl_family	*ev_family;	/* up: the events are told */
 
 /*
- * The family the events are told on, to those who subscribed; NULL
- * before it goes, so that no event is told on it after.
+ * The agent's family, up: the events are told to those who subscribed,
+ * as arcana-events' notification; NULL before it goes, so that none is
+ * told after.
  */
 void
 event_family(cbl_family *fam)
@@ -94,7 +95,6 @@ name_ok(const char *s)
 static void
 event_vadd(const char *jail, const char *kind, const char *fmt, va_list ap)
 {
-	struct arc_event_ntf	 ntf;
 	struct event		*e;
 	char			*data, *json, *jname;
 	int			 n;
@@ -124,19 +124,15 @@ event_vadd(const char *jail, const char *kind, const char *fmt, va_list ap)
 	e->kind = kind;
 	e->jail = jname;
 	e->data = data;
-	/* Told to the subscribers too, as events has it, in its order. */
+	/* Told to the subscribers too, as arcana-events' notification,
+	 * in the order they are kept. */
 	json = NULL;
 	if (ev_family != NULL && asprintf(&json, "{\"n\":%ju,\"t\":%jd,"
 	    "\"kind\":\"%s\"%s%s%s,\"data\":%s}", (uintmax_t)e->n,
 	    (intmax_t)e->t, kind, jname != NULL ? ",\"jail\":\"" : "",
 	    jname != NULL ? jname : "", jname != NULL ? "\"" : "", data) !=
-	    -1) {
-		memset(&ntf, 0, sizeof(ntf));
-		ntf.json = json;
-		(void)arc_event_notify(ev_family, &ntf);
-		/* And as arcana-events' notification, in the same order. */
+	    -1)
 		yang_event(json);
-	}
 	pthread_mutex_unlock(&ev_lock);
 	free(json);
 	yang_changed(YANG_EVENTS);
@@ -185,7 +181,7 @@ events_replay(time_t from, void (*fn)(const char *, time_t, void *),
  * after one; jail only for a jail's.
  */
 int
-do_events(struct work *w, uint64_t after, struct arc_events_rsp *rsp)
+do_events(struct work *w, uint64_t after, struct json_rsp *rsp)
 {
 	const struct event	*e;
 	FILE			*fp;

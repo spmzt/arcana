@@ -54,6 +54,111 @@ module arcana-processes {
     }
   }
 
+  grouping process-files {
+    description
+      "A process's files.";
+    list file {
+      description
+        "A file it has open, or uses (procstat_getfiles(3)).";
+      leaf fd {
+        type int32;
+        description
+          "Its descriptor; absent for one of use.";
+      }
+      leaf use {
+        type string;
+        description
+          "cwd, root, text, mapped, other.";
+      }
+      leaf type {
+        type string;
+        description
+          "file, fifo, socket, pipe, tty, kqueue, mqueue, other.";
+      }
+      leaf path {
+        type string;
+        description
+          "Its path, where known.";
+      }
+      leaf proto {
+        type string;
+        description
+          "A socket's protocol.";
+      }
+      leaf local {
+        type string;
+        description
+          "A socket's local address.";
+      }
+      leaf remote {
+        type string;
+        description
+          "A socket's peer.";
+      }
+      leaf mode {
+        type string;
+        description
+          "r, w, rw.";
+      }
+    }
+  }
+
+  grouping process-threads {
+    description
+      "A process's threads.";
+    list thread {
+      key "tid";
+      description
+        "One of its threads.";
+      leaf tid {
+        type uint64;
+        description
+          "Its id.";
+      }
+      leaf name {
+        type string;
+        description
+          "Its name.";
+      }
+      leaf run-state {
+        type string;
+        description
+          "Its state.";
+      }
+      leaf wait {
+        type string;
+        description
+          "What it sleeps on.";
+      }
+      leaf priority {
+        type int32;
+        description
+          "Its priority.";
+      }
+      leaf wcpu {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        units "percent";
+        description
+          "The kernel's decayed share.";
+      }
+      leaf cpu-time {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        units "seconds";
+        description
+          "The CPU it has used.";
+      }
+      leaf last-cpu {
+        type uint16;
+        description
+          "The CPU it ran on last (ki_lastcpu).";
+      }
+    }
+  }
+
   uses oc-proc:procmon-processes-top {
     augment "processes" {
       description
@@ -217,103 +322,19 @@ module arcana-processes {
         description
           "Blocks a second, between the looks.";
       }
+      leaf kernel {
+        type boolean;
+        description
+          "A kernel process (P_SYSTEM, P_KPROC): present and true
+           only for one.";
+      }
     }
     augment "processes/process" {
       description
         "One process asked for: its files and threads; and what is done
          to a process.";
-      list file {
-        config false;
-        description
-          "A file it has open, or uses (procstat_getfiles(3)).";
-        leaf fd {
-          type int32;
-          description
-            "Its descriptor; absent for one of use.";
-        }
-        leaf use {
-          type string;
-          description
-            "cwd, root, text, mapped, other.";
-        }
-        leaf type {
-          type string;
-          description
-            "file, fifo, socket, pipe, tty, kqueue, mqueue, other.";
-        }
-        leaf path {
-          type string;
-          description
-            "Its path, where known.";
-        }
-        leaf proto {
-          type string;
-          description
-            "A socket's protocol.";
-        }
-        leaf local {
-          type string;
-          description
-            "A socket's local address.";
-        }
-        leaf remote {
-          type string;
-          description
-            "A socket's peer.";
-        }
-        leaf mode {
-          type string;
-          description
-            "r, w, rw.";
-        }
-      }
-      list thread {
-        key "tid";
-        config false;
-        description
-          "One of its threads.";
-        leaf tid {
-          type uint64;
-          description
-            "Its id.";
-        }
-        leaf name {
-          type string;
-          description
-            "Its name.";
-        }
-        leaf run-state {
-          type string;
-          description
-            "Its state.";
-        }
-        leaf wait {
-          type string;
-          description
-            "What it sleeps on.";
-        }
-        leaf priority {
-          type int32;
-          description
-            "Its priority.";
-        }
-        leaf wcpu {
-          type decimal64 {
-            fraction-digits 2;
-          }
-          units "percent";
-          description
-            "The kernel's decayed share.";
-        }
-        leaf cpu-time {
-          type decimal64 {
-            fraction-digits 2;
-          }
-          units "seconds";
-          description
-            "The CPU it has used.";
-        }
-      }
+      uses process-files;
+      uses process-threads;
       action signal {
         nacm:default-deny-all;
         description
@@ -342,6 +363,21 @@ module arcana-processes {
               "The new nice value.";
           }
           uses same-process;
+        }
+      }
+      action read {
+        description
+          "The process with what a read of the list leaves out
+           (procstat(3)): its files, 500 at most, and its threads,
+           1000 at most.";
+        output {
+          leaf name {
+            type string;
+            description
+              "Its command's name.";
+          }
+          uses process-files;
+          uses process-threads;
         }
       }
     }

@@ -199,7 +199,8 @@ yalarms_from_json(const char *json, cbl_yarena *a, struct ietf_alarms *out)
 		if (v[n].alarm_text == NULL)
 			v[n].alarm_text = "";
 		/* Its history: raised, and cleared when it was; compressed,
-		 * the clearing alone. */
+		 * or cleared within the second it was raised (the change's
+		 * time its key), the clearing alone. */
 		if ((sc = cbl_yarena_alloc(a, 2 * sizeof(*sc))) == NULL)
 			goto nomem;
 		sc[0].time = v[n].last_raised;
@@ -217,8 +218,8 @@ yalarms_from_json(const char *json, cbl_yarena *a, struct ietf_alarms *out)
 		}
 		v[n].status_change.n = v[n].is_cleared && cl != 0 ? 2 : 1;
 		v[n].status_change.v = sc;
-		if (v[n].status_change.n == 2 && yj_yes(e, "compressed",
-		    &has)) {
+		if (v[n].status_change.n == 2 && (yj_yes(e, "compressed",
+		    &has) || cl == t)) {
 			v[n].status_change.n = 1;
 			v[n].status_change.v = &sc[1];
 		}

@@ -1591,7 +1591,7 @@ EOT
 	atf_check -o file:want "$y" kept kept \
 	    0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 	cat > trace.json <<'EOT'
-{"packets":[{"ms":12,"verdict":"pass","family":"ipv6","source":"2001:db8::9","destination":"2001:db8::1","proto":6,"sport":51234,"dport":22,"rule":1001,"interface":"em0","direction":"in"},{"ms":40,"verdict":"deny","family":"ipv4","source":"10.0.0.2","destination":"10.0.0.1","proto":17,"sport":5678,"dport":5678,"rule":9100,"interface":"em0","direction":"in"}],"seconds":3,"limit":100}
+{"packets":[{"ms":12,"verdict":"pass","family":"inet6","source":"2001:db8::9","destination":"2001:db8::1","proto":6,"sport":51234,"dport":22,"rule":1001,"interface":"em0","direction":"in"},{"ms":40,"verdict":"deny","family":"inet","source":"10.0.0.2","destination":"10.0.0.1","proto":17,"sport":5678,"dport":5678,"rule":9100,"interface":"em0","direction":"in"}],"seconds":3,"limit":100}
 EOT
 	cat > want <<'EOT'
 trace seconds=3 limit=100
@@ -1608,7 +1608,8 @@ yang_troubleshoot_head()
 	atf_set "descr" "path-check, traceroute and capture as" \
 	    "arcana-troubleshoot has them: a packet's way at one host, its" \
 	    "firewall's walks typed; a traceroute's hops; a capture's lines" \
-	    "and pcap; through YANG-CBOR and back"
+	    "and pcap; through YANG-CBOR and back, and made the" \
+	    "operations' JSON again"
 }
 yang_troubleshoot_body()
 {
@@ -1640,9 +1641,12 @@ reply-out deny rule=800 by-state=- keep=- setfib=-1 fwd=-
   800 decides
 finding bad The firewall drops the reply going out by epair2b: rule 800 (00800 deny tcp from any 22 to any)
 finding info It goes out by epair3a
-yang-cbor 970 bytes, the same back
+yang-cbor 993 bytes, the same back
 EOT
 	atf_check -o file:want "$y" path path.json
+	# Made the operation's JSON again, as the console makes it of the
+	# output (ytsjson.c): the same, in pathcheck.c's order.
+	atf_check -o file:path.json "$y" back-path path.json
 	cat > tr.json <<'EOT'
 {"address":"2001:db8::1","family":"inet6","hops":[{"ttl":1,"address":"2001:db8:1::1","rtt":0.412},{"ttl":2,"lost":true},{"ttl":3,"address":"2001:db8::1","rtt":12.5,"note":"!X"}],"reached":true}
 EOT
@@ -1654,6 +1658,7 @@ hop 3 2001:db8::1 rtt=12500 note=!X lost=-
 yang-cbor 77 bytes, the same back
 EOT
 	atf_check -o file:want "$y" traceroute tr.json
+	atf_check -o inline:'{"address":"2001:db8::1","family":"inet6","hops":[{"ttl":1,"address":"2001:db8:1::1","rtt":0.412000},{"ttl":2,"lost":true},{"ttl":3,"address":"2001:db8::1","rtt":12.500000,"note":"!X"}],"reached":true}\n' "$y" back-traceroute tr.json
 	cat > cap.json <<'EOT'
 {"source":"em0","filter":"port 22","lines":["2026-10-15 12:00:00.000001 IP 10.0.0.2.51234 > 10.0.0.1.22: Flags [S]","2026-10-15 12:00:00.000200 IP 10.0.0.1.22 > 10.0.0.2.51234: Flags [S.]"],"packets":2,"limit":50,"seconds":10,"timed_out":true,"bytes":24,"pcap":"1MOyoQIABAAAAAAAAAAAAAAABAABAAAA"}
 EOT
@@ -1664,6 +1669,10 @@ line 2026-10-15 12:00:00.000200 IP 10.0.0.1.22 > 10.0.0.2.51234: Flags [S.]
 yang-cbor 221 bytes, the same back
 EOT
 	atf_check -o file:want "$y" capture cap.json
+	# In capture.c's order; without an interface, the sources alone.
+	atf_check -o inline:'{"pcap":"1MOyoQIABAAAAAAAAAAAAAAABAABAAAA","bytes":24,"source":"em0","filter":"port 22","packets":2,"limit":50,"seconds":10,"timed_out":true,"lines":["2026-10-15 12:00:00.000001 IP 10.0.0.2.51234 > 10.0.0.1.22: Flags [S]","2026-10-15 12:00:00.000200 IP 10.0.0.1.22 > 10.0.0.2.51234: Flags [S.]"]}\n' "$y" back-capture cap.json
+	echo '{"sources":["em0","lo0","ipfw100"]}' > src.json
+	atf_check -o file:src.json "$y" back-capture src.json
 }
 
 atf_test_case yang_history
@@ -1672,7 +1681,7 @@ yang_history_head()
 	atf_set "descr" "the history operation's reply as arcana-history has" \
 	    "it: sampling and limits as configuration, the samples taken" \
 	    "apart by the names of the interfaces, disks, jails and FEC" \
-	    "relays; through" \
+	    "relays, two of a second told apart; through" \
 	    "YANG-CBOR and back"
 }
 yang_history_body()
@@ -1680,7 +1689,7 @@ yang_history_body()
 	local y="$(atf_get_srcdir)/yhist"
 
 	cat > hist.json <<'EOT'
-{"limits":{"cpu":90,"mem":80,"swap":50},"rules":[{"kind":"net","name":"em0","limit":100000000,"over":false},{"kind":"jail-cpu","name":"web","limit":50,"over":true}],"racct":true,"step":5,"keep":720,"bytes":94560,"ncpu":12,"mem_total":25769803776,"swap_total":4294967296,"fields":["t","cpu","load","mem","swap","rx","tx","read","write"],"nets":["em0","em1"],"disks":["ada0"],"jails":["web"],"relays":["speederv2_c_wg0"],"samples":[[1791995110,12.5,0.42,8589934592,0,120000,34000,4096,8192,100000,30000,20000,4000,4096,8192,3.5,268435456,10000,7000],[1791995115,80.0,1.10,8600000000,1024,130000,35000,0,0,110000,31000,20000,4000,0,0,55.0,268435456,0,0]]}
+{"limits":{"cpu":90,"mem":80,"swap":50},"rules":[{"kind":"net","name":"em0","limit":100000000,"over":false},{"kind":"jail-cpu","name":"web","limit":50,"over":true}],"racct":true,"step":5,"keep":720,"bytes":94560,"ncpu":12,"mem_total":25769803776,"swap_total":4294967296,"fields":["t","cpu","load","mem","swap","rx","tx","read","write"],"nets":["em0","em1"],"disks":["ada0"],"jails":["web"],"relays":["speederv2_c_wg0"],"samples":[[1791995110,12.5,0.42,8589934592,0,120000,34000,4096,8192,100000,30000,20000,4000,4096,8192,3.5,268435456,10000,7000],[1791995115,80.0,1.10,8600000000,1024,130000,35000,0,0,110000,31000,20000,4000,0,0,55.0,268435456,0,0],[1791995115,2.0,1.10,8600000000,1024,0,0,0,0,0,0,0,0,0,0,0,268435456,0,0]]}
 EOT
 	cat > want <<'EOT'
 sampling step=5 keep=720 limits cpu=90 mem=80 swap=50
@@ -1694,7 +1703,8 @@ jail web
 relay speederv2_c_wg0
 sample 2026-10-14T16:25:10Z cpu=125 load=42 memory=8589934592 swap=0 rx=120000 tx=34000 read=4096 written=8192 em0=100000/30000 em1=20000/4000 ada0=4096/8192 web=35/268435456 speederv2_c_wg0=10000+7000
 sample 2026-10-14T16:25:15Z cpu=800 load=110 memory=8600000000 swap=1024 rx=130000 tx=35000 read=0 written=0 em0=110000/31000 em1=20000/4000 ada0=0/0 web=550/268435456 speederv2_c_wg0=0+0
-yang-cbor 449 bytes, the same back
+sample 2026-10-14T16:25:15.01Z cpu=20 load=110 memory=8600000000 swap=1024 rx=0 tx=0 read=0 written=0 em0=0/0 em1=0/0 ada0=0/0 web=0/268435456 speederv2_c_wg0=0+0
+yang-cbor 587 bytes, the same back
 EOT
 	atf_check -o file:want "$y" hist.json
 }
@@ -1705,7 +1715,8 @@ yang_events_head()
 	atf_set "descr" "the events operation's reply as arcana-events has" \
 	    "it: each kind an identity, its data the case of that kind," \
 	    "typed; one event as the notification; through YANG-CBOR and" \
-	    "back"
+	    "back; every kind made the reply's JSON again as its source" \
+	    "wrote it"
 }
 yang_events_body()
 {
@@ -1716,14 +1727,14 @@ yang_events_body()
 EOT
 	cat > want <<'EOT'
 events last=12 first=3 kept=512
-3 2026-10-14T16:25:10Z route-add: route 10.9.0.0/16 via 10.0.0.1 on em0 fib=0 flags=UGS source=static
+3 2026-10-14T16:25:10Z route-add: route 10.9.0.0/16 via 10.0.0.1 on em0 fib=0 flags=UGS source=static nhop=5
 4 2026-10-14T16:25:11Z routes: routes changed=40
 5 2026-10-14T16:25:12Z link jail=r1: link epair0b up=yes carrier=yes mtu=1500
 6 2026-10-14T16:25:13Z address-add: address em0 2001:db8::7/64
-7 2026-10-14T16:25:14Z neigh: neighbor em0 10.0.0.9 lladdr=02:00:00:00:00:09 state=reachable router=no
+7 2026-10-14T16:25:14Z neigh: neighbor em0 10.0.0.9 lladdr=02:00:00:00:00:09 state=reachable router=no family=inet
 8 2026-10-14T16:25:15Z threshold: threshold jail-cpu name=web value=55 limit=50 over=yes
 9 2026-10-14T16:25:16Z kmsg: kmsg seq=41 text=em0: link state changed to UP more=0
-10 2026-10-14T16:25:17Z sdwan-tunnel: tunnel tvc-1 10.202.0.2 down misses=3 by=-
+10 2026-10-14T16:25:17Z sdwan-tunnel: tunnel tvc-1 10.202.0.2 down misses=3 by=- jail=-
 11 2026-10-14T16:25:18Z sdwan-fault: fault tunnel Major tvc-1 by=probe set: no reply
 12 2026-10-14T16:25:19Z sdwan-security: security seq=7 rule=30010 Deny 10.1.0.2:4000 -> 10.3.0.2:22 on em0 (deny-ssh)
 13 2026-10-14T16:25:20Z job: job 77 ipfw table T46 add ok=no error=ipfw: bad
@@ -1735,9 +1746,19 @@ events last=12 first=3 kept=512
 19 2026-10-14T16:25:26Z procs: procs started=4 exited=3
 20 2026-10-14T16:25:27Z monitor-threshold: monitor edge-b delay value=42500 threshold=40000 over=yes on gre0
 21 2026-10-14T16:25:28Z sdwan-ids: alert sec-lan sid=1000009 rev=1 10.0.0.9:4444 -> 10.0.0.1:23 TCP on em0 severity=2 allowed: LOCAL telnet
-yang-cbor 1332 bytes, the same back
+yang-cbor 1343 bytes, the same back
 EOT
 	atf_check -o file:want "$y" list ev.json
+	# Each kind as its source writes it, there and back as the console
+	# makes the events reply of the read (yevjson.c): the same but a
+	# double's digits.
+	cat > real.json <<'EOT'
+{"last":40,"first":3,"kept":512,"events":[{"n":3,"t":1791995110,"kind":"route-add","data":{"destination":"198.51.100.0/24","gateway":"127.0.0.1","flags":"UGS","nhop":5,"mtu":1400,"interface-name":"lo0","metric":0,"weight":1,"fib":0,"prefixlen":24,"source":"127.0.0.1","path":1,"paths":2,"expire-time":"1791999999"}},{"n":4,"t":1791995111,"kind":"routes","data":{"changed":40}},{"n":5,"t":1791995112,"kind":"link","jail":"r1","data":{"interface":"epair0b","up":true,"carrier":true,"mtu":1500}},{"n":6,"t":1791995113,"kind":"address-add","data":{"interface":"em0","address":"2001:db8::7","prefixlen":64}},{"n":7,"t":1791995114,"kind":"neigh","data":{"family":"inet","address":"192.0.2.202","lladdr":"02:00:00:00:00:09","interface-name":"em0","state":"reachable","router":true,"next":1791995200}},{"n":8,"t":1791995115,"kind":"threshold","data":{"what":"jail-cpu","name":"web","value":55,"limit":50,"over":true}},{"n":9,"t":1791995115,"kind":"threshold","data":{"what":"mem","value":3,"limit":1,"over":true}},{"n":10,"t":1791995115,"kind":"threshold","data":{"what":"storage","name":"tank","limit":0,"over":false}},{"n":11,"t":1791995116,"kind":"kmsg","data":{"seq":41,"text":"em0: link state changed to UP"}},{"n":12,"t":1791995116,"kind":"kmsg","data":{"seq":62,"more":7}},{"n":13,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"jlo","address":"127.0.0.1","state":"up","misses":0,"jail":"arcw_sdj"}},{"n":14,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"t1","address":"100.64.0.1","interface":"gre100","state":"unknown","by":"bfd"}},{"n":15,"t":1791995117,"kind":"monitor","data":{"id":"lo","address":"127.0.0.1","state":"up","misses":0,"interface":"lo0"}},{"n":16,"t":1791995118,"kind":"sdwan-fault","data":{"type":"tunnel","severity":"Major","object":"tvc-1","by":"probe","description":"no reply","state":"set"}},{"n":17,"t":1791995118,"kind":"sdwan-fault","data":{"type":"ids","severity":"Cleared","object":"sw1","description":"Suricata sw1 runs again","state":"cleared"}},{"n":18,"t":1791995119,"kind":"sdwan-security","data":{"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"em0","comment":"deny-ssh"}},{"n":19,"t":1791995120,"kind":"job","data":{"id":77,"title":"ipfw table T46 add","ok":false,"error":"ipfw: bad"}},{"n":20,"t":1791995120,"kind":"job","data":{"id":78,"title":"x","ok":true}},{"n":21,"t":1791995121,"kind":"jail-state","data":{"jail":"web","state":"running","jid":5}},{"n":22,"t":1791995122,"kind":"crash","data":{"pid":812,"process":"nginx","jid":5,"jail":"web","uid":80,"signal":11,"core":false,"reason":"sugid process denied by kern.sugid_coredump"}},{"n":23,"t":1791995123,"kind":"conf","data":{"file":"/etc/rc.conf"}},{"n":24,"t":1791995124,"kind":"device","data":{"cdev":"md3","state":"created"}},{"n":25,"t":1791995125,"kind":"zfs","data":{"type":"pool_import","pool":"tank"}},{"n":26,"t":1791995126,"kind":"procs","data":{"started":4,"exited":3}},{"n":27,"t":1791995127,"kind":"monitor-threshold","data":{"id":"edge-b","metric":"delay","value":42.5,"threshold":40,"over":true,"interface":"gre0"}},{"n":28,"t":1791995128,"kind":"sdwan-ids","data":{"name":"sec-lan","time":"2026-10-14T16:25:28+0000","src":"10.0.0.9","sport":4444,"dst":"10.0.0.1","dport":23,"proto":"TCP","iface":"em0","sid":1000009,"rev":1,"signature":"LOCAL telnet","category":"","severity":2,"action":"allowed"}},{"n":29,"t":1791995129,"kind":"undo-failed","data":{"node":"/ietf-interfaces:interfaces","errno":5,"message":"why","report":"arcana-agent 0.1\n"}}]}
+EOT
+	cat > want <<'EOT'
+{"last":40,"first":3,"kept":512,"events":[{"n":3,"t":1791995110,"kind":"route-add","data":{"destination":"198.51.100.0/24","gateway":"127.0.0.1","flags":"UGS","nhop":5,"mtu":1400,"interface-name":"lo0","metric":0,"weight":1,"fib":0,"prefixlen":24,"source":"127.0.0.1","path":1,"paths":2,"expire-time":"1791999999"}},{"n":4,"t":1791995111,"kind":"routes","data":{"changed":40}},{"n":5,"t":1791995112,"kind":"link","jail":"r1","data":{"interface":"epair0b","up":true,"carrier":true,"mtu":1500}},{"n":6,"t":1791995113,"kind":"address-add","data":{"interface":"em0","address":"2001:db8::7","prefixlen":64}},{"n":7,"t":1791995114,"kind":"neigh","data":{"family":"inet","address":"192.0.2.202","lladdr":"02:00:00:00:00:09","interface-name":"em0","state":"reachable","router":true,"next":1791995200}},{"n":8,"t":1791995115,"kind":"threshold","data":{"what":"jail-cpu","name":"web","value":55,"limit":50,"over":true}},{"n":9,"t":1791995115,"kind":"threshold","data":{"what":"mem","value":3,"limit":1,"over":true}},{"n":10,"t":1791995115,"kind":"threshold","data":{"what":"storage","name":"tank","limit":0,"over":false}},{"n":11,"t":1791995116,"kind":"kmsg","data":{"seq":41,"text":"em0: link state changed to UP"}},{"n":12,"t":1791995116,"kind":"kmsg","data":{"seq":62,"more":7}},{"n":13,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"jlo","address":"127.0.0.1","state":"up","misses":0,"jail":"arcw_sdj"}},{"n":14,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"t1","address":"100.64.0.1","interface":"gre100","state":"unknown","by":"bfd"}},{"n":15,"t":1791995117,"kind":"monitor","data":{"id":"lo","address":"127.0.0.1","state":"up","misses":0,"interface":"lo0"}},{"n":16,"t":1791995118,"kind":"sdwan-fault","data":{"type":"tunnel","severity":"Major","object":"tvc-1","by":"probe","description":"no reply","state":"set"}},{"n":17,"t":1791995118,"kind":"sdwan-fault","data":{"type":"ids","severity":"Cleared","object":"sw1","description":"Suricata sw1 runs again","state":"cleared"}},{"n":18,"t":1791995119,"kind":"sdwan-security","data":{"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"em0","comment":"deny-ssh"}},{"n":19,"t":1791995120,"kind":"job","data":{"id":77,"title":"ipfw table T46 add","ok":false,"error":"ipfw: bad"}},{"n":20,"t":1791995120,"kind":"job","data":{"id":78,"title":"x","ok":true}},{"n":21,"t":1791995121,"kind":"jail-state","data":{"jail":"web","state":"running","jid":5}},{"n":22,"t":1791995122,"kind":"crash","data":{"pid":812,"process":"nginx","jid":5,"jail":"web","uid":80,"signal":11,"core":false,"reason":"sugid process denied by kern.sugid_coredump"}},{"n":23,"t":1791995123,"kind":"conf","data":{"file":"/etc/rc.conf"}},{"n":24,"t":1791995124,"kind":"device","data":{"cdev":"md3","state":"created"}},{"n":25,"t":1791995125,"kind":"zfs","data":{"type":"pool_import","pool":"tank"}},{"n":26,"t":1791995126,"kind":"procs","data":{"started":4,"exited":3}},{"n":27,"t":1791995127,"kind":"monitor-threshold","data":{"id":"edge-b","metric":"delay","value":42.500000,"threshold":40,"over":true,"interface":"gre0"}},{"n":28,"t":1791995128,"kind":"sdwan-ids","data":{"name":"sec-lan","time":"2026-10-14T16:25:28+0000","src":"10.0.0.9","sport":4444,"dst":"10.0.0.1","dport":23,"proto":"TCP","iface":"em0","sid":1000009,"rev":1,"signature":"LOCAL telnet","category":"","severity":2,"action":"allowed"}},{"n":29,"t":1791995129,"kind":"undo-failed","data":{"node":"/ietf-interfaces:interfaces","errno":5,"message":"why","report":"arcana-agent 0.1\n"}}]}
+EOT
+	atf_check -o file:want "$y" back real.json
 	cat > one.json <<'EOT'
 {"n":16,"t":1791995123,"kind":"link-del","data":{"interface":"epair9a","up":false,"carrier":false,"mtu":1500}}
 EOT
@@ -1751,8 +1772,8 @@ yang_plugins_head()
 	atf_set "descr" "BIRD, WireGuard and netgraph as arcana-bird," \
 	    "arcana-wireguard and arcana-netgraph have them: birdc's" \
 	    "protocols with a BGP neighbour's own and its channels, OSPF" \
-	    "neighbours, BFD sessions, tables, routes; bird.conf with its" \
-	    "SHA-256; wg show's interfaces and peers, keys only said to be" \
+	    "neighbours, BFD sessions, tables, routes, OSPF's areas and" \
+	    "topology; wg show's interfaces and peers, keys only said to be" \
 	    "there; ngctl's nodes and hooks; through YANG-CBOR and back"
 }
 yang_plugins_body()
@@ -1790,16 +1811,22 @@ route master4 0.0.0.0/0 unicast static1 from=- since=2026-10-15 19:00:00 primary
 yang-cbor 245 bytes, the same back
 EOT
 	atf_check -o file:want "$y" bird-routes br.json
-	printf 'router id 10.0.0.1;\ninclude "peers.conf";\n' > bird.conf
-	cat > want <<'EOT'
-configuration /usr/local/etc/bird.conf
-file /usr/local/etc/bird.conf text=42 sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-file /usr/local/etc/peers.conf text=0 sha256=-
-yang-cbor 199 bytes, the same back
+	cat > bo.json <<'EOT'
+{"protocols":[{"name":"ospf1","areas":["0.0.0.0"],"topology":[{"area":"0.0.0.0","routers":[{"id":"10.0.0.1","links":[{"kind":"network","to":"10.1.0.2","metric":10},{"kind":"external","to":"0.0.0.0/0","metric2":10000}],"distance":0},{"id":"10.0.0.3","links":[],"unreachable":true}],"networks":[{"id":"10.1.0.2","routers":["10.0.0.1","10.0.0.2"],"dr":"10.0.0.2","distance":10}]}]}]}
 EOT
-	atf_check -o file:want "$y" bird-config /usr/local/etc/bird.conf bird.conf \
-	    0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-	    /usr/local/etc/bird.conf /usr/local/etc/peers.conf
+	cat > want <<'EOT'
+ospf ospf1 areas 0.0.0.0
+  area 0.0.0.0
+    router 10.0.0.1 distance=0
+      network 10.1.0.2 metric=10 metric2=0
+      external 0.0.0.0/0 metric=0 metric2=10000
+    router 10.0.0.3 distance=0 unreachable
+    network 10.1.0.2 dr=10.0.0.2 distance=10 10.0.0.1 10.0.0.2
+EOT
+	atf_check -o match:'^ospf ospf1 areas 0.0.0.0$' \
+	    -o match:'yang-cbor [0-9]+ bytes, the same back' "$y" bird-ospf bo.json
+	"$y" bird-ospf bo.json | sed '$d' > got
+	atf_check -o file:want cat got
 	cat > wg.json <<'EOT'
 {"interfaces":[{"name":"wg0","private-key":true,"public-key":"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=","listen-port":51820,"peers":[{"public-key":"TrMvSoP4jYQlY6RIzBgbssQqY3vxI2Pi+y71lOWWXX0=","preshared-key":false,"endpoint":"203.0.113.2:51820","allowed-ips":["10.202.0.2/32","fd00:5a::2/128"],"latest-handshake":1791995110,"rx":123456,"tx":654321,"keepalive":25},{"public-key":"gN65BkIKy1eCE9pP1wdc8ROUtkHLF2PfAqYdyYBz6EA=","preshared-key":true,"allowed-ips":["10.202.0.3/32"],"latest-handshake":0,"rx":0,"tx":0,"keepalive":0}]}],"now":1791995200}
 EOT
@@ -1964,15 +1991,26 @@ yang_sdwan_body()
 {
 	local y="$(atf_get_srcdir)/ysd"
 
+	# Each edge's targets, links and monitors, as the agent keeps them,
+	# and back as its setters take them.
 	cat > targets.json <<'EOT'
-[{"id":"tvc-1","address":"10.202.0.2","fib":1,"interval":100,"size":64,"count":0,"dscp":46,"down":3,"up":3,"timeout":1000,"eval":1000,"history":3600,"report":5000,"tca":{"delay":50,"ipdv":10,"loss":0.01,"damping":2}},{"id":"tvc-2","address":"fd00:5a::2"}]
+{"edges":[{"jail":"","targets":[{"id":"tvc-1","address":"10.202.0.2","fib":1,"interval":100,"size":64,"count":0,"dscp":46,"down":3,"up":3,"timeout":1000,"eval":1000,"history":3600,"report":5,"tca":{"delay":50,"ipdv":10,"loss":0.01,"damping":2}},{"id":"tvc-2","address":"fd00:5a::2"}],"links":[{"id":"uni-1","interface":"em1","role":"uni"}],"monitors":[{"id":"ov-gre0","interface":"gre0","address":"10.255.0.2","fib":2,"eval":10000}]},{"jail":"gateway","targets":[{"id":"tvc-1","address":"10.202.0.1"}]}]}
 EOT
 	cat > want <<'EOT'
-target tvc-1 10.202.0.2 fib=1 interval=100 size=64 count=0 dscp=46 down=3 up=3 timeout=1000 eval=1000 history=3600 report=5000 tca delay=50000 ipdv=10000 loss=10000 damping=2
+target tvc-1 10.202.0.2 fib=1 interval=100 size=64 count=0 dscp=46 down=3 up=3 timeout=1000 eval=1000 history=3600 report=5 tca delay=50000 ipdv=10000 loss=10000 damping=2
 target tvc-2 fd00:5a::2 fib=0 interval=0 size=0 count=0 dscp=0 down=0 up=0 timeout=0 eval=0 history=0 report=0
-yang-cbor 102 bytes, the same back
+link uni-1 em1 uni
+monitor ov-gre0 gre0 10.255.0.2 fib=2 eval=10000
+set {"targets":[{"id":"tvc-1","address":"10.202.0.2","count":0,"report":5,"fib":1,"interval":100,"size":64,"dscp":46,"down":3,"up":3,"timeout":1000,"eval":1000,"history":3600,"tca":{"delay":50.0,"ipdv":10.0,"loss":0.010000,"damping":2}},{"id":"tvc-2","address":"fd00:5a::2"}],"links":[{"id":"uni-1","interface":"em1","role":"uni"}]}
+set {"jail":"","targets":[{"id":"ov-gre0","interface":"gre0","address":"10.255.0.2","fib":2,"eval":10000}]}
+jail gateway
+target tvc-1 10.202.0.1 fib=0 interval=0 size=0 count=0 dscp=0 down=0 up=0 timeout=0 eval=0 history=0 report=0
+set {"jail":"gateway","targets":[{"id":"tvc-1","address":"10.202.0.1"}],"links":[]}
 EOT
-	atf_check -o file:want "$y" targets targets.json
+	atf_check -o save:got "$y" targets targets.json
+	atf_check -o match:'yang-cbor [0-9]+ bytes, the same back' cat got
+	sed '$d' got > got2
+	atf_check -o file:want cat got2
 	cat > probes.json <<'EOT'
 {"targets":[{"id":"tvc-1","address":"10.202.0.2","family":"inet","fib":1,"state":"up","since":1791995000,"interval":100,"size":64,"eval":1000,"dscp":46,"sent":12000,"received":11990,"misses":0,"last_rtt":1.234,"now":{"sent":5,"recv":5,"delay":0.6,"ipdv":0.05,"loss":0,"age":512.3},"samples":[[1791995100,0.617,0.052,0.0,0.5,0.9,10,10],[1791995101,0.7,0.1,0.1,0.5,1.2,10,9]],"kept":2},{"id":"tvc-2","address":"fd00:5a::2","family":"inet6","fib":0,"state":"error","error":"no route","since":1791995000,"interval":100,"size":64,"eval":1000,"dscp":0,"sent":0,"received":0,"misses":0,"last_rtt":0,"samples":[],"kept":0}],"time":1791995110,"probing":true}
 EOT
@@ -2007,9 +2045,6 @@ EOT
 	atf_check -o inline:'entry sw1_p1 10.3.0.0/24: tvc-1 via 10.202.0.2 tvc-2 via 10.203.0.2\nyang-cbor 67 bytes, the same back\n' \
 	    "$y" steer steer.json
 	# An edge that is a vnet jail: its jail in each, the state's edges.
-	printf '%s\n' '{"jail":"gateway","targets":[{"id":"tvc-1","address":"10.202.0.2"}]}' > jt.json
-	atf_check -o match:'^target tvc-1 10.202.0.2 .* jail=gateway$' \
-	    -o match:'the same back' "$y" targets jt.json
 	printf '%s\n' '{"jail":"gateway","set":30,"tables":[],"rules":["00500 count ip from any to any"]}' > jr.json
 	atf_check -o match:'^rules set=30 jail=gateway$' -o match:'the same back' \
 	    "$y" rules jr.json
@@ -2288,7 +2323,7 @@ atf_test_case yang_log
 yang_log_head()
 {
 	atf_set "descr" "the log operation's replies as arcana-log has" \
-	    "them, a line's facility and severity" \
+	    "them, a line's facility and severity (names or numbers)" \
 	    "ietf-syslog's; syslog.conf and newsyslog.conf as ietf-syslog," \
 	    "what it cannot hold said; through YANG-CBOR and back," \
 	    "committed as they read, nothing changed"
@@ -2308,9 +2343,10 @@ file messages.0.bz2 size=9100 modified=2026-10-13T14:00:00Z packed=yes
 yang-cbor 134 bytes, the same back
 EOF
 	atf_check -o file:want "$y" files files.json
-	# syslogd -v's "facility.level": security is RFC 5424's audit.
+	# syslogd -vv's "facility.level", -v's numbers: security is RFC
+	# 5424's audit.  The files of the directory read with the lines.
 	cat > read.json <<'EOF'
-{"name":"messages","lines":[{"time":"Oct 14 12:00:01","level":"auth.info","host":"labvm","tag":"sshd","pid":"812","text":"Accepted publickey for root"},{"time":"Oct 14 12:00:02","level":"security.warn","host":"labvm","tag":"kernel","text":"ipfw: 100 Deny"},{"time":"Oct 14 12:00:03","host":"labvm","text":"-- MARK --"},{"text":"a line of no form"}],"size":88211,"position":88211,"rotated":true}
+{"name":"messages","files":[{"name":"messages","size":88211,"mtime":1791995110}],"lines":[{"time":"Oct 14 12:00:01","level":"auth.info","host":"labvm","tag":"sshd","pid":"812","text":"Accepted publickey for root"},{"time":"Oct 14 12:00:02","level":"security.warn","host":"labvm","tag":"kernel","text":"ipfw: 100 Deny"},{"time":"Oct 14 12:00:03","host":"labvm","text":"-- MARK --"},{"text":"a line of no form"},{"time":"Oct 14 12:00:04","level":"16.3","host":"labvm","tag":"app","text":"local0's"}],"size":88211,"position":88211,"rotated":true}
 EOF
 	cat > want <<'EOF'
 name messages size=88211 position=88211 rotated=yes
@@ -2318,7 +2354,9 @@ line time=Oct 14 12:00:01 host=labvm facility=auth severity=info tag=sshd pid=81
 line time=Oct 14 12:00:02 host=labvm facility=audit severity=warning tag=kernel pid=- seq=-1 seen=- text=ipfw: 100 Deny
 line time=Oct 14 12:00:03 host=labvm facility=- severity=- tag=- pid=- seq=-1 seen=- text=-- MARK --
 line time=- host=- facility=- severity=- tag=- pid=- seq=-1 seen=- text=a line of no form
-yang-cbor 215 bytes, the same back
+line time=Oct 14 12:00:04 host=labvm facility=local0 severity=error tag=app pid=- seq=-1 seen=- text=local0's
+file messages size=88211 modified=2026-10-14T16:25:10Z
+yang-cbor 304 bytes, the same back
 EOF
 	atf_check -o file:want "$y" read read.json
 	cat > dmesg.json <<'EOF'
@@ -2404,15 +2442,16 @@ yang_processes_head()
 {
 	atf_set "descr" "the processes operation's replies as" \
 	    "arcana-processes has them, OpenConfig" \
-	    "procmon's shape with FreeBSD's besides: one process's files" \
-	    "and threads on its entry, through YANG-CBOR and back"
+	    "procmon's shape with FreeBSD's besides, a kernel process" \
+	    "told; one process's files and threads on its entry, the CPU" \
+	    "each thread ran on last, through YANG-CBOR and back"
 }
 yang_processes_body()
 {
 	local y="$(atf_get_srcdir)/yprocs"
 
 	cat > ps.json <<'EOF'
-{"processes":[{"pid":812,"ppid":1,"user":"root","jid":0,"state":"sleep","wait":"select","nice":0,"pri":20,"threads":1,"rss":9437184,"size":14680064,"time":1.27,"wcpu":0.05,"cpu":0.0,"in":12,"out":3,"io":0.0,"start":1791990000,"comm":"sshd","args":"/usr/sbin/sshd -D"},{"pid":4100,"ppid":4099,"user":"www","jid":3,"jail":"web","state":"run","nice":-5,"pri":52,"threads":4,"rss":104857600,"size":209715200,"time":3600.5,"wcpu":151.25,"cpu":180.4,"in":0,"out":0,"io":2.5,"start":1791995110,"comm":"nginx","args":"nginx: worker process"}],"jails":[{"jid":3,"name":"web","procs":5,"threads":9,"cpu":180.4,"wcpu":151.25,"rss":130000000}],"ncpu":4,"elapsed":0.25}
+{"processes":[{"pid":812,"ppid":1,"user":"root","jid":0,"state":"sleep","wait":"select","nice":0,"pri":20,"threads":1,"rss":9437184,"size":14680064,"time":1.27,"wcpu":0.05,"cpu":0.0,"in":12,"out":3,"io":0.0,"start":1791990000,"comm":"sshd","args":"/usr/sbin/sshd -D"},{"pid":4100,"ppid":4099,"user":"www","jid":3,"jail":"web","state":"run","nice":-5,"pri":52,"threads":4,"rss":104857600,"size":209715200,"time":3600.5,"wcpu":151.25,"cpu":180.4,"in":0,"out":0,"io":2.5,"start":1791995110,"comm":"nginx","args":"nginx: worker process"},{"pid":11,"ppid":0,"user":"root","jid":0,"state":"run","nice":0,"pri":155,"threads":4,"rss":0,"size":0,"time":9000.0,"wcpu":390.0,"cpu":395.5,"in":0,"out":0,"io":0.0,"start":1791980000,"kernel":true,"comm":"idle"}],"jails":[{"jid":3,"name":"web","procs":5,"threads":9,"cpu":180.4,"wcpu":151.25,"rss":130000000}],"ncpu":4,"elapsed":0.25}
 EOF
 	cat > one.json <<'EOF'
 {"pid":812,"comm":"sshd","files":[{"use":"cwd","type":"file","path":"/","mode":"r"},{"fd":3,"type":"socket","proto":"TCP","local":"192.0.2.1:22","remote":"198.51.100.7:51000","mode":"rw"}],"threads":[{"tid":100812,"name":"sshd","state":"sleep","wait":"select","pri":20,"wcpu":0.05,"time":1.27,"cpu":0}]}
@@ -2424,10 +2463,11 @@ ncpu 4 elapsed 0.25
 process 812 name=sshd args=/usr/sbin/sshd|-D start=1791990000000000000 util=0 memory=9437184 ppid=1 user=root jail=0/- state=sleep wait=select nice=0 pri=20 threads=1 size=14680064 time=1.27 cpu=0.00 wcpu=0.05 in=12 out=3 io=0.00
   file use=cwd type=file path=/ proto=- local=- remote=- mode=r
   file fd=3 type=socket path=- proto=TCP local=192.0.2.1:22 remote=198.51.100.7:51000 mode=rw
-  thread 100812 name=sshd state=sleep wait=select pri=20 wcpu=0.05 time=1.27
+  thread 100812 name=sshd state=sleep wait=select pri=20 wcpu=0.05 time=1.27 on=0
 process 4100 name=nginx args=nginx:|worker|process start=1791995110000000000 util=100 memory=104857600 ppid=4099 user=www jail=3/web state=run wait=- nice=-5 pri=52 threads=4 size=209715200 time=3600.50 cpu=180.40 wcpu=151.25 in=0 out=0 io=2.50
+process 11 name=idle args= start=1791980000000000000 util=100 memory=0 ppid=0 user=root jail=0/- state=run wait=- nice=0 pri=155 threads=4 size=0 time=9000.00 cpu=395.50 wcpu=390.00 in=0 out=0 io=0.00 kernel
 jail 3 web procs=5 threads=9 cpu=180.40 wcpu=151.25 rss=130000000
-yang-cbor 411 bytes, the same back
+yang-cbor 502 bytes, the same back
 EOF
 	atf_check -o file:want "$y" ps.json one.json
 	# Without the detail, no files or threads.
@@ -3967,9 +4007,10 @@ EOS
 	atf_check -o match:'fake-helper --scope-helper 0 route-get 10.77.5.5 4' \
 	    "$JGC" -t -F 4 -c "$SOCK" route get 10.77.5.5
 
-	# Netgraph: the nodes with their hooks, and the few commands.
-	atf_check -o match:'"name":"em0","type":"ether","id":"00000002","hooks":\[\{"hook":"lower","peer":"bridge0","peer-type":"bridge","peer-id":"0000000c","peer-hook":"link0"\}\]' \
-	    -o match:'"name":"ngctl1234","type":"socket","id":"00000010","hooks":\[\]' \
+	# Netgraph: the nodes with their hooks (arcana-netgraph's read
+	# action), and the few commands.
+	atf_check -o match:'\{"hook":\[\{"name":"lower","peer":"bridge0","peer-hook":"link0","peer-id":"0000000c","peer-type":"bridge"\}\],"id":"00000002","name":"em0","type":"ether"\}' \
+	    -o match:'\{"id":"00000010","name":"ngctl1234","type":"socket"\}' \
 	    "$JGC" -c "$SOCK" net netgraph
 	atf_check -o match:'fake-ngctl mkpeer em0: bridge lower link0' \
 	    "$JGC" -c "$SOCK" ng mkpeer em0: bridge lower link0
@@ -4399,7 +4440,8 @@ EOP
 "restart nope") printf 'BIRD 2.15.1 ready.\nNo protocols match\n' ;;
 restart*|reload*|enable*|disable*) printf 'BIRD 2.15.1 ready.\n%s: done\n' "\$2" ;;
 configure) printf 'BIRD 2.15.1 ready.\nReading configuration from /usr/local/etc/bird.conf\nReconfigured\n' ;;
-"configure timeout 2") printf 'BIRD 2.15.1 ready.\nReconfigured\n' ;;
+"configure timeout "*) printf 'BIRD 2.15.1 ready.\nReconfigured\n' ;;
+"configure undo") printf 'BIRD 2.15.1 ready.\nUndo requested\n' ;;
 "configure confirm") printf 'BIRD 2.15.1 ready.\nReconfiguration confirmed\n' ;;
 "show route for 10.1.2.3 count") printf 'BIRD 2.15.1 ready.\n2 of 2 routes for 1 networks in table master4\n' ;;
 "show route for 10.1.2.3 all") cat <<EOP ;;
@@ -4437,8 +4479,9 @@ EOS
 
 	# An interface without a key, and one to be given one: made on
 	# the host, read by wg(8) from a file that is gone afterwards.
-	atf_check -o match:'"name":"wg0","private-key":false,"listen-port":51820' \
-	    -o match:'"name":"wg1"' -o not-match:'none' \
+	# arcana-wireguard's read action, as RFC 7951's JSON.
+	atf_check -o match:'"listen-port":51820,"name":"wg0",' \
+	    -o match:'"name":"wg1","private-key":false' -o not-match:'none' \
 	    "$JGC" -c "$SOCK" net wireguard
 	atf_check -o match:'wg0: wireguard init' -o match:'made on this host' \
 	    -o match:'fake-wg set wg0 listen-port 51820' \
@@ -4456,8 +4499,8 @@ EOS
 	# that there is one.  Not in the reading, not in its trace, not in
 	# a job's.
 	atf_check -o save:wg.out "$JGC" -t -c "$SOCK" net wireguard
-	atf_check -o match:"\"name\":\"wg0\",\"private-key\":true,\"public-key\":\"$PUB\"" \
-	    -o match:"\"public-key\":\"$PEER\",\"preshared-key\":false,\"endpoint\":\"192.0.2.9:51820\",\"allowed-ips\":\[\"10.9.9.2/32\",\"fd00::2/128\"\],\"latest-handshake\":1700000000,\"rx\":1024,\"tx\":2048,\"keepalive\":25" \
+	atf_check -o match:"\"private-key\":true,\"public-key\":\"$PUB\"" \
+	    -o match:"\{\"allowed-ip\":\[\"10.9.9.2/32\",\"fd00::2/128\"\],\"endpoint\":\"192.0.2.9:51820\",\"keepalive\":25,\"latest-handshake\":\"2023-11-14T22:13:20Z\",\"preshared-key\":false,\"public-key\":\"$PEER\",\"received\":\"1024\",\"sent\":\"2048\"\}" \
 	    -o match:'not kept: it has keys in it' cat wg.out
 	atf_check -s exit:1 grep -qF "$KEY" wg.out
 
@@ -4521,23 +4564,25 @@ EOS
 	atf_check -o not-match:'wg0' cat rc.conf
 
 	# BIRD: what it says of itself and of its protocols, asked for
-	# without the right to change anything.
+	# without the right to change anything: arcana-bird's read action,
+	# as RFC 7951's JSON.
 	atf_check -o save:bird.json "$JGC" -c "$SOCK" net bird
 	atf_check -o match:'"status":\["BIRD 2.15.1","Router ID is 192.0.2.1","Hostname is lab","Daemon is up and running"\]' \
-	    -o match:'"name":"device1","proto":"Device","table":"---","state":"up","since":"2026-10-01","info":""' \
-	    -o match:'"name":"bgp_core","proto":"BGP","table":"---","state":"up","since":"12:01:02.345","info":"Established"' \
-	    -o match:'"name":"bgp_edge".*"state":"start".*"info":"Active        Socket: Connection refused"' \
+	    -o match:'\{"info":"","name":"device1","since":"2026-10-01","state":"up","table":"---","type":"Device"\}' \
+	    -o match:'"info":"Established","name":"bgp_core","since":"12:01:02.345","state":"up","table":"---","type":"BGP"' \
+	    -o match:'"info":"Active        Socket: Connection refused","name":"bgp_edge","since":"12:01:02.345","state":"start"' \
 	    cat bird.json
 	# Of a neighbour: who it is, and of each channel its filters and
-	# how many routes came and went.
-	atf_check -o match:'"description":"Core uplink","bgp-state":"Established","neighbor":"192.0.2.1","neighbor-as":"65001","local-as":"65000","neighbor-id":"192.0.2.1"' \
-	    -o match:'"name":"ipv4","state":"UP","table":"master4","input-filter":"bgp_in","output-filter":"bgp_out","routes":"845233 imported, 12 exported, 400000 preferred","imported":845233,"exported":12' \
-	    -o match:'"name":"ipv6".*"output-filter":"REJECT".*"imported":190000,"exported":0' \
-	    -o match:'"neighbor":"198.51.100.7","neighbor-as":"65002".*"last-error":"Socket: Connection refused"' \
-	    -o match:'"cache":"rpki.example.net","rpki-status":"Established","serial":"42"' \
-	    -o match:'"ospf":\[\{"proto":"ospf1","router-id":"10.0.0.2","pri":"1","state":"Full/PtP","dtime":"00:00:35","interface":"gif0","address":"10.255.0.2"\}\]' \
-	    -o match:'"bfd":\[\{"proto":"bfd1","address":"fe80::1","interface":"gif0","state":"Up","since":"13:01:27.605","interval":"0.200","timeout":"1.000"\},\{"proto":"bfd1","address":"fe80::2","interface":"gre1","state":"Down"' \
-	    -o match:'"tables":\[\{"name":"master4","routes":845236,"networks":845233\},\{"name":"r4","routes":512345,"networks":512345\}\]' \
+	# how many routes came and went; show protocols all's lines too.
+	atf_check -o match:'"bgp":\{"hold":"150.012/240","local-as":65000,"neighbor":"192.0.2.1","neighbor-as":65001,"neighbor-id":"192.0.2.1","state":"Established"\}' \
+	    -o match:'\{"exported":"12","imported":"845233","input-filter":"bgp_in","name":"ipv4","output-filter":"bgp_out","routes":"845233 imported, 12 exported, 400000 preferred","state":"UP","table":"master4"\}' \
+	    -o match:'"exported":"0","imported":"190000","input-filter":"bgp_in","name":"ipv6","output-filter":"REJECT"' \
+	    -o match:'"description":"Core uplink","detail":\["  Description:    Core uplink","  BGP state:          Established"' \
+	    -o match:'"bgp":\{"last-error":"Socket: Connection refused","local-as":65000,"neighbor":"198.51.100.7","neighbor-as":65002,"state":"Active"\}' \
+	    -o match:'"rpki":\{"cache":"rpki.example.net","serial":"42","status":"Established"\}' \
+	    -o match:'"ospf-neighbor":\[\{"address":"10.255.0.2","dead-time":"00:00:35","interface":"gif0","priority":"1","protocol":"ospf1","router-id":"10.0.0.2","state":"Full/PtP"\}\]' \
+	    -o match:'"bfd-session":\[\{"address":"fe80::1","interface":"gif0","interval":"0.200","protocol":"bfd1","since":"13:01:27.605","state":"Up","timeout":"1.000"\},\{"address":"fe80::2","interface":"gre1","interval":"1.000","protocol":"bfd1","since":"13:02:00.000","state":"Down"' \
+	    -o match:'"table":\[\{"name":"master4","networks":"845233","routes":"845236"\},\{"name":"r4","networks":"512345","routes":"512345"\}\]' \
 	    cat bird.json
 	atf_check -o match:'^-r show status$' -o match:'^-r show protocols all$' \
 	    cat birdc.log
@@ -4562,8 +4607,9 @@ EOS
 	    "$JGC" -c "$SOCK" bird down now
 	atf_check -o not-match:'down' cat birdc.log
 
-	# Its configuration: read whole, with the files it includes; put
-	# back whole, once bird(8) has parsed it, and the daemon told.
+	# Its configuration (arcana-bird): read whole from running, with the
+	# files it includes; put back whole by a commit, once bird(8) has
+	# parsed it, and the daemon told.
 	atf_check -o match:'^router id 192.0.2.1;$' -o match:'filter bgp_in' \
 	    "$JGC" -c "$SOCK" bird config
 	atf_check -o match:'bird/peers/edge.conf' \
@@ -4602,30 +4648,31 @@ EOS
 	atf_check -s exit:1 -e match:"not a file of BIRD's configuration" -o ignore \
 	    "$JGC" -c "$SOCK" bird config -w edge.new "$(pwd)/bird/peers/x.sh"
 	atf_check -o not-match:'bgp_edge' cat rc.conf
+	# Running has them, arcana-bird's configuration.
+	atf_check -o match:'"arcana-bird:bird"' -o match:'peers/edge.conf' \
+	    "$JGC" -c "$SOCK" get -d running bird
 
 	# BIRD's routes, said in birdc's words; an address alone is the
 	# route that covers it.  Each route with where it leads, and with
 	# all, what it carries.
 	atf_check -o save:r.json "$JGC" -c "$SOCK" bird routes 10.1.2.3 all
-	atf_check -o match:'"table":"master4","prefix":"10.1.0.0/16","type":"unicast","protocol":"bgp_core","from":"192.0.2.1","since":"2026-10-01","primary":true,"preference":"100","info":"AS65001i"' \
-	    -o match:'"nexthops":\[\{"via":"192.0.2.1","interface":"em0"\}\]' \
-	    -o match:'"attrs":\["Type: BGP univ","BGP.as_path: 65001 65010","BGP.large_community: \(65001, 1, 100\)"\]' \
-	    -o match:'"prefix":"10.1.0.0/16","type":"unicast","protocol":"bgp_edge","since":"12:01:02.345","primary":false,"preference":"100/20","info":"AS65002\?"' \
-	    -o match:'\{"via":"198.51.100.7","interface":"gre0"\},\{"via":"198.51.100.9","interface":"gre1"\}' \
-	    -o match:'"count":2' cat r.json
-	atf_check -o match:'"routes":\[\]' "$JGC" -c "$SOCK" bird routes table master6
+	atf_check -o match:'"attribute":\["Type: BGP univ","BGP.as_path: 65001 65010","BGP.large_community: \(65001, 1, 100\)"\],"from":"192.0.2.1","info":"AS65001i","nexthop":\[\{"interface":"em0","via":"192.0.2.1"\}\],"preference":"100","prefix":"10.1.0.0/16","primary":true,"protocol":"bgp_core","since":"2026-10-01","table":"master4","type":"unicast"' \
+	    -o match:'"preference":"100/20","prefix":"10.1.0.0/16","primary":false,"protocol":"bgp_edge","since":"12:01:02.345"' \
+	    -o match:'\{"interface":"gre0","via":"198.51.100.7"\},\{"interface":"gre1","via":"198.51.100.9"\}' \
+	    -o match:'"count":"2"' cat r.json
+	atf_check -o not-match:'"route"' "$JGC" -c "$SOCK" bird routes table master6
 
 	# OSPF: each protocol with the areas it is in; with topology, what
 	# its link-state database says, routers with their links and the
 	# transit networks; a protocol's name is a word.
-	atf_check -o match:'"protocols":\[\{"name":"ospf1","areas":\["0.0.0.0"\]\}\]' \
+	atf_check -o match:'"protocol":\[\{"area":\["0.0.0.0"\],"name":"ospf1"\}\]' \
 	    "$JGC" -c "$SOCK" bird ospf
 	atf_check -o save:o.json "$JGC" -c "$SOCK" bird ospf topology ospf1
-	atf_check -o match:'"id":"10.0.0.2","links":\[\{"kind":"router","to":"192.0.2.1","metric":10\},\{"kind":"stubnet","to":"10.9.0.0/24","metric":10\},\{"kind":"external","to":"0.0.0.0/0","metric2":10000\}\],"distance":10' \
-	    -o match:'"networks":\[\{"id":"10.255.0.0/24","routers":\["192.0.2.1","10.0.0.2"\],"dr":"192.0.2.1","distance":10\}\]' \
+	atf_check -o match:'"distance":10,"id":"10.0.0.2","link":\[\{"kind":"router","metric":10,"to":"192.0.2.1"\},\{"kind":"stubnet","metric":10,"to":"10.9.0.0/24"\},\{"kind":"external","metric2":10000,"to":"0.0.0.0/0"\}\]' \
+	    -o match:'"network":\[\{"distance":10,"dr":"192.0.2.1","id":"10.255.0.0/24","router":\["192.0.2.1","10.0.0.2"\]\}\]' \
 	    cat o.json
-	atf_check -s exit:1 -e match:'letters, digits and _' -o ignore \
-	    "$JGC" -c "$SOCK" bird ospf topology 'x-y'
+	atf_check -s exit:1 -e match:"does not match pattern '\[A-Za-z0-9_\]\+'" \
+	    -o ignore "$JGC" -c "$SOCK" bird ospf topology 'x-y'
 	atf_check -o match:'"message":"Network not found"' \
 	    "$JGC" -c "$SOCK" bird routes 10.9.0.0/16
 	# A neighbour's whole table is counted, not carried.
@@ -4640,33 +4687,42 @@ EOS
 	atf_check -s exit:1 -e match:"in birdc's words" -o ignore \
 	    "$JGC" -c "$SOCK" bird routes table
 
-	# In safe mode BIRD is told to take the change back by itself when
-	# its time is up, and the file goes back with it.
+	# In safe mode a confirmed commit: BIRD is told to take the change
+	# back by itself a little after the commit's timeout, should the
+	# agent be gone; the commit undone at its timeout, BIRD is told to go
+	# back now, and the file goes back with it.
 	sed -e 's/reject;/accept; # safe/' bird/bird.conf > safe.conf
 	: > birdc.log
-	atf_check -o match:'taken back unless confirmed' \
-	    "$JGC" -s -c "$SOCK" bird config -w safe.conf
-	atf_check -o match:'^configure timeout 2$' cat birdc.log
+	atf_check -o match:'taken back unless confirmed' -o save:safe.out \
+	    "$JGC" -c "$SOCK" bird config -c 2 -w safe.conf
+	TOK=$(sed -n 's/.*bird confirm //p' safe.out)
+	atf_check -o match:'^configure timeout 7$' cat birdc.log
 	atf_check -o match:'# safe' cat bird/bird.conf
 	# Another change waits for this one.
-	atf_check -s exit:1 -e match:'waits to be confirmed' -o ignore \
+	atf_check -s exit:1 -e match:'confirmed commit' -o ignore \
 	    "$JGC" -c "$SOCK" bird config -w safe.conf
 	for i in $(seq 1 80); do
 		grep -q '# safe' bird/bird.conf || break
 		sleep 0.1
 	done
 	atf_check -o match:'reject;' -o not-match:'# safe' cat bird/bird.conf
-	atf_check -s exit:1 -e match:'no change to BIRD waits' -o ignore \
-	    "$JGC" -c "$SOCK" bird confirm
-	# Confirmed, it stays.
+	atf_check -o match:'^configure undo$' cat birdc.log
+	atf_check -s exit:1 -e match:'no confirmed commit' -o ignore \
+	    "$JGC" -c "$SOCK" bird confirm "$TOK"
+	# Confirmed, it stays, and BIRD is told so.
 	for i in $(seq 1 50); do
-		"$JGC" -s -c "$SOCK" bird config -w safe.conf > out 2>&1 && break
+		"$JGC" -c "$SOCK" bird config -c 2 -w safe.conf > out 2>&1 && break
 		sleep 0.1
 	done
 	atf_check -o match:'taken back unless confirmed' cat out
-	atf_check -o match:'confirmed: it stays' "$JGC" -c "$SOCK" bird confirm
+	TOK=$(sed -n 's/.*bird confirm //p' out)
+	atf_check -o match:'confirmed: it stays' "$JGC" -c "$SOCK" bird confirm "$TOK"
+	for i in $(seq 1 30); do
+		grep -q '^configure confirm$' birdc.log && break
+		sleep 0.1
+	done
 	atf_check -o match:'^configure confirm$' cat birdc.log
-	sleep 5
+	sleep 3
 	atf_check -o match:'# safe' cat bird/bird.conf
 
 	# What BIRD itself does not take does not stay in the file: what
@@ -4681,20 +4737,26 @@ EOS
 	    "$JGC" -c "$SOCK" bird configure
 	rm bird.refuses
 	# A daemon that goes away while it is told is not undone after:
-	# the file parses, and stays for it to read when it is started.
+	# the file parses, and stays for it to read when it is started; the
+	# commit stands, warned of it.
 	touch bird.dies
-	atf_check -s exit:1 -e match:'BIRD stopped answering when told to read' \
-	    -e match:'The file is in place and parses' -o ignore \
+	atf_check -o match:'BIRD stopped answering when told to read' \
+	    -o match:'The file is in place and parses' \
 	    "$JGC" -c "$SOCK" bird config -w two.conf
 	atf_check -o match:'# two' cat bird/bird.conf
 	rm bird.dies
-	# One that does not run: nothing in safe mode; without it the file
-	# is put in place, for when it is started.
+	# One that does not run: the file put in place for when it is
+	# started, warned of; in safe mode taken back at the timeout.
 	sed -e 's/# two/# twob/' bird/bird.conf > twob.conf
-	atf_check -s exit:1 -e match:'BIRD does not answer: nothing can be changed in safe mode' \
-	    -o ignore "$JGC" -s -c "$SOCK" bird config -w twob.conf
+	atf_check -o match:'reads it when it is started' \
+	    "$JGC" -c "$SOCK" bird config -c 2 -w twob.conf
+	atf_check -o match:'# twob' cat bird/bird.conf
+	for i in $(seq 1 80); do
+		grep -q '# twob' bird/bird.conf || break
+		sleep 0.1
+	done
 	atf_check -o match:'# two$' cat bird/bird.conf
-	atf_check -s exit:1 -e match:'reads it when it is started' -o ignore \
+	atf_check -o match:'reads it when it is started' \
 	    "$JGC" -c "$SOCK" bird config -w twob.conf
 	atf_check -o match:'# twob' cat bird/bird.conf
 	rm bird.dead
@@ -4713,9 +4775,9 @@ EOS
 	# is not undone after either: the file stays.
 	sed -e 's/# two/# gone/' bird/bird.conf > gone.conf
 	atf_check -o match:'taken back unless confirmed' \
-	    "$JGC" -s -c "$SOCK" bird config -w gone.conf
+	    "$JGC" -c "$SOCK" bird config -c 2 -w gone.conf
 	touch bird.dead
-	sleep 6
+	sleep 4
 	atf_check -o match:'# gone' cat bird/bird.conf
 	rm bird.dead
 	sed -e 's/# gone/# two/' bird/bird.conf > two.conf
@@ -4728,32 +4790,28 @@ EOS
 	# that would stop its own timer.
 	sed -e 's/# two/# three/' bird/bird.conf > three.conf
 	for i in $(seq 1 50); do
-		"$JGC" -s -c "$SOCK" bird config -w three.conf > out 2>&1 && break
+		"$JGC" -c "$SOCK" bird config -c 2 -w three.conf > out 2>&1 && break
 		sleep 0.1
 	done
 	atf_check -o match:'taken back unless confirmed' cat out
 	atf_check -s exit:1 -o match:'waits to be confirmed' \
 	    "$JGC" -c "$SOCK" bird configure
-	# Left alone it is taken back, and BIRD told to read the file as
-	# it was; a file somebody changed meanwhile is left to them.
+	# Left alone it is taken back, BIRD told to go back and the file
+	# as it was; a file somebody changed meanwhile is left to them.
 	: > birdc.log
 	for i in $(seq 1 80); do
 		grep -q '# three' bird/bird.conf || break
 		sleep 0.1
 	done
 	atf_check -o match:'# two' -o not-match:'# three' cat bird/bird.conf
-	for i in $(seq 1 30); do
-		grep -q '^configure$' birdc.log && break
-		sleep 0.1
-	done
-	atf_check -o match:'^configure$' cat birdc.log
+	atf_check -o match:'^configure undo$' cat birdc.log
 	for i in $(seq 1 50); do
-		"$JGC" -s -c "$SOCK" bird config -w three.conf > out 2>&1 && break
+		"$JGC" -c "$SOCK" bird config -c 2 -w three.conf > out 2>&1 && break
 		sleep 0.1
 	done
 	atf_check -o match:'taken back unless confirmed' cat out
 	printf '# somebody else\n' >> bird/bird.conf
-	sleep 6
+	sleep 4
 	atf_check -o match:'# three' -o match:'# somebody else' cat bird/bird.conf
 }
 vpn_cleanup()
@@ -5060,9 +5118,10 @@ EOS
 	atf_check test ! -e wg/wg0.conf
 	atf_check -o not-match:'wireguard' cat rc.conf
 
-	# BIRD there: the jail's birdc and bird, its configuration read and
-	# put back beneath the jail's root.
-	atf_check -o match:'"name":"bgp_up".*"neighbor":"192.0.2.1"' \
+	# BIRD there: the jail's birdc and bird (arcana-bird's read action
+	# on the jail's node), its configuration read and put back beneath
+	# the jail's root (arcana-bird's jail).
+	atf_check -o match:'"bgp":\{"neighbor":"192.0.2.1"[^}]*\}.*"name":"bgp_up"' \
 	    "$JGC" -j gateway -c "$SOCK" net bird
 	atf_check -o match:'jexec 4 .*/fake-birdc -r show status' cat jexec.log
 	atf_check -o match:'^router id 10.0.0.1;$' \
@@ -5097,6 +5156,9 @@ EOS
 	    "$JGC" -j web -c "$SOCK" net interfaces
 	atf_check -s exit:1 -e match:'is not running' -o ignore \
 	    "$JGC" -j nope -c "$SOCK" net routes
+	# A plugin's, by its module's read action on the jail's node.
+	atf_check -s exit:1 -e match:'net netgraph: .*has no network of its own' \
+	    "$JGC" -j web -c "$SOCK" net netgraph
 	atf_check -s exit:1 -o match:'has no network of its own' \
 	    "$JGC" -j web -c "$SOCK" interface lo0 up
 	atf_check -s exit:1 -e match:'invalid jail name' -o ignore \
@@ -6462,16 +6524,16 @@ EOS
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
 	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0,"counters":\[\]\}' \
 	    -o match:'"steer":\[\],"steered":false' "$JGC" -c "$SOCK" sdwan
-	# What is not a target list.
+	# What is not a target list: refused as arcana-probe has them.
 	atf_check -s exit:1 -e match:'JSON array' -o ignore \
 	    "$JGC" -c "$SOCK" sdwan probes '{"id":"x"}'
-	atf_check -s exit:1 -e match:'id and an address' -o ignore \
+	atf_check -s exit:1 -e match:'address: mandatory, missing' -o ignore \
 	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x"}]'
-	atf_check -s exit:1 -e match:'is not an address' -o ignore \
+	atf_check -s exit:1 -e match:'address' -o ignore \
 	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x","address":"nowhere"}]'
 	atf_check -s exit:1 -e match:'interval' -o ignore \
 	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x","address":"127.0.0.1","interval":1}]'
-	atf_check -s exit:1 -e match:'there twice' -o ignore \
+	atf_check -s exit:1 -e match:'twice' -o ignore \
 	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x","address":"127.0.0.1"},{"id":"x","address":"::1"}]'
 	# Two targets, with their settings and the defaults.
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
@@ -9529,6 +9591,9 @@ EOS
 	    -o match:'^tick-1s$' -o match:'^/n >= 3/$' -o match:'inet_ntoa6' cat script.d
 	atf_check -s exit:1 -e match:'IPv4 or IPv6 address' "$JGC" -c "$SOCK" ipfw trace nonsense
 	atf_check -s exit:1 -e ignore "$JGC" -c "$SOCK" ipfw trace 192.0.2.7 61
+	# A jail's firewall: the trace of its entry, in its network.
+	atf_check -s exit:1 -e match:'jail nosuchjail is not running' -o ignore \
+	    "$JGC" -j nosuchjail -c "$SOCK" ipfw trace 192.0.2.7 1
 }
 fw_trace_cleanup()
 {

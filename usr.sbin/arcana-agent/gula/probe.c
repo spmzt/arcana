@@ -1561,7 +1561,7 @@ mon_name(const struct arc_job_spec *sp)
 	return (NULL);
 }
 
-/* A monitor's settings, as targets_parse takes them back. */
+/* A target's settings, as targets_parse takes them back. */
 static ucl_object_t *
 target_conf(const struct target *t)
 {
@@ -1575,6 +1575,12 @@ target_conf(const struct target *t)
 		ucl_object_insert_key(o, ucl_object_fromstring(t->ifname),
 		    "interface", 0, false);
 	ucl_object_insert_key(o, ucl_object_fromint(t->fib), "fib", 0, false);
+	if (!is_monitor(t)) {
+		ucl_object_insert_key(o, ucl_object_fromint(t->count), "count",
+		    0, false);
+		ucl_object_insert_key(o, ucl_object_fromint(t->report),
+		    "report", 0, false);
+	}
 	ucl_object_insert_key(o, ucl_object_fromint(t->interval), "interval",
 	    0, false);
 	ucl_object_insert_key(o, ucl_object_fromint(t->size), "size", 0, false);
@@ -1722,6 +1728,70 @@ put_num(ucl_object_t *o, const char *key, const char *v, const char **errp)
 }
 
 /*
+ * An edge's monitors in the place of those it had: arr, the targets as
+ * targets_parse takes them (taken), the owner's file written again.
+ */
+static int
+monitors_put(struct work *w, ucl_object_t *arr, const char *jail,
+    const char **errp)
+{
+	struct target	*new;
+	ucl_object_t	*top;
+	const char	*e;
+	char		*json, path[MAXPATHLEN], jbuf[64];
+	int		 n, step;
+
+	if (jail[0] != '\0') {
+		top = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(top, ucl_object_fromstring(jail), "jail", 0,
+		    false);
+		ucl_object_insert_key(top, arr, "targets", 0, false);
+	} else
+		top = arr;
+	n = (int)ucl_array_size(ucl_object_lookup(top, "targets") != NULL ?
+	    ucl_object_lookup(top, "targets") : top);
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	if (json == NULL) {
+		*errp = "no memory";
+		return (-1);
+	}
+	if ((new = calloc(TARGETS_MAX, sizeof(*new))) == NULL) {
+		free(json);
+		*errp = strerror(errno);
+		return (-1);
+	}
+	if ((n = targets_parse(w, json, new, jbuf, sizeof(jbuf), OWN_MONITOR,
+	    errp)) < 0) {
+		free(new);
+		free(json);
+		return (-1);
+	}
+	if (!targets_swap(new, n, jail, OWN_MONITOR)) {
+		*errp = wfmt(w, "%d targets at most, monitors and SD-WAN's "
+		    "together", TARGETS_MAX);
+		for (n--; n >= 0; n--)
+			target_free(&new[n]);
+		free(new);
+		free(json);
+		return (-1);
+	}
+	conf_path(path, sizeof(path), jail, OWN_MONITOR);
+	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
+	e = NULL;
+	if (n == 0 ? unlink(path) == -1 && errno != ENOENT && (e = strerror(
+	    errno)) != NULL : conf_write(json, jail, OWN_MONITOR, &e) != 0) {
+		step_end(w, step, false, "%s", e);
+		*errp = wfmt(w, "%s: %s", path, e);
+		free(json);
+		return (-1);
+	}
+	step_end(w, step, true, "%d monitor%s", n, n == 1 ? "" : "s");
+	free(json);
+	return (0);
+}
+
+/*
  * A monitor set (added, or changed in place: its samples kept when it
  * probes the same address the same way) or removed, at the host or at
  * the vnet jail sp->jail; the owner's file written again.
@@ -1730,13 +1800,11 @@ int
 do_monitor_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
 {
-	struct target	*new;
-	ucl_object_t	*arr, *o, *tc, *top;
+	ucl_object_t	*arr, *o, *tc;
 	const char	*name, *jail, *a, *v, *ifname, *e;
-	char		*json, path[MAXPATHLEN], jbuf[64];
 	double		 d;
 	size_t		 i;
-	int		 n, k, step;
+	int		 k;
 	bool		 found;
 
 	name = mon_name(sp);
@@ -1841,52 +1909,154 @@ do_monitor_job(struct work *w, const struct arc_job_spec *sp,
 			ucl_object_unref(tc);
 		ucl_array_append(arr, o);
 	}
-	if (jail[0] != '\0') {
-		top = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(top, ucl_object_fromstring(jail), "jail", 0,
-		    false);
-		ucl_object_insert_key(top, arr, "targets", 0, false);
-	} else
-		top = arr;
-	n = (int)ucl_array_size(ucl_object_lookup(top, "targets") != NULL ?
-	    ucl_object_lookup(top, "targets") : top);
+	return (monitors_put(w, arr, jail, errp));
+}
+
+/*
+ * The configuration of the probes as arcana-probe has it: each edge
+ * (the host's first, "" its jail) with its SD-WAN targets, the links it
+ * watches and the admin's monitors, as JSON
+ * {"edges": [{"jail", "targets", "links", "monitors"}]}; malloc'd, NULL
+ * for no memory.
+ */
+char *
+probe_conf_json(void)
+{
+	ucl_object_t		*top, *edges, *e, *l;
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	const char		*jail, *key;
+	char			*json;
+	int			 k;
+
+	top = ucl_object_typed_new(UCL_OBJECT);
+	edges = ucl_object_typed_new(UCL_OBJECT);
+	/* The host's, always. */
+	e = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(edges, e, "", 0, true);
+	pthread_mutex_lock(&lock);
+	for (k = 0; k < ntargets + nlinks; k++) {
+		/* A target's place left empty is none. */
+		if (k < ntargets && targets[k].id[0] == '\0')
+			continue;
+		jail = k < ntargets ? targets[k].jail : links[k - ntargets].jail;
+		if ((o = ucl_object_lookup(edges, jail)) == NULL) {
+			e = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(edges, e, jail, 0, true);
+		} else
+			e = (ucl_object_t *)(uintptr_t)o;
+		key = k >= ntargets ? "links" : is_monitor(&targets[k]) ?
+		    "monitors" : "targets";
+		if ((o = ucl_object_lookup(e, key)) == NULL) {
+			l = ucl_object_typed_new(UCL_ARRAY);
+			ucl_object_insert_key(e, l, key, 0, true);
+		} else
+			l = (ucl_object_t *)(uintptr_t)o;
+		if (k < ntargets)
+			ucl_array_append(l, target_conf(&targets[k]));
+		else {
+			o = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key((ucl_object_t *)(uintptr_t)o,
+			    ucl_object_fromstring(links[k - ntargets].id), "id",
+			    0, false);
+			ucl_object_insert_key((ucl_object_t *)(uintptr_t)o,
+			    ucl_object_fromstring(links[k - ntargets].ifname),
+			    "interface", 0, false);
+			ucl_object_insert_key((ucl_object_t *)(uintptr_t)o,
+			    ucl_object_fromstring(links[k - ntargets].role),
+			    "role", 0, false);
+			ucl_array_append(l, (ucl_object_t *)(uintptr_t)o);
+		}
+	}
+	pthread_mutex_unlock(&lock);
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((o = ucl_object_iterate(edges, &it, true)) != NULL) {
+		e = ucl_object_copy(o);
+		ucl_object_insert_key(e, ucl_object_fromstring(ucl_object_key(o)),
+		    "jail", 0, true);
+		ucl_array_append(l, e);
+	}
+	ucl_object_unref(edges);
+	ucl_object_insert_key(top, l, "edges", 0, false);
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
-	if (json == NULL) {
-		*errp = "no memory";
+	return (json);
+}
+
+/*
+ * An edge's monitors set together, json {"jail", "targets"} (a
+ * monitor's id its name): on the host one without an address probes
+ * its interface's far end, through the interface's FIB when it names
+ * none.
+ */
+int
+do_monitors_set(struct work *w, const char *json, const char **errp)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*top, *arr, *o;
+	const ucl_object_t	*v, *e;
+	ucl_object_iter_t	 it;
+	const char		*jail, *ifname, *dst;
+	int			 rc;
+
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	top = ucl_parser_add_string(p, json, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	if (top == NULL || ucl_object_type(top) != UCL_OBJECT) {
+		if (top != NULL)
+			ucl_object_unref(top);
+		*errp = "the monitors are a JSON object";
 		return (-1);
 	}
-	if ((new = calloc(TARGETS_MAX, sizeof(*new))) == NULL) {
-		free(json);
-		*errp = strerror(errno);
+	jail = (v = ucl_object_lookup(top, "jail")) != NULL &&
+	    ucl_object_type(v) == UCL_STRING ? ucl_object_tostring(v) : "";
+	if (jail[0] != '\0' && !valid_jail(jail)) {
+		ucl_object_unref(top);
+		*errp = "invalid jail name";
 		return (-1);
 	}
-	if ((n = targets_parse(w, json, new, jbuf, sizeof(jbuf), OWN_MONITOR,
-	    errp)) < 0) {
-		free(new);
-		free(json);
-		return (-1);
+	jail = wstrdup(w, jail);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(top, "targets"), &it,
+	    true)) != NULL) {
+		o = ucl_object_copy(e);
+		ifname = (v = ucl_object_lookup(o, "interface")) != NULL &&
+		    ucl_object_type(v) == UCL_STRING ? ucl_object_tostring(v) :
+		    NULL;
+		if (ifname != NULL && (ifname[0] == '\0' || strlen(ifname) >=
+		    IFNAMSIZ || !valid_ifname(ifname))) {
+			ucl_object_unref(o);
+			ucl_object_unref(arr);
+			ucl_object_unref(top);
+			*errp = "a monitor's interface is an interface's name";
+			return (-1);
+		}
+		if (ucl_object_lookup(o, "address") == NULL) {
+			if (ifname == NULL || jail[0] != '\0' || (dst = ptp_dst(w,
+			    ifname)) == NULL) {
+				*errp = ifname != NULL && jail[0] == '\0' ?
+				    wfmt(w, "%s has no far end to probe (not "
+				    "point to point): give an address", ifname) :
+				    "a monitor needs an address";
+				ucl_object_unref(o);
+				ucl_object_unref(arr);
+				ucl_object_unref(top);
+				return (-1);
+			}
+			ucl_object_insert_key(o, ucl_object_fromstring(dst),
+			    "address", 0, true);
+			if (ucl_object_lookup(o, "fib") == NULL && if_fib(ifname) >
+			    0)
+				ucl_object_insert_key(o, ucl_object_fromint(
+				    if_fib(ifname)), "fib", 0, true);
+		}
+		ucl_array_append(arr, o);
 	}
-	if (!targets_swap(new, n, jail, OWN_MONITOR)) {
-		*errp = wfmt(w, "%d targets at most, monitors and SD-WAN's "
-		    "together", TARGETS_MAX);
-		for (n--; n >= 0; n--)
-			target_free(&new[n]);
-		free(new);
-		free(json);
-		return (-1);
-	}
-	conf_path(path, sizeof(path), jail, OWN_MONITOR);
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
-	e = NULL;
-	if (n == 0 ? unlink(path) == -1 && errno != ENOENT && (e = strerror(
-	    errno)) != NULL : conf_write(json, jail, OWN_MONITOR, &e) != 0) {
-		step_end(w, step, false, "%s", e);
-		*errp = wfmt(w, "%s: %s", path, e);
-		free(json);
-		return (-1);
-	}
-	step_end(w, step, true, "%d monitor%s", n, n == 1 ? "" : "s");
-	free(json);
-	return (0);
+	ucl_object_unref(top);
+	rc = monitors_put(w, arr, jail, errp);
+	return (rc);
 }

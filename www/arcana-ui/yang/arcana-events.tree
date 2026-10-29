@@ -11,7 +11,7 @@ module: arcana-events
      |  +--ro (data)?
      |     +--:(route)
      |     |  +--ro route
-     |     |     +--ro destination?     inet:ip-address-no-zone
+     |     |     +--ro destination?     string
      |     |     +--ro prefix-length?   uint8
      |     |     +--ro gateway?         string
      |     |     +--ro interface?       string
@@ -21,6 +21,10 @@ module: arcana-events
      |     |     +--ro weight?          uint32
      |     |     +--ro mtu?             uint32
      |     |     +--ro source?          string
+     |     |     +--ro nhop?            uint32
+     |     |     +--ro path?            uint16
+     |     |     +--ro paths?           uint16
+     |     |     +--ro expire-time?     uint32
      |     +--:(routes)
      |     |  +--ro routes
      |     |     +--ro changed?   uint32
@@ -42,6 +46,8 @@ module: arcana-events
      |     |     +--ro link-address?   string
      |     |     +--ro state?          string
      |     |     +--ro router?         boolean
+     |     |     +--ro family?         string
+     |     |     +--ro next?           uint32
      |     +--:(threshold)
      |     |  +--ro threshold
      |     |     +--ro what?    enumeration
@@ -62,6 +68,7 @@ module: arcana-events
      |     |     +--ro state?       enumeration
      |     |     +--ro misses?      uint32
      |     |     +--ro by?          string
+     |     |     +--ro jail?        string
      |     +--:(fault)
      |     |  +--ro fault
      |     |     +--ro type?          string
@@ -124,21 +131,27 @@ module: arcana-events
      |     |     +--ro over?        boolean
      |     |     +--ro interface?   string
      |     +--:(alert)
-     |        +--ro alert
-     |           +--ro instance?    string
-     |           +--ro time?        string
-     |           +--ro src?         string
-     |           +--ro sport?       uint16
-     |           +--ro dst?         string
-     |           +--ro dport?       uint16
-     |           +--ro proto?       string
-     |           +--ro interface?   string
-     |           +--ro sid?         uint32
-     |           +--ro rev?         uint32
-     |           +--ro signature?   string
-     |           +--ro category?    string
-     |           +--ro severity?    uint8
-     |           +--ro action?      string
+     |     |  +--ro alert
+     |     |     +--ro instance?    string
+     |     |     +--ro time?        string
+     |     |     +--ro src?         string
+     |     |     +--ro sport?       uint16
+     |     |     +--ro dst?         string
+     |     |     +--ro dport?       uint16
+     |     |     +--ro proto?       string
+     |     |     +--ro interface?   string
+     |     |     +--ro sid?         uint32
+     |     |     +--ro rev?         uint32
+     |     |     +--ro signature?   string
+     |     |     +--ro category?    string
+     |     |     +--ro severity?    uint8
+     |     |     +--ro action?      string
+     |     +--:(undo)
+     |        +--ro undo
+     |           +--ro node?      string
+     |           +--ro errno?     int32
+     |           +--ro message?   string
+     |           +--ro report?    string
      +---x read
         +---w input
         |  +---w after?   uint64
@@ -146,141 +159,155 @@ module: arcana-events
            +--ro last?    uint64
            +--ro first?   uint64
            +--ro event* [number]
-              +--ro number    uint64
-              +--ro time?     yang:date-and-time
-              +--ro kind?     identityref
-              +--ro jail?     string
-              +--ro (data)?
-                 +--:(route)
-                 |  +--ro route
-                 |     +--ro destination?     inet:ip-address-no-zone
-                 |     +--ro prefix-length?   uint8
-                 |     +--ro gateway?         string
-                 |     +--ro interface?       string
-                 |     +--ro fib?             uint16
-                 |     +--ro flags?           string
-                 |     +--ro metric?          uint32
-                 |     +--ro weight?          uint32
-                 |     +--ro mtu?             uint32
-                 |     +--ro source?          string
-                 +--:(routes)
-                 |  +--ro routes
-                 |     +--ro changed?   uint32
-                 +--:(link)
-                 |  +--ro link
-                 |     +--ro interface?   string
-                 |     +--ro up?          boolean
-                 |     +--ro carrier?     boolean
-                 |     +--ro mtu?         uint32
-                 +--:(address)
-                 |  +--ro address
-                 |     +--ro interface?       string
-                 |     +--ro address?         inet:ip-address
-                 |     +--ro prefix-length?   uint8
-                 +--:(neighbor)
-                 |  +--ro neighbor
-                 |     +--ro interface?      string
-                 |     +--ro address?        inet:ip-address
-                 |     +--ro link-address?   string
-                 |     +--ro state?          string
-                 |     +--ro router?         boolean
-                 +--:(threshold)
-                 |  +--ro threshold
-                 |     +--ro what?    enumeration
-                 |     +--ro name?    string
-                 |     +--ro value?   uint64
-                 |     +--ro limit?   uint64
-                 |     +--ro over?    boolean
-                 +--:(kmsg)
-                 |  +--ro kmsg
-                 |     +--ro sequence?   uint64
-                 |     +--ro text?       string
-                 |     +--ro more?       uint32
-                 +--:(tunnel)
-                 |  +--ro tunnel
-                 |     +--ro id?          string
-                 |     +--ro address?     inet:ip-address-no-zone
-                 |     +--ro interface?   string
-                 |     +--ro state?       enumeration
-                 |     +--ro misses?      uint32
-                 |     +--ro by?          string
-                 +--:(fault)
-                 |  +--ro fault
-                 |     +--ro type?          string
-                 |     +--ro severity?      string
-                 |     +--ro object?        string
-                 |     +--ro by?            string
-                 |     +--ro description?   string
-                 |     +--ro state?         enumeration
-                 +--:(security)
-                 |  +--ro security
-                 |     +--ro sequence?      uint64
-                 |     +--ro rule?          uint32
-                 |     +--ro action?        string
-                 |     +--ro source?        string
-                 |     +--ro destination?   string
-                 |     +--ro interface?     string
-                 |     +--ro comment?       string
-                 +--:(job)
-                 |  +--ro job
-                 |     +--ro id?      uint64
-                 |     +--ro title?   string
-                 |     +--ro ok?      boolean
-                 |     +--ro error?   string
-                 +--:(jail-state)
-                 |  +--ro jail-state
-                 |     +--ro jail?    string
-                 |     +--ro state?   enumeration
-                 |     +--ro jid?     uint32
-                 +--:(crash)
-                 |  +--ro crash
-                 |     +--ro pid?       uint32
-                 |     +--ro process?   string
-                 |     +--ro jid?       uint32
-                 |     +--ro jail?      string
-                 |     +--ro uid?       uint32
-                 |     +--ro signal?    uint8
-                 |     +--ro core?      boolean
-                 |     +--ro reason?    string
-                 +--:(conf)
-                 |  +--ro conf
-                 |     +--ro file?   string
-                 +--:(device)
-                 |  +--ro device
-                 |     +--ro cdev?    string
-                 |     +--ro state?   string
-                 +--:(zfs)
-                 |  +--ro zfs
-                 |     +--ro type?   string
-                 |     +--ro pool?   string
-                 +--:(procs)
-                 |  +--ro procs
-                 |     +--ro started?   uint32
-                 |     +--ro exited?    uint32
-                 +--:(monitor)
-                 |  +--ro monitor
-                 |     +--ro id?          string
-                 |     +--ro metric?      string
-                 |     +--ro value?       decimal64
-                 |     +--ro threshold?   decimal64
-                 |     +--ro over?        boolean
-                 |     +--ro interface?   string
-                 +--:(alert)
-                    +--ro alert
-                       +--ro instance?    string
-                       +--ro time?        string
-                       +--ro src?         string
-                       +--ro sport?       uint16
-                       +--ro dst?         string
-                       +--ro dport?       uint16
-                       +--ro proto?       string
-                       +--ro interface?   string
-                       +--ro sid?         uint32
-                       +--ro rev?         uint32
-                       +--ro signature?   string
-                       +--ro category?    string
-                       +--ro severity?    uint8
-                       +--ro action?      string
+           |  +--ro number    uint64
+           |  +--ro time?     yang:date-and-time
+           |  +--ro kind?     identityref
+           |  +--ro jail?     string
+           |  +--ro (data)?
+           |     +--:(route)
+           |     |  +--ro route
+           |     |     +--ro destination?     string
+           |     |     +--ro prefix-length?   uint8
+           |     |     +--ro gateway?         string
+           |     |     +--ro interface?       string
+           |     |     +--ro fib?             uint16
+           |     |     +--ro flags?           string
+           |     |     +--ro metric?          uint32
+           |     |     +--ro weight?          uint32
+           |     |     +--ro mtu?             uint32
+           |     |     +--ro source?          string
+           |     |     +--ro nhop?            uint32
+           |     |     +--ro path?            uint16
+           |     |     +--ro paths?           uint16
+           |     |     +--ro expire-time?     uint32
+           |     +--:(routes)
+           |     |  +--ro routes
+           |     |     +--ro changed?   uint32
+           |     +--:(link)
+           |     |  +--ro link
+           |     |     +--ro interface?   string
+           |     |     +--ro up?          boolean
+           |     |     +--ro carrier?     boolean
+           |     |     +--ro mtu?         uint32
+           |     +--:(address)
+           |     |  +--ro address
+           |     |     +--ro interface?       string
+           |     |     +--ro address?         inet:ip-address
+           |     |     +--ro prefix-length?   uint8
+           |     +--:(neighbor)
+           |     |  +--ro neighbor
+           |     |     +--ro interface?      string
+           |     |     +--ro address?        inet:ip-address
+           |     |     +--ro link-address?   string
+           |     |     +--ro state?          string
+           |     |     +--ro router?         boolean
+           |     |     +--ro family?         string
+           |     |     +--ro next?           uint32
+           |     +--:(threshold)
+           |     |  +--ro threshold
+           |     |     +--ro what?    enumeration
+           |     |     +--ro name?    string
+           |     |     +--ro value?   uint64
+           |     |     +--ro limit?   uint64
+           |     |     +--ro over?    boolean
+           |     +--:(kmsg)
+           |     |  +--ro kmsg
+           |     |     +--ro sequence?   uint64
+           |     |     +--ro text?       string
+           |     |     +--ro more?       uint32
+           |     +--:(tunnel)
+           |     |  +--ro tunnel
+           |     |     +--ro id?          string
+           |     |     +--ro address?     inet:ip-address-no-zone
+           |     |     +--ro interface?   string
+           |     |     +--ro state?       enumeration
+           |     |     +--ro misses?      uint32
+           |     |     +--ro by?          string
+           |     |     +--ro jail?        string
+           |     +--:(fault)
+           |     |  +--ro fault
+           |     |     +--ro type?          string
+           |     |     +--ro severity?      string
+           |     |     +--ro object?        string
+           |     |     +--ro by?            string
+           |     |     +--ro description?   string
+           |     |     +--ro state?         enumeration
+           |     +--:(security)
+           |     |  +--ro security
+           |     |     +--ro sequence?      uint64
+           |     |     +--ro rule?          uint32
+           |     |     +--ro action?        string
+           |     |     +--ro source?        string
+           |     |     +--ro destination?   string
+           |     |     +--ro interface?     string
+           |     |     +--ro comment?       string
+           |     +--:(job)
+           |     |  +--ro job
+           |     |     +--ro id?      uint64
+           |     |     +--ro title?   string
+           |     |     +--ro ok?      boolean
+           |     |     +--ro error?   string
+           |     +--:(jail-state)
+           |     |  +--ro jail-state
+           |     |     +--ro jail?    string
+           |     |     +--ro state?   enumeration
+           |     |     +--ro jid?     uint32
+           |     +--:(crash)
+           |     |  +--ro crash
+           |     |     +--ro pid?       uint32
+           |     |     +--ro process?   string
+           |     |     +--ro jid?       uint32
+           |     |     +--ro jail?      string
+           |     |     +--ro uid?       uint32
+           |     |     +--ro signal?    uint8
+           |     |     +--ro core?      boolean
+           |     |     +--ro reason?    string
+           |     +--:(conf)
+           |     |  +--ro conf
+           |     |     +--ro file?   string
+           |     +--:(device)
+           |     |  +--ro device
+           |     |     +--ro cdev?    string
+           |     |     +--ro state?   string
+           |     +--:(zfs)
+           |     |  +--ro zfs
+           |     |     +--ro type?   string
+           |     |     +--ro pool?   string
+           |     +--:(procs)
+           |     |  +--ro procs
+           |     |     +--ro started?   uint32
+           |     |     +--ro exited?    uint32
+           |     +--:(monitor)
+           |     |  +--ro monitor
+           |     |     +--ro id?          string
+           |     |     +--ro metric?      string
+           |     |     +--ro value?       decimal64
+           |     |     +--ro threshold?   decimal64
+           |     |     +--ro over?        boolean
+           |     |     +--ro interface?   string
+           |     +--:(alert)
+           |     |  +--ro alert
+           |     |     +--ro instance?    string
+           |     |     +--ro time?        string
+           |     |     +--ro src?         string
+           |     |     +--ro sport?       uint16
+           |     |     +--ro dst?         string
+           |     |     +--ro dport?       uint16
+           |     |     +--ro proto?       string
+           |     |     +--ro interface?   string
+           |     |     +--ro sid?         uint32
+           |     |     +--ro rev?         uint32
+           |     |     +--ro signature?   string
+           |     |     +--ro category?    string
+           |     |     +--ro severity?    uint8
+           |     |     +--ro action?      string
+           |     +--:(undo)
+           |        +--ro undo
+           |           +--ro node?      string
+           |           +--ro errno?     int32
+           |           +--ro message?   string
+           |           +--ro report?    string
+           +--ro kept?    uint16
 
   notifications:
     +---n event
@@ -291,7 +318,7 @@ module: arcana-events
        +---- (data)?
           +--:(route)
           |  +---- route
-          |     +---- destination?     inet:ip-address-no-zone
+          |     +---- destination?     string
           |     +---- prefix-length?   uint8
           |     +---- gateway?         string
           |     +---- interface?       string
@@ -301,6 +328,10 @@ module: arcana-events
           |     +---- weight?          uint32
           |     +---- mtu?             uint32
           |     +---- source?          string
+          |     +---- nhop?            uint32
+          |     +---- path?            uint16
+          |     +---- paths?           uint16
+          |     +---- expire-time?     uint32
           +--:(routes)
           |  +---- routes
           |     +---- changed?   uint32
@@ -322,6 +353,8 @@ module: arcana-events
           |     +---- link-address?   string
           |     +---- state?          string
           |     +---- router?         boolean
+          |     +---- family?         string
+          |     +---- next?           uint32
           +--:(threshold)
           |  +---- threshold
           |     +---- what?    enumeration
@@ -342,6 +375,7 @@ module: arcana-events
           |     +---- state?       enumeration
           |     +---- misses?      uint32
           |     +---- by?          string
+          |     +---- jail?        string
           +--:(fault)
           |  +---- fault
           |     +---- type?          string
@@ -404,18 +438,24 @@ module: arcana-events
           |     +---- over?        boolean
           |     +---- interface?   string
           +--:(alert)
-             +---- alert
-                +---- instance?    string
-                +---- time?        string
-                +---- src?         string
-                +---- sport?       uint16
-                +---- dst?         string
-                +---- dport?       uint16
-                +---- proto?       string
-                +---- interface?   string
-                +---- sid?         uint32
-                +---- rev?         uint32
-                +---- signature?   string
-                +---- category?    string
-                +---- severity?    uint8
-                +---- action?      string
+          |  +---- alert
+          |     +---- instance?    string
+          |     +---- time?        string
+          |     +---- src?         string
+          |     +---- sport?       uint16
+          |     +---- dst?         string
+          |     +---- dport?       uint16
+          |     +---- proto?       string
+          |     +---- interface?   string
+          |     +---- sid?         uint32
+          |     +---- rev?         uint32
+          |     +---- signature?   string
+          |     +---- category?    string
+          |     +---- severity?    uint8
+          |     +---- action?      string
+          +--:(undo)
+             +---- undo
+                +---- node?      string
+                +---- errno?     int32
+                +---- message?   string
+                +---- report?    string

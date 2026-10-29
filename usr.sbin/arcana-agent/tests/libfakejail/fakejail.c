@@ -12,9 +12,10 @@
  *	name jid vnet path [osrelease]
  *
  * as "gw 4 new /tmp/t/jroot 16.0-CURRENT": jails nobody made, there for
- * the agent alone.  A jail not in it, or no file, is not running.
- * Without FAKEJAIL, and for a walk by lastjid, the real one answers:
- * the list of every jail stays the host's.
+ * the agent alone.  A jail not in it, or no file, is not running; a
+ * walk by lastjid goes through the file's, by their jids.  Without
+ * FAKEJAIL, or without the file for a walk, the real one answers: the
+ * list of every jail stays the host's.
  *
  * Nothing of libjail is linked: the library is loaded into whatever the
  * agent runs too, and libjail's own symbols are looked for when called.
@@ -73,14 +74,16 @@ real(int flags, char *av[])
 
 /*
  * The file's line for the jail, by jid when one is given, else by
- * name; its fields in f, split in place in line.
+ * name, or with after (a walk) the one of the least jid above it; its
+ * fields in f, split in place in line.
  */
 static bool
-lookup(const char *file, const char *jid, const char *name, char *line,
-    size_t len, char *f[FJ_FIELDS])
+lookup(const char *file, const char *jid, const char *name, long after,
+    char *line, size_t len, char *f[FJ_FIELDS])
 {
 	FILE	*fp;
-	char	*p, *s;
+	char	*p, *s, best[MAXPATHLEN + 256];
+	long	 bj = -1, j;
 	int	 n;
 
 	if ((fp = fopen(file, "r")) == NULL)
@@ -98,6 +101,15 @@ lookup(const char *file, const char *jid, const char *name, char *line,
 			continue;
 		while (n < FJ_FIELDS)
 			f[n++] = empty;
+		if (after >= 0) {
+			if ((j = strtol(f[1], NULL, 10)) > after && (bj < 0 ||
+			    j < bj)) {
+				bj = j;
+				snprintf(best, sizeof(best), "%s %s %s %s %s",
+				    f[0], f[1], f[2], f[3], f[4]);
+			}
+			continue;
+		}
 		if (jid != NULL ? strcmp(f[1], jid) == 0 :
 		    strcmp(f[0], name) == 0) {
 			fclose(fp);
@@ -105,7 +117,17 @@ lookup(const char *file, const char *jid, const char *name, char *line,
 		}
 	}
 	fclose(fp);
-	return (false);
+	if (bj < 0)
+		return (false);
+	/* The one found, split again. */
+	snprintf(line, len, "%s", best);
+	n = 0;
+	p = line;
+	while (n < FJ_FIELDS && (s = strsep(&p, " ")) != NULL)
+		f[n++] = s;
+	while (n < FJ_FIELDS)
+		f[n++] = empty;
+	return (true);
 }
 
 int
@@ -115,7 +137,9 @@ jail_getv(int flags, ...)
 	char		*av[2 * FJ_PAIRS + 1], *f[FJ_FIELDS];
 	char		 line[MAXPATHLEN + 256];
 	const char	*file, *jid, *name, *key, *s;
+	long		 after;
 	int		 n, i;
+	FILE		*fp;
 
 	va_start(ap, flags);
 	for (n = 0; n < 2 * FJ_PAIRS && (av[n] = va_arg(ap, char *)) != NULL;
@@ -132,9 +156,17 @@ jail_getv(int flags, ...)
 		av[i] = NULL;
 	/* The key, as libjail takes it: lastjid, a jid not 0, the name. */
 	jid = name = NULL;
+	after = -1;
 	for (i = 0; i < n; i += 2) {
-		if (strcmp(av[i], "lastjid") == 0)
-			return (real(flags, av));
+		if (strcmp(av[i], "lastjid") == 0) {
+			if ((file = getenv("FAKEJAIL")) == NULL || (fp =
+			    fopen(file, "r")) == NULL)
+				return (real(flags, av));
+			fclose(fp);
+			after = strtol(av[i + 1], NULL, 10);
+			key = av[i + 1];
+			continue;
+		}
 		if (strcmp(av[i], "jid") == 0 &&
 		    strtol(av[i + 1], NULL, 10) != 0)
 			jid = av[i + 1];
@@ -143,18 +175,21 @@ jail_getv(int flags, ...)
 	}
 	if ((file = getenv("FAKEJAIL")) == NULL)
 		return (real(flags, av));
-	if ((key = jid != NULL ? jid : name) == NULL) {
+	if (after < 0 && (key = jid != NULL ? jid : name) == NULL) {
 		errmsg("%s", "no jail specified");
 		errno = ENOENT;
 		return (-1);
 	}
-	if (!lookup(file, jid, name, line, sizeof(line), f)) {
+	if (!lookup(file, after >= 0 ? NULL : jid, name, after, line,
+	    sizeof(line), f)) {
 		errmsg("jail \"%s\" not found", key);
 		errno = ENOENT;
 		return (-1);
 	}
 	for (i = 0; i < n; i += 2) {
 		if (av[i + 1] == key)
+			continue;
+		if (strcmp(av[i], "lastjid") == 0)
 			continue;
 		if (strcmp(av[i], "name") == 0)
 			s = f[0];

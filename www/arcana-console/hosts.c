@@ -35,7 +35,11 @@
 #include "restconf.h"
 #include "ytrans.h"
 #include "yqueue.h"
+#include "ygula.h"
 #include "ystore.h"
+#include "yplug.h"
+#include "yprobes.h"
+#include "ytshoot.h"
 
 enum op {
 	OP_HELLO,
@@ -1714,25 +1718,6 @@ agent_keep(const void *bin, size_t len, const char *version)
 	return (NULL);
 }
 
-/* The host's own JSON, as the reply's data. */
-static void
-put_json(ucl_object_t *top, const char *json)
-{
-	struct ucl_parser	*p;
-	ucl_object_t		*e;
-
-	if (json == NULL)
-		return;
-	e = NULL;
-	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
-	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
-	if (ucl_parser_add_string(p, json, 0))
-		e = ucl_parser_get_object(p);
-	ucl_parser_free(p);
-	if (e != NULL)
-		put(top, "data", e);
-}
-
 /*
  * In a call's task: a host's bundle, its secrets too, from config-export
  * there, malloc(3)ed into *out; NULL, or why not.
@@ -1794,8 +1779,6 @@ call_run(struct task *t)
 	struct arc_network_rsp	*nr;
 	struct arc_route_lookup_req rlq;
 	struct arc_route_lookup_rsp *rlr;
-	struct arc_bird_config_req bcq;
-	struct arc_bird_config_rsp *bcr;
 	struct arc_stats_rsp	*str;
 	struct arc_jail_files_rsp *jfiles;
 	struct arc_builder_rsp	*bur;
@@ -1817,8 +1800,6 @@ call_run(struct task *t)
 	struct arc_certs_rsp	*cer;
 	struct arc_ssh_req	 sshq;
 	struct arc_ssh_rsp	*sshr;
-	struct arc_capture_req	 capq;
-	struct arc_capture_rsp	*capr;
 	struct arc_tls_req	 tlq;
 	struct arc_tls_rsp	*tlr;
 	struct arc_transport_req tpq;
@@ -1827,21 +1808,9 @@ call_run(struct task *t)
 	struct arc_config_export_rsp *cxr;
 	struct arc_config_apply_req caq;
 	struct arc_config_apply_rsp *car;
-	struct arc_path_check_req pcq;
-	struct arc_path_check_rsp *pcr;
 	struct arc_notify_req	 ntq;
 	struct arc_notify_rsp	*ntr;
 	char			*bundle;
-	struct arc_processes_req prq;
-	struct arc_processes_rsp *prr;
-	struct arc_log_req	 lgq;
-	struct arc_log_rsp	*lgr;
-	struct arc_history_req	 hsq;
-	struct arc_history_rsp	*hsr;
-	struct arc_events_req	 evq;
-	struct arc_events_rsp	*evr;
-	struct arc_fw_trace_req	 ftq;
-	struct arc_fw_trace_rsp	*ftr;
 	struct pooled		 kept;
 	struct tellbox		*box;
 	struct arc_ipfw_rules_req irq;
@@ -1859,12 +1828,8 @@ call_run(struct task *t)
 	struct arc_source_head_req shq;
 	struct arc_source_log_req slq;
 	struct arc_source_log_rsp *slr;
-	struct arc_traceroute_req trq;
-	struct arc_traceroute_rsp *trr;
 	struct arc_sdwan_req	sdq;
 	struct arc_sdwan_rsp	*sdr;
-	struct arc_sdwan_probes_req spq;
-	struct arc_sdwan_probes_rsp *spr;
 	struct arc_sdwan_rules_req srq;
 	struct arc_sdwan_rules_rsp *srr;
 	struct arc_sdwan_steer_req ssq;
@@ -1917,7 +1882,6 @@ call_run(struct task *t)
 	ytag[0] = '\0';
 	nr = NULL;
 	rlr = NULL;
-	bcr = NULL;
 	str = NULL;
 	jfiles = NULL;
 	bur = NULL;
@@ -1927,19 +1891,12 @@ call_run(struct task *t)
 	sysr = NULL;
 	cer = NULL;
 	sshr = NULL;
-	capr = NULL;
 	tlr = NULL;
 	tpr = NULL;
 	cxr = NULL;
 	car = NULL;
-	pcr = NULL;
 	ntr = NULL;
 	bundle = NULL;
-	prr = NULL;
-	lgr = NULL;
-	hsr = NULL;
-	evr = NULL;
-	ftr = NULL;
 	reused = again = false;
 	irr = NULL;
 	ya = NULL;
@@ -1948,7 +1905,6 @@ call_run(struct task *t)
 	cur = NULL;
 	shr = NULL;
 	slr = NULL;
-	trr = NULL;
 	bin = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
@@ -2340,6 +2296,19 @@ connected:
 			thread_log(LOG_INFO, "%s: interfaces by the models: %s; "
 			    "by its table", c->sname, yerr);
 		}
+		/* A plugin's program: its module's (yplug.c). */
+		if (yplug_kind(c->action)) {
+			ysteps_begin(&cl, c, &ys);
+			e = NULL;
+			ok = yplug_net(cl.conn, c->action, c->scope, c->jail, &e,
+			    ywhy, sizeof(ywhy)) == 0;
+			ysteps_end(&cl, &ys, &steps, &nsteps);
+			if (!ok)
+				put_str(top, "error", ywhy);
+			put(top, "data", e != NULL ? e : ucl_object_typed_new(
+			    UCL_NULL));
+			break;
+		}
 		memset(&nq, 0, sizeof(nq));
 		nq.has_net_kind = true;
 		nq.net_kind = c->action;
@@ -2377,32 +2346,19 @@ connected:
 		nsteps = nr->trace.n;
 		break;
 	case OP_BIRD_CONFIG:
-		/* The path rides where a jail's name does, the SHA-256 of
-		 * what the text was made from where an address does. */
-		memset(&bcq, 0, sizeof(bcq));
-		bcq.conf_path = c->jail[0] != '\0' ? c->jail : NULL;
-		bcq.conf_text = c->text;
-		bcq.sha256 = c->address[0] != '\0' ? c->address : NULL;
-		bcq.dry_run = c->dry_run;
-		bcq.jail = c->scope[0] != '\0' ? c->scope : NULL;
-		bcq.safe = c->refresh && c->text != NULL && !c->dry_run;
-		bcq.confirm = c->config_only;
-		bcq.has_safe_wait = bcq.safe && c->safe_wait > 0;
-		bcq.safe_wait = (uint32_t)c->safe_wait;
-		if ((error = arc_bird_config(&cl, &bcq, &bcr)) != 0)
-			goto rpcfail;
-		ok = bcr->ok;
-		if (bcr->has_confirm_by)
-			put(top, "confirm_by", ucl_object_fromint(
-			    bcr->confirm_by));
-		put_str(top, "error", bcr->error);
-		put_str(top, "path", bcr->conf_path);
-		put_str(top, "text", bcr->conf_text);
-		put_str(top, "sha256", bcr->sha256);
-		if (bcr->files.n > 0)
-			put(top, "files", strs(bcr->files.v, bcr->files.n));
-		steps = bcr->trace.v;
-		nsteps = bcr->trace.n;
+		/*
+		 * arcana-bird's configuration (yplug.c).  The path rides where
+		 * a jail's name does, the SHA-256 of what the text was made
+		 * from where an address does.
+		 */
+		ysteps_begin(&cl, c, &ys);
+		ok = yplug_bird_config(cl.conn, c->sid, c->scope, c->jail,
+		    c->text, c->address[0] != '\0' ? c->address : NULL,
+		    c->dry_run, c->refresh && c->text != NULL && !c->dry_run,
+		    c->safe_wait, c->config_only, top, ywhy, sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		break;
 	case OP_ROUTE_LOOKUP:
 		memset(&rlq, 0, sizeof(rlq));
@@ -2430,26 +2386,15 @@ connected:
 		nsteps = rlr->trace.n;
 		break;
 	case OP_TRACEROUTE:
-		memset(&trq, 0, sizeof(trq));
-		trq.lookup = c->address;
-		if ((error = arc_traceroute(&cl, &trq, &trr)) != 0)
-			goto rpcfail;
-		ok = trr->ok;
-		put_str(top, "error", trr->error);
-		e = NULL;
-		if (trr->json != NULL) {
-			struct ucl_parser *p;
-
-			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
-			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
-			if (ucl_parser_add_string(p, trr->json, 0))
-				e = ucl_parser_get_object(p);
-			ucl_parser_free(p);
-		}
+		/* arcana-troubleshoot's traceroute (ytshoot.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = yts_traceroute(cl.conn, c->address, &e, ywhy,
+		    sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		if (e != NULL)
 			put(top, "data", e);
-		steps = trr->trace.v;
-		nsteps = trr->trace.n;
 		break;
 	case OP_SDWAN:
 		memset(&sdq, 0, sizeof(sdq));
@@ -2475,14 +2420,21 @@ connected:
 		nsteps = sdr->trace.n;
 		break;
 	case OP_SDWAN_PROBES:
-		memset(&spq, 0, sizeof(spq));
-		spq.json = c->text;
-		if ((error = arc_sdwan_probes(&cl, &spq, &spr)) != 0)
-			goto rpcfail;
-		ok = spr->ok;
-		put_str(top, "error", spr->error);
-		steps = spr->trace.v;
-		nsteps = spr->trace.n;
+		/* arcana-probe's edge in the candidate, committed confirmed
+		 * and confirmed at once (yprobes.c). */
+		ysteps_begin(&cl, c, &ys);
+		{
+			uint64_t	esid;
+			char		tok[33];
+
+			ok = yprobes_edit(cl.conn, c->text, ywhy, sizeof(ywhy),
+			    &esid, ytag, sizeof(ytag)) == 0 && ytrans_commit(
+			    cl.conn, NULL, NULL, NULL, 0, 0, tok, sizeof(tok),
+			    ywhy, sizeof(ywhy), ytag, sizeof(ytag)) == 0;
+		}
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		break;
 	case OP_SDWAN_RULES:
 		memset(&srq, 0, sizeof(srq));
@@ -2620,25 +2572,16 @@ connected:
 		}
 		break;
 	case OP_PATH_CHECK:
-		memset(&pcq, 0, sizeof(pcq));
-		pcq.path_src = c->psrc;
-		pcq.path_dst = c->pdst;
-		pcq.path_proto = c->pproto[0] != '\0' ? c->pproto : NULL;
-		pcq.has_path_port = c->pport != 0;
-		pcq.path_port = c->pport;
-		pcq.interface = c->ifname[0] != '\0' ? c->ifname : NULL;
-		pcq.has_net_fib = c->has_pos;
-		pcq.net_fib = c->fib;
-		pcq.jail = c->jail[0] != '\0' ? c->jail : NULL;
-		pcq.path_reply = c->preply;
-		if ((error = arc_path_check(&cl, &pcq, &pcr)) != 0)
-			goto rpcfail;
-		ok = pcr->ok;
-		put_str(top, "error", pcr->error);
-		if ((e = parse_json(pcr->json)) != NULL)
+		/* arcana-troubleshoot's path-check (ytshoot.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = yts_path_check(cl.conn, c->psrc, c->pdst, c->pproto,
+		    c->pport, c->ifname, c->has_pos, c->fib, c->jail,
+		    c->preply, &e, ywhy, sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (e != NULL)
 			put(top, "data", e);
-		steps = pcr->trace.v;
-		nsteps = pcr->trace.n;
 		break;
 	case OP_NOTIFY:
 		/* The token is the call's key: zeroed as the call goes. */
@@ -2719,99 +2662,85 @@ connected:
 		nsteps = tpr->trace.n;
 		break;
 	case OP_PROCESSES:
-		memset(&prq, 0, sizeof(prq));
-		prq.jail = c->scope[0] != '\0' ? c->scope : NULL;
-		prq.has_pid = c->fib != 0;
-		prq.pid = c->fib;
-		if ((error = arc_processes(&cl, &prq, &prr)) != 0)
-			goto rpcfail;
-		ok = prr->ok;
-		put_str(top, "error", prr->error);
-		put_json(top, prr->json);
-		steps = prr->trace.v;
-		nsteps = prr->trace.n;
+		/* arcana-processes' list, or a process's read (ygula.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = ygula_processes(cl.conn, c->scope[0] != '\0' ? c->scope :
+		    NULL, c->fib, &e, ywhy, sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (e != NULL)
+			put(top, "data", e);
 		break;
 	case OP_LOG:
-		/* The text looked for rides where a jail's name does. */
-		memset(&lgq, 0, sizeof(lgq));
-		lgq.log_name = c->logname[0] != '\0' ? c->logname : NULL;
-		lgq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
-		lgq.has_position = c->has_pos;
-		lgq.position = c->pos;
-		lgq.has_lines = c->lines > 0;
-		lgq.lines = c->lines;
-		lgq.jail = c->scope[0] != '\0' ? c->scope : NULL;
-		if ((error = arc_log(&cl, &lgq, &lgr)) != 0)
-			goto rpcfail;
-		ok = lgr->ok;
-		put_str(top, "error", lgr->error);
-		put_json(top, lgr->json);
-		steps = lgr->trace.v;
-		nsteps = lgr->trace.n;
+		/* arcana-log's read (ygula.c); the text looked for rides
+		 * where a jail's name does. */
+		ysteps_begin(&cl, c, &ys);
+		ok = ygula_log(cl.conn, c->logname, c->jail, c->has_pos, c->pos,
+		    c->lines, c->scope, &e, ywhy, sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (e != NULL)
+			put(top, "data", e);
 		break;
 	case OP_HISTORY:
-		memset(&hsq, 0, sizeof(hsq));
-		hsq.has_after = c->has_pos;
-		hsq.after = c->pos;
-		/* How to sample rides where the routes' fib and offset do. */
-		hsq.has_sample_step = hsq.has_sample_keep = c->retry;
-		hsq.sample_step = c->fib;
-		hsq.sample_keep = c->offset;
-		hsq.has_limit_cpu = hsq.has_limit_mem = hsq.has_limit_swap =
-		    c->retry && c->names != NULL;
-		if (c->names != NULL) {
-			hsq.limit_cpu = (uint32_t)atoi(c->names[0]);
-			hsq.limit_mem = (uint32_t)atoi(c->names[1]);
-			hsq.limit_swap = (uint32_t)atoi(c->names[2]);
+		/* arcana-history's read (ygula.c); how to sample, which rides
+		 * where the routes' fib and offset do, committed first. */
+		ysteps_begin(&cl, c, &ys);
+		ok = true;
+		e = NULL;
+		if (c->retry) {
+			uint32_t	lim[3];
+
+			for (size_t k = 0; c->names != NULL && k < 3; k++)
+				lim[k] = (uint32_t)atoi(c->names[k]);
+			ok = ygula_history_set(cl.conn, c->fib, c->offset,
+			    c->names != NULL ? lim : NULL, c->names != NULL &&
+			    c->nnames == 4 ? atoi(c->names[3]) : -1, c->text,
+			    ywhy, sizeof(ywhy)) == 0;
 		}
-		/* Storage's, when the body said it. */
-		if (c->retry && c->names != NULL && c->nnames == 4) {
-			hsq.has_limit_storage = true;
-			hsq.limit_storage = (uint32_t)atoi(c->names[3]);
-		}
-		/* The limits of devices and jails, as the agent takes them. */
-		if (c->retry && c->text != NULL)
-			hsq.limit_rules = c->text;
-		if ((error = arc_history(&cl, &hsq, &hsr)) != 0)
-			goto rpcfail;
-		ok = hsr->ok;
-		put_str(top, "error", hsr->error);
-		put_json(top, hsr->json);
-		steps = hsr->trace.v;
-		nsteps = hsr->trace.n;
+		if (ok)
+			ok = ygula_history(cl.conn, c->has_pos, c->pos, &e,
+			    ywhy, sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (e != NULL)
+			put(top, "data", e);
 		break;
 	case OP_EVENTS:
-		memset(&evq, 0, sizeof(evq));
-		evq.has_after = c->has_pos;
-		evq.after = c->pos;
-		if ((error = arc_events(&cl, &evq, &evr)) != 0)
-			goto rpcfail;
-		ok = evr->ok;
+		/* arcana-events' read (ygula.c). */
+		ysteps_begin(&cl, c, &ys);
+		ok = ygula_events(cl.conn, c->has_pos, c->pos, &e, ywhy,
+		    sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
 		/* One that says the configuration changed: the host's
 		 * datastores' entity-tags (restconf.c). */
-		if (ok)
-			restconf_events(c->uri, evr->json);
-		put_str(top, "error", evr->error);
-		put_json(top, evr->json);
-		steps = evr->trace.v;
-		nsteps = evr->trace.n;
+		if (e != NULL) {
+			unsigned char	*ej;
+
+			if ((ej = ucl_object_emit(e, UCL_EMIT_JSON_COMPACT)) !=
+			    NULL)
+				restconf_events(c->uri, (const char *)ej);
+			free(ej);
+			put(top, "data", e);
+		}
 		break;
 	case OP_FW_TRACE:
-		/* How long rides in fib, how many in pos. */
-		memset(&ftq, 0, sizeof(ftq));
-		ftq.jail = c->scope[0] != '\0' ? c->scope : NULL;
-		ftq.net_filter = c->address;
-		ftq.has_seconds = c->fib != 0;
-		ftq.seconds = c->fib;
-		ftq.has_packets = c->has_pos;
-		ftq.packets = (uint32_t)c->pos;
-		if ((error = arc_fw_trace(&cl, &ftq, &ftr)) != 0)
-			goto rpcfail;
-		ok = ftr->ok;
-		put_str(top, "error", ftr->error);
-		put_json(top, ftr->json);
-		steps = ftr->trace.v;
-		nsteps = ftr->trace.n;
+		/* arcana-firewall's trace (ytshoot.c); how long rides in fib,
+		 * how many in pos. */
+		ysteps_begin(&cl, c, &ys);
+		ok = yts_fw_trace(cl.conn, c->scope, c->address, c->fib,
+		    c->has_pos ? (uint32_t)c->pos : 0, &e, ywhy,
+		    sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (e != NULL)
+			put(top, "data", e);
 		break;
 	case OP_SYSCTL:
 		/* By arcana-sysctl's read action (ytrans.c): where to begin
@@ -3141,23 +3070,18 @@ connected:
 			put_str(top, "error", ywhy);
 		break;
 	case OP_CAPTURE:
-		/* The source rides where an address does, the filter in
-		 * text, seconds in fib and packets in pos. */
-		memset(&capq, 0, sizeof(capq));
-		capq.jail = c->scope[0] != '\0' ? c->scope : NULL;
-		capq.interface = c->address[0] != '\0' ? c->address : NULL;
-		capq.net_filter = c->text;
-		capq.has_seconds = c->fib != 0;
-		capq.seconds = c->fib;
-		capq.has_packets = c->has_pos;
-		capq.packets = (uint32_t)c->pos;
-		if ((error = arc_capture(&cl, &capq, &capr)) != 0)
-			goto rpcfail;
-		ok = capr->ok;
-		put_str(top, "error", capr->error);
-		put_json(top, capr->json);
-		steps = capr->trace.v;
-		nsteps = capr->trace.n;
+		/* arcana-troubleshoot's capture (ytshoot.c): the source rides
+		 * where an address does, the filter in text, seconds in fib
+		 * and packets in pos. */
+		ysteps_begin(&cl, c, &ys);
+		ok = yts_capture(cl.conn, c->scope, c->address, c->text, c->fib,
+		    c->has_pos ? (uint32_t)c->pos : 0, &e, ywhy,
+		    sizeof(ywhy)) == 0;
+		ysteps_end(&cl, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (e != NULL)
+			put(top, "data", e);
 		break;
 	case OP_SSH:
 		memset(&sshq, 0, sizeof(sshq));
@@ -3427,8 +3351,6 @@ done:
 		arc_network_rsp_free(nr);
 	if (rlr != NULL)
 		arc_route_lookup_rsp_free(rlr);
-	if (bcr != NULL)
-		arc_bird_config_rsp_free(bcr);
 	if (str != NULL)
 		arc_stats_rsp_free(str);
 	if (jfiles != NULL)
@@ -3447,8 +3369,6 @@ done:
 		arc_certs_rsp_free(cer);
 	if (sshr != NULL)
 		arc_ssh_rsp_free(sshr);
-	if (capr != NULL)
-		arc_capture_rsp_free(capr);
 	if (tlr != NULL)
 		arc_tls_rsp_free(tlr);
 	if (tpr != NULL)
@@ -3457,21 +3377,9 @@ done:
 		arc_config_export_rsp_free(cxr);
 	if (car != NULL)
 		arc_config_apply_rsp_free(car);
-	if (pcr != NULL)
-		arc_path_check_rsp_free(pcr);
 	if (ntr != NULL)
 		arc_notify_rsp_free(ntr);
 	free(bundle);
-	if (prr != NULL)
-		arc_processes_rsp_free(prr);
-	if (lgr != NULL)
-		arc_log_rsp_free(lgr);
-	if (hsr != NULL)
-		arc_history_rsp_free(hsr);
-	if (evr != NULL)
-		arc_events_rsp_free(evr);
-	if (ftr != NULL)
-		arc_fw_trace_rsp_free(ftr);
 	if (irr != NULL)
 		arc_ipfw_rules_rsp_free(irr);
 	if (ya != NULL)
@@ -3486,8 +3394,6 @@ done:
 		arc_source_head_rsp_free(shr);
 	if (slr != NULL)
 		arc_source_log_rsp_free(slr);
-	if (trr != NULL)
-		arc_traceroute_rsp_free(trr);
 	free(bin);
 	/*
 	 * Kept for the next request when it answered: also when the agent

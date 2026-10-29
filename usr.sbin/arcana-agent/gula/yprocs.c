@@ -6,9 +6,9 @@
 
 /*
  * Gula: the processes as arcana-processes has them, OpenConfig's
- * procmon shape with FreeBSD's besides, from the processes operation's
- * JSON (procs.c): the list, and one process's files and threads put on
- * it.
+ * procmon shape with FreeBSD's besides, from procs.c's JSON: the list,
+ * and one process's files and threads, its read action's (or put on its
+ * entry).
  */
 
 #include <errno.h>
@@ -20,6 +20,7 @@
 #include "yjson.h"
 
 typedef struct arcana_processes_processes_process yproc;
+typedef struct arcana_processes_processes_process_read_output yread;
 
 /* "a b c" split on blanks, the arena's. */
 static int
@@ -84,13 +85,80 @@ state_of(const ucl_object_t *e, cbl_yarena *a,
 	YJ_NUM(e, "in", st, blocks_in);
 	YJ_NUM(e, "out", st, blocks_out);
 	YJ_DEC2(e, "io", st, io);
+	st->kernel = yj_yes(e, "kernel", &st->has_kernel);
 	return (0);
 }
 
+/* One process's files and threads, do_process()'s, into r. */
+static int
+detail_of(const ucl_object_t *dt, cbl_yarena *a, yread *r)
+{
+	const ucl_object_t *fa, *ta, *f;
+	struct arcana_processes_processes_process_read_output_file *fv = NULL;
+	struct arcana_processes_processes_process_read_output_thread *tv =
+	    NULL;
+	ucl_object_iter_t it;
+	size_t k = 0;
+
+	fa = ucl_object_lookup(dt, "files");
+	ta = ucl_object_lookup(dt, "threads");
+	if ((yj_count(fa) > 0 && (fv = cbl_yarena_alloc(a, yj_count(fa) *
+	    sizeof(*fv))) == NULL) || (yj_count(ta) > 0 && (tv =
+	    cbl_yarena_alloc(a, yj_count(ta) * sizeof(*tv))) == NULL))
+		return (ENOMEM);
+	r->name = yj_str(a, dt, "comm");
+	YJ_EACH(fa, it, f) {
+		memset(&fv[k], 0, sizeof(fv[k]));
+		YJ_NUM(f, "fd", &fv[k], fd);
+		fv[k].use = yj_str(a, f, "use");
+		fv[k].type = yj_str(a, f, "type");
+		fv[k].path = yj_str(a, f, "path");
+		fv[k].proto = yj_str(a, f, "proto");
+		fv[k].local = yj_str(a, f, "local");
+		fv[k].remote = yj_str(a, f, "remote");
+		fv[k++].mode = yj_str(a, f, "mode");
+	}
+	r->file.n = k;
+	r->file.v = fv;
+	k = 0;
+	YJ_EACH(ta, it, f) {
+		int64_t tid = 0;
+
+		memset(&tv[k], 0, sizeof(tv[k]));
+		(void)yj_num(f, "tid", &tid);
+		tv[k].tid = (uint64_t)tid;
+		tv[k].name = yj_str(a, f, "name");
+		tv[k].run_state = yj_str(a, f, "state");
+		tv[k].wait = yj_str(a, f, "wait");
+		YJ_NUM(f, "pri", &tv[k], priority);
+		YJ_DEC2(f, "wcpu", &tv[k], wcpu);
+		YJ_DEC2(f, "time", &tv[k], cpu_time);
+		YJ_NUM(f, "cpu", &tv[k], last_cpu);
+		k++;
+	}
+	r->thread.n = k;
+	r->thread.v = tv;
+	return (0);
+}
+
+int
+yprocs_read_from_json(const char *detail, cbl_yarena *a, yread *out)
+{
+	ucl_object_t	*dt;
+	int		 error;
+
+	memset(out, 0, sizeof(*out));
+	if ((dt = yj_parse(detail)) == NULL)
+		return (EINVAL);
+	error = detail_of(dt, a, out);
+	ucl_object_unref(dt);
+	return (error);
+}
+
 /*
- * The processes operation's reply (all, or a jail's) put in out; then,
- * with detail (the reply for one pid: NULL none), that process's files
- * and threads on its entry.
+ * do_processes()' JSON (all, or a jail's) put in out; then, with detail
+ * (do_process()'s: NULL none), that process's files and threads on its
+ * entry.
  */
 int
 yprocs_from_json(const char *json, const char *detail, cbl_yarena *a,
@@ -130,52 +198,17 @@ yprocs_from_json(const char *json, const char *detail, cbl_yarena *a,
 		    state_of(e, a, st) != 0)
 			goto out;
 		v[i].state = st;
+		/* The list entry's lists have the output's layout. */
 		if (dt != NULL && pid == dpid) {
-			const ucl_object_t *fa = ucl_object_lookup(dt, "files");
-			const ucl_object_t *ta = ucl_object_lookup(dt,
-			    "threads"), *f;
-			struct arcana_processes_processes_process_file *fv =
-			    NULL;
-			struct arcana_processes_processes_process_thread *tv =
-			    NULL;
-			ucl_object_iter_t fit;
-			size_t k = 0;
+			yread r;
 
-			if ((yj_count(fa) > 0 && (fv = cbl_yarena_alloc(a,
-			    yj_count(fa) * sizeof(*fv))) == NULL) ||
-			    (yj_count(ta) > 0 && (tv = cbl_yarena_alloc(a,
-			    yj_count(ta) * sizeof(*tv))) == NULL))
+			memset(&r, 0, sizeof(r));
+			if (detail_of(dt, a, &r) != 0)
 				goto out;
-			YJ_EACH(fa, fit, f) {
-				memset(&fv[k], 0, sizeof(fv[k]));
-				YJ_NUM(f, "fd", &fv[k], fd);
-				fv[k].use = yj_str(a, f, "use");
-				fv[k].type = yj_str(a, f, "type");
-				fv[k].path = yj_str(a, f, "path");
-				fv[k].proto = yj_str(a, f, "proto");
-				fv[k].local = yj_str(a, f, "local");
-				fv[k].remote = yj_str(a, f, "remote");
-				fv[k++].mode = yj_str(a, f, "mode");
-			}
-			v[i].file.n = k;
-			v[i].file.v = fv;
-			k = 0;
-			YJ_EACH(ta, fit, f) {
-				int64_t tid = 0;
-
-				memset(&tv[k], 0, sizeof(tv[k]));
-				(void)yj_num(f, "tid", &tid);
-				tv[k].tid = (uint64_t)tid;
-				tv[k].name = yj_str(a, f, "name");
-				tv[k].run_state = yj_str(a, f, "state");
-				tv[k].wait = yj_str(a, f, "wait");
-				YJ_NUM(f, "pri", &tv[k], priority);
-				YJ_DEC2(f, "wcpu", &tv[k], wcpu);
-				YJ_DEC2(f, "time", &tv[k], cpu_time);
-				k++;
-			}
-			v[i].thread.n = k;
-			v[i].thread.v = tv;
+			v[i].file.n = r.file.n;
+			v[i].file.v = (const void *)r.file.v;
+			v[i].thread.n = r.thread.n;
+			v[i].thread.v = (const void *)r.thread.v;
 		}
 		i++;
 	}

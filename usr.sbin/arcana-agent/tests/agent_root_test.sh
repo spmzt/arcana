@@ -949,9 +949,10 @@ EOF
 	done
 	atf_check -o match:'peer_a +BGP +--- +up .*Established' \
 	    /usr/local/sbin/birdc -s ba.ctl show protocols peer_a
-	# The agent's read of it, from the jail: up and Established.
+	# The agent's read of it, from the jail (arcana-bird's read action
+	# on the jail's node): up and Established.
 	atf_check -o save:bird.json "$JGC" -c "$SOCK" -j arcw_ba net bird
-	atf_check -o match:'"name":"peer_a","proto":"BGP"[^}]*"state":"up"[^}]*"info":"Established"' \
+	atf_check -o match:'"info":"Established","name":"peer_a","since":"[^"]*","state":"up","table":"---","type":"BGP"' \
 	    cat bird.json
 	# The route b gave, learned by a, as the agent reads BIRD's table.
 	for i in $(seq 1 20); do

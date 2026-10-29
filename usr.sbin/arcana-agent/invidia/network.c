@@ -676,7 +676,7 @@ do_route_lookup(struct work *w, const char *address, uint32_t fib,
  */
 int
 do_traceroute(struct work *w, const char *address,
-    struct arc_traceroute_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	struct execres	 res;
 	ucl_object_t	*top, *hops, *h;

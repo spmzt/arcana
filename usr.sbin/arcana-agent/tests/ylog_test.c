@@ -232,6 +232,11 @@ main(int argc, char **argv)
 			    (intmax_t)l->sequence : -1, str(l->seen),
 			    str(l->text));
 		}
+		for (size_t i = 0; i < r.file.n; i++)
+			printf("file %s size=%jd modified=%s\n",
+			    str(r.file.v[i].name), r.file.v[i].has_size ?
+			    (intmax_t)r.file.v[i].size : -1,
+			    str(r.file.v[i].modified));
 		same((void *)arcana_log_logs_read_output_encode, (void *)
 		    arcana_log_logs_read_output_decode, &r, &back, a);
 	} else if (strcmp(argv[1], "conf") == 0)

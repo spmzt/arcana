@@ -320,17 +320,20 @@ int	ykernel_kld_write(struct vc_file *f,
 	    const struct arcana_kernel_kernel *want, char *err, size_t errlen);
 
 /*
- * arcana-processes (gula/yprocs.c): the processes operation's JSON in
- * OpenConfig procmon's shape with FreeBSD's besides; detail, the reply
- * for one pid (NULL: none), its files and threads put on its entry.
+ * arcana-processes (gula/yprocs.c): do_processes()' JSON in OpenConfig
+ * procmon's shape with FreeBSD's besides; detail, do_process()'s (NULL:
+ * none), its files and threads put on its entry.  yprocs_read_from_json():
+ * do_process()'s as the process's read action gives it.
  */
 int	yprocs_from_json(const char *json, const char *detail, cbl_yarena *a,
 	    struct arcana_processes_processes *out);
+int	yprocs_read_from_json(const char *detail, cbl_yarena *a,
+	    struct arcana_processes_processes_process_read_output *out);
 
 /*
- * arcana-log (gula/ylog.c): the log operation's JSON, the log
- * directory's files (dir, the directory's path) or a read's lines,
- * each line's facility and severity as ietf-syslog's.
+ * arcana-log (gula/ylog.c): do_log()'s JSON, the log directory's files
+ * (dir, the directory's path), or a read's lines with the files of the
+ * directory read, each line's facility and severity as ietf-syslog's.
  */
 int	ylog_files_from_json(const char *json, const char *dir, cbl_yarena *a,
 	    struct arcana_log_logs *out);
@@ -427,25 +430,25 @@ int	yev_one_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_events_event *out);
 
 /*
- * arcana-bird (luxuria/ybird.c): the bird kind of the network
- * operation as the module's state, the bird-routes kind as the routes
- * action's output, the bird-config reply as the configuration's files.
+ * arcana-bird (luxuria/ybird.c): what birdc says as the module's state
+ * (the read action's output too), the routes and ospf actions'
+ * output.
  */
 int	ybird_from_json(const char *json, cbl_yarena *a,
-	    struct arcana_bird_bird_state *out);
+	    struct arcana_bird_state *out);
 int	ybird_routes_from_json(const char *json, cbl_yarena *a,
-	    struct arcana_bird_bird_routes_output *out);
-int	ybird_config_from(const char *path, const char *text,
-	    const char *sha256, const char *const *files, size_t nfiles,
-	    cbl_yarena *a, struct arcana_bird_bird_configuration *out);
+	    struct arcana_bird_routes *out);
+int	ybird_ospf_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_bird_ospf *out);
 
-/* arcana-wireguard (invidia/ywg.c): the wireguard kind. */
-int	ywg_from_json(const char *json, cbl_yarena *a,
-	    struct arcana_wireguard_wireguard *out);
+/* arcana-wireguard (invidia/ywg.c): wg's interfaces, *nifp of them in
+ * *ifp, when read in *now. */
+int	ywg_from_json(const char *json, cbl_yarena *a, const char **now,
+	    size_t *nifp, const struct arcana_wireguard_interface **ifp);
 
-/* arcana-netgraph (invidia/yng.c): the netgraph kind. */
-int	yng_from_json(const char *json, cbl_yarena *a,
-	    struct arcana_netgraph_netgraph *out);
+/* arcana-netgraph (invidia/yng.c): ngctl's nodes, *np of them in *vp. */
+int	yng_from_json(const char *json, cbl_yarena *a, size_t *np,
+	    const struct arcana_netgraph_node **vp);
 
 /*
  * arcana-host (superbia/yhost.c): the host attribute set with the
@@ -484,11 +487,19 @@ int	yjf_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_jails_jails_arcjf_files *out);
 
 /*
- * arcana-probe (gula/yprobe.c): sdwan-probes' targets as
- * configuration, the sdwan read's targets as state.
+ * arcana-probe (gula/yprobe.c): the edges' targets, links and monitors
+ * (probe_conf_json()) as configuration; an edge's (jail NULL or "" the
+ * host's) targets and links, or its monitors, as the JSON
+ * do_probes_set() and do_monitors_set() take, malloc'd; the sdwan
+ * read's targets as state.
  */
-int	yprobe_targets_from_json(const char *json, cbl_yarena *a, size_t *np,
-	    const struct arcana_probe_probes_target **vp);
+int	yprobe_conf_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_probe_probes *out);
+char	*yprobe_edge_json(const char *jail, size_t nt,
+	    const struct arcana_probe_target *tv, size_t nl,
+	    const struct arcana_probe_link *lv);
+char	*yprobe_monitors_json(const char *jail, size_t n,
+	    const struct arcana_probe_monitor *v);
 int	yprobe_state_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_probe_probes_state *out);
 

@@ -2,12 +2,12 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-netgraph",
     "module-revision": "2026-10-15",
-    "sid-file-version": 1,
+    "sid-file-version": 3,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
-        "module-name": "arcana-jails",
-        "module-revision": "2026-10-14"
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
       }
     ],
     "assignment-range": [
@@ -25,56 +25,67 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph",
+        "status": "obsolete",
         "sid": "71501"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/node",
+        "status": "obsolete",
         "sid": "71502"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/node/hook",
+        "status": "obsolete",
         "sid": "71503"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/node/hook/name",
+        "status": "obsolete",
         "sid": "71504"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/node/hook/peer",
+        "status": "obsolete",
         "sid": "71505"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/node/hook/peer-hook",
+        "status": "obsolete",
         "sid": "71506"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/node/hook/peer-id",
+        "status": "obsolete",
         "sid": "71507"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/node/hook/peer-type",
+        "status": "obsolete",
         "sid": "71508"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/node/id",
+        "status": "obsolete",
         "sid": "71509"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/node/name",
+        "status": "obsolete",
         "sid": "71510"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/node/type",
+        "status": "obsolete",
         "sid": "71511"
       },
       {
@@ -131,6 +142,154 @@
         "namespace": "data",
         "identifier": "/arcana-netgraph:netgraph/node/type",
         "sid": "71522"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read",
+        "status": "obsolete",
+        "sid": "71523"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/input",
+        "status": "obsolete",
+        "sid": "71524"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/output",
+        "status": "obsolete",
+        "sid": "71525"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/output/node",
+        "status": "obsolete",
+        "sid": "71526"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/output/node/hook",
+        "status": "obsolete",
+        "sid": "71527"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/output/node/hook/name",
+        "status": "obsolete",
+        "sid": "71528"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/output/node/hook/peer",
+        "status": "obsolete",
+        "sid": "71529"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/output/node/hook/peer-hook",
+        "status": "obsolete",
+        "sid": "71530"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/output/node/hook/peer-id",
+        "status": "obsolete",
+        "sid": "71531"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/output/node/hook/peer-type",
+        "status": "obsolete",
+        "sid": "71532"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/output/node/id",
+        "status": "obsolete",
+        "sid": "71533"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/output/node/name",
+        "status": "obsolete",
+        "sid": "71534"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-netgraph:netgraph/read/output/node/type",
+        "status": "obsolete",
+        "sid": "71535"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read",
+        "sid": "71536"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/input",
+        "sid": "71537"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/output",
+        "sid": "71538"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/output/node",
+        "sid": "71539"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/output/node/hook",
+        "sid": "71540"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/output/node/hook/name",
+        "sid": "71541"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/output/node/hook/peer",
+        "sid": "71542"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/output/node/hook/peer-hook",
+        "sid": "71543"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/output/node/hook/peer-id",
+        "sid": "71544"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/output/node/hook/peer-type",
+        "sid": "71545"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/output/node/id",
+        "sid": "71546"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/output/node/name",
+        "sid": "71547"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/output/node/type",
+        "sid": "71548"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-netgraph:netgraph/read/input/jail",
+        "sid": "71549"
       }
     ]
   }

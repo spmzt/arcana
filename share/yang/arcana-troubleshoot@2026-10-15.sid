@@ -2,9 +2,13 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-troubleshoot",
     "module-revision": "2026-10-15",
-    "sid-file-version": 1,
+    "sid-file-version": 3,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
+      {
+        "module-name": "ietf-netconf-acm",
+        "module-revision": "2018-02-14"
+      },
       {
         "module-name": "ietf-inet-types",
         "module-revision": "2025-12-22"
@@ -764,6 +768,51 @@
         "namespace": "data",
         "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/output/reached",
         "sid": "70647"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output/capture-source",
+        "sid": "70648"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/address/loopback",
+        "sid": "70649"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/route/metric",
+        "sid": "70650"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/route/to",
+        "sid": "70651"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/route/weight",
+        "sid": "70652"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/action",
+        "sid": "70653"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/action",
+        "sid": "70654"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/action",
+        "sid": "70655"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/action",
+        "sid": "70656"
       }
     ]
   }

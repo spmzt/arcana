@@ -19,6 +19,7 @@ module: arcana-troubleshoot
      |     |  +--ro interface?       string
      |     |  +--ro fib?             uint16
      |     |  +--ro up?              boolean
+     |     |  +--ro loopback?        boolean
      |     +--ro source
      |     |  +--ro local?       boolean
      |     |  +--ro connected?   string
@@ -31,12 +32,15 @@ module: arcana-troubleshoot
      |     |  +--ro how?         string
      |     +--ro fib?           uint16
      |     +--ro route
-     |     |  +--ro destination?     inet:ip-address-no-zone
+     |     |  +--ro destination?     string
      |     |  +--ro prefix-length?   uint8
      |     |  +--ro gateway?         string
      |     |  +--ro interface?       string
      |     |  +--ro fib?             uint16
      |     |  +--ro flags?           string
+     |     |  +--ro to?              string
+     |     |  +--ro metric?          uint32
+     |     |  +--ro weight?          uint32
      |     +--ro neighbor
      |     |  +--ro address?   inet:ip-address-no-zone
      |     |  +--ro state?     string
@@ -61,8 +65,9 @@ module: arcana-troubleshoot
      |     |  |  |  +--ro text?   string
      |     |  |  |  +--ro how?    string
      |     |  |  +--ro uncertain*
-     |     |  |     +--ro text?      string
-     |     |  |     +--ro because?   string
+     |     |  |  |  +--ro text?      string
+     |     |  |  |  +--ro because?   string
+     |     |  |  +--ro action?       string
      |     |  +--ro out
      |     |  |  +--ro verdict?      enumeration
      |     |  |  +--ro rule?         arcfw:rule-number
@@ -77,8 +82,9 @@ module: arcana-troubleshoot
      |     |  |  |  +--ro text?   string
      |     |  |  |  +--ro how?    string
      |     |  |  +--ro uncertain*
-     |     |  |     +--ro text?      string
-     |     |  |     +--ro because?   string
+     |     |  |  |  +--ro text?      string
+     |     |  |  |  +--ro because?   string
+     |     |  |  +--ro action?       string
      |     |  +--ro reply-in
      |     |  |  +--ro verdict?      enumeration
      |     |  |  +--ro rule?         arcfw:rule-number
@@ -93,8 +99,9 @@ module: arcana-troubleshoot
      |     |  |  |  +--ro text?   string
      |     |  |  |  +--ro how?    string
      |     |  |  +--ro uncertain*
-     |     |  |     +--ro text?      string
-     |     |  |     +--ro because?   string
+     |     |  |  |  +--ro text?      string
+     |     |  |  |  +--ro because?   string
+     |     |  |  +--ro action?       string
      |     |  +--ro reply-out
      |     |     +--ro verdict?      enumeration
      |     |     +--ro rule?         arcfw:rule-number
@@ -109,8 +116,9 @@ module: arcana-troubleshoot
      |     |     |  +--ro text?   string
      |     |     |  +--ro how?    string
      |     |     +--ro uncertain*
-     |     |        +--ro text?      string
-     |     |        +--ro because?   string
+     |     |     |  +--ro text?      string
+     |     |     |  +--ro because?   string
+     |     |     +--ro action?       string
      |     +--ro delivered?     boolean
      |     +--ro finding*
      |        +--ro severity?   severity
@@ -130,19 +138,20 @@ module: arcana-troubleshoot
      |        +--ro lost?      boolean
      +---x capture
         +---w input
-        |  +---w interface    string
+        |  +---w interface?   string
         |  +---w filter?      string
         |  +---w packets?     uint16
         |  +---w seconds?     uint8
         |  +---w jail?        string
         +--ro output
-           +--ro source?      string
-           +--ro filter?      string
-           +--ro line*        string
-           +--ro packets?     uint32
-           +--ro limit?       uint16
-           +--ro seconds?     uint8
-           +--ro timed-out?   boolean
-           +--ro bytes?       uint64
-           +--ro pcap?        binary
-           +--ro taken?       yang:date-and-time
+           +--ro source?           string
+           +--ro filter?           string
+           +--ro line*             string
+           +--ro packets?          uint32
+           +--ro limit?            uint16
+           +--ro seconds?          uint8
+           +--ro timed-out?        boolean
+           +--ro bytes?            uint64
+           +--ro pcap?             binary
+           +--ro taken?            yang:date-and-time
+           +--ro capture-source*   string

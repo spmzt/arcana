@@ -10276,60 +10276,163 @@ tq_modal(struct html *h)
 	return (true);
 }
 
-/* An end's monitor set (or, address empty, taken away when there). */
+/*
+ * The monitors of the ends written to each end's host by a commit of
+ * arcana-probe's monitors (ycommit.c): a YANG Patch of the host's
+ * candidate, an edit a monitor, then the commit; two hosts, two
+ * commits.  The monitors read again once committed.
+ */
+#define	TQ_HOSTS	2
+static struct ycommit	tq_yc[TQ_HOSTS];
+static struct html	tq_patch[TQ_HOSTS];
+static int		tq_nedit[TQ_HOSTS];
+
+static void
+tq_saved(struct ycommit *yc, int how)
+{
+
+	if (how == YC_REFUSED) {
+		toast(true, "%s", yc->note);
+		return;
+	}
+	if (how == YC_SAVED)
+		toast(false, "The tunnel's monitors are set");
+	(void)tq_monitors(yc->sid, true);
+}
+
+/* The patch of the host of node i: its slot, NULL when both are taken. */
+static struct html *
+tq_patch_of(int node)
+{
+	const char	*sid = app.servers[tn[node].srv].id;
+	int		 k;
+
+	for (k = 0; k < TQ_HOSTS; k++) {
+		if (tq_yc[k].sid[0] == '\0') {
+			snprintf(tq_yc[k].sid, sizeof(tq_yc[k].sid), "%s", sid);
+			memset(&tq_patch[k], 0, sizeof(tq_patch[k]));
+			tq_nedit[k] = 0;
+			return (&tq_patch[k]);
+		}
+		if (strcmp(tq_yc[k].sid, sid) == 0)
+			return (&tq_patch[k]);
+	}
+	return (NULL);
+}
+
+/* A whole number of the form's as JSON, or nothing for none. */
+static void
+tq_num(struct html *h, const char *key, const char *v)
+{
+	char	*end;
+	long	 n;
+
+	if (v == NULL || v[0] == '\0')
+		return;
+	n = strtol(v, &end, 10);
+	if (*end == '\0' && n >= 0)
+		h_fmt(h, ",\"%s\":%ld", key, n);
+}
+
+/*
+ * An end's monitor in its host's patch: merged, or with address empty
+ * taken away when it is there.
+ */
 static void
 tq_send(const struct tqend *e, const char *prefix, const char *addr,
     const char *fib, const char *interval, const char *eval)
 {
-	struct server	*s;
-	const char	*w[6];
-	char		 a[6][96], title[160], extra[96], *q, *json;
-	size_t		 n;
+	struct html	*h;
+	const char	*jail;
+	char		 name[48], *qn, *qi, *qa, *qj;
+	int		 k;
 
-	s = &app.servers[tn[e->node].srv];
-	extra[0] = '\0';
-	if (tn[e->node].jail[0] != '\0') {
-		q = json_quote(tn[e->node].jail);
-		snprintf(extra, sizeof(extra), ",\"jail\":%s", q);
-		free(q);
+	snprintf(name, sizeof(name), "%s%s", prefix, e->ifname);
+	if ((addr == NULL || addr[0] == '\0') && tq_find(e, prefix) == NULL)
+		return;
+	if (!url_word(name) || ((jail = tn[e->node].jail)[0] != '\0' &&
+	    !url_word(jail))) {
+		toast(true, "%s: not a monitor's name", name);
+		return;
 	}
-	snprintf(a[0], sizeof(a[0]), "name=%s%s", prefix, e->ifname);
-	w[0] = a[0];
+	if ((h = tq_patch_of(e->node)) == NULL)
+		return;
+	k = (int)(h - tq_patch);
+	h_raw(h, tq_nedit[k]++ > 0 ? "," : "");
+	qn = json_quote(name);
+	qj = json_quote(jail);
 	if (addr == NULL || addr[0] == '\0') {
-		if (tq_find(e, prefix) == NULL)
-			return;
-		snprintf(title, sizeof(title), "monitor remove %s%s", prefix,
-		    e->ifname);
-		json = job_json("monitor", "remove", w, 1, NULL, extra[0] !=
-		    '\0' ? extra : NULL);
+		if (jail[0] != '\0')
+			h_fmt(h, "{\"edit-id\":%s,\"operation\":\"remove\","
+			    "\"target\":\"/jail=%s/monitor=%s\"}", qn, jail,
+			    name);
+		else
+			h_fmt(h, "{\"edit-id\":%s,\"operation\":\"remove\","
+			    "\"target\":\"/monitor=%s\"}", qn, name);
 	} else {
-		n = 1;
-		snprintf(a[n], sizeof(a[n]), "interface=%s", e->ifname);
-		w[n] = a[n];
-		n++;
-		snprintf(a[n], sizeof(a[n]), "address=%s", addr);
-		w[n] = a[n];
-		n++;
-		snprintf(a[n], sizeof(a[n]), "fib=%s", fib[0] != '\0' ? fib : "0");
-		w[n] = a[n];
-		n++;
-		if (interval[0] != '\0') {
-			snprintf(a[n], sizeof(a[n]), "interval=%s", interval);
-			w[n] = a[n];
-			n++;
-		}
-		if (eval[0] != '\0') {
-			snprintf(a[n], sizeof(a[n]), "eval=%s", eval);
-			w[n] = a[n];
-			n++;
-		}
-		snprintf(title, sizeof(title), "monitor set %s%s", prefix,
-		    e->ifname);
-		json = job_json("monitor", "set", w, n, NULL, extra[0] != '\0' ?
-		    extra : NULL);
+		qi = json_quote(e->ifname);
+		qa = json_quote(addr);
+		if (jail[0] != '\0')
+			h_fmt(h, "{\"edit-id\":%s,\"operation\":\"merge\","
+			    "\"target\":\"/jail=%s\",\"value\":{"
+			    "\"arcana-probe:jail\":[{\"name\":%s,\"monitor\":[",
+			    qn, jail, qj);
+		else
+			h_fmt(h, "{\"edit-id\":%s,\"operation\":\"merge\","
+			    "\"target\":\"/monitor=%s\",\"value\":{"
+			    "\"arcana-probe:monitor\":[", qn, name);
+		h_fmt(h, "{\"name\":%s,\"interface\":%s,\"address\":%s", qn,
+		    qi, qa);
+		tq_num(h, "fib", fib[0] != '\0' ? fib : "0");
+		tq_num(h, "interval", interval);
+		tq_num(h, "eval", eval);
+		h_raw(h, jail[0] != '\0' ? "}]}]}}" : "}]}}");
+		free(qi);
+		free(qa);
 	}
-	job_send(s, json, title, JOB_MONITOR, tn[e->node].jail[0] != '\0' ?
-	    tn[e->node].jail : s->name);
+	free(qn);
+	free(qj);
+}
+
+/* Each host's patch sent, and committed. */
+static void
+tq_commit(void)
+{
+	char	url[300], *body;
+
+	for (int k = 0; k < TQ_HOSTS; k++) {
+		if (tq_yc[k].sid[0] == '\0')
+			continue;
+		if (tq_nedit[k] > 0) {
+			snprintf(url, sizeof(url), "/restconf/ds/"
+			    "ietf-datastores:candidate/arcana-fleet:fleet/"
+			    "host=%s/arcana-probe:probes", tq_yc[k].sid);
+			if (asprintf(&body, "{\"ietf-yang-patch:yang-patch\":{"
+			    "\"patch-id\":\"quality\",\"edit\":[%s]}}",
+			    tq_patch[k].s != NULL ? tq_patch[k].s : "") == -1)
+				abort();
+			tq_yc[k].act = k == 0 ? "tq-yc0" : "tq-yc1";
+			tq_yc[k].done = tq_saved;
+			if (!ycommit_save(&tq_yc[k], tq_yc[k].sid, "PATCH", url,
+			    body))
+				toast(true, "A change of the configuration is on "
+				    "its way");
+			free(body);
+		}
+		free(tq_patch[k].s);
+		memset(&tq_patch[k], 0, sizeof(tq_patch[k]));
+		tq_nedit[k] = 0;
+	}
+}
+
+/* The patches begun anew, the hosts not yet named. */
+static void
+tq_begin(void)
+{
+
+	for (int k = 0; k < TQ_HOSTS; k++)
+		if (!tq_yc[k].busy && tq_yc[k].token[0] == '\0')
+			tq_yc[k].sid[0] = '\0';
 }
 
 static const char *
@@ -10350,6 +10453,7 @@ tq_form(const char *form, const ucl_object_t *f)
 	if ((q = tq_pair(tq.edit)) != NULL) {
 		iv = tq_fv(f, "interval");
 		ev = tq_fv(f, "eval");
+		tq_begin();
 		tq_send(&q->a, "ov-", tq_fv(f, "A_ov"), tq_fv(f, "A_ovfib"), iv,
 		    ev);
 		tq_send(&q->a, "ul-", tq_fv(f, "A_ul"), tq_fv(f, "A_ulfib"), iv,
@@ -10360,6 +10464,7 @@ tq_form(const char *form, const ucl_object_t *f)
 			tq_send(&q->b, "ul-", tq_fv(f, "B_ul"), tq_fv(f,
 			    "B_ulfib"), iv, ev);
 		}
+		tq_commit();
 		snprintf(tq.pick, sizeof(tq.pick), "%s", q->key);
 	}
 	app.modal = MODAL_NONE;
@@ -10400,14 +10505,18 @@ tq_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strcmp(act, "tq-do-stop") == 0 && (q = tq_pair(arg)) != NULL) {
+		tq_begin();
 		tq_send(&q->a, "ov-", "", "", "", "");
 		tq_send(&q->a, "ul-", "", "", "", "");
 		if (q->has_b) {
 			tq_send(&q->b, "ov-", "", "", "", "");
 			tq_send(&q->b, "ul-", "", "", "", "");
 		}
+		tq_commit();
 		return (true);
 	}
+	if (ycommit_action(&tq_yc[0], act) || ycommit_action(&tq_yc[1], act))
+		return (true);
 	return (false);
 }
 

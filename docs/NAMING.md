@@ -305,5 +305,5 @@ its wire the YANG module written from it) fall under the Archives:
 | `stats`: ZFS pools | Acedia |
 | the trace of every call, the activity log, job traces | Gula |
 | update check, browser notifications (in the console) | Luxuria |
-| `network` for bird and bird-routes, `bird-config`, the bird job: the plugins | Luxuria |
-| `network` for wireguard, the wireguard job: WireGuard, through the base system's wg(8) | Invidia |
+| arcana-bird (the `network` operation's bird kinds and `bird-config` before it), the bird job: the plugins | Luxuria |
+| arcana-wireguard (the `network` operation's wireguard kind before it), the wireguard job: WireGuard, through the base system's wg(8) | Invidia |

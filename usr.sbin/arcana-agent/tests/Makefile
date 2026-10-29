@@ -73,16 +73,19 @@ SRCS.yfw=	yfw_test.c yfw.c yjson.c ymodel_schema.c
 LDADD.yfw+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yts: path-check, traceroute and capture as arcana-troubleshoot has them.
 PROGS+=		yts
-SRCS.yts=	yts_test.c yts.c yjson.c ymodel_schema.c
+SRCS.yts=	yts_test.c yts.c yjson.c ymodel_schema.c ytsjson.c
+CFLAGS.yts_test.c+= -I${.CURDIR}/../../../www/arcana-console
 LDADD.yts+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yhist: the history operation's reply as arcana-history has it.
 PROGS+=		yhist
 SRCS.yhist=	yhist_test.c yhist.c yjson.c ymodel_schema.c
 LDADD.yhist+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yev: the events operation's reply, and one event, as arcana-events
-# has them.
+# has them; and made the operation's JSON again, as the console makes it
+# (its yevjson.c).
 PROGS+=		yev
-SRCS.yev=	yev_test.c yev.c yjson.c ymodel_schema.c
+SRCS.yev=	yev_test.c yev.c yjson.c ymodel_schema.c yevjson.c
+CFLAGS.yev_test.c+= -I${.CURDIR}/../../../www/arcana-console
 LDADD.yev+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yplug: BIRD, WireGuard and netgraph as their modules have them.
 PROGS+=		yplug
@@ -137,7 +140,8 @@ SRCS.fwmatch=	fwmatch_test.c fwmatch.c
 CFLAGS.fwmatch_test.c+=	-I${.CURDIR}/../invidia
 .PATH:		${.CURDIR}/../invidia ${.CURDIR}/../ira ${.CURDIR}/../acedia \
 		${.CURDIR}/../luxuria \
-		${.CURDIR}/../superbia ${.CURDIR}/../gula ${.CURDIR}/.. ${YOBJ}
+		${.CURDIR}/../superbia ${.CURDIR}/../gula ${.CURDIR}/.. ${YOBJ} \
+		${.CURDIR}/../../../www/arcana-console
 CFLAGS+=	-I${.CURDIR}/../invidia ${CBLINK_CFLAGS}
 MAN=
 

@@ -184,15 +184,22 @@ module arcana-troubleshoot {
           "What it asks that is not known.";
       }
     }
+    leaf action {
+      type string;
+      description
+        "The rule's action, ipfw's word, where the verdict is other
+         (queue, tee, netgraph, ...).";
+    }
   }
 
   grouping route {
     description
       "A route, as the kernel chose it.";
     leaf destination {
-      type inet:ip-address-no-zone;
+      type string;
       description
-        "The route's destination.";
+        "The route's destination as netstat prints it: an address, or
+         default.";
     }
     leaf prefix-length {
       type uint8 {
@@ -221,6 +228,21 @@ module arcana-troubleshoot {
       description
         "Its flags, as netstat prints them (U, G, S, B blackhole, R
          reject).";
+    }
+    leaf to {
+      type string;
+      description
+        "The address it was asked for.";
+    }
+    leaf metric {
+      type uint32;
+      description
+        "Its metric.";
+    }
+    leaf weight {
+      type uint32;
+      description
+        "Its weight, among equal routes.";
     }
   }
 
@@ -268,6 +290,10 @@ module arcana-troubleshoot {
               description
                 "Any IP.";
             }
+            enum sctp {
+              description
+                "An SCTP association's first chunk (INIT).";
+            }
           }
           default "tcp";
           description
@@ -276,7 +302,7 @@ module arcana-troubleshoot {
         leaf port {
           type inet:port-number;
           description
-            "The destination port, of tcp or udp.";
+            "The destination port, of tcp, udp or sctp.";
         }
         leaf interface {
           type string;
@@ -337,6 +363,11 @@ module arcana-troubleshoot {
             type boolean;
             description
               "The interface is up.";
+          }
+          leaf loopback {
+            type boolean;
+            description
+              "The interface is a loopback.";
           }
         }
         container source {
@@ -571,9 +602,9 @@ module arcana-troubleshoot {
       input {
         leaf interface {
           type string;
-          mandatory true;
           description
-            "Where to take them from.";
+            "Where to take them from; none, the sources there are
+             (capture-source) said alone.";
         }
         leaf filter {
           type string;
@@ -652,6 +683,13 @@ module arcana-troubleshoot {
           type yang:date-and-time;
           description
             "When it ended.";
+        }
+        leaf-list capture-source {
+          type string;
+          description
+            "Without an interface asked: where packets can be taken
+             from, there (the jail's network with jail), what tcpdump
+             -D lists.";
         }
       }
     }

@@ -38,7 +38,10 @@
 
 #include "yjsonin.h"
 #include "yqueue.h"
+#include "ygula.h"
 #include "ystore.h"
+#include "yprobes.h"
+#include "ytshoot.h"
 
 #define	PATH_SOCKET	"unix:/var/run/arcana-agent.sock"
 #define	MAX_FRAME	(8 * 1024 * 1024)
@@ -217,8 +220,8 @@ usage(void)
 	    "    bird enable | disable | restart | reload protocol\n"
 	    "    bird configure\n"
 	    "    bird config [file]\n"
-	    "    bird config -w new-text [-n] [file]\n"
-	    "    bird confirm\n"
+	    "    bird config -w new-text [-n] [-c seconds] [file]\n"
+	    "    bird confirm id\n"
 	    "    bird ospf [topology [protocol]]\n"
 	    "    bird routes [prefix | for address] [protocol | export name]\n"
 	    "        [table name] [all]\n"
@@ -1599,6 +1602,30 @@ ytold_end(bool print)
 }
 
 /*
+ * A read of the models made the JSON its operation gave (ygula.c and
+ * the like), data, printed as json_out() prints it, with the steps
+ * heard since ytold_begin(); error and err, why it failed.
+ */
+static int
+ydata_out(const char *what, int error, ucl_object_t *data, const char *err)
+{
+	unsigned char	*json;
+
+	if (data != NULL && (json = ucl_object_emit(data,
+	    UCL_EMIT_JSON_COMPACT)) != NULL) {
+		xo_emit("{:json/%s}\n", (char *)json);
+		free(json);
+	}
+	if (data != NULL)
+		ucl_object_unref(data);
+	ytold_end(true);
+	if (error != 0)
+		xo_warnx("%s: %s", what, err[0] != '\0' ? err :
+		    strerror(error));
+	return (error != 0 ? 1 : 0);
+}
+
+/*
  * Top-level node n of datastore ds (-1: the agent's default), decoded
  * into its module's data, data (a's).  Refused: said, exit 1.
  */
@@ -1666,6 +1693,45 @@ ycall(struct arc_client *cl, const struct cbl_ynode *n,
 	}
 	cbl_msg_free(rep);
 	return (0);
+}
+
+/*
+ * A plugin's module read, its top-level node top's action act given in
+ * (the vnet jail -j names in it, if one): its output as RFC 7951's
+ * JSON, with the steps the agent took; what it said where it could
+ * not, as what failed of it.  0, or 1.
+ */
+static int
+yplug_read(struct arc_client *cl, const char *top, const char *act,
+    const void *in, const char *what)
+{
+	const struct cbl_ynode	*n, *an, *onode;
+	struct cbl_ybuf		 b = { NULL, 0, 0 };
+	cbl_yarena		*a;
+	void			*out;
+	char			 why[512];
+	int			 error;
+
+	n = ytop_named(top);
+	if (n == NULL || (an = ychild(n, act)) == NULL || (onode = ychild(an,
+	    "output")) == NULL)
+		xo_errx(1, "%s: its module is not in the tables", what);
+	if ((a = cbl_yarena_new()) == NULL || (out = cbl_yarena_alloc(a,
+	    onode->size)) == NULL)
+		xo_err(1, "%s", what);
+	ytold_begin(cl);
+	error = ycall(cl, n, NULL, 0, act, in, out, a, why, sizeof(why));
+	ytold_end(true);
+	if (error == 0 && (error = cbl_yjson(onode, out, &b)) != 0)
+		(void)snprintf(why, sizeof(why), "%s", strerror(error));
+	if (error == 0)
+		xo_emit("{:json/%.*s}\n", (int)b.len, b.p != NULL ?
+		    (const char *)b.p : "{}");
+	else
+		xo_warnx("%s: %s", what, why);
+	cbl_ybuf_free(&b);
+	cbl_yarena_free(a);
+	return (error == 0 ? 0 : 1);
 }
 
 /* arcana-jails' jails, as datastore ds has them (a's). */
@@ -2726,29 +2792,76 @@ cmd_agent_update(struct arc_client *cl, int argc, char **argv)
  * waited for unless it is only queued (-q).
  */
 /*
- * bird config [file]: print a file of BIRD's configuration.
- * bird config -w new-text [-n] [file]: put the text of a local file in
- * its place, or with -n only have it parsed.
+ * BIRD's configuration as running has it (arcana-bird), the host's or
+ * with -j the jail's; d the data read (a's).  NULL where it has none.
+ */
+static const struct arcana_bird_configuration *
+ybird_conf(struct arc_client *cl, struct arcana_bird *d, cbl_yarena *a)
+{
+	const struct cbl_ynode	*n;
+
+	if ((n = ytop_named("bird")) == NULL)
+		xo_errx(1, "bird: arcana-bird is not in the tables");
+	memset(d, 0, sizeof(*d));
+	yget_data(cl, n, CBL_YDS_RUNNING, d, a);
+	if (d->bird == NULL)
+		return (NULL);
+	if (netjail == NULL)
+		return (d->bird->configuration);
+	for (size_t i = 0; i < d->bird->jail.n; i++)
+		if (strcmp(d->bird->jail.v[i].name, netjail) == 0)
+			return (d->bird->jail.v[i].configuration);
+	return (NULL);
+}
+
+/*
+ * bird config [file]: a file of BIRD's configuration, its main one by
+ * default, as running has it.  bird config -w new-text [-n] [-c
+ * seconds] [file]: put in its place by a commit, BIRD told (with -s, or
+ * -c the seconds to wait, a confirmed commit, taken back unless bird
+ * confirm comes in time); with -n only whether bird(8) takes it, the
+ * check action.
  */
 static int
 cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_bird_config_req	 req;
-	struct arc_bird_config_rsp	*rsp, *cur;
-	struct stat			 sb;
-	const char			*from;
-	char				*text;
-	size_t				 i;
-	int				 ch, error, fd;
+	struct arcana_bird_bird_check_input		 cin;
+	struct ietf_netconf_commit_input		 com;
+	struct ietf_netconf_discard_changes_input	 din;
+	const struct arcana_bird_configuration		*c;
+	struct arcana_bird_configuration		*nc;
+	struct arcana_bird_configuration_file		*f;
+	struct arcana_bird_bird				*b;
+	struct arcana_bird_bird_jail			*jv;
+	struct arcana_bird				 d;
+	const struct cbl_ynode				*n;
+	struct stat					 sb;
+	const char					*from, *path;
+	cbl_yarena					*a;
+	char						*text, err[512], tag[80];
+	char						 token[33];
+	const char					*errstr;
+	uint64_t					 errsid;
+	uint32_t					 wait;
+	size_t						 i, k;
+	bool						 dry_run;
+	int						 ch, fd;
 
 	from = NULL;
-	memset(&req, 0, sizeof(req));
+	dry_run = false;
+	wait = safe ? (safe_wait > 0 ? safe_wait : 120) : 0;
 	optind = 1;
 	optreset = 1;
-	while ((ch = getopt(argc, argv, "nw:")) != -1) {
+	while ((ch = getopt(argc, argv, "c:nw:")) != -1) {
 		switch (ch) {
+		case 'c':
+			wait = (uint32_t)strtonum(optarg, 1, 3600, &errstr);
+			if (errstr != NULL)
+				xo_errx(2, "bird config -c %s: %s", optarg,
+				    errstr);
+			break;
 		case 'n':
-			req.dry_run = true;
+			dry_run = true;
 			break;
 		case 'w':
 			from = optarg;
@@ -2757,123 +2870,166 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 			usage();
 		}
 	}
-	if (argc - optind > 1 || (req.dry_run && from == NULL))
+	if (argc - optind > 1 || (dry_run && from == NULL))
 		usage();
-	req.conf_path = argc - optind == 1 ? argv[optind] : NULL;
-	req.jail = netjail;
-	req.safe = safe && from != NULL && !req.dry_run;
-	req.has_safe_wait = req.safe && safe_wait > 0;
-	req.safe_wait = safe_wait;
-	text = NULL;
-	cur = NULL;
-	if (from != NULL) {
-		if ((fd = fileargs_open(files, from)) == -1 || fstat(fd, &sb) == -1 ||
-		    (text = malloc((size_t)sb.st_size + 1)) == NULL ||
-		    read(fd, text, (size_t)sb.st_size) != sb.st_size)
-			xo_err(1, "%s", from);
-		close(fd);
-		text[sb.st_size] = '\0';
-		/* What is there now says what the new text replaces. */
-		if ((error = arc_bird_config(cl, &req, &cur)) != 0)
-			fail(cl, error, "bird config");
-		req.sha256 = cur->sha256 != NULL ? cur->sha256 :
-		    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b"
-		    "7852b855";
-		req.conf_text = text;
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "bird config");
+	ytold_begin(cl);
+	c = ybird_conf(cl, &d, a);
+	ytold_end(false);
+	path = argc - optind == 1 ? argv[optind] : c != NULL && c->path !=
+	    NULL ? c->path : "/usr/local/etc/bird.conf";
+	for (i = 0; c != NULL && i < c->file.n; i++)
+		if (strcmp(c->file.v[i].path, path) == 0)
+			break;
+	if (from == NULL) {
+		ytold_end(true);
+		if (c == NULL || i == c->file.n)
+			xo_errx(1, "bird config: %s is not a file of BIRD's "
+			    "configuration%s", path, c == NULL ? " (it has none)" :
+			    "");
+		xo_emit("{:text/%s}", c->file.v[i].text != NULL ?
+		    c->file.v[i].text : "");
+		for (k = 0; k < c->file.n; k++)
+			if (k != i)
+				xo_emit("{e:file/%s}", c->file.v[k].path);
+		cbl_yarena_free(a);
+		return (0);
 	}
-	if ((error = arc_bird_config(cl, &req, &rsp)) != 0)
-		fail(cl, error, "bird config");
-	if (from == NULL && rsp->conf_text != NULL)
-		xo_emit("{:text/%s}", rsp->conf_text);
-	else if (rsp->ok)
-		xo_emit("{:path/%s}: {:result/%s}\n", rsp->conf_path != NULL ?
-		    rsp->conf_path : "", req.dry_run ? "parses; left as it "
-		    "was" : req.safe ? "in place, and BIRD told; taken back "
-		    "unless confirmed (bird confirm)" : "in place, and BIRD "
-		    "told");
-	if (rsp->ok && rsp->has_confirm_by)
-		xo_emit("{e:confirm-by/%jd}", (intmax_t)rsp->confirm_by);
-	if (from == NULL)
-		for (i = 1; i < rsp->files.n; i++)
-			xo_emit("{e:file/%s}", rsp->files.v[i]);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("bird config: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_bird_config_rsp_free(rsp);
-	if (cur != NULL)
-		arc_bird_config_rsp_free(cur);
+	if ((fd = fileargs_open(files, from)) == -1 || fstat(fd, &sb) == -1 ||
+	    (text = malloc((size_t)sb.st_size + 1)) == NULL ||
+	    read(fd, text, (size_t)sb.st_size) != sb.st_size)
+		xo_err(1, "%s", from);
+	close(fd);
+	text[sb.st_size] = '\0';
+	if (dry_run) {
+		memset(&cin, 0, sizeof(cin));
+		cin.jail = netjail;
+		cin.path = path;
+		cin.text = text;
+		k = (size_t)yplug_read(cl, "bird", "check", &cin,
+		    "bird config -n");
+		if (k == 0)
+			xo_emit("{:path/%s}: {:result/%s}\n", path, "parses; left "
+			    "as it was");
+		free(text);
+		cbl_yarena_free(a);
+		return ((int)k);
+	}
+	/* Running's with the file's text in its place, or the file added. */
+	if ((n = ytop_named("bird")) == NULL || (b = cbl_yarena_alloc(a,
+	    sizeof(*b))) == NULL || (nc = cbl_yarena_alloc(a,
+	    sizeof(*nc))) == NULL || (f = cbl_yarena_alloc(a, ((c != NULL ?
+	    c->file.n : 0) + 1) * sizeof(*f))) == NULL)
+		xo_err(1, "bird config");
+	memset(b, 0, sizeof(*b));
+	memset(nc, 0, sizeof(*nc));
+	if (d.bird != NULL)
+		*b = *d.bird;
+	k = 0;
+	for (size_t m = 0; c != NULL && m < c->file.n; m++)
+		f[k++] = c->file.v[m];
+	if (c == NULL || i == c->file.n) {
+		memset(&f[k], 0, sizeof(f[k]));
+		f[k++].path = path;
+		i = k - 1;
+	}
+	f[i].text = text;
+	nc->path = c != NULL ? c->path : NULL;
+	nc->file.n = k;
+	nc->file.v = f;
+	if (netjail == NULL)
+		b->configuration = nc;
+	else {
+		if ((jv = cbl_yarena_alloc(a, (b->jail.n + 1) * sizeof(*jv))) ==
+		    NULL)
+			xo_err(1, "bird config");
+		for (size_t m = 0; m < b->jail.n; m++)
+			jv[m] = b->jail.v[m];
+		for (k = 0; k < b->jail.n && strcmp(jv[k].name, netjail) != 0;
+		    k++)
+			;
+		if (k == b->jail.n) {
+			memset(&jv[k], 0, sizeof(jv[k]));
+			jv[k].name = netjail;
+			b->jail.n++;
+		}
+		jv[k].configuration = nc;
+		b->jail.v = jv;
+	}
+	d.bird = b;
+	ytold_begin(cl);
+	if (yedit_data(cl->conn, n, &d, CBL_YDS_CANDIDATE, accepts, naccepts,
+	    err, sizeof(err), &errsid, tag, sizeof(tag)) != 0) {
+		ytold_end(true);
+		refused("bird config", err, tag);
+	}
+	memset(&com, 0, sizeof(com));
+	/* Safe: a confirmed commit, BIRD's own timer beside it. */
+	if (wait > 0) {
+		(void)snprintf(token, sizeof(token), "%08x%08x%08x%08x",
+		    arc4random(), arc4random(), arc4random(), arc4random());
+		com.confirmed = true;
+		com.has_confirm_timeout = true;
+		com.confirm_timeout = wait;
+		com.persist = token;
+	}
+	if (netconf_try(cl, "commit", &com, err, sizeof(err), tag,
+	    sizeof(tag)) != 0) {
+		memset(&din, 0, sizeof(din));
+		(void)netconf_try(cl, "discard-changes", &din, NULL, 0, NULL, 0);
+		ytold_end(true);
+		refused("bird config", err, tag);
+	}
+	ytold_end(true);
+	xo_emit("{:path/%s}: {:result/%s}\n", path, wait > 0 ? "in place, and "
+	    "BIRD told; taken back unless confirmed" : "in place, and BIRD "
+	    "told");
+	if (wait > 0)
+		xo_emit("{Lw:confirm within}{:seconds/%u}{L: seconds: arcanactl "
+		    "bird confirm }{:persist-id/%s}\n", com.confirm_timeout,
+		    token);
 	free(text);
-	return (error);
+	cbl_yarena_free(a);
+	return (0);
 }
 
-/* bird confirm: the configuration changed in safe mode stays. */
+/* bird confirm id: the configuration committed with -s stays. */
 static int
-cmd_bird_confirm(struct arc_client *cl)
+cmd_bird_confirm(struct arc_client *cl, const char *id)
 {
-	struct arc_bird_config_req	 req;
-	struct arc_bird_config_rsp	*rsp;
-	int				 error;
+	struct ietf_netconf_commit_input	in;
 
-	memset(&req, 0, sizeof(req));
-	req.confirm = true;
-	req.jail = netjail;
-	if ((error = arc_bird_config(cl, &req, &rsp)) != 0)
-		fail(cl, error, "bird confirm");
-	if (rsp->ok)
-		xo_emit("{:result/%s}\n", "confirmed: it stays");
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("bird confirm: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_bird_config_rsp_free(rsp);
-	return (error);
+	memset(&in, 0, sizeof(in));
+	in.persist_id = id;
+	netconf_rpc(cl, "commit", &in);
+	xo_emit("{:result/%s}\n", "confirmed: it stays");
+	return (0);
 }
 
-/* bird routes [words]: routes of BIRD's tables, said in birdc's words. */
 /* bird ospf [topology [protocol]]: BIRD's OSPF areas, or their topology. */
 static int
 cmd_bird_ospf(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_network_req	 req;
-	struct arc_network_rsp	*rsp;
-	char			 words[96];
-	int			 error;
+	struct arcana_bird_bird_ospf_input	in;
 
-	words[0] = '\0';
 	if (argc > 2 || (argc >= 1 && strcmp(argv[0], "topology") != 0))
 		usage();
-	if (argc >= 1 && snprintf(words, sizeof(words), "%s%s%s", argv[0],
-	    argc == 2 ? "," : "", argc == 2 ? argv[1] : "") >=
-	    (int)sizeof(words))
-		usage();
-	memset(&req, 0, sizeof(req));
-	req.has_net_kind = true;
-	req.net_kind = ARC_NET_KIND_BIRD_OSPF;
-	req.net_filter = words[0] != '\0' ? words : NULL;
-	req.jail = netjail;
-	if ((error = arc_network(cl, &req, &rsp)) != 0)
-		fail(cl, error, "bird ospf");
-	if (rsp->json != NULL)
-		xo_emit("{:json/%s}\n", rsp->json);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("bird ospf: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_network_rsp_free(rsp);
-	return (error);
+	memset(&in, 0, sizeof(in));
+	in.jail = netjail;
+	in.has_topology = argc >= 1;
+	in.topology = argc >= 1;
+	in.protocol = argc == 2 ? argv[1] : NULL;
+	return (yplug_read(cl, "bird", "ospf", &in, "bird ospf"));
 }
 
+/* bird routes [words]: routes of BIRD's tables, said in birdc's words. */
 static int
 cmd_bird_routes(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_network_req	 req;
-	struct arc_network_rsp	*rsp;
-	char			 words[256];
-	int			 i, error;
+	struct arcana_bird_bird_routes_input	in;
+	char					words[256];
+	int					i;
 
 	words[0] = '\0';
 	for (i = 0; i < argc; i++) {
@@ -2882,22 +3038,10 @@ cmd_bird_routes(struct arc_client *cl, int argc, char **argv)
 		if (strlcat(words, argv[i], sizeof(words)) >= sizeof(words))
 			usage();
 	}
-	memset(&req, 0, sizeof(req));
-	req.has_net_kind = true;
-	req.net_kind = ARC_NET_KIND_BIRD_ROUTES;
-	req.net_filter = words[0] != '\0' ? words : NULL;
-	req.jail = netjail;
-	if ((error = arc_network(cl, &req, &rsp)) != 0)
-		fail(cl, error, "bird routes");
-	if (rsp->json != NULL)
-		xo_emit("{:json/%s}\n", rsp->json);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("bird routes: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_network_rsp_free(rsp);
-	return (error);
+	memset(&in, 0, sizeof(in));
+	in.jail = netjail;
+	in.filter = words[0] != '\0' ? words : NULL;
+	return (yplug_read(cl, "bird", "routes", &in, "bird routes"));
 }
 
 /* route get address: the route the host would take, and the others. */
@@ -2960,19 +3104,32 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 {
 	struct arc_sdwan_req		 req;
 	struct arc_sdwan_rsp		*rsp;
-	struct arc_sdwan_probes_req	 preq;
-	struct arc_sdwan_probes_rsp	*prsp;
 	int				 error;
 
+	/* The targets and links of an edge, arcana-probe's, committed. */
 	if (argc == 3 && strcmp(argv[1], "probes") == 0) {
-		memset(&preq, 0, sizeof(preq));
-		preq.json = argv[2];
-		if ((error = arc_sdwan_probes(cl, &preq, &prsp)) != 0)
-			fail(cl, error, "sdwan probes");
-		error = json_out("sdwan-probes", prsp->ok, prsp->error, NULL,
-		    prsp->trace.v, prsp->trace.n);
-		arc_sdwan_probes_rsp_free(prsp);
-		return (error);
+		struct ietf_netconf_commit_input		 cin;
+		struct ietf_netconf_discard_changes_input	 din;
+		uint64_t					 esid;
+		char						 err[512], tag[80];
+
+		ytold_begin(cl);
+		if (yprobes_edit(cl->conn, json_arg(argv[2]), err, sizeof(err),
+		    &esid, tag, sizeof(tag)) != 0) {
+			ytold_end(true);
+			refused("sdwan probes", err, tag);
+		}
+		memset(&cin, 0, sizeof(cin));
+		if (netconf_try(cl, "commit", &cin, err, sizeof(err), tag,
+		    sizeof(tag)) != 0) {
+			memset(&din, 0, sizeof(din));
+			(void)netconf_try(cl, "discard-changes", &din, NULL, 0,
+			    NULL, 0);
+			ytold_end(true);
+			refused("sdwan probes", err, tag);
+		}
+		ytold_end(true);
+		return (json_out("sdwan-probes", true, NULL, NULL, NULL, 0));
 	}
 	if (argc == 3 && strcmp(argv[1], "rules") == 0) {
 		struct arc_sdwan_rules_req	 rq;
@@ -3076,23 +3233,19 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/* traceroute address: arcana-troubleshoot's traceroute. */
 static int
 cmd_traceroute(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_traceroute_req	 req;
-	struct arc_traceroute_rsp	*rsp;
-	int				 error;
+	ucl_object_t	*data;
+	char		 err[256];
+	int		 error;
 
 	if (argc != 2)
 		usage();
-	memset(&req, 0, sizeof(req));
-	req.lookup = argv[1];
-	if ((error = arc_traceroute(cl, &req, &rsp)) != 0)
-		fail(cl, error, "traceroute");
-	error = json_out("traceroute", rsp->ok, rsp->error, rsp->json,
-	    rsp->trace.v, rsp->trace.n);
-	arc_traceroute_rsp_free(rsp);
-	return (error);
+	ytold_begin(cl);
+	error = yts_traceroute(cl->conn, argv[1], &data, err, sizeof(err));
+	return (ydata_out("traceroute", error, data, err));
 }
 
 static int
@@ -3124,8 +3277,8 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "ospf") == 0)
 		return (cmd_bird_ospf(cl, argc - 2, argv + 2));
 	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "confirm") == 0 &&
-	    argc == 2)
-		return (cmd_bird_confirm(cl));
+	    argc == 3)
+		return (cmd_bird_confirm(cl, argv[2]));
 	if (strcmp(argv[0], "bird") == 0) {
 		sp.kind = ARC_JOB_KIND_BIRD;
 		sp.verb = argv[1];
@@ -3442,6 +3595,35 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 			break;
 	if (i == nitems(kinds))
 		usage();
+	/* Those of a plugin: its module's read action (Y-3). */
+	if (i == ARC_NET_KIND_NETGRAPH) {
+		struct arcana_netgraph_netgraph_read_input in = { 0 };
+
+		if (argc != 2)
+			usage();
+		in.jail = netjail;
+		return (yplug_read(cl, kinds[i], "read", &in, "net netgraph"));
+	}
+	if (i == ARC_NET_KIND_WIREGUARD) {
+		struct arcana_wireguard_wireguard_read_input in = { 0 };
+
+		if (argc != 2)
+			usage();
+		in.jail = netjail;
+		return (yplug_read(cl, kinds[i], "read", &in, "net wireguard"));
+	}
+	if (i == ARC_NET_KIND_BIRD) {
+		struct arcana_bird_bird_read_input in = { 0 };
+
+		if (argc != 2)
+			usage();
+		in.jail = netjail;
+		return (yplug_read(cl, kinds[i], "read", &in, "net bird"));
+	}
+	if (i == ARC_NET_KIND_BIRD_ROUTES)
+		return (cmd_bird_routes(cl, argc - 2, argv + 2));
+	if (i == ARC_NET_KIND_BIRD_OSPF)
+		return (cmd_bird_ospf(cl, argc - 2, argv + 2));
 	memset(&req, 0, sizeof(req));
 	req.has_net_kind = true;
 	req.net_kind = (uint8_t)i;
@@ -3857,26 +4039,25 @@ cmd_tls(struct arc_client *cl, int argc, char **argv, const char *mine)
 static int
 cmd_capture(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_capture_req	 rq;
-	struct arc_capture_rsp	*rs;
-	const char		*errstr;
-	char			*f;
+	ucl_object_t		*data;
+	const char		*errstr, *source;
+	char			*f, ebuf[256];
 	size_t			 len;
+	uint32_t		 packets, seconds;
 	int			 i, error;
 
-	memset(&rq, 0, sizeof(rq));
-	rq.jail = netjail;
+	/* arcana-troubleshoot's capture. */
+	source = NULL;
+	packets = seconds = 0;
 	f = NULL;
 	if (argc != 1) {
 		if (argc < 4)
 			usage();
-		rq.interface = argv[1];
-		rq.has_packets = true;
-		rq.packets = (uint32_t)strtonum(argv[2], 1, 500, &errstr);
+		source = argv[1];
+		packets = (uint32_t)strtonum(argv[2], 1, 500, &errstr);
 		if (errstr != NULL)
 			errx(2, "packets %s: %s", argv[2], errstr);
-		rq.has_seconds = true;
-		rq.seconds = (uint32_t)strtonum(argv[3], 1, 60, &errstr);
+		seconds = (uint32_t)strtonum(argv[3], 1, 60, &errstr);
 		if (errstr != NULL)
 			errx(2, "seconds %s: %s", argv[3], errstr);
 		for (len = 1, i = 4; i < argc; i++)
@@ -3888,19 +4069,12 @@ cmd_capture(struct arc_client *cl, int argc, char **argv)
 				strlcat(f, " ", len);
 			strlcat(f, argv[i], len);
 		}
-		rq.net_filter = f;
 	}
-	if ((error = arc_capture(cl, &rq, &rs)) != 0)
-		fail(cl, error, "capture");
-	if (rs->json != NULL)
-		xo_emit("{:json/%s}\n", rs->json);
-	else if (rs->error != NULL)
-		warnx("%s", rs->error);
-	emit_trace(rs->trace.v, rs->trace.n);
-	error = rs->ok ? 0 : 1;
-	arc_capture_rsp_free(rs);
+	ytold_begin(cl);
+	error = yts_capture(cl->conn, netjail, source, f, seconds, packets,
+	    &data, ebuf, sizeof(ebuf));
 	free(f);
-	return (error);
+	return (ydata_out("capture", error, data, ebuf));
 }
 
 /*
@@ -4934,31 +5108,42 @@ json_out(const char *what, bool ok, const char *error, const char *json,
  * history set seconds samples: how often it is sampled, how many kept.
  * events [after]: what happened on the host, after an event's number.
  */
-/* An event as it comes: a line of its own, at once. */
+/*
+ * An event as it comes, arcana-events' notification as the events
+ * reply has one: a line of its own, at once.
+ */
 static void
-event_line(const struct arc_event_ntf *ntf, void *arg)
+event_line(cbl_conn *conn, cbl_msg *msg, void *arg)
 {
+	ucl_object_t	*o;
+	unsigned char	*json;
 
+	(void)conn;
 	(void)arg;
-	if (ntf->json != NULL) {
-		printf("%s\n", ntf->json);
+	if ((o = ygula_event_of(msg)) == NULL)
+		return;
+	if ((json = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT)) != NULL) {
+		printf("%s\n", (char *)json);
 		fflush(stdout);
+		free(json);
 	}
+	ucl_object_unref(o);
 }
 
 /*
- * The host's events as they happen, until the host goes or we are
- * stopped: the connection is driven here, nothing asked of it after.
+ * The host's events as they happen, of family 1's group notify, until
+ * the host goes or we are stopped: the connection is driven here,
+ * nothing asked of it after.
  */
 static int
 follow_events(struct arc_client *cl)
 {
-	static const struct arc_events_handlers h = { .event = event_line };
 	struct pollfd	 pfd;
 	cbl_sub		*sub;
 	int		 error, ev, ms;
 
-	if ((error = arc_events_subscribe(cl, &h, NULL, &sub)) != 0)
+	if ((error = cbl_subscribe(cl->conn, "cblink.yang", "notify",
+	    event_line, NULL, &sub)) != 0)
 		fail(cl, error, "events");
 	for (;;) {
 		ev = 0;
@@ -4983,32 +5168,29 @@ static int
 cmd_gula(struct arc_client *cl, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
-	struct arc_processes_req pq;
-	struct arc_processes_rsp *pr;
-	struct arc_log_req	 lq;
-	struct arc_log_rsp	*lr;
-	struct arc_history_req	 hq;
-	struct arc_history_rsp	*hr;
+	uint64_t		 position;
+	uint32_t		 lines;
+	bool			 from;
 	const char		*names[2], *e;
-	int			 error, ch, rc;
+	ucl_object_t		*data;
+	char			 err[256];
+	uint32_t		 pid;
+	int			 error, ch;
 
 	if (strcmp(argv[0], "ps") == 0) {
+		/* arcana-processes' list, or a process's read. */
 		if (argc > 2)
 			usage();
-		memset(&pq, 0, sizeof(pq));
-		pq.jail = netjail;
+		pid = 0;
 		if (argc == 2) {
-			pq.has_pid = true;
-			pq.pid = (uint32_t)strtonum(argv[1], 1, 99999, &e);
+			pid = (uint32_t)strtonum(argv[1], 1, 99999, &e);
 			if (e != NULL)
 				xo_errx(1, "ps: %s: %s", argv[1], e);
 		}
-		if ((error = arc_processes(cl, &pq, &pr)) != 0)
-			fail(cl, error, "ps");
-		rc = json_out("ps", pr->ok, pr->error, pr->json, pr->trace.v,
-		    pr->trace.n);
-		arc_processes_rsp_free(pr);
-		return (rc);
+		ytold_begin(cl);
+		error = ygula_processes(cl->conn, netjail, pid, &data, err,
+		    sizeof(err));
+		return (ydata_out("ps", error, data, err));
 	}
 	if (strcmp(argv[0], "signal") == 0 || strcmp(argv[0], "renice") == 0) {
 		if (argc < 2 || argc > 3 || (argc == 2 && argv[0][0] == 'r'))
@@ -5029,101 +5211,99 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 	    "-f") == 0)
 		return (follow_events(cl));
 	if (strcmp(argv[0], "events") == 0) {
-		struct arc_events_req	 eq;
-		struct arc_events_rsp	*er;
+		/* arcana-events' read. */
+		uint64_t	after = 0;
 
 		if (argc > 2)
 			usage();
-		memset(&eq, 0, sizeof(eq));
 		if (argc == 2) {
-			eq.has_after = true;
-			eq.after = (uint64_t)strtonum(argv[1], 0, INT64_MAX,
-			    &e);
+			after = (uint64_t)strtonum(argv[1], 0, INT64_MAX, &e);
 			if (e != NULL)
 				xo_errx(1, "events: after %s: %s", argv[1], e);
 		}
-		if ((error = arc_events(cl, &eq, &er)) != 0)
-			fail(cl, error, "events");
-		rc = json_out("events", er->ok, er->error, er->json,
-		    er->trace.v, er->trace.n);
-		arc_events_rsp_free(er);
-		return (rc);
+		ytold_begin(cl);
+		error = ygula_events(cl->conn, argc == 2, after, &data, err,
+		    sizeof(err));
+		return (ydata_out("events", error, data, err));
 	}
 	if (strcmp(argv[0], "history") == 0) {
-		memset(&hq, 0, sizeof(hq));
+		/* arcana-history's read; how it samples committed first. */
+		const char	*rules = NULL;
+		uint32_t	 lim[3], step = 0, keep = 0;
+		uint64_t	 after = 0;
+		int		 storage = -1;
+		bool		 set = false, has_lim = false, has_after = false;
+
 		/* ... rules list: the limits of devices and jails, last. */
 		if (argc >= 6 && strcmp(argv[1], "set") == 0 &&
 		    strcmp(argv[argc - 2], "rules") == 0) {
-			hq.limit_rules = argv[argc - 1];
+			rules = argv[argc - 1];
 			argc -= 2;
 		}
 		if ((argc == 4 || argc == 7 || argc == 8) && strcmp(argv[1],
 		    "set") == 0) {
 			/* ... cpu mem swap [storage] */
 			if (argc == 8) {
-				hq.has_limit_storage = true;
-				hq.limit_storage = (uint32_t)strtonum(argv[7],
-				    0, 100, &e);
+				storage = (int)strtonum(argv[7], 0, 100, &e);
 				if (e != NULL)
 					xo_errx(1, "history: a limit is 0 to "
 					    "100");
 			}
 			if (argc >= 7) {
-				hq.has_limit_cpu = hq.has_limit_mem =
-				    hq.has_limit_swap = true;
-				hq.limit_cpu = (uint32_t)strtonum(argv[4], 0,
-				    100, &e);
+				has_lim = true;
+				lim[0] = (uint32_t)strtonum(argv[4], 0, 100,
+				    &e);
 				if (e == NULL)
-					hq.limit_mem = (uint32_t)strtonum(
-					    argv[5], 0, 100, &e);
+					lim[1] = (uint32_t)strtonum(argv[5], 0,
+					    100, &e);
 				if (e == NULL)
-					hq.limit_swap = (uint32_t)strtonum(
-					    argv[6], 0, 100, &e);
+					lim[2] = (uint32_t)strtonum(argv[6], 0,
+					    100, &e);
 				if (e != NULL)
 					xo_errx(1, "history: a limit is 0 to "
 					    "100");
 			}
-			hq.has_sample_step = hq.has_sample_keep = true;
-			hq.sample_step = (uint32_t)strtonum(argv[2], 1, 3600,
-			    &e);
+			set = true;
+			step = (uint32_t)strtonum(argv[2], 1, 3600, &e);
 			if (e != NULL)
 				xo_errx(1, "history: seconds %s: %s", argv[2],
 				    e);
-			hq.sample_keep = (uint32_t)strtonum(argv[3], 0, 5000,
-			    &e);
+			keep = (uint32_t)strtonum(argv[3], 0, 5000, &e);
 			if (e != NULL)
 				xo_errx(1, "history: samples %s: %s", argv[3],
 				    e);
 		} else if (argc > 2)
 			usage();
 		else if (argc == 2) {
-			hq.has_after = true;
-			hq.after = (uint64_t)strtonum(argv[1], 0, INT64_MAX,
-			    &e);
+			has_after = true;
+			after = (uint64_t)strtonum(argv[1], 0, INT64_MAX, &e);
 			if (e != NULL)
 				xo_errx(1, "history: after %s: %s", argv[1], e);
 		}
-		if ((error = arc_history(cl, &hq, &hr)) != 0)
-			fail(cl, error, "history");
-		rc = json_out("history", hr->ok, hr->error, hr->json,
-		    hr->trace.v, hr->trace.n);
-		arc_history_rsp_free(hr);
-		return (rc);
+		ytold_begin(cl);
+		data = NULL;
+		error = set ? ygula_history_set(cl->conn, step, keep, has_lim ?
+		    lim : NULL, storage, rules, err, sizeof(err)) : 0;
+		if (error == 0)
+			error = ygula_history(cl->conn, has_after, after, &data,
+			    err, sizeof(err));
+		return (ydata_out("history", error, data, err));
 	}
-	memset(&lq, 0, sizeof(lq));
+	/* arcana-log's read. */
+	position = 0;
+	lines = 0;
+	from = false;
 	optreset = optind = 1;
 	while ((ch = getopt(argc, argv, "f:o:")) != -1) {
 		switch (ch) {
 		case 'f':
-			lq.has_position = true;
-			lq.position = (uint64_t)strtonum(optarg, 0, INT64_MAX,
-			    &e);
+			from = true;
+			position = (uint64_t)strtonum(optarg, 0, INT64_MAX, &e);
 			if (e != NULL)
 				xo_errx(1, "log: position %s: %s", optarg, e);
 			break;
 		case 'o':
-			lq.has_lines = true;
-			lq.lines = (uint32_t)strtonum(optarg, 1, 5000, &e);
+			lines = (uint32_t)strtonum(optarg, 1, 5000, &e);
 			if (e != NULL)
 				xo_errx(1, "log: lines %s: %s", optarg, e);
 			break;
@@ -5135,15 +5315,11 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 	argv += optind;
 	if (argc > 2)
 		usage();
-	lq.log_name = argc > 0 ? argv[0] : NULL;
-	lq.net_filter = argc > 1 ? argv[1] : NULL;
-	lq.jail = netjail;
-	if ((error = arc_log(cl, &lq, &lr)) != 0)
-		fail(cl, error, "log");
-	rc = json_out("log", lr->ok, lr->error, lr->json, lr->trace.v,
-	    lr->trace.n);
-	arc_log_rsp_free(lr);
-	return (rc);
+	ytold_begin(cl);
+	error = ygula_log(cl->conn, argc > 0 ? argv[0] : NULL, argc > 1 ?
+	    argv[1] : NULL, from, position, lines, netjail, &data, err,
+	    sizeof(err));
+	return (ydata_out("log", error, data, err));
 }
 
 /*
@@ -5231,31 +5407,36 @@ cmd_config_apply(struct arc_client *cl, int argc, char **argv)
 static int
 cmd_path_check(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_path_check_req	 req;
-	struct arc_path_check_rsp	*rsp;
-	int				 ch, error;
+	ucl_object_t	*data;
+	const char	*iface, *proto;
+	char		 err[256];
+	uint32_t	 pfib, port;
+	int		 ch, error;
+	bool		 has_fib, reply;
 
-	memset(&req, 0, sizeof(req));
+	/* arcana-troubleshoot's path-check. */
+	iface = proto = NULL;
+	pfib = port = 0;
+	has_fib = reply = false;
 	optind = 1;
 	optreset = 1;
 	while ((ch = getopt(argc, argv, "F:i:p:P:r")) != -1) {
 		switch (ch) {
 		case 'r':
-			req.path_reply = true;
+			reply = true;
 			break;
 		case 'F':
-			req.has_net_fib = true;
-			req.net_fib = (uint32_t)strtoul(optarg, NULL, 10);
+			has_fib = true;
+			pfib = (uint32_t)strtoul(optarg, NULL, 10);
 			break;
 		case 'i':
-			req.interface = optarg;
+			iface = optarg;
 			break;
 		case 'p':
-			req.path_proto = optarg;
+			proto = optarg;
 			break;
 		case 'P':
-			req.has_path_port = true;
-			req.path_port = (uint32_t)strtoul(optarg, NULL, 10);
+			port = (uint32_t)strtoul(optarg, NULL, 10);
 			break;
 		default:
 			usage();
@@ -5263,20 +5444,11 @@ cmd_path_check(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc != optind + 2)
 		usage();
-	req.path_src = argv[optind];
-	req.path_dst = argv[optind + 1];
-	req.jail = netjail;
-	if ((error = arc_path_check(cl, &req, &rsp)) != 0)
-		fail(cl, error, "path-check");
-	if (rsp->json != NULL)
-		xo_emit("{:json/%s}\n", rsp->json);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("path-check: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_path_check_rsp_free(rsp);
-	return (error);
+	ytold_begin(cl);
+	error = yts_path_check(cl->conn, argv[optind], argv[optind + 1],
+	    proto, port, iface, has_fib, pfib, netjail, reply, &data, err,
+	    sizeof(err));
+	return (ydata_out("path-check", error, data, err));
 }
 
 /*
@@ -5373,35 +5545,30 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 	if (argc < 2)
 		usage();
 	if (strcmp(argv[1], "trace") == 0) {
-		struct arc_fw_trace_req	 tq;
-		struct arc_fw_trace_rsp	*tr;
-		const char		*e;
+		/* arcana-firewall's trace, of the host's or the jail's. */
+		ucl_object_t	*data;
+		const char	*e;
+		char		 err[256];
+		uint32_t	 seconds = 0, packets = 0;
 
 		if (argc < 3 || argc > 5)
 			usage();
-		memset(&tq, 0, sizeof(tq));
-		tq.jail = netjail;
-		tq.net_filter = argv[2];
 		if (argc > 3) {
-			tq.has_seconds = true;
-			tq.seconds = (uint32_t)strtonum(argv[3], 1, 60, &e);
+			seconds = (uint32_t)strtonum(argv[3], 1, 60, &e);
 			if (e != NULL)
 				xo_errx(1, "ipfw trace: seconds %s: %s", argv[3],
 				    e);
 		}
 		if (argc > 4) {
-			tq.has_packets = true;
-			tq.packets = (uint32_t)strtonum(argv[4], 1, 1000, &e);
+			packets = (uint32_t)strtonum(argv[4], 1, 1000, &e);
 			if (e != NULL)
 				xo_errx(1, "ipfw trace: packets %s: %s", argv[4],
 				    e);
 		}
-		if ((error = arc_fw_trace(cl, &tq, &tr)) != 0)
-			fail(cl, error, "ipfw trace");
-		error = json_out("ipfw trace", tr->ok, tr->error, tr->json,
-		    tr->trace.v, tr->trace.n);
-		arc_fw_trace_rsp_free(tr);
-		return (error);
+		ytold_begin(cl);
+		error = yts_fw_trace(cl->conn, netjail, argv[2], seconds,
+		    packets, &data, err, sizeof(err));
+		return (ydata_out("ipfw trace", error, data, err));
 	}
 	if (strcmp(argv[1], "rules") == 0) {
 		from = NULL;

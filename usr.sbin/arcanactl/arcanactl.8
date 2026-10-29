@@ -480,6 +480,27 @@ and
 settings, which
 .Cm sysctl
 sets.
+.Cm netgraph
+is the graph as
+.Xr ngctl 8
+lists it, the read action of arcana-netgraph's
+.Cm netgraph
+(the host's, or with
+.Fl j
+the jail's), as RFC 7951's JSON: each node with its id, name and type
+and its hooks, each with the node and hook at the other end.
+.Cm wireguard
+is arcana-wireguard's read action likewise: each
+.Xr wg 4
+interface with its public key, whether it has a private one, its port
+and its peers, each with its public key, endpoint, allowed IPs, last
+handshake, bytes received and sent, and keepalive.
+.Cm bird
+is arcana-bird's read action:
+.Xr birdc 8 Ns 's
+status, each protocol with what
+.Ql show protocols all
+says of it, the OSPF neighbours, the BFD sessions and the tables.
 .It Cm kmod Op Cm load | unload | keep | forget Ar module
 The kernel's modules and its memory, as
 .Cm get kernel
@@ -1250,7 +1271,9 @@ jail, at most
 .Ar packets
 or for
 .Ar seconds ;
-with nothing, the sources there are.
+with nothing, the sources there are: arcana-troubleshoot's
+.Ic capture
+action.
 .It Cm zfskey Oo Fl n Oc Ar dataset
 The key of an encrypted dataset whose keylocation is prompt, typed and
 loaded; with
@@ -1360,7 +1383,9 @@ the FIB,
 tcp, udp, sctp, icmp or ip, and
 .Fl P
 the port.
-JSON on stdout.
+JSON on stdout: arcana-troubleshoot's
+.Ic path-check
+action.
 .It Cm source-log Oo Fl i Ar key Oc Oo Fl n Ar count Oc Ar repository Op Ar ref
 The latest commits of the repository's branch, newest first, and its
 tags: what is new;
@@ -1592,10 +1617,12 @@ and between this look and the one before
 .Pq cpu ,
 the blocks it read and wrote and how many a second, when it started,
 and its command line; the busiest first; and each jail's share added
-up.
+up: arcana-processes' list, a jail's taken from it.
 With
 .Ar pid ,
-that process alone, with what it has open and its threads.
+that process alone, with what it has open and its threads, its
+.Ic read
+action.
 .It Cm signal Ar pid Op Ar name | number
 Send the process a signal, by a job:
 .Dv SIGTERM
@@ -1637,6 +1664,11 @@ then the new one from its start.
 A file
 .Xr newsyslog 8
 has packed is unpacked and read whole.
+It is arcana-log's
+.Ic read
+action, the level as
+.Ql syslogd -vv
+names it.
 .It Cm events Op Ar after | Fl f
 What happened on the host, as the kernel told the agent of it through
 .Xr netlink 4 :
@@ -1651,6 +1683,12 @@ each event as it happens, a line each, until the host goes or
 .Nm
 is stopped: the agent tells it to those who subscribed, nothing is
 asked again.
+They are arcana-events'
+.Ic read
+action and its
+.Ic event
+notification, of cblink's YANG family's group
+.Ql notify .
 .It Cm net nhgroups
 The kernel's nexthop groups, what a route of several next hops points
 to, each with its next hops and their shares.
@@ -1692,6 +1730,9 @@ interval, named by its syslog tag.
 With
 .Ar after ,
 only the samples after that time, in seconds since the epoch.
+It is arcana-history's
+.Ic read
+action.
 .It Cm history set Ar seconds Ar samples Oo Ar cpu mem swap Oo Ar storage Oc Oc Op Cm rules Ar list
 Have the agent sample every
 .Ar seconds ,
@@ -1718,6 +1759,8 @@ the limits of an interface, a disk or a jail, with commas:
 and
 .Ql jail-mem: Ns Ar jail Ns = Ns Ar bytes ;
 an empty list takes them away.
+They are arcana-history's configuration, put in the candidate with what
+running has besides and committed.
 The reply says what the samples take of the agent's memory.
 The samples are written down when the agent stops and read again when
 it starts.
@@ -1895,6 +1938,10 @@ whichever ends first.
 With
 .Fl j ,
 of the jail's own firewall.
+It is arcana-firewall's
+.Ic trace
+action, of the jail's entry with
+.Fl j .
 The host needs
 .Xr dtrace 4
 loaded.
@@ -2284,14 +2331,22 @@ each target's state, the sample in progress and the samples kept
 (the one-way delay, its variation, the loss, each eval interval).
 .It Cm sdwan probes Ar json
 The targets the agent is to measure from now on, a JSON array as the
-sdwan-probes operation takes it: each an id and an address, and maybe
-fib, interval, size, count, dscp, down, up, timeout, eval, history and
-report.
+console's SD-WAN apply makes them: each an id and an address, and maybe
+fib, interval, size, count, dscp, down, up, timeout, eval, history,
+report and tca, put in arcana-probe's
+.Ic target
+list by a commit, the edge's links and monitors and the other edges'
+as running has them.
 An empty array stops them all.
 An object
-.Brq Qq jail : Qq Ar name , Qq targets : Bq ...
-sets those of an SD-WAN edge that is that vnet jail instead, probed
-from its network, apart from the host's and each other jail's.
+.Brq Qq jail : Qq Ar name , Qq targets : Bq ... , Qq links : Bq ...
+sets those of an SD-WAN edge that is that vnet jail instead (its entry
+of arcana-probe's
+.Ic jail ) ,
+probed from its network, apart from the host's and each other jail's,
+with the interfaces whose links it watches.
+Refusals are the model's: a target without an address, an interval out
+of its range, an id twice.
 .It Cm sdwan rules Ar json
 A
 .Ar json
@@ -2344,7 +2399,10 @@ or
 .Xr traceroute6 8 ,
 from the host to
 .Ar address :
-a probe a hop, a second's wait, 30 hops at most, as JSON.
+a probe a hop, a second's wait, 30 hops at most, as JSON:
+arcana-troubleshoot's
+.Ic traceroute
+action.
 The console's Traceroute asks again and again, as
 .Xr mtr 8
 does.
@@ -2533,7 +2591,9 @@ a prefix, or the route that covers an address
 those learned from a protocol, or exported to it; those of one table;
 with
 .Cm all ,
-what each carries, a BGP route's path and communities.
+what each carries, a BGP route's path and communities: arcana-bird's
+.Ic routes
+action, as RFC 7951's JSON.
 They are counted first: more than 2000 are not sent, and the count is
 said instead.
 .It Cm bird ospf Op Cm topology Op Ar protocol
@@ -2544,19 +2604,32 @@ what each area's link-state database says, from
 its routers with their distance and links
 .Pq router, network, stubnet, external, with the metric ,
 and its transit networks with their designated router and routers.
-Every router of an area holds the same database.
-.It Cm bird confirm
+Every router of an area holds the same database: arcana-bird's
+.Ic ospf
+action, as RFC 7951's JSON.
+.It Cm bird confirm Ar id
 The configuration put in place with
 .Fl s
-stays.
+or
+.Fl c
+stays: the confirmed commit of persist-id
+.Ar id
+confirmed, as
+.Cm commit Fl i
+does.
 .It Cm bird config Op Ar file
 Print BIRD's configuration: its main file, or
 .Ar file ,
-one it includes.
-.It Cm bird config Fl w Ar new-text Oo Fl n Oc Op Ar file
+one it includes, as running has it (arcana-bird's
+.Ic configuration ,
+or with
+.Fl j
+its
+.Ic jail ) .
+.It Cm bird config Fl w Ar new-text Oo Fl n Oc Oo Fl c Ar seconds Oc Op Ar file
 Put the text of the local file
 .Ar new-text
-in its place.
+in its place by a commit of arcana-bird.
 .Xr bird 8
 parses the whole configuration first, and what it refuses does not
 stay; then the daemon is told to read it.
@@ -2565,16 +2638,24 @@ The file as it was is kept beside it with
 after its name.
 With
 .Fl n
-it is parsed only.
+it is parsed only, the
+.Ic check
+action.
 With
 .Fl s
-before the command, BIRD is told to take the new configuration back by
-itself
-.Pq Ql configure timeout
-unless
+before the command, or
+.Fl c ,
+the commit is a confirmed one, of
+.Ar seconds
+.Pq else Fl W Ns 's, else two minutes ,
+its persist-id printed: BIRD is told to take the new configuration back
+by itself
+.Pq Ql configure timeout ,
+a little later than the commit, should the agent be gone; unless
 .Cm bird confirm
-comes within the time the host allows; the file is then put back as it
-was.
+comes in time, the commit is undone, BIRD told to go back
+.Pq Ql configure undo
+and the file put back as it was.
 .Pp
 With the option
 .Fl s

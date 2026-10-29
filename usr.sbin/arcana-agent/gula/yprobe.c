@@ -5,10 +5,10 @@
  */
 
 /*
- * Gula: the probes as YANG, arcana-probe: the
- * sdwan-probes operation's targets (probe.c) as configuration, the
- * sdwan read's targets as state, each sample taken apart from its
- * row.
+ * Gula: the probes as YANG, arcana-probe: each edge's targets, links
+ * and monitors (probe.c's probe_conf_json()) as configuration, and
+ * back as the JSON do_probes_set() and do_monitors_set() take; the
+ * sdwan read's targets as state, each sample taken apart from its row.
  */
 
 #include <sys/param.h>
@@ -42,7 +42,7 @@ datetime(cbl_yarena *a, int64_t t)
 static bool
 addr_union(cbl_yarena *a, const ucl_object_t *o, const char *key, void *u)
 {
-	struct arcana_probe_probes_target_address	*s = u;
+	struct arcana_probe_target_address	*s = u;
 	const char					*v;
 
 	if ((v = yj_str(a, o, key)) == NULL)
@@ -70,69 +70,292 @@ dec(const ucl_object_t *o, const char *key, int d, int64_t *v)
 static const char *const states[] = { "unknown", "up", "down", "ended",
     "error" };
 
-int
-yprobe_targets_from_json(const char *json, cbl_yarena *a, size_t *np,
-    const struct arcana_probe_probes_target **vp)
+/* The thresholds of o's, NULL with none. */
+static int
+tca_of(cbl_yarena *a, const ucl_object_t *o, const struct arcana_probe_tca **tp)
 {
-	struct arcana_probe_probes_target	*v;
-	struct arcana_probe_probes_target_tca	*t;
-	const ucl_object_t			*e, *o, *list;
-	ucl_object_iter_t			 it;
-	ucl_object_t				*top;
-	const char				*jail;
-	size_t					 n = 0;
+	struct arcana_probe_tca	*t;
+	const ucl_object_t	*c;
 
-	*np = 0;
-	*vp = NULL;
-	if ((top = yj_parse(json)) == NULL)
-		return (EINVAL);
-	/* A jail's edge's: {"jail", "targets"}, each target its. */
-	list = top;
-	jail = NULL;
-	if (ucl_object_type(top) == UCL_OBJECT) {
-		jail = yj_str(a, top, "jail");
-		list = ucl_object_lookup(top, "targets");
-	}
-	if ((v = cbl_yarena_alloc(a, (yj_count(list) + 1) * sizeof(*v))) ==
-	    NULL) {
-		ucl_object_unref(top);
+	*tp = NULL;
+	if ((c = ucl_object_lookup(o, "tca")) == NULL)
+		return (0);
+	if ((t = cbl_yarena_alloc(a, sizeof(*t))) == NULL)
 		return (ENOMEM);
-	}
-	YJ_EACH(list, it, e) {
-		memset(&v[n], 0, sizeof(v[n]));
-		if ((v[n].id = yj_str(a, e, "id")) == NULL)
+	memset(t, 0, sizeof(*t));
+	t->has_delay = dec(c, "delay", 3, &t->delay);
+	t->has_ipdv = dec(c, "ipdv", 3, &t->ipdv);
+	t->has_loss = dec(c, "loss", 6, &t->loss);
+	YJ_NUM(c, "damping", t, damping);
+	*tp = t;
+	return (0);
+}
+
+/* An edge's lists, e's ("targets", "links", "monitors"), into its. */
+static int
+edge_of(cbl_yarena *a, const ucl_object_t *e,
+    struct arcana_probe_probes_jail *out)
+{
+	struct arcana_probe_target	*t;
+	struct arcana_probe_link	*l;
+	struct arcana_probe_monitor	*m;
+	const ucl_object_t		*o, *list;
+	ucl_object_iter_t		 it;
+	const char			*s;
+	size_t				 n;
+	int				 error;
+
+	list = ucl_object_lookup(e, "targets");
+	if ((t = cbl_yarena_alloc(a, (yj_count(list) + 1) * sizeof(*t))) ==
+	    NULL)
+		return (ENOMEM);
+	n = 0;
+	YJ_EACH(list, it, o) {
+		memset(&t[n], 0, sizeof(t[n]));
+		if ((t[n].id = yj_str(a, o, "id")) == NULL)
 			continue;
-		v[n].jail = jail;
-		v[n].has_address = addr_union(a, e, "address", &v[n].address);
-		YJ_NUM(e, "fib", &v[n], fib);
-		YJ_NUM(e, "interval", &v[n], interval);
-		YJ_NUM(e, "size", &v[n], size);
-		YJ_NUM(e, "count", &v[n], count);
-		YJ_NUM(e, "dscp", &v[n], dscp);
-		YJ_NUM(e, "down", &v[n], down);
-		YJ_NUM(e, "up", &v[n], up);
-		YJ_NUM(e, "timeout", &v[n], timeout);
-		YJ_NUM(e, "eval", &v[n], eval);
-		YJ_NUM(e, "history", &v[n], history);
-		YJ_NUM(e, "report", &v[n], report);
-		if ((o = ucl_object_lookup(e, "tca")) != NULL) {
-			if ((t = cbl_yarena_alloc(a, sizeof(*t))) == NULL) {
-				ucl_object_unref(top);
-				return (ENOMEM);
-			}
-			memset(t, 0, sizeof(*t));
-			t->has_delay = dec(o, "delay", 3, &t->delay);
-			t->has_ipdv = dec(o, "ipdv", 3, &t->ipdv);
-			t->has_loss = dec(o, "loss", 6, &t->loss);
-			YJ_NUM(o, "damping", t, damping);
-			v[n].tca = t;
+		t[n].has_address = addr_union(a, o, "address", &t[n].address);
+		YJ_NUM(o, "count", &t[n], count);
+		YJ_NUM(o, "report", &t[n], report);
+		YJ_NUM(o, "fib", &t[n], fib);
+		YJ_NUM(o, "interval", &t[n], interval);
+		YJ_NUM(o, "size", &t[n], size);
+		YJ_NUM(o, "dscp", &t[n], dscp);
+		YJ_NUM(o, "down", &t[n], down);
+		YJ_NUM(o, "up", &t[n], up);
+		YJ_NUM(o, "timeout", &t[n], timeout);
+		YJ_NUM(o, "eval", &t[n], eval);
+		YJ_NUM(o, "history", &t[n], history);
+		if ((error = tca_of(a, o, &t[n].tca)) != 0)
+			return (error);
+		n++;
+	}
+	out->target.n = n;
+	out->target.v = t;
+	list = ucl_object_lookup(e, "links");
+	if ((l = cbl_yarena_alloc(a, (yj_count(list) + 1) * sizeof(*l))) ==
+	    NULL)
+		return (ENOMEM);
+	n = 0;
+	YJ_EACH(list, it, o) {
+		memset(&l[n], 0, sizeof(l[n]));
+		if ((l[n].id = yj_str(a, o, "id")) == NULL)
+			continue;
+		l[n].interface = yj_str(a, o, "interface");
+		if ((s = yj_str(a, o, "role")) != NULL) {
+			l[n].has_role = true;
+			l[n].role = strcmp(s, "uni") == 0 ?
+			    ARCANA_PROBE_LINK_ROLE_UNI :
+			    ARCANA_PROBE_LINK_ROLE_UCS;
 		}
 		n++;
 	}
-	*np = n;
-	*vp = v;
-	ucl_object_unref(top);
+	out->link.n = n;
+	out->link.v = l;
+	list = ucl_object_lookup(e, "monitors");
+	if ((m = cbl_yarena_alloc(a, (yj_count(list) + 1) * sizeof(*m))) ==
+	    NULL)
+		return (ENOMEM);
+	n = 0;
+	YJ_EACH(list, it, o) {
+		memset(&m[n], 0, sizeof(m[n]));
+		if ((m[n].name = yj_str(a, o, "id")) == NULL)
+			continue;
+		m[n].interface = yj_str(a, o, "interface");
+		m[n].has_address = addr_union(a, o, "address", &m[n].address);
+		YJ_NUM(o, "fib", &m[n], fib);
+		YJ_NUM(o, "interval", &m[n], interval);
+		YJ_NUM(o, "size", &m[n], size);
+		YJ_NUM(o, "dscp", &m[n], dscp);
+		YJ_NUM(o, "down", &m[n], down);
+		YJ_NUM(o, "up", &m[n], up);
+		YJ_NUM(o, "timeout", &m[n], timeout);
+		YJ_NUM(o, "eval", &m[n], eval);
+		YJ_NUM(o, "history", &m[n], history);
+		if ((error = tca_of(a, o, &m[n].tca)) != 0)
+			return (error);
+		n++;
+	}
+	out->monitor.n = n;
+	out->monitor.v = m;
 	return (0);
+}
+
+int
+yprobe_conf_from_json(const char *json, cbl_yarena *a,
+    struct arcana_probe_probes *out)
+{
+	struct arcana_probe_probes_jail	*j, host;
+	const ucl_object_t		*e;
+	ucl_object_iter_t		 it;
+	ucl_object_t			*top;
+	const char			*name;
+	size_t				 n = 0;
+	int				 error = 0;
+
+	if ((top = yj_parse(json)) == NULL)
+		return (EINVAL);
+	if ((j = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top,
+	    "edges")) + 1) * sizeof(*j))) == NULL) {
+		ucl_object_unref(top);
+		return (ENOMEM);
+	}
+	YJ_EACH(ucl_object_lookup(top, "edges"), it, e) {
+		name = yj_str(a, e, "jail");
+		if (name == NULL || name[0] == '\0') {
+			memset(&host, 0, sizeof(host));
+			if ((error = edge_of(a, e, &host)) != 0)
+				break;
+			out->target.n = host.target.n;
+			out->target.v = host.target.v;
+			out->link.n = host.link.n;
+			out->link.v = host.link.v;
+			out->monitor.n = host.monitor.n;
+			out->monitor.v = host.monitor.v;
+			continue;
+		}
+		memset(&j[n], 0, sizeof(j[n]));
+		j[n].name = name;
+		if ((error = edge_of(a, e, &j[n])) != 0)
+			break;
+		n++;
+	}
+	out->jail.n = n;
+	out->jail.v = j;
+	ucl_object_unref(top);
+	return (error);
+}
+
+/* A decimal64 of d fraction digits as a number of o's. */
+static void
+put_dec(ucl_object_t *o, const char *key, bool has, int64_t v, int d)
+{
+
+	if (has)
+		ucl_object_insert_key(o, ucl_object_fromdouble((double)v / (d ==
+		    6 ? 1000000.0 : 1000.0)), key, 0, true);
+}
+
+#define	PUT_INT(o, key, y, f) do {					\
+	if ((y)->has_##f)						\
+		ucl_object_insert_key((o), ucl_object_fromint((int64_t)	\
+		    (y)->f), (key), 0, true);				\
+} while (0)
+
+static void
+put_tca(ucl_object_t *o, const struct arcana_probe_tca *t)
+{
+	ucl_object_t	*c;
+
+	if (t == NULL)
+		return;
+	c = ucl_object_typed_new(UCL_OBJECT);
+	put_dec(c, "delay", t->has_delay, t->delay, 3);
+	put_dec(c, "ipdv", t->has_ipdv, t->ipdv, 3);
+	put_dec(c, "loss", t->has_loss, t->loss, 6);
+	PUT_INT(c, "damping", t, damping);
+	ucl_object_insert_key(o, c, "tca", 0, true);
+}
+
+static char *
+emit(ucl_object_t *top)
+{
+	char	*json;
+
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	return (json);
+}
+
+char *
+yprobe_edge_json(const char *jail, size_t nt,
+    const struct arcana_probe_target *tv, size_t nl,
+    const struct arcana_probe_link *lv)
+{
+	ucl_object_t	*top, *arr, *o;
+
+	top = ucl_object_typed_new(UCL_OBJECT);
+	if (jail != NULL && jail[0] != '\0')
+		ucl_object_insert_key(top, ucl_object_fromstring(jail), "jail",
+		    0, true);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (size_t i = 0; i < nt; i++) {
+		const struct arcana_probe_target *t = &tv[i];
+
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(t->id), "id", 0,
+		    true);
+		if (t->has_address)
+			ucl_object_insert_key(o, ucl_object_fromstring(
+			    t->address.v.m0), "address", 0, true);
+		PUT_INT(o, "count", t, count);
+		PUT_INT(o, "report", t, report);
+		PUT_INT(o, "fib", t, fib);
+		PUT_INT(o, "interval", t, interval);
+		PUT_INT(o, "size", t, size);
+		PUT_INT(o, "dscp", t, dscp);
+		PUT_INT(o, "down", t, down);
+		PUT_INT(o, "up", t, up);
+		PUT_INT(o, "timeout", t, timeout);
+		PUT_INT(o, "eval", t, eval);
+		PUT_INT(o, "history", t, history);
+		put_tca(o, t->tca);
+		ucl_array_append(arr, o);
+	}
+	ucl_object_insert_key(top, arr, "targets", 0, true);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (size_t i = 0; i < nl; i++) {
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(lv[i].id), "id",
+		    0, true);
+		if (lv[i].interface != NULL)
+			ucl_object_insert_key(o, ucl_object_fromstring(
+			    lv[i].interface), "interface", 0, true);
+		ucl_object_insert_key(o, ucl_object_fromstring(lv[i].has_role &&
+		    lv[i].role == ARCANA_PROBE_LINK_ROLE_UNI ? "uni" : "ucs"),
+		    "role", 0, true);
+		ucl_array_append(arr, o);
+	}
+	ucl_object_insert_key(top, arr, "links", 0, true);
+	return (emit(top));
+}
+
+char *
+yprobe_monitors_json(const char *jail, size_t n,
+    const struct arcana_probe_monitor *v)
+{
+	ucl_object_t	*top, *arr, *o;
+
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, ucl_object_fromstring(jail != NULL ? jail :
+	    ""), "jail", 0, true);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (size_t i = 0; i < n; i++) {
+		const struct arcana_probe_monitor *m = &v[i];
+
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(m->name), "id", 0,
+		    true);
+		if (m->interface != NULL)
+			ucl_object_insert_key(o, ucl_object_fromstring(
+			    m->interface), "interface", 0, true);
+		if (m->has_address)
+			ucl_object_insert_key(o, ucl_object_fromstring(
+			    m->address.v.m0), "address", 0, true);
+		PUT_INT(o, "fib", m, fib);
+		PUT_INT(o, "interval", m, interval);
+		PUT_INT(o, "size", m, size);
+		PUT_INT(o, "dscp", m, dscp);
+		PUT_INT(o, "down", m, down);
+		PUT_INT(o, "up", m, up);
+		PUT_INT(o, "timeout", m, timeout);
+		PUT_INT(o, "eval", m, eval);
+		PUT_INT(o, "history", m, history);
+		put_tca(o, m->tca);
+		ucl_array_append(arr, o);
+	}
+	ucl_object_insert_key(top, arr, "targets", 0, true);
+	return (emit(top));
 }
 
 /* The i-th number of a row, as a double. */

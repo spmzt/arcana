@@ -1133,6 +1133,8 @@ void		 ycommit_note(struct html *, const struct ycommit *);
 bool		 ycommit_action(struct ycommit *, const char *);
 void		 ycommit_tick(struct ycommit *, double);
 const char	*rc_why(const ucl_object_t *, const char *);
+/* actions.c: a name that goes into a request's path as it is. */
+bool		 url_word(const char *);
 /* ra.c: an interface's router advertisements (rtadvd.conf(5)), on the
  * Network tab's Interfaces. */
 void		 view_ra(struct html *, struct server *);

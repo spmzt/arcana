@@ -3,23 +3,87 @@ module: arcana-probe
      +--rw target* [id]
      |  +--rw id          string
      |  +--rw address     inet:ip-address-no-zone
+     |  +--rw count?      uint32
+     |  +--rw report?     uint16
      |  +--rw fib?        uint16
      |  +--rw interval?   uint32
      |  +--rw size?       uint16
-     |  +--rw count?      uint32
      |  +--rw dscp?       uint8
      |  +--rw down?       uint8
      |  +--rw up?         uint8
      |  +--rw timeout?    uint32
      |  +--rw eval?       uint32
      |  +--rw history?    uint32
-     |  +--rw report?     uint32
      |  +--rw tca
-     |  |  +--rw delay?     ms
-     |  |  +--rw ipdv?      ms
-     |  |  +--rw loss?      decimal64
-     |  |  +--rw damping?   uint8
-     |  +--rw jail?       string
+     |     +--rw delay?     ms
+     |     +--rw ipdv?      ms
+     |     +--rw loss?      decimal64
+     |     +--rw damping?   uint8
+     +--rw link* [id]
+     |  +--rw id           string
+     |  +--rw interface    string
+     |  +--rw role?        enumeration
+     +--rw monitor* [name]
+     |  +--rw name         string
+     |  +--rw interface?   string
+     |  +--rw address?     inet:ip-address-no-zone
+     |  +--rw fib?         uint16
+     |  +--rw interval?    uint32
+     |  +--rw size?        uint16
+     |  +--rw dscp?        uint8
+     |  +--rw down?        uint8
+     |  +--rw up?          uint8
+     |  +--rw timeout?     uint32
+     |  +--rw eval?        uint32
+     |  +--rw history?     uint32
+     |  +--rw tca
+     |     +--rw delay?     ms
+     |     +--rw ipdv?      ms
+     |     +--rw loss?      decimal64
+     |     +--rw damping?   uint8
+     +--rw jail* [name]
+     |  +--rw name    string
+     |  +--rw target* [id]
+     |  |  +--rw id          string
+     |  |  +--rw address     inet:ip-address-no-zone
+     |  |  +--rw count?      uint32
+     |  |  +--rw report?     uint16
+     |  |  +--rw fib?        uint16
+     |  |  +--rw interval?   uint32
+     |  |  +--rw size?       uint16
+     |  |  +--rw dscp?       uint8
+     |  |  +--rw down?       uint8
+     |  |  +--rw up?         uint8
+     |  |  +--rw timeout?    uint32
+     |  |  +--rw eval?       uint32
+     |  |  +--rw history?    uint32
+     |  |  +--rw tca
+     |  |     +--rw delay?     ms
+     |  |     +--rw ipdv?      ms
+     |  |     +--rw loss?      decimal64
+     |  |     +--rw damping?   uint8
+     |  +--rw link* [id]
+     |  |  +--rw id           string
+     |  |  +--rw interface    string
+     |  |  +--rw role?        enumeration
+     |  +--rw monitor* [name]
+     |     +--rw name         string
+     |     +--rw interface?   string
+     |     +--rw address?     inet:ip-address-no-zone
+     |     +--rw fib?         uint16
+     |     +--rw interval?    uint32
+     |     +--rw size?        uint16
+     |     +--rw dscp?        uint8
+     |     +--rw down?        uint8
+     |     +--rw up?          uint8
+     |     +--rw timeout?     uint32
+     |     +--rw eval?        uint32
+     |     +--rw history?     uint32
+     |     +--rw tca
+     |        +--rw delay?     ms
+     |        +--rw ipdv?      ms
+     |        +--rw loss?      decimal64
+     |        +--rw damping?   uint8
      +--ro state
      |  +--ro probing?   boolean
      |  +--ro time?      yang:date-and-time

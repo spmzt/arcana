@@ -2,9 +2,13 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-wireguard",
     "module-revision": "2026-10-15",
-    "sid-file-version": 1,
+    "sid-file-version": 3,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
+      {
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
+      },
       {
         "module-name": "ietf-inet-types",
         "module-revision": "2025-12-22"
@@ -12,10 +16,6 @@
       {
         "module-name": "ietf-yang-types",
         "module-revision": "2025-12-22"
-      },
-      {
-        "module-name": "arcana-jails",
-        "module-revision": "2026-10-14"
       }
     ],
     "assignment-range": [
@@ -33,81 +33,97 @@
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard",
+        "status": "obsolete",
         "sid": "71401"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface",
+        "status": "obsolete",
         "sid": "71402"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/listen-port",
+        "status": "obsolete",
         "sid": "71403"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/name",
+        "status": "obsolete",
         "sid": "71404"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/peer",
+        "status": "obsolete",
         "sid": "71405"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/peer/allowed-ip",
+        "status": "obsolete",
         "sid": "71406"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/peer/endpoint",
+        "status": "obsolete",
         "sid": "71407"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/peer/keepalive",
+        "status": "obsolete",
         "sid": "71408"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/peer/latest-handshake",
+        "status": "obsolete",
         "sid": "71409"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/peer/preshared-key",
+        "status": "obsolete",
         "sid": "71410"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/peer/public-key",
+        "status": "obsolete",
         "sid": "71411"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/peer/received",
+        "status": "obsolete",
         "sid": "71412"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/peer/sent",
+        "status": "obsolete",
         "sid": "71413"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/private-key",
+        "status": "obsolete",
         "sid": "71414"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/interface/public-key",
+        "status": "obsolete",
         "sid": "71415"
       },
       {
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/now",
+        "status": "obsolete",
         "sid": "71416"
       },
       {
@@ -189,6 +205,209 @@
         "namespace": "data",
         "identifier": "/arcana-wireguard:wireguard/now",
         "sid": "71432"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read",
+        "status": "obsolete",
+        "sid": "71433"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/input",
+        "status": "obsolete",
+        "sid": "71434"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output",
+        "status": "obsolete",
+        "sid": "71435"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface",
+        "status": "obsolete",
+        "sid": "71436"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/listen-port",
+        "status": "obsolete",
+        "sid": "71437"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/name",
+        "status": "obsolete",
+        "sid": "71438"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/peer",
+        "status": "obsolete",
+        "sid": "71439"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/peer/allowed-ip",
+        "status": "obsolete",
+        "sid": "71440"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/peer/endpoint",
+        "status": "obsolete",
+        "sid": "71441"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/peer/keepalive",
+        "status": "obsolete",
+        "sid": "71442"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/peer/latest-handshake",
+        "status": "obsolete",
+        "sid": "71443"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/peer/preshared-key",
+        "status": "obsolete",
+        "sid": "71444"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/peer/public-key",
+        "status": "obsolete",
+        "sid": "71445"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/peer/received",
+        "status": "obsolete",
+        "sid": "71446"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/peer/sent",
+        "status": "obsolete",
+        "sid": "71447"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/private-key",
+        "status": "obsolete",
+        "sid": "71448"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/interface/public-key",
+        "status": "obsolete",
+        "sid": "71449"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-wireguard:wireguard/read/output/now",
+        "status": "obsolete",
+        "sid": "71450"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read",
+        "sid": "71451"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/input",
+        "sid": "71452"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output",
+        "sid": "71453"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface",
+        "sid": "71454"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/listen-port",
+        "sid": "71455"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/name",
+        "sid": "71456"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/peer",
+        "sid": "71457"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/peer/allowed-ip",
+        "sid": "71458"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/peer/endpoint",
+        "sid": "71459"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/peer/keepalive",
+        "sid": "71460"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/peer/latest-handshake",
+        "sid": "71461"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/peer/preshared-key",
+        "sid": "71462"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/peer/public-key",
+        "sid": "71463"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/peer/received",
+        "sid": "71464"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/peer/sent",
+        "sid": "71465"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/private-key",
+        "sid": "71466"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/interface/public-key",
+        "sid": "71467"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/output/now",
+        "sid": "71468"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-wireguard:wireguard/read/input/jail",
+        "sid": "71469"
       }
     ]
   }

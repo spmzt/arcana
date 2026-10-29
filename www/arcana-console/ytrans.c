@@ -1230,39 +1230,45 @@ netconf_rpc(cbl_conn *conn, const char *name, const void *in,
 	return (ask_tag(conn, req, acc, nacc, err, errlen, tag, taglen));
 }
 
-static int
-ycommit(cbl_conn *conn, const struct cbl_ynode *n, const void *d,
-    const char *const *acc, size_t nacc, char *err, size_t errlen, char *tag,
-    size_t taglen)
+int
+ytrans_commit(cbl_conn *conn, const struct cbl_ynode *n, const void *d,
+    const char *const *acc, size_t nacc, int wait, char *token, size_t toklen,
+    char *err, size_t errlen, char *tag, size_t taglen)
 {
 	struct ietf_netconf_commit_input		 cin;
 	struct ietf_netconf_discard_changes_input	 din;
 	cbl_msg						*req;
-	char						 token[33], why[16], none[8];
+	char						 why[16], none[8];
 	int						 error;
 
 	err[0] = tag[0] = '\0';
-	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
-	    CBL_YCMD_EDIT, 0, &req)) != 0) {
+	/* No data: the candidate as an EDIT made it already. */
+	if (d != NULL && (error = cbl_msg_new(cbl_conn_ctx(conn),
+	    CBL_YANG_FAMILY, CBL_YCMD_EDIT, 0, &req)) != 0) {
 		snprintf(err, errlen, "%s", strerror(error));
 		return (error);
 	}
-	if ((error = cbl_msg_set_datastore(req, CBL_YDS_CANDIDATE)) != 0 ||
-	    (error = cbl_msg_put_ymember(req, n, d)) != 0) {
+	if (d != NULL && ((error = cbl_msg_set_datastore(req,
+	    CBL_YDS_CANDIDATE)) != 0 || (error = cbl_msg_put_ymember(req, n,
+	    d)) != 0)) {
 		cbl_msg_free(req);
 		snprintf(err, errlen, "%s", strerror(error));
 		return (error);
 	}
-	if ((error = ask_tag(conn, req, acc, nacc, err, errlen, tag,
-	    taglen)) != 0)
+	if (d != NULL && (error = ask_tag(conn, req, acc, nacc, err, errlen,
+	    tag, taglen)) != 0)
 		return (error);
-	snprintf(token, sizeof(token), "%08x%08x%08x%08x", arc4random(),
+	snprintf(token, toklen, "%08x%08x%08x%08x", arc4random(),
 	    arc4random(), arc4random(), arc4random());
 	memset(&cin, 0, sizeof(cin));
-	cin.confirmed = true;
-	cin.has_confirm_timeout = true;
-	cin.confirm_timeout = CONFIRM_TIMEOUT;
-	cin.persist = token;
+	/* wait < 0: a commit not confirmed, what it does done for good. */
+	if (wait >= 0) {
+		cin.confirmed = true;
+		cin.has_confirm_timeout = true;
+		cin.confirm_timeout = wait > 0 ? (uint32_t)wait :
+		    CONFIRM_TIMEOUT;
+		cin.persist = token;
+	}
 	if ((error = netconf_rpc(conn, "commit", &cin, acc, nacc, err, errlen,
 	    tag, taglen)) != 0) {
 		memset(&din, 0, sizeof(din));
@@ -1270,11 +1276,33 @@ ycommit(cbl_conn *conn, const struct cbl_ynode *n, const void *d,
 		    sizeof(why), none, sizeof(none));
 		return (error);
 	}
-	/* Here still: the change stays. */
+	/* Here still: the change stays, or waits for its confirm. */
+	if (wait != 0)
+		return (0);
+	return (ytrans_confirm(conn, token, err, errlen));
+}
+
+int
+ytrans_confirm(cbl_conn *conn, const char *token, char *err, size_t errlen)
+{
+	struct ietf_netconf_commit_input	 cin;
+	char					 none[8];
+
 	memset(&cin, 0, sizeof(cin));
 	cin.persist_id = token;
 	return (netconf_rpc(conn, "commit", &cin, NULL, 0, err, errlen, none,
 	    sizeof(none)));
+}
+
+static int
+ycommit(cbl_conn *conn, const struct cbl_ynode *n, const void *d,
+    const char *const *acc, size_t nacc, char *err, size_t errlen, char *tag,
+    size_t taglen)
+{
+	char	token[33];
+
+	return (ytrans_commit(conn, n, d, acc, nacc, 0, token, sizeof(token),
+	    err, errlen, tag, taglen));
 }
 
 /*

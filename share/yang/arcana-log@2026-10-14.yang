@@ -35,15 +35,9 @@ module arcana-log {
       "Initial revision.";
   }
 
-  container logs {
-    config false;
+  grouping log-files {
     description
-      "The log directory and its files.";
-    leaf directory {
-      type string;
-      description
-        "Where syslogd writes: the agent's -L, /var/log.";
-    }
+      "The files of a log directory.";
     list file {
       key "name";
       description
@@ -75,6 +69,18 @@ module arcana-log {
            .zst): read unpacked.";
       }
     }
+  }
+
+  container logs {
+    config false;
+    description
+      "The log directory and its files.";
+    leaf directory {
+      type string;
+      description
+        "Where syslogd writes: the agent's -L, /var/log.";
+    }
+    uses log-files;
     action read {
       description
         "Lines of a log: its last ones, or with a position those
@@ -192,6 +198,11 @@ module arcana-log {
             description
               "When the agent read a kernel message first.";
           }
+        }
+        uses log-files {
+          description
+            "The files of the directory the log was read from, the
+             host's or the jail's: none for @dmesg and @audit.";
         }
       }
     }

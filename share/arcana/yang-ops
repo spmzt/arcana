@@ -57,6 +57,9 @@ sdwan-dns	arcana-sdwan@2026-10-15
 sdwan-proxy	arcana-sdwan@2026-10-15
 sdwan-ids	arcana-sdwan@2026-10-15
 address	ietf-ip@2018-02-22
+# network's interfaces; its netgraph, wireguard and bird kinds the read
+# actions of arcana-netgraph, arcana-wireguard and arcana-bird, its
+# bird-routes and bird-ospf kinds arcana-bird's routes and ospf.
 network	arcana-interfaces@2026-10-14
 network-parts	arcana-network-instance@2026-10-14
 route-lookup	ietf-routing@2018-03-13

@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-history",
     "module-revision": "2026-10-15",
-    "sid-file-version": 3,
+    "sid-file-version": 4,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -17,6 +17,10 @@
     "assignment-range": [
       {
         "entry-point": "70700",
+        "size": "100"
+      },
+      {
+        "entry-point": "80000",
         "size": "100"
       }
     ],
@@ -425,6 +429,116 @@
         "namespace": "data",
         "identifier": "/arcana-history:history/state/sample/relay/plain",
         "sid": "70780"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/bytes",
+        "sid": "70781"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/disk",
+        "sid": "70782"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/interface",
+        "sid": "70783"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/jail",
+        "sid": "70784"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/limits",
+        "sid": "70785"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/limits/cpu",
+        "sid": "70786"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/limits/memory",
+        "sid": "70787"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/limits/storage",
+        "sid": "70788"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/limits/swap",
+        "sid": "70789"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/memory-total",
+        "sid": "70790"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/ncpu",
+        "sid": "70791"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/racct",
+        "sid": "70792"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/relay",
+        "sid": "70793"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/rule",
+        "sid": "70794"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/rule/kind",
+        "sid": "70795"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/rule/limit",
+        "sid": "70796"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/rule/name",
+        "sid": "70797"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/rule/over",
+        "sid": "70798"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sampling",
+        "sid": "70799"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sampling/keep",
+        "sid": "80000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sampling/step",
+        "sid": "80001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/swap-total",
+        "sid": "80002"
       }
     ]
   }

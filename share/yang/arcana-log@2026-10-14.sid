@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-log",
     "module-revision": "2026-10-14",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -170,6 +170,31 @@
         "namespace": "data",
         "identifier": "/arcana-log:logs/read/output/size",
         "sid": "69929"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/file",
+        "sid": "69930"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/file/modified",
+        "sid": "69931"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/file/name",
+        "sid": "69932"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/file/packed",
+        "sid": "69933"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/file/size",
+        "sid": "69934"
       }
     ]
   }

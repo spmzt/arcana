@@ -237,7 +237,7 @@ line_object(struct work *w, char *line)
 /* The lines of text as the reply, each taken apart; the last max. */
 static int
 lines_reply(struct work *w, const char *name, char *buf, size_t len,
-    const char *filter, uint32_t max, struct arc_log_rsp *rsp)
+    const char *filter, uint32_t max, struct json_rsp *rsp)
 {
 	ucl_object_t	*top, *arr;
 	unsigned char	*json;
@@ -295,7 +295,7 @@ lines_reply(struct work *w, const char *name, char *buf, size_t len,
  */
 static bool
 kmsg_reply(struct work *w, const char *filter, bool from, uint64_t position,
-    uint32_t max, struct arc_log_rsp *rsp)
+    uint32_t max, struct json_rsp *rsp)
 {
 	struct kmsg_line	*v;
 	ucl_object_t		*top, *arr, *o;
@@ -344,7 +344,7 @@ kmsg_reply(struct work *w, const char *filter, bool from, uint64_t position,
 
 static int
 special(struct work *w, const char *name, const char *filter, bool from,
-    uint64_t position, uint32_t max, struct arc_log_rsp *rsp)
+    uint64_t position, uint32_t max, struct json_rsp *rsp)
 {
 	struct execres	 res;
 	const char	*bin;
@@ -428,7 +428,7 @@ special(struct work *w, const char *name, const char *filter, bool from,
 
 int
 do_log(struct work *w, const char *name, const char *filter, bool from,
-    uint64_t position, uint32_t max, struct arc_log_rsp *rsp)
+    uint64_t position, uint32_t max, struct json_rsp *rsp)
 {
 	struct stat	 sb;
 	ucl_object_t	*top, *arr;

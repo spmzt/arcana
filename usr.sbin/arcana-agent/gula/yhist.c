@@ -29,16 +29,24 @@
 
 typedef struct arcana_history_sample ysample;
 
+/*
+ * A time as yang:date-and-time; the n-th of a second already said
+ * (n > 0) with n hundredths, so that the samples' key stays one each.
+ */
 static char *
-datetime(cbl_yarena *a, int64_t t)
+datetime(cbl_yarena *a, int64_t t, int n)
 {
-	char		buf[32], *p;
+	char		buf[48], *p;
 	struct tm	tm;
 	time_t		tt = (time_t)t;
 
 	if (gmtime_r(&tt, &tm) == NULL || strftime(buf, sizeof(buf),
-	    "%Y-%m-%dT%H:%M:%SZ", &tm) == 0)
+	    "%Y-%m-%dT%H:%M:%S", &tm) == 0)
 		return (NULL);
+	if (n > 0)
+		snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), ".%02d",
+		    n);
+	strlcat(buf, "Z", sizeof(buf));
 	if ((p = cbl_yarena_alloc(a, strlen(buf) + 1)) != NULL)
 		memcpy(p, buf, strlen(buf) + 1);
 	return (p);
@@ -79,7 +87,9 @@ samples_of(cbl_yarena *a, const ucl_object_t *top, const char *const *nets,
 	ucl_object_iter_t					 it;
 	ysample							*v;
 	double							 d;
+	int64_t							 was = -1;
 	size_t							 n = 0, k, i;
+	int							 dup = 0;
 
 	if ((v = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top,
 	    "samples")) + 1) * sizeof(*v))) == NULL)
@@ -88,7 +98,10 @@ samples_of(cbl_yarena *a, const ucl_object_t *top, const char *const *nets,
 		if (ucl_object_type(e) != UCL_ARRAY || !nth(e, 0, &d))
 			continue;
 		memset(&v[n], 0, sizeof(v[n]));
-		v[n].time = datetime(a, (int64_t)d);
+		/* Two looks in a second (one woken early) are told apart. */
+		dup = (int64_t)d == was && dup < 99 ? dup + 1 : 0;
+		was = (int64_t)d;
+		v[n].time = datetime(a, (int64_t)d, dup);
 		if ((v[n].has_cpu = nth(e, 1, &d)))
 			v[n].cpu = (int64_t)(d * 10 + 0.5);
 		if ((v[n].has_load = nth(e, 2, &d)))

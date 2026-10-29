@@ -30,6 +30,8 @@
 
 #include <openssl/evp.h>
 
+#include <cblink.h>
+
 #include "agent.h"
 
 static void
@@ -956,10 +958,11 @@ do_bird_verb(struct work *w, const char *verb, const char *const *names,
 }
 
 /*
- * BIRD's configuration: its main file and what that includes.  A file
- * is read whole and put back whole; before the daemon is told of a new
- * one, bird(8) parses the whole configuration, and what it refuses
- * does not stay.
+ * BIRD's configuration: its main file and what that includes, the
+ * host's or a vnet jail's, as arcana-bird holds it.  A file is read
+ * whole and put back whole; before the daemon is told of a new one,
+ * bird(8) parses the whole configuration, and what it refuses does
+ * not stay.
  */
 
 /*
@@ -993,8 +996,8 @@ conf_file_ok(struct work *w, const char *path)
 	return (strncmp(real, dir, strlen(dir)) == 0);
 }
 
-static const char *
-sha_hex(struct work *w, const char *data, size_t len)
+const char *
+bird_sha(struct work *w, const char *data, size_t len)
 {
 	unsigned char	md[32];
 	unsigned int	n;
@@ -1010,20 +1013,21 @@ sha_hex(struct work *w, const char *data, size_t len)
 }
 
 /*
- * A configuration put in place in safe mode, waiting to be confirmed:
- * BIRD was told to take it back by itself when the time is up
- * (configure timeout), and the file is put back then too.  One at a
- * time.
+ * A configuration put in place by a confirmed commit, waiting to be
+ * confirmed: BIRD was told to take it back by itself a little after the
+ * commit's timeout (configure timeout), should the agent be gone by
+ * then; the commit confirmed, BIRD is told to keep it; undone, to take
+ * it back now, and the file is put back.  One at a time.
  */
 static pthread_mutex_t	pend_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t	pend_cv = PTHREAD_COND_INITIALIZER;
 static struct {
-	bool	 active, confirmed;
+	bool	 active, done;
 	char	*jail;			/* whose BIRD, or NULL the host's */
 	char	*path, *base, *bak;
 	char	*sha;			/* of the text put in place */
 	bool	 had;
-	time_t	 by;
+	time_t	 by;			/* BIRD's own timer runs out */
+	cbl_ctx	*ctx;			/* whose datastores say confirmed */
 } pend;
 
 /* A job's safe configure: BIRD's own timer runs, and the job's confirm
@@ -1042,19 +1046,29 @@ pending(void)
 	return (p);
 }
 
+static bool
+same_jail(const char *a, const char *b)
+{
+
+	return (strcmp(a != NULL ? a : "", b != NULL ? b : "") == 0);
+}
+
 /*
  * The file as it was before the change that was not confirmed, and BIRD
- * running what the file says.  Only a file that is still the text put
- * there is touched: what somebody changed since is theirs.  And only
- * for a BIRD that answers: one that died is not undone after.
+ * running what the file says: told to go back (configure undo) where
+ * its timer still runs, else to read the file.  Only a file that is
+ * still the text put there is touched: what somebody changed since is
+ * theirs.  And only for a BIRD that answers: one that died is not
+ * undone after.  Under pend_lock.
  */
 static void
-pend_back(struct work *w, bool dead)
+pend_back(struct work *w)
 {
 	struct execres	 res;
 	const char	*e;
 	char		*now;
 	size_t		 len;
+	bool		 undone;
 
 	e = NULL;
 	if (scope_enter(w, pend.jail, &e) != 0) {
@@ -1063,7 +1077,7 @@ pend_back(struct work *w, bool dead)
 		return;
 	}
 	if ((now = scope_slurp(w, pend.path, &len)) == NULL || strcmp(
-	    sha_hex(w, now, len), pend.sha) != 0) {
+	    bird_sha(w, now, len), pend.sha) != 0) {
 		logmsg(LOG_WARNING, "bird: the change to %s was not confirmed, "
 		    "but the file is no longer the one put there: left as "
 		    "it is", pend.path);
@@ -1074,13 +1088,17 @@ pend_back(struct work *w, bool dead)
 	 * with, and nothing is taken back for it: the file parses, and is
 	 * what it reads when it is started again.
 	 */
-	if (dead || !alive(w)) {
+	if (!alive(w)) {
 		logmsg(LOG_ERR, "bird: BIRD stopped answering after the change "
 		    "to %s, which was not confirmed: the file is left in "
 		    "place, for BIRD to read when it is started again",
 		    pend.path);
 		return;
 	}
+	undone = birdc(w, false, "configure", "undo", NULL, &res) == 0 &&
+	    res.out != NULL && strstr(res.out, "not available") == NULL &&
+	    strstr(res.out, "error") == NULL && strstr(res.out,
+	    "Nothing to do") == NULL;
 	if (scope_rename(w, pend.path, pend.had ? pend.bak : pend.base,
 	    pend.had ? pend.base : NULL) != 0) {
 		logmsg(LOG_ERR, "bird: the change to %s was not confirmed, and "
@@ -1088,14 +1106,9 @@ pend_back(struct work *w, bool dead)
 		    strerror(errno));
 		return;
 	}
-	/*
-	 * BIRD went back by itself when its time was up, and reading the
-	 * file again changes nothing then.  Had it been started anew
-	 * meanwhile, it would run what the file said then: this is what
-	 * takes that back.
-	 */
-	if (birdc(w, false, "configure", NULL, NULL, &res) != 0 ||
-	    !took(&res))
+	/* Its timer gone (BIRD started anew meanwhile): the file read. */
+	if (!undone && (birdc(w, false, "configure", NULL, NULL, &res) != 0 ||
+	    !took(&res)))
 		logmsg(LOG_ERR, "bird: the change to %s was not confirmed; the "
 		    "file is as it was, but BIRD did not read it: %s",
 		    pend.path, said(w, &res));
@@ -1105,96 +1118,121 @@ pend_back(struct work *w, bool dead)
 		    pend.path);
 }
 
-static void *
-pend_wait(void *arg __unused)
+static void
+pend_clear(void)
 {
-	struct timespec	 ts;
-	struct work	 w;
-	const char	*e;
-	bool		 keep, dead;
-	int		 n;
 
-	dead = false;
-	pthread_mutex_lock(&pend_lock);
-	for (n = 1; !pend.confirmed && !dead && !changes_stopping() &&
-	    time(NULL) < pend.by + 2; n++) {
-		clock_gettime(CLOCK_REALTIME, &ts);
-		ts.tv_sec += 1;
-		(void)pthread_cond_timedwait(&pend_cv, &pend_lock, &ts);
-		if (pend.confirmed || n % 3 != 0)
-			continue;
-		/* A daemon the change brought down is not waited for. */
-		pthread_mutex_unlock(&pend_lock);
-		work_init(&w);
-		e = NULL;
-		dead = scope_enter(&w, pend.jail, &e) == 0 && !alive(&w);
-		work_free(&w);
-		pthread_mutex_lock(&pend_lock);
-	}
-	keep = pend.confirmed;
-	/* From here a confirmation comes too late. */
-	if (!keep)
-		pend.confirmed = true;
-	pthread_mutex_unlock(&pend_lock);
-	if (!keep) {
-		work_init(&w);
-		pthread_mutex_lock(&change_lock);
-		pend_back(&w, dead);
-		pthread_mutex_unlock(&change_lock);
-		work_free(&w);
-	} else
-		logmsg(LOG_INFO, "bird: the change to %s was confirmed",
-		    pend.path);
-	pthread_mutex_lock(&pend_lock);
 	free(pend.jail);
 	free(pend.path);
 	free(pend.base);
 	free(pend.bak);
 	free(pend.sha);
 	memset(&pend, 0, sizeof(pend));
-	pthread_cond_broadcast(&pend_cv);
-	pthread_mutex_unlock(&pend_lock);
+}
+
+/*
+ * The commit's fate, as its datastores tell it: no longer waiting and
+ * not undone (the undo is the edit's, which ends pend), it was
+ * confirmed, and BIRD is told to keep the change.  BIRD's timer run
+ * out first, the commit gone without a word: the file put back.
+ * pend_lock is not held while the datastores are asked: an undo holds
+ * their lock and takes it.
+ */
+static void *
+pend_wait(void *arg __unused)
+{
+	struct execres	 res;
+	struct work	 w;
+	const char	*e;
+	cbl_ctx		*ctx;
+	bool		 waits, late;
+
+	for (;;) {
+		pthread_mutex_lock(&pend_lock);
+		if (pend.done || !pend.active) {
+			pthread_mutex_unlock(&pend_lock);
+			break;
+		}
+		ctx = pend.ctx;
+		late = time(NULL) >= pend.by + 2;
+		pthread_mutex_unlock(&pend_lock);
+		waits = !late && cbl_ydatastore_pending(ctx, NULL);
+		if (waits) {
+			(void)usleep(200000);
+			continue;
+		}
+		pthread_mutex_lock(&change_lock);
+		pthread_mutex_lock(&pend_lock);
+		if (pend.done || !pend.active) {
+			pthread_mutex_unlock(&pend_lock);
+			pthread_mutex_unlock(&change_lock);
+			break;
+		}
+		work_init(&w);
+		e = NULL;
+		if (late)
+			pend_back(&w);
+		else if (scope_enter(&w, pend.jail, &e) != 0)
+			logmsg(LOG_ERR, "bird: the change to %s was confirmed, "
+			    "but BIRD could not be told: %s", pend.path, e);
+		else if (birdc(&w, false, "configure", "confirm", NULL, &res) !=
+		    0 || res.out == NULL || strstr(res.out,
+		    "Reconfiguration confirmed") == NULL)
+			logmsg(LOG_ERR, "bird: the change to %s was confirmed, "
+			    "but BIRD did not keep it: %s", pend.path,
+			    said(&w, &res));
+		else
+			logmsg(LOG_INFO, "bird: the change to %s was confirmed",
+			    pend.path);
+		work_free(&w);
+		pend_clear();
+		pthread_mutex_unlock(&pend_lock);
+		pthread_mutex_unlock(&change_lock);
+		break;
+	}
 	return (NULL);
 }
 
-static bool
-same_jail(const char *a, const char *b)
+/*
+ * A commit that changes the configuration while a confirmed one waited:
+ * that one was confirmed (one undone ended pend, and the datastores let
+ * no other commit in while one waits), maybe by this very commit, and
+ * BIRD is told to keep it now rather than when the thread next asks.
+ * Under change_lock.
+ */
+void
+bird_conf_settle(void)
 {
-
-	return (strcmp(a != NULL ? a : "", b != NULL ? b : "") == 0);
-}
-
-/* The change that waits stays: BIRD is told, and the file is left. */
-static void
-pend_confirm(struct work *w, struct arc_bird_config_rsp *rsp)
-{
-	struct execres	res;
+	struct execres	 res;
+	struct work	 w;
+	const char	*e;
 
 	pthread_mutex_lock(&pend_lock);
-	if (!pend.active || pend.confirmed || !same_jail(pend.jail, w->jail)) {
+	if (!pend.active || pend.done) {
 		pthread_mutex_unlock(&pend_lock);
-		rsp->error = "no change to BIRD waits to be confirmed: it was "
-		    "taken back when its time was up";
 		return;
 	}
-	/* "Nothing to do" is BIRD's word for an undo timer not running. */
-	if (birdc(w, false, "configure", "confirm", NULL, &res) != 0 ||
+	work_init(&w);
+	e = NULL;
+	if (scope_enter(&w, pend.jail, &e) != 0)
+		logmsg(LOG_ERR, "bird: the change to %s was confirmed, but BIRD "
+		    "could not be told: %s", pend.path, e);
+	else if (birdc(&w, false, "configure", "confirm", NULL, &res) != 0 ||
 	    res.out == NULL || strstr(res.out, "Reconfiguration confirmed") ==
-	    NULL) {
-		pthread_mutex_unlock(&pend_lock);
-		rsp->error = wfmt(w, "BIRD did not confirm it, and the change "
-		    "is taken back: %s", said(w, &res));
-		return;
-	}
-	pend.confirmed = true;
-	pthread_cond_broadcast(&pend_cv);
+	    NULL)
+		logmsg(LOG_ERR, "bird: the change to %s was confirmed, but BIRD "
+		    "did not keep it: %s", pend.path, said(&w, &res));
+	else
+		logmsg(LOG_INFO, "bird: the change to %s was confirmed",
+		    pend.path);
+	work_free(&w);
+	pend_clear();
 	pthread_mutex_unlock(&pend_lock);
-	rsp->ok = true;
 }
 
-/* The main file, and the files its include lines name. */
-static void
-conf_files(struct work *w, struct arc_bird_config_rsp *rsp)
+/* The main file, and the files its include lines name; *np of them. */
+const char **
+bird_conf_files(struct work *w, size_t *np)
 {
 	const char	**v, *p, *q, *e;
 	char		*text, *pat;
@@ -1234,94 +1272,72 @@ conf_files(struct work *w, struct arc_bird_config_rsp *rsp)
 			globfree(&g);
 		}
 	}
-	rsp->files.v = v;
-	rsp->files.n = n;
+	*np = n;
+	return (v);
 }
 
-int
-do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
-    struct arc_bird_config_rsp *rsp)
+/*
+ * path, a file of the configuration to be read or put in place: the
+ * main one or a .conf beside it, there or (with make) to be made.
+ * NULL, or why not.
+ */
+static const char *
+conf_path_bad(struct work *w, const char *path, bool make)
+{
+	char	*dir;
+	size_t	 len;
+
+	if (path[0] != '/' || strstr(path, "/../") != NULL)
+		return (wfmt(w, "%s is not a file of BIRD's configuration (%s "
+		    "and the .conf files beside it)", path, opts.bird_conf));
+	if (conf_file_ok(w, path))
+		return (NULL);
+	len = strlen(path);
+	dir = wstrdup(w, opts.bird_conf);
+	if (strrchr(dir, '/') != NULL)
+		*(strrchr(dir, '/') + 1) = '\0';
+	if (make && strncmp(path, dir, strlen(dir)) == 0 && len >= 6 &&
+	    strcmp(path + len - 5, ".conf") == 0)
+		return (NULL);
+	return (wfmt(w, "%s is not a file of BIRD's configuration", path));
+}
+
+/* As it was: the one before it back, or the new file gone. */
+static void
+conf_unplace(struct work *w, const char *path, bool had, const char *base,
+    const char *bak)
+{
+	int	step;
+
+	step = step_begin(w, ARC_STEP_KIND_FILE, "restore", "%s", path);
+	step_end(w, step, scope_rename(w, path, had ? bak : base, had ? base :
+	    NULL) == 0, NULL);
+}
+
+/*
+ * text in path's place (made where it is none), the one before kept
+ * beside it as .arcana-old, and the whole configuration parsed: 0, or
+ * -1 with the file as it was and why in *errp.  *hadp: there was one;
+ * *basep, *bakp: the names to put it back with.
+ */
+static int
+conf_place(struct work *w, const char *path, const char *text, bool *hadp,
+    const char **basep, const char **bakp, const char **errp)
 {
 	struct execres	 res;
-	const char	*path, *sha, *base;
-	char		*old, *tmp, *bak, *argv[5];
-	size_t		 oldlen, len;
-	pthread_t	 thr;
-	int		 step, wait;
-	bool		 had, up;
+	char		*argv[5];
+	size_t		 oldlen;
+	int		 step;
 
-	rsp->has_ok = true;
-	rsp->ok = false;
-	if (rq->confirm) {
-		pend_confirm(w, rsp);
-		return (0);
-	}
-	path = rq->conf_path != NULL && rq->conf_path[0] != '\0' ?
-	    rq->conf_path : opts.bird_conf;
-	if (path[0] != '/' || strstr(path, "/../") != NULL ||
-	    (rq->conf_text == NULL && !conf_file_ok(w, path))) {
-		rsp->error = wfmt(w, "%s is not a file of BIRD's configuration "
-		    "(%s and the .conf files beside it)", path, opts.bird_conf);
-		return (0);
-	}
-	rsp->conf_path = wtext(w, wstrdup(w, path));
-	step = step_begin(w, ARC_STEP_KIND_FILE, "read", "%s", path);
-	old = scope_slurp(w, path, &oldlen);
-	had = old != NULL;
-	step_end(w, step, had || (errno == ENOENT && rq->conf_text != NULL),
-	    had ? NULL : "%s", strerror(errno));
-	if (rq->conf_text == NULL) {
-		if (!had) {
-			rsp->error = wfmt(w, "%s: %s", path, strerror(errno));
-			return (0);
-		}
-		rsp->conf_text = wtext(w, old);
-		rsp->sha256 = sha_hex(w, old, oldlen);
-		conf_files(w, rsp);
-		rsp->ok = true;
-		return (0);
-	}
-	/* A file to be made: it must be one the configuration would read. */
-	if (!had) {
-		len = strlen(path);
-		tmp = wstrdup(w, opts.bird_conf);
-		if (strrchr(tmp, '/') != NULL)
-			*(strrchr(tmp, '/') + 1) = '\0';
-		if (errno != ENOENT || strncmp(path, tmp, strlen(tmp)) != 0 ||
-		    len < 6 || strcmp(path + len - 5, ".conf") != 0) {
-			rsp->error = wfmt(w, "%s is not a file of BIRD's "
-			    "configuration", path);
-			return (0);
-		}
-		old = wstrdup(w, "");
-		oldlen = 0;
-	} else if (!conf_file_ok(w, path)) {
-		rsp->error = wfmt(w, "%s is not a file of BIRD's configuration",
-		    path);
-		return (0);
-	}
-	sha = sha_hex(w, old, oldlen);
-	if (rq->sha256 == NULL || strcmp(rq->sha256, sha) != 0) {
-		rsp->error = "the file is not the one this was made from: "
-		    "somebody changed it meanwhile.  Read it again";
-		return (0);
-	}
-	if (pending()) {
-		rsp->error = "a change to BIRD waits to be confirmed: it "
-		    "stays or is taken back first";
-		return (0);
-	}
-
-	len = strlen(rq->conf_text);
-	base = strrchr(path, '/') + 1;
-	bak = wfmt(w, "%s.arcana-old", base);
+	*basep = strrchr(path, '/') + 1;
+	*bakp = wfmt(w, "%s.arcana-old", *basep);
+	*hadp = scope_slurp(w, path, &oldlen) != NULL;
 	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
-	/* The old one aside, the new one in its place, to be parsed. */
-	if (scope_replace(w, path, rq->conf_text, len, 0640, had ? bak :
+	if (scope_replace(w, path, text, strlen(text), 0640, *hadp ? *bakp :
 	    NULL) == -1) {
 		step_end(w, step, false, "%s", strerror(errno));
-		rsp->error = wfmt(w, "%s: %s", path, strerror(errno));
-		return (0);
+		*errp = wfmt(w, "%s: %s", path, strerror(errno));
+		return (-1);
 	}
 	step_end(w, step, true, "the one before it is kept as %s.arcana-old",
 	    path);
@@ -1330,34 +1346,69 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 	argv[2] = (char *)(uintptr_t)"-c";
 	argv[3] = (char *)(uintptr_t)opts.bird_conf;
 	argv[4] = NULL;
-	if (run_exec(w, argv, &res) != 0) {
-		rsp->error = wfmt(w, "bird does not take it: %s", res.errlen >
-		    0 ? res.err : res.out != NULL ? res.out : "no reason given");
-		goto back;
+	if (run_exec(w, argv, &res) == 0)
+		return (0);
+	*errp = wfmt(w, "bird does not take it: %s", res.errlen > 0 ? res.err :
+	    res.out != NULL ? res.out : "no reason given");
+	conf_unplace(w, path, *hadp, *basep, *bakp);
+	return (-1);
+}
+
+int
+bird_conf_check(struct work *w, const char *path, const char *text,
+    const char **errp)
+{
+	const char	*base, *bak;
+	size_t		 len;
+	bool		 had;
+
+	if ((*errp = conf_path_bad(w, path, scope_slurp(w, path, &len) ==
+	    NULL)) != NULL)
+		return (-1);
+	if (pending()) {
+		*errp = "a change to BIRD waits to be confirmed: it stays or is "
+		    "taken back first";
+		return (-1);
 	}
-	if (rq->dry_run) {
-		rsp->ok = true;
-		goto back;
+	if (conf_place(w, path, text, &had, &base, &bak, errp) != 0)
+		return (-1);
+	conf_unplace(w, path, had, base, bak);
+	return (0);
+}
+
+int
+bird_conf_put(struct work *w, const char *path, const char *text,
+    const char *was, int timeout, cbl_ctx *ctx, const char **errp,
+    const char **warnp)
+{
+	struct execres	 res;
+	const char	*base, *bak, *sha;
+	char		*old;
+	size_t		 oldlen;
+	pthread_t	 thr;
+	bool		 had;
+
+	*warnp = NULL;
+	old = scope_slurp(w, path, &oldlen);
+	if ((*errp = conf_path_bad(w, path, old == NULL)) != NULL)
+		return (-1);
+	sha = bird_sha(w, old != NULL ? old : "", old != NULL ? oldlen : 0);
+	if (was != NULL && strcmp(was, sha) != 0) {
+		*errp = wfmt(w, "%s is not the one this was made from: somebody "
+		    "changed it meanwhile.  Read it again", path);
+		return (-1);
 	}
-	/*
-	 * Safe mode is BIRD's own: a daemon that does not answer has no
-	 * timer to take the change back with.
-	 */
-	/* The console's rollback timer for the host, else the agent's. */
-	wait = rq->has_safe_wait && rq->safe_wait > 0 ? (int)rq->safe_wait :
-	    opts.safe_wait;
-	up = alive(w);
-	if (!up && rq->safe) {
-		rsp->error = "BIRD does not answer: nothing can be changed in "
-		    "safe mode, where it is BIRD that takes the change back";
-		goto back;
+	if (pending()) {
+		*errp = "a change to BIRD waits to be confirmed: it stays or is "
+		    "taken back first";
+		return (-1);
 	}
-	if (!up) {
-		/* Nothing runs to be told: it reads the file when started. */
-		rsp->error = "the file is in place and parses; BIRD does not "
+	if (conf_place(w, path, text, &had, &base, &bak, errp) != 0)
+		return (-1);
+	/* Nothing runs to be told: it reads the file when started. */
+	if (!alive(w)) {
+		*warnp = "the file is in place and parses; BIRD does not "
 		    "answer, and reads it when it is started";
-		rsp->conf_text = wtext(w, wstrdup(w, rq->conf_text));
-		rsp->sha256 = sha_hex(w, rq->conf_text, len);
 		return (0);
 	}
 	/*
@@ -1366,63 +1417,72 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 	 * matter: the file parses, bird(8) said so, and it stays for BIRD
 	 * to read when it is started again.
 	 */
-	if (birdc(w, false, "configure", rq->safe ? "timeout" : NULL,
-	    rq->safe ? wfmt(w, "%d", wait) : NULL, &res) != 0 ||
+	if (birdc(w, false, "configure", timeout > 0 ? "timeout" : NULL,
+	    timeout > 0 ? wfmt(w, "%d", timeout + 5) : NULL, &res) != 0 ||
 	    !took(&res)) {
 		if (alive(w)) {
-			rsp->error = wfmt(w, "BIRD did not take it, and the "
-			    "file is as it was: %s", said(w, &res));
-			goto back;
+			*errp = wfmt(w, "BIRD did not take it, and the file is as "
+			    "it was: %s", said(w, &res));
+			conf_unplace(w, path, had, base, bak);
+			return (-1);
 		}
-		rsp->error = wfmt(w, "BIRD stopped answering when told to read "
-		    "the new configuration (%s).  The file is in place and "
-		    "parses: BIRD reads it when it is started again",
-		    said(w, &res));
-		rsp->conf_text = wtext(w, wstrdup(w, rq->conf_text));
-		rsp->sha256 = sha_hex(w, rq->conf_text, len);
+		*warnp = wfmt(w, "BIRD stopped answering when told to read the "
+		    "new configuration (%s).  The file is in place and parses: "
+		    "BIRD reads it when it is started again", said(w, &res));
 		return (0);
 	}
 	(void)usleep(700000);
 	if (!alive(w)) {
-		rsp->error = "BIRD took the new configuration and then stopped "
+		*warnp = "BIRD took the new configuration and then stopped "
 		    "answering.  The file is in place and parses: BIRD reads "
 		    "it when it is started again";
-		rsp->conf_text = wtext(w, wstrdup(w, rq->conf_text));
-		rsp->sha256 = sha_hex(w, rq->conf_text, len);
 		return (0);
 	}
-	if (rq->safe) {
-		/* BIRD counts from now; so does the file. */
-		pthread_mutex_lock(&pend_lock);
-		pend.active = true;
-		pend.confirmed = false;
-		pend.jail = w->jail != NULL ? strdup(w->jail) : NULL;
-		pend.path = strdup(path);
-		pend.base = strdup(base);
-		pend.bak = strdup(bak);
-		pend.sha = strdup(sha_hex(w, rq->conf_text, len));
-		pend.had = had;
-		pend.by = time(NULL) + wait;
-		rsp->has_confirm_by = true;
-		rsp->confirm_by = pend.by;
-		if (pend.path == NULL || pend.base == NULL || pend.bak ==
-		    NULL || pend.sha == NULL || pthread_create(&thr, NULL, pend_wait, NULL) != 0)
-			err(1, "bird: safe mode");
-		pthread_detach(thr);
-		pthread_mutex_unlock(&pend_lock);
-	}
-	rsp->conf_text = wtext(w, wstrdup(w, rq->conf_text));
-	rsp->sha256 = sha_hex(w, rq->conf_text, len);
-	conf_files(w, rsp);
-	rsp->ok = true;
+	if (timeout <= 0)
+		return (0);
+	/* BIRD counts from now, a little longer than the commit. */
+	pthread_mutex_lock(&pend_lock);
+	pend.active = true;
+	pend.done = false;
+	pend.jail = w->jail != NULL ? strdup(w->jail) : NULL;
+	pend.path = strdup(path);
+	pend.base = strdup(base);
+	pend.bak = strdup(bak);
+	pend.sha = strdup(bird_sha(w, text, strlen(text)));
+	pend.had = had;
+	pend.by = time(NULL) + timeout + 5;
+	pend.ctx = ctx;
+	if (pend.path == NULL || pend.base == NULL || pend.bak == NULL ||
+	    pend.sha == NULL || pthread_create(&thr, NULL, pend_wait, NULL) !=
+	    0)
+		err(1, "bird: a confirmed commit");
+	pthread_detach(thr);
+	pthread_mutex_unlock(&pend_lock);
 	return (0);
-back:
-	/* As it was: the one before it back, or the new file gone. */
-	step = step_begin(w, ARC_STEP_KIND_FILE, "restore", "%s", path);
-	step_end(w, step, scope_rename(w, path, had ? bak : base, had ? base :
-	    NULL) == 0, NULL);
-	rsp->conf_text = wtext(w, old);
-	rsp->sha256 = sha;
+}
+
+int
+bird_conf_undo(struct work *w, const char *path, const char *text,
+    const char **errp)
+{
+	const char	*warn;
+
+	/* The change that waits: BIRD told to go back, the file back. */
+	pthread_mutex_lock(&pend_lock);
+	if (pend.active && !pend.done && same_jail(pend.jail, w->jail) &&
+	    strcmp(pend.path, path) == 0) {
+		pend.done = true;
+		pend_back(w);
+		pend_clear();
+		pthread_mutex_unlock(&pend_lock);
+		return (0);
+	}
+	pthread_mutex_unlock(&pend_lock);
+	/* One that was not waiting: the text before it put back. */
+	if (bird_conf_put(w, path, text, NULL, 0, NULL, errp, &warn) != 0)
+		return (-1);
+	if (warn != NULL)
+		logmsg(LOG_WARNING, "bird: %s put back: %s", path, warn);
 	return (0);
 }
 

@@ -2360,6 +2360,62 @@ ATF_TC_BODY(monitors, tc)
 	}
 	ATF_CHECK_MSG(i < 100, "the monitor is not removed");
 	resp_free(&r);
+
+	/*
+	 * As the Quality dialog sets them: arcana-probe's monitors, a YANG
+	 * Patch of the host's candidate, then a confirmed commit confirmed;
+	 * and taken away the same way.
+	 */
+	{
+		char	cand[256], rpc[256], id[16];
+
+		snprintf(id, sizeof(id), "%.*s", (int)(strlen(path) -
+		    strlen("/api/servers/") - strlen("/monitors")), path +
+		    strlen("/api/servers/"));
+		snprintf(cand, sizeof(cand), "/restconf/ds/ietf-datastores:"
+		    "candidate/arcana-fleet:fleet/host=%s/arcana-probe:probes",
+		    id);
+		snprintf(rpc, sizeof(rpc), "/restconf/data/arcana-fleet:fleet/"
+		    "host=%s/ietf-netconf:commit", id);
+		http_with("PATCH", cand, "Content-Type: application/"
+		    "yang-patch+json\r\n", "{\"ietf-yang-patch:yang-patch\":{"
+		    "\"patch-id\":\"quality\",\"edit\":[{\"edit-id\":\"ov-gre9\","
+		    "\"operation\":\"merge\",\"target\":\"/monitor=ov-gre9\","
+		    "\"value\":{\"arcana-probe:monitor\":[{\"name\":\"ov-gre9\","
+		    "\"interface\":\"gre9\",\"address\":\"192.0.2.9\",\"fib\":1,"
+		    "\"interval\":100,\"eval\":1000}]}}]}}", &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		http("POST", rpc, "{\"ietf-netconf:input\":{\"confirmed\":"
+		    "[null],\"confirm-timeout\":60,\"persist\":\"q1\"}}", &r);
+		EXPECT(&r, 204);
+		resp_free(&r);
+		http("POST", rpc, "{\"ietf-netconf:input\":{\"persist-id\":"
+		    "\"q1\"}}", &r);
+		EXPECT(&r, 204);
+		resp_free(&r);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("ov-gre9", jstr(&r, "data.monitors.0.id"));
+		ATF_CHECK_STREQ("1", jstr(&r, "data.monitors.0.fib"));
+		ATF_CHECK_STREQ("100", jstr(&r, "data.monitors.0.interval"));
+		resp_free(&r);
+		ATF_CHECK(system("grep -q ov-gre9 monitors.json") == 0);
+		http_with("PATCH", cand, "Content-Type: application/"
+		    "yang-patch+json\r\n", "{\"ietf-yang-patch:yang-patch\":{"
+		    "\"patch-id\":\"quality\",\"edit\":[{\"edit-id\":\"ov-gre9\","
+		    "\"operation\":\"remove\",\"target\":\"/monitor=ov-gre9\"}]}}",
+		    &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		http("POST", rpc, "{\"ietf-netconf:input\":{}}", &r);
+		EXPECT(&r, 204);
+		resp_free(&r);
+		http("GET", path, NULL, &r);
+		ATF_CHECK_MSG(r.body != NULL && strstr(r.body, "\"monitors\":[]") !=
+		    NULL, "%s", r.body);
+		resp_free(&r);
+	}
 }
 
 CONSOLE_TC(speeder, "UDPspeeder's relay read through the console, its "
@@ -6224,12 +6280,16 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK(jstr(&r, "confirm_by") != NULL);
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^configure timeout 60$' birdc.log") == 0);
+	/* A confirmed commit of a minute, BIRD's timer a little longer. */
+	ATF_CHECK(system("grep -q '^configure timeout 65$' birdc.log") == 0);
 	http("POST", path, "{\"confirm\":true}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^configure confirm$' birdc.log && grep -q "
+	/* The commit confirmed, BIRD is told so in a moment. */
+	ATF_CHECK(system("for i in $(seq 1 40); do grep -q '^configure "
+	    "confirm$' birdc.log && break; sleep 0.1; done; grep -q "
+	    "'^configure confirm$' birdc.log && grep -q "
 	    "'^router id 192.0.2.10;$' bird/bird.conf") == 0);
 	http("POST", path, "{\"confirm\":true}", &r);
 	EXPECT(&r, 200);

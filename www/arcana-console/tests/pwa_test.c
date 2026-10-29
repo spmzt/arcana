@@ -3240,7 +3240,7 @@ part_plugins(void)
 	ATF_CHECK(system("grep -q '^\t\timport filter bgp_out;$' bird/bird.conf "
 	    "&& grep -q '^\t\texport none;$' bird/bird.conf && ! grep -q "
 	    "'export filter bgp_out' bird/bird.conf && grep -q '^configure "
-	    "timeout 60$' birdc.log") == 0);
+	    "timeout 65$' birdc.log") == 0);
 	/* Kept only when told so: the seconds left shown, then Confirm. */
 	wait_js("document.querySelector('.notice button[data-act=bird-confirm]') && "
 	    "/takes it back by itself in [0-9]+ s/.test(document.querySelector("
@@ -3249,7 +3249,10 @@ part_plugins(void)
 	run("document.querySelector('.notice button[data-act=bird-confirm]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('BIRD keeps its new configuration'))", 30);
-	ATF_CHECK(system("grep -q '^configure confirm$' birdc.log") == 0);
+	/* The commit confirmed, BIRD is told so in a moment. */
+	ATF_CHECK(system("for i in $(seq 1 40); do grep -q '^configure "
+	    "confirm$' birdc.log && break; sleep 0.1; done; grep -q "
+	    "'^configure confirm$' birdc.log") == 0);
 	/*
 	 * BGP, OSPF and BFD each a tab of the host's BIRD, with a form: a
 	 * protocol made, one changed, and one the form cannot show left
@@ -7928,8 +7931,7 @@ part_mesh(void)
 	shot("9-mesh-tq-dialog");
 	run("const f = document.querySelector('form[data-form=tq-set]'); "
 	    "f.interval.value = '100'; f.eval.value = '1000'; f.requestSubmit();");
-	queued_run();
-	queued_run();
+	/* Each end's host commits its monitors (arcana-probe): no job. */
 	/* All four answered, nothing lost: delay figures in each of the
 	 * row's cells, each up. */
 	wait_js("(r => r && r.querySelectorAll('td.tq-cell.st-up').length === "
@@ -8026,8 +8028,6 @@ part_mesh(void)
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]')"
 	    ".requestSubmit();");
-	queued_run();
-	queued_run();
 	wait_js("!document.querySelector('table.tq button[data-act=tq-stop]')",
 	    60);
 }

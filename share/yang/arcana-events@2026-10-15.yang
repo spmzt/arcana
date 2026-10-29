@@ -178,6 +178,13 @@ module arcana-events {
        node, why, and a report to file as a bug.";
   }
 
+  identity monitor {
+    base event-kind;
+    description
+      "A monitor's target went down or came up: its data the
+       tunnel's.";
+  }
+
   grouping event {
     description
       "One event.";
@@ -211,9 +218,11 @@ module arcana-events {
           "route-add, route-del: the route, as the network
            operation's routes have one.";
         leaf destination {
-          type inet:ip-address-no-zone;
+          type string;
           description
-            "Its destination.";
+            "Its destination as netstat prints it: an address, with
+             its prefix length after a slash where it is a network, or
+             default.";
         }
         leaf prefix-length {
           type uint8;
@@ -258,7 +267,28 @@ module arcana-events {
         leaf source {
           type string;
           description
-            "Where it came from: a protocol, or static.";
+            "Its preferred source address.";
+        }
+        leaf nhop {
+          type uint32;
+          description
+            "The kernel's nexthop it points to.";
+        }
+        leaf path {
+          type uint16;
+          description
+            "Which of the route's several ways this is.";
+        }
+        leaf paths {
+          type uint16;
+          description
+            "How many ways the route has.";
+        }
+        leaf expire-time {
+          type uint32;
+          units "seconds";
+          description
+            "When it expires, where it does.";
         }
       }
       container routes {
@@ -342,6 +372,16 @@ module arcana-events {
           description
             "It is a router (NDP).";
         }
+        leaf family {
+          type string;
+          description
+            "inet (ARP) or inet6 (NDP).";
+        }
+        leaf next {
+          type uint32;
+          description
+            "When its state moves on, as the kernel says it.";
+        }
       }
       container threshold {
         description
@@ -375,6 +415,10 @@ module arcana-events {
             enum jail-mem {
               description
                 "A jail's memory, in bytes.";
+            }
+            enum storage {
+              description
+                "A file system's share full, in percent.";
             }
           }
           description
@@ -423,7 +467,8 @@ module arcana-events {
       }
       container tunnel {
         description
-          "sdwan-tunnel: a tunnel's state.";
+          "sdwan-tunnel: a tunnel's state; monitor: a monitor's
+           target's.";
         leaf id {
           type string;
           description
@@ -449,6 +494,10 @@ module arcana-events {
               description
                 "Down.";
             }
+            enum unknown {
+              description
+                "Neither, as BFD says it.";
+            }
           }
           description
             "Which way it went.";
@@ -462,6 +511,11 @@ module arcana-events {
           type string;
           description
             "What said so: the agent's probes, or bfd.";
+        }
+        leaf jail {
+          type string;
+          description
+            "The jail whose probe it is, where it is one's.";
         }
       }
       container fault {
@@ -808,6 +862,30 @@ module arcana-events {
             "allowed or blocked.";
         }
       }
+      container undo {
+        description
+          "undo-failed: what an undo stopped at.";
+        leaf node {
+          type string;
+          description
+            "The node whose undo failed.";
+        }
+        leaf errno {
+          type int32;
+          description
+            "The error.";
+        }
+        leaf message {
+          type string;
+          description
+            "Why.";
+        }
+        leaf report {
+          type string;
+          description
+            "A report to file as a bug.";
+        }
+      }
     }
   }
 
@@ -864,6 +942,11 @@ module arcana-events {
           description
             "The events, oldest first.";
           uses event;
+        }
+        leaf kept {
+          type uint16;
+          description
+            "How many are kept at most.";
         }
       }
     }

@@ -2,9 +2,13 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-probe",
     "module-revision": "2026-10-15",
-    "sid-file-version": 2,
-    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "sid-file-version": 3,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 72 000, 100, and 80 300, 100.",
     "dependency-revision": [
+      {
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
+      },
       {
         "module-name": "ietf-inet-types",
         "module-revision": "2025-12-22"
@@ -17,6 +21,10 @@
     "assignment-range": [
       {
         "entry-point": "72000",
+        "size": "100"
+      },
+      {
+        "entry-point": "80300",
         "size": "100"
       }
     ],
@@ -394,7 +402,333 @@
       {
         "namespace": "data",
         "identifier": "/arcana-probe:probes/target/jail",
+        "status": "obsolete",
         "sid": "72074"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail",
+        "sid": "72075"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/link",
+        "sid": "72076"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/link/id",
+        "sid": "72077"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/link/interface",
+        "sid": "72078"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/link/role",
+        "sid": "72079"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor",
+        "sid": "72080"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/address",
+        "sid": "72081"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/down",
+        "sid": "72082"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/dscp",
+        "sid": "72083"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/eval",
+        "sid": "72084"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/fib",
+        "sid": "72085"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/history",
+        "sid": "72086"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/interface",
+        "sid": "72087"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/interval",
+        "sid": "72088"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/name",
+        "sid": "72089"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/size",
+        "sid": "72090"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/tca",
+        "sid": "72091"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/tca/damping",
+        "sid": "72092"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/tca/delay",
+        "sid": "72093"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/tca/ipdv",
+        "sid": "72094"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/tca/loss",
+        "sid": "72095"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/timeout",
+        "sid": "72096"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/monitor/up",
+        "sid": "72097"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/name",
+        "sid": "72098"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target",
+        "sid": "72099"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/address",
+        "sid": "80300"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/count",
+        "sid": "80301"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/down",
+        "sid": "80302"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/dscp",
+        "sid": "80303"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/eval",
+        "sid": "80304"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/fib",
+        "sid": "80305"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/history",
+        "sid": "80306"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/id",
+        "sid": "80307"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/interval",
+        "sid": "80308"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/report",
+        "sid": "80309"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/size",
+        "sid": "80310"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/tca",
+        "sid": "80311"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/tca/damping",
+        "sid": "80312"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/tca/delay",
+        "sid": "80313"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/tca/ipdv",
+        "sid": "80314"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/tca/loss",
+        "sid": "80315"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/timeout",
+        "sid": "80316"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/jail/target/up",
+        "sid": "80317"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/link",
+        "sid": "80318"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/link/id",
+        "sid": "80319"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/link/interface",
+        "sid": "80320"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/link/role",
+        "sid": "80321"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor",
+        "sid": "80322"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/address",
+        "sid": "80323"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/down",
+        "sid": "80324"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/dscp",
+        "sid": "80325"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/eval",
+        "sid": "80326"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/fib",
+        "sid": "80327"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/history",
+        "sid": "80328"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/interface",
+        "sid": "80329"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/interval",
+        "sid": "80330"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/name",
+        "sid": "80331"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/size",
+        "sid": "80332"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/tca",
+        "sid": "80333"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/tca/damping",
+        "sid": "80334"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/tca/delay",
+        "sid": "80335"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/tca/ipdv",
+        "sid": "80336"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/tca/loss",
+        "sid": "80337"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/timeout",
+        "sid": "80338"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/monitor/up",
+        "sid": "80339"
       }
     ]
   }

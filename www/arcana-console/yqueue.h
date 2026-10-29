@@ -59,15 +59,24 @@ int	yq_confirm(cbl_conn *conn, uint64_t id, char *err, size_t errlen);
 int	yq_lanes(cbl_conn *conn, int lanes, char *err, size_t errlen);
 
 /*
- * The helpers, for ystore.c too: yq_top(), the top-level node name of
- * module mod; yq_child(), n's child name (NULL: none); yq_call(), rpc
- * act (list NULL), or action act of list's entry whose one key is *key,
- * or of container list (key NULL), in its input (NULL: none), out its
- * output (NULL: not read), in a.
+ * The helpers, for ystore.c and ygula.c too: yq_top(), the top-level
+ * node name of module mod; yq_child(), n's child name (NULL: none);
+ * yq_get(), top-level node n of datastore ds (CBL_YDS_*; -1, the
+ * agent's default) by a GET, into its module's data (none there: left
+ * as it was); yq_commit(), top-level node n of module data d put in the
+ * candidate, which replaces it there, and committed, the candidate
+ * discarded where the commit fails; yq_call(), rpc act (list NULL), or
+ * action act of list's entry whose one key is *key, or of container
+ * list (key NULL), in its input (NULL: none), out its output (NULL: not
+ * read), in a.
  */
 const struct cbl_ynode *yq_top(const char *mod, const char *name);
 const struct cbl_ynode *yq_child(const struct cbl_ynode *n,
 	    const char *name);
+int	yq_get(cbl_conn *conn, const struct cbl_ynode *n, int ds, void *data,
+	    cbl_yarena *a, char *err, size_t errlen);
+int	yq_commit(cbl_conn *conn, const struct cbl_ynode *n, const void *d,
+	    char *err, size_t errlen);
 int	yq_call(cbl_conn *conn, const struct cbl_ynode *list, const void *key,
 	    const struct cbl_ynode *act, const void *in, void *out,
 	    cbl_yarena *a, char *err, size_t errlen);

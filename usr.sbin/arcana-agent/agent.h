@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.233.0"
+#define	ARCANA_AGENT_VERSION	"0.234.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -436,9 +436,30 @@ struct zfskey_rsp {
 void		 do_zfs_key(struct work *, const struct zfskey_req *,
 		    struct zfskey_rsp *);
 
-/* invidia/capture.c: packets taken with tcpdump */
-void		 do_capture(struct work *, const struct arc_capture_req *,
-		    struct arc_capture_rsp *);
+/*
+ * A read answered in JSON, as the operation of arcana.yaml it was gave
+ * it: the modules make their trees of it (gula/y*.c, invidia/y*.c).
+ */
+struct json_rsp {
+	bool		 has_ok;
+	bool		 ok;
+	const char	*error;
+	const char	*json;
+};
+
+/*
+ * invidia/capture.c: packets taken with tcpdump off interface (NULL:
+ * the sources there are), filter a pcap-filter(7) expression, so many
+ * packets or seconds at most (0: 50, 10).
+ */
+struct capture_req {
+	const char	*interface;
+	const char	*filter;
+	uint32_t	 packets;
+	uint32_t	 seconds;
+};
+void		 do_capture(struct work *, const struct capture_req *,
+		    struct json_rsp *);
 
 /* superbia/ssh.c: the base system's sshd */
 void		 do_ssh(struct work *, struct arc_ssh_rsp *);
@@ -547,8 +568,7 @@ int		 do_network(struct work *, uint8_t, uint8_t, const char *,
 		    uint32_t, uint32_t, struct arc_network_rsp *);
 int		 do_route_lookup(struct work *, const char *, uint32_t,
 		    struct arc_route_lookup_rsp *);
-int		 do_traceroute(struct work *, const char *,
-		    struct arc_traceroute_rsp *);
+int		 do_traceroute(struct work *, const char *, struct json_rsp *);
 
 /* invidia/interfaces.c */
 int		 do_interfaces(struct work *, uint8_t, struct arc_network_rsp *);
@@ -661,9 +681,27 @@ int		 bird_configure_confirm(struct work *, const char **);
 int		 bird_configure_undo(struct work *, const char **);
 int		 do_bird_verb(struct work *, const char *, const char *const *,
 		    size_t, const char **);
-int		 do_bird_config(struct work *,
-		    const struct arc_bird_config_req *,
-		    struct arc_bird_config_rsp *);
+/*
+ * Its configuration, the host's or w's jail's (arcana-bird): the files
+ * it is made of; a text's SHA-256; whether bird(8) takes a text in a
+ * file's place, the file left; a text put in place, was the SHA-256 of
+ * the one it replaces (NULL: any), BIRD told, with timeout (s, 0 none)
+ * a confirmed commit's of ctx's datastores, BIRD's own timer a little
+ * longer, then kept or taken back as the commit is; a text put back,
+ * the confirmed change that waits for it taken back; the change that
+ * waited kept, a commit come after it.  0, or -1 and why in *errp;
+ * *warnp what the change met that did not stop it.
+ */
+const char	**bird_conf_files(struct work *, size_t *);
+const char	*bird_sha(struct work *, const char *, size_t);
+int		 bird_conf_check(struct work *, const char *, const char *,
+		    const char **);
+int		 bird_conf_put(struct work *, const char *, const char *,
+		    const char *, int, struct cbl_ctx *, const char **,
+		    const char **);
+int		 bird_conf_undo(struct work *, const char *, const char *,
+		    const char **);
+void		 bird_conf_settle(void);
 
 /* invidia/scope.c: the network of a vnet jail, from the host. */
 int		 scope_enter(struct work *, const char *, const char **);
@@ -685,18 +723,17 @@ int		 do_ntp(struct work *, const char *const *, size_t, bool, bool,
 		    const char **);
 bool		 ntp_server_ok(const char *);
 /* gula: what runs, what was written down, how busy it has been. */
-int		 do_processes(struct work *, const char *,
-		    struct arc_processes_rsp *);
+int		 do_processes(struct work *, const char *, struct json_rsp *);
 const char	*proc_check(const struct arc_job_spec *);
 char		*proc_title(const struct arc_job_spec *);
 int		 do_proc_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 bool		 log_name_ok(const char *);
 int		 do_log(struct work *, const char *, const char *, bool,
-		    uint64_t, uint32_t, struct arc_log_rsp *);
+		    uint64_t, uint32_t, struct json_rsp *);
 void		 history_start(void);
 int		 do_history(struct work *, uint64_t, bool, uint32_t, uint32_t,
-		    const uint32_t *, const char *, struct arc_history_rsp *);
+		    const uint32_t *, const char *, struct json_rsp *);
 /* gula/kmsg.c: the kernel's messages, numbered as they come. */
 struct kmsg_line {
 	uint64_t	 n;
@@ -723,6 +760,9 @@ const char	*monitor_check(const struct arc_job_spec *);
 char		*monitor_title(const struct arc_job_spec *);
 int		 do_monitor_job(struct work *, const struct arc_job_spec *,
 		    const char **);
+int		 do_monitors_set(struct work *, const char *, const char **);
+/* The targets, links and monitors of each edge, as JSON (malloc'd). */
+char		*probe_conf_json(void);
 int		 probe_state_of(const char *, const char *);
 void		 probe_link(const char *, const char *, bool);
 /* invidia/sdwan.c: the rules that steer, and the steering. */
@@ -919,7 +959,7 @@ int		 faults_compress(const char *, const char *);
 /* gula/record.c: what the security rules logged, a day of it. */
 void		 record_start(void);
 void		 record_json(struct ucl_object_s *);
-int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
+int		 do_process(struct work *, uint32_t, struct json_rsp *);
 
 /* superbia/sysctl.c: the kernel's values, as sysctl_read() gives them
  * (arcana-sysctl's), the host's whole or a jail's network's. */
@@ -963,7 +1003,7 @@ int		 do_l2_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 int		 do_ipfw(struct work *, struct arc_network_rsp *);
 int		 do_fw_trace(struct work *, const char *, uint32_t, uint32_t,
-		    struct arc_fw_trace_rsp *);
+		    struct json_rsp *);
 int		 do_ipfw_rules(struct work *, const struct arc_ipfw_rules_req *,
 		    struct arc_ipfw_rules_rsp *);
 const char	*ipfw_check(const struct arc_job_spec *);
@@ -1000,7 +1040,7 @@ int		 do_config_apply(struct work *, const char *, bool, bool,
 /* invidia/pathcheck.c: what this host does with a packet and its reply. */
 int		 do_path_check(struct work *, const char *, const char *,
 		    const char *, uint32_t, const char *, bool, uint32_t, bool,
-		    struct arc_path_check_rsp *);
+		    struct json_rsp *);
 bool		 kmod_loaded(const char *);
 bool		 prefix_covers(const uint8_t *, const uint8_t *, int);
 int		 if_fib(const char *);
@@ -1134,7 +1174,7 @@ int		 ysubs_init(struct cbl_ctx *);
 #define	NACM_CONSOLE	"console"
 void		 event_add_jail(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);
-int		 do_events(struct work *, uint64_t, struct arc_events_rsp *);
+int		 do_events(struct work *, uint64_t, struct json_rsp *);
 
 /* invidia/netgraph.c */
 int		 do_netgraph(struct work *, struct arc_network_rsp *);

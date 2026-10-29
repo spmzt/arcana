@@ -34,6 +34,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <jail.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -128,22 +129,20 @@ keys_of(const struct cbl_bytes *target, size_t want, cbl_yarena *a)
 }
 
 /*
- * An action of a jail's (its target a jail's entry, the key its name):
- * the work in the jail's scope.  0, or the error said.
+ * An action given a vnet jail by its input (NULL or "": the host): the
+ * work in the jail's scope.  0, or the error said.
  */
 static int
-yjail_scope(cbl_req *req, const struct cbl_bytes *target, struct work *w,
-    cbl_yarena *a)
+yjail_in(cbl_req *req, const char *jail, struct work *w)
 {
-	const void	**k;
 	const char	*e;
 
-	if ((k = keys_of(target, 1, a)) == NULL)
+	if (jail == NULL || jail[0] == '\0')
 		return (0);
-	if (!valid_jail(*(const char *const *)k[0]))
+	if (!valid_jail(jail))
 		return (said(req, "invalid jail name"));
 	e = NULL;
-	if (scope_enter(w, *(const char *const *)k[0], &e) != 0)
+	if (scope_enter(w, jail, &e) != 0)
 		return (said(req, e));
 	return (0);
 }
@@ -765,15 +764,63 @@ arcana_agent_agent_update_action(cbl_req *req, const struct cbl_bytes *target,
 	return (0);
 }
 
-int
-arcana_bird_bird_edit(cbl_req *req, const struct arcana_bird *before,
-    const struct arcana_bird *after)
-{
+/*
+ * arcana-bird: BIRD's configuration, the host's and that of each
+ * running vnet jail that has one, read from its files; what birdc says
+ * in the operational datastore alone, a jail's by the read action.
+ */
 
-	(void)req;
-	(void)before;
-	(void)after;
-	return (EOPNOTSUPP);
+/* A copy of n bytes of s in a's, terminated; NULL: no memory. */
+static char *
+ycopy(cbl_yarena *a, const char *s, size_t n)
+{
+	char	*p;
+
+	if ((p = cbl_yarena_alloc(a, n + 1)) != NULL) {
+		memcpy(p, s, n);
+		p[n] = '\0';
+	}
+	return (p);
+}
+
+/*
+ * The configuration's files, w's (the host's or its jail's): each read
+ * whole, with its SHA-256.  ENOENT where there is no main file.
+ */
+static int
+ybird_conf(struct work *w, cbl_yarena *a,
+    const struct arcana_bird_configuration **outp)
+{
+	struct arcana_bird_configuration	*out;
+	struct arcana_bird_configuration_file	*f;
+	const char				**v, *sha;
+	char					*text;
+	size_t					 n, len, k = 0;
+
+	*outp = NULL;
+	if (scope_slurp(w, opts.bird_conf, &len) == NULL)
+		return (errno == ENOENT ? ENOENT : EIO);
+	v = bird_conf_files(w, &n);
+	if ((out = cbl_yarena_alloc(a, sizeof(*out))) == NULL ||
+	    (f = cbl_yarena_alloc(a, (n + 1) * sizeof(*f))) == NULL)
+		return (ENOMEM);
+	memset(out, 0, sizeof(*out));
+	for (size_t i = 0; i < n; i++) {
+		if ((text = scope_slurp(w, v[i], &len)) == NULL)
+			continue;
+		sha = bird_sha(w, text, len);
+		memset(&f[k], 0, sizeof(f[k]));
+		if ((f[k].path = ycopy(a, v[i], strlen(v[i]))) == NULL ||
+		    (f[k].text = ycopy(a, text, len)) == NULL ||
+		    (f[k].sha256 = ycopy(a, sha, strlen(sha))) == NULL)
+			return (ENOMEM);
+		k++;
+	}
+	out->path = k > 0 ? f[0].path : NULL;
+	out->file.n = k;
+	out->file.v = f;
+	*outp = out;
+	return (0);
 }
 
 int
@@ -781,50 +828,384 @@ arcana_bird_bird_get(cbl_req *req, struct arcana_bird *data, cbl_yarena *a)
 {
 	struct arc_network_rsp		 r;
 	struct arcana_bird_bird		*o;
-	struct arcana_bird_bird_state	*st;
-	struct work			*w;
-	int				 error;
+	struct arcana_bird_bird_jail	*jv;
+	struct arcana_bird_state	*st;
+	struct work			*w, *jw;
+	const char			*e;
+	size_t				 k = 0;
+	int				 error, jid, lastjid;
 
-	(void)req;
-	if ((w = ywork(a)) == NULL)
+	if ((w = ywork(a)) == NULL || (o = cbl_yarena_alloc(a,
+	    sizeof(*o))) == NULL)
 		return (ENOMEM);
+	memset(o, 0, sizeof(*o));
+	if ((error = ybird_conf(w, a, &o->configuration)) != 0 && error !=
+	    ENOENT)
+		return (error);
+	/* Each running vnet jail's that has one. */
+	jv = NULL;
+	for (lastjid = 0;; lastjid = jid) {
+		struct arcana_bird_bird_jail	*nv;
+		char				 last[16], name[MAXHOSTNAMELEN];
+		char				 vnet[16];
+
+		snprintf(last, sizeof(last), "%d", lastjid);
+		name[0] = vnet[0] = '\0';
+		if ((jid = jail_getv(0, "lastjid", last, "name", name, "vnet",
+		    vnet, NULL)) == -1)
+			break;
+		if (strcmp(vnet, "new") != 0 && strcmp(vnet, "1") != 0)
+			continue;
+		if ((jw = ywork(a)) == NULL || (nv = cbl_yarena_alloc(a,
+		    (k + 1) * sizeof(*nv))) == NULL)
+			return (ENOMEM);
+		if (k > 0)
+			memcpy(nv, jv, k * sizeof(*nv));
+		jv = nv;
+		memset(&jv[k], 0, sizeof(jv[k]));
+		e = NULL;
+		if (scope_enter(jw, name, &e) != 0 || ybird_conf(jw, a,
+		    &jv[k].configuration) != 0 || (jv[k].name = ycopy(a, name,
+		    strlen(name))) == NULL)
+			continue;
+		k++;
+	}
+	o->jail.n = k;
+	o->jail.v = jv;
+	/* What birdc says: no BIRD running, none, not a failure. */
+	if (cbl_req_ydatastore(req) == CBL_YDS_OPERATIONAL) {
+		memset(&r, 0, sizeof(r));
+		(void)do_network(w, ARC_NET_KIND_BIRD, ARC_NET_FAMILY_ALL, NULL,
+		    0, 0, &r);
+		if (!r.ok)
+			(void)failed("bird", r.error);
+		else {
+			if ((st = cbl_yarena_alloc(a, sizeof(*st))) == NULL)
+				return (ENOMEM);
+			if ((error = ybird_from_json(r.json, a, st)) != 0)
+				return (error);
+			o->state = st;
+		}
+	}
+	if (o->configuration != NULL || o->state != NULL || o->jail.n > 0)
+		data->bird = o;
+	return (0);
+}
+
+/*
+ * The commit req is, its confirm-timeout (s) when it is a confirmed
+ * one (RFC 6241's 600 where it says none); 0 for another, or an undo.
+ */
+static int
+commit_timeout(cbl_req *req, cbl_yarena *a)
+{
+	struct ietf_netconf_commit_input	 in;
+	const struct cbl_ymodule		*m;
+	const struct cbl_ynode			*n = NULL, *inode = NULL;
+	const cbl_msg				*msg;
+
+	if (cbl_req_yundo(req) || (msg = cbl_req_msg(req)) == NULL)
+		return (0);
+	for (uint32_t i = 0; n == NULL && i < ymodel_schema.nmod; i++) {
+		m = ymodel_schema.mod[i];
+		if (strcmp(m->name, "ietf-netconf") != 0)
+			continue;
+		for (uint32_t k = 0; k < m->ntop; k++)
+			if (strcmp(m->top[k]->name, "commit") == 0)
+				n = m->top[k];
+	}
+	for (uint32_t i = 0; n != NULL && i < n->nchild; i++)
+		if (n->child[i]->kind == CBL_YN_INPUT)
+			inode = n->child[i];
+	memset(&in, 0, sizeof(in));
+	if (inode == NULL || cbl_msg_ydecode(msg, inode, &in, a, 0, NULL,
+	    0) != 0 || !in.confirmed)
+		return (0);
+	return (in.has_confirm_timeout && in.confirm_timeout > 0 ?
+	    (int)in.confirm_timeout : 600);
+}
+
+/* A file of a configuration, by its path; NULL where it is none. */
+static const struct arcana_bird_configuration_file *
+conf_file(const struct arcana_bird_configuration *c, const char *path)
+{
+
+	for (size_t i = 0; c != NULL && i < c->file.n; i++)
+		if (strcmp(c->file.v[i].path, path) == 0)
+			return (&c->file.v[i]);
+	return (NULL);
+}
+
+/* A jail's configuration, by its name; NULL where it is none. */
+static const struct arcana_bird_configuration *
+conf_of_jail(const struct arcana_bird_bird *b, const char *jail)
+{
+
+	for (size_t i = 0; b != NULL && i < b->jail.n; i++)
+		if (strcmp(b->jail.v[i].name, jail) == 0)
+			return (b->jail.v[i].configuration);
+	return (NULL);
+}
+
+struct bchange {
+	const char	*jail;		/* NULL: the host's */
+	const char	*path;
+	const char	*was;		/* its text before; NULL: none */
+	const char	*text;
+};
+
+/*
+ * What after changes of before, a configuration's: each file whose
+ * text is new, put in *ch (one at most, *nch it), -1 and why where
+ * there is more or a file is taken out (undo takes back what its
+ * commit made, a file made left).
+ */
+static int
+conf_diff(const char *jail, const struct arcana_bird_configuration *before,
+    const struct arcana_bird_configuration *after, bool undo,
+    struct bchange *ch, size_t *nch, const char **why)
+{
+	const struct arcana_bird_configuration_file	*f, *g;
+
+	for (size_t i = 0; before != NULL && i < before->file.n; i++)
+		if (!undo && conf_file(after, before->file.v[i].path) ==
+		    NULL) {
+			*why = "a file of BIRD's configuration is not taken out "
+			    "by a commit: take out what includes it";
+			return (-1);
+		}
+	for (size_t i = 0; after != NULL && i < after->file.n; i++) {
+		f = &after->file.v[i];
+		g = conf_file(before, f->path);
+		if (f->text == NULL || (g != NULL && g->text != NULL &&
+		    strcmp(g->text, f->text) == 0))
+			continue;
+		if (*nch == 1) {
+			*why = "one file of BIRD's configuration at a time";
+			return (-1);
+		}
+		ch->jail = jail;
+		ch->path = f->path;
+		ch->was = g != NULL ? g->text : NULL;
+		ch->text = f->text;
+		(*nch)++;
+	}
+	return (0);
+}
+
+int
+arcana_bird_bird_edit(cbl_req *req, const struct arcana_bird *before,
+    const struct arcana_bird *after)
+{
+	const struct arcana_bird_bird	*b, *f;
+	struct bchange			 ch;
+	struct work			 w;
+	cbl_yarena			*a;
+	const char			*why, *warn;
+	size_t				 nch = 0;
+	bool				 undo;
+	int				 rc, root;
+
+	b = before != NULL ? before->bird : NULL;
+	f = after != NULL ? after->bird : NULL;
+	undo = cbl_req_yundo(req);
+	why = NULL;
+	memset(&ch, 0, sizeof(ch));
+	if (conf_diff(NULL, b != NULL ? b->configuration : NULL, f != NULL ?
+	    f->configuration : NULL, undo, &ch, &nch, &why) != 0)
+		return (said(req, why));
+	for (size_t i = 0; f != NULL && i < f->jail.n; i++) {
+		if (!valid_jail(f->jail.v[i].name))
+			return (said(req, "invalid jail name"));
+		if (conf_diff(f->jail.v[i].name, conf_of_jail(b,
+		    f->jail.v[i].name), f->jail.v[i].configuration, undo, &ch,
+		    &nch, &why) != 0)
+			return (said(req, why));
+	}
+	if (nch == 0)
+		return (0);
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	if (!change_begin("BIRD's configuration")) {
+		cbl_yarena_free(a);
+		return (said(req, "not done: arcana-agent is stopping"));
+	}
+	work_init(&w);
+	trace_tell(&w, req);
+	root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "BIRD's "
+	    "configuration: %s%s%s", ch.path, ch.jail != NULL ? " in " : "",
+	    ch.jail != NULL ? ch.jail : "");
+	why = warn = NULL;
+	rc = 0;
+	if (!undo)
+		bird_conf_settle();
+	if (ch.jail != NULL && scope_enter(&w, ch.jail, &why) != 0)
+		rc = -1;
+	else if (undo)
+		rc = bird_conf_undo(&w, ch.path, ch.text, &why);
+	else
+		rc = bird_conf_put(&w, ch.path, ch.text, bird_sha(&w, ch.was !=
+		    NULL ? ch.was : "", ch.was != NULL ? strlen(ch.was) : 0),
+		    commit_timeout(req, a), cbl_req_ctx(req), &why, &warn);
+	change_end();
+	step_end(&w, root, rc == 0, NULL);
+	if (rc == 0 && warn != NULL)
+		(void)cbl_req_ywarn(req, 0, "bird-not-told", warn);
+	rc = rc == 0 ? 0 : said(req, why);
+	work_free(&w);
+	cbl_yarena_free(a);
+	return (rc);
+}
+
+/* What birdc says now, the host's or the jail's the target is. */
+static int
+bird_read(cbl_req *req, const char *jail, struct arcana_bird_state *out,
+    cbl_yarena *a)
+{
+	struct arc_network_rsp	 r;
+	struct work		*w;
+	int			 error, root;
+
+	if ((w = ywork_told(req, a, "BIRD", &root)) == NULL)
+		return (ENOMEM);
+	if ((error = yjail_in(req, jail, w)) != 0) {
+		step_end(w, root, false, NULL);
+		return (error);
+	}
 	memset(&r, 0, sizeof(r));
 	(void)do_network(w, ARC_NET_KIND_BIRD, ARC_NET_FAMILY_ALL, NULL, 0, 0,
 	    &r);
-	/* No BIRD running (birdc not answering): no bird, not a failure. */
-	if (!r.ok) {
-		(void)failed("bird", r.error);
-		return (0);
-	}
-	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL ||
-	    (st = cbl_yarena_alloc(a, sizeof(*st))) == NULL)
+	step_end(w, root, r.ok, NULL);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (ybird_from_json(r.json, a, out));
+}
+
+int
+arcana_bird_bird_read_action(cbl_req *req, const struct cbl_bytes *target,
+    const struct arcana_bird_bird_read_input *in, struct arcana_bird_state *out,
+    cbl_yarena *a)
+{
+
+	(void)target;
+	return (bird_read(req, in->jail, out, a));
+}
+
+/* Routes of BIRD's tables, in birdc's words. */
+static int
+bird_routes(cbl_req *req, const char *jail, const char *filter,
+    struct arcana_bird_routes *out, cbl_yarena *a)
+{
+	struct arc_network_rsp	 r;
+	struct work		*w;
+	int			 error, root;
+
+	if ((w = ywork_told(req, a, "BIRD's routes", &root)) == NULL)
 		return (ENOMEM);
-	memset(o, 0, sizeof(*o));
-	if ((error = ybird_from_json(r.json, a, st)) != 0)
+	if ((error = yjail_in(req, jail, w)) != 0) {
+		step_end(w, root, false, NULL);
 		return (error);
-	o->state = st;
-	data->bird = o;
-	return (0);
+	}
+	memset(&r, 0, sizeof(r));
+	(void)do_bird_routes(w, filter != NULL ? filter : "all", &r);
+	step_end(w, root, r.ok, NULL);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (ybird_routes_from_json(r.json, a, out));
 }
 
 int
 arcana_bird_bird_routes_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_bird_bird_routes_input *in,
-    struct arcana_bird_bird_routes_output *out, cbl_yarena *a)
+    struct arcana_bird_routes *out, cbl_yarena *a)
 {
-	struct arc_network_rsp	 r;
-	struct work		*w;
-	int			 error;
 
-	if ((w = ywork(a)) == NULL)
+	(void)target;
+	return (bird_routes(req, in->jail, in->filter, out, a));
+}
+
+/* BIRD's OSPF protocols, their areas, with topology their topology. */
+static int
+bird_ospf(cbl_req *req, const char *jail, bool topology, const char *protocol,
+    struct arcana_bird_ospf *out, cbl_yarena *a)
+{
+	struct arc_network_rsp		 r;
+	struct arcana_bird_ospf_protocol	*v;
+	struct work			*w;
+	size_t				 n = 0;
+	int				 error, root;
+
+	if ((w = ywork_told(req, a, "BIRD's OSPF", &root)) == NULL)
 		return (ENOMEM);
-	if ((error = yjail_scope(req, target, w, a)) != 0)
+	if ((error = yjail_in(req, jail, w)) != 0) {
+		step_end(w, root, false, NULL);
 		return (error);
+	}
 	memset(&r, 0, sizeof(r));
-	(void)do_bird_routes(w, in->filter != NULL ? in->filter : "all", &r);
+	(void)do_bird_ospf(w, !topology ? NULL : protocol != NULL ? wfmt(w,
+	    "topology %s", protocol) : "topology", &r);
+	step_end(w, root, r.ok, NULL);
 	if (!r.ok)
 		return (said(req, r.error));
-	return (ybird_routes_from_json(r.json, a, out));
+	if ((error = ybird_ospf_from_json(r.json, a, out)) != 0 ||
+	    protocol == NULL || topology)
+		return (error);
+	/* The one protocol, without its topology. */
+	v = (struct arcana_bird_ospf_protocol *)(uintptr_t)out->protocol.v;
+	for (size_t i = 0; i < out->protocol.n; i++)
+		if (strcmp(v[i].name, protocol) == 0)
+			v[n++] = v[i];
+	out->protocol.n = n;
+	return (0);
+}
+
+int
+arcana_bird_bird_ospf_action(cbl_req *req, const struct cbl_bytes *target,
+    const struct arcana_bird_bird_ospf_input *in, struct arcana_bird_ospf *out,
+    cbl_yarena *a)
+{
+
+	(void)target;
+	return (bird_ospf(req, in->jail, in->has_topology && in->topology,
+	    in->protocol, out, a));
+}
+
+/* Whether bird(8) takes text in path's place; the file left. */
+static int
+bird_check_text(cbl_req *req, const char *jail, const char *path,
+    const char *text, cbl_yarena *a)
+{
+	struct work	*w;
+	const char	*why;
+	int		 error, root, rc;
+
+	if ((w = ywork_told(req, a, "BIRD's configuration checked",
+	    &root)) == NULL)
+		return (ENOMEM);
+	if ((error = yjail_in(req, jail, w)) != 0) {
+		step_end(w, root, false, NULL);
+		return (error);
+	}
+	if (!change_begin("BIRD's configuration checked")) {
+		step_end(w, root, false, NULL);
+		return (said(req, "not done: arcana-agent is stopping"));
+	}
+	why = NULL;
+	rc = bird_conf_check(w, path, text, &why);
+	change_end();
+	step_end(w, root, rc == 0, NULL);
+	return (rc == 0 ? 0 : said(req, why));
+}
+
+int
+arcana_bird_bird_check_action(cbl_req *req, const struct cbl_bytes *target,
+    const struct arcana_bird_bird_check_input *in,
+    struct arcana_bird_bird_check_output *out, cbl_yarena *a)
+{
+
+	(void)target;
+	(void)out;
+	return (bird_check_text(req, in->jail, in->path, in->text, a));
 }
 
 int
@@ -855,7 +1236,7 @@ int
 arcana_events_events_get(cbl_req *req, struct arcana_events *data,
     cbl_yarena *a)
 {
-	struct arc_events_rsp		 r;
+	struct json_rsp			 r;
 	struct arcana_events_events	*o;
 	struct work			*w;
 	int				 error;
@@ -880,7 +1261,7 @@ arcana_events_events_read_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_events_events_read_input *in,
     struct arcana_events_events_read_output *out, cbl_yarena *a)
 {
-	struct arc_events_rsp		 r;
+	struct json_rsp			 r;
 	struct arcana_events_events	 o;
 	struct work			*w;
 	int				 error;
@@ -900,6 +1281,8 @@ arcana_events_events_read_action(cbl_req *req, const struct cbl_bytes *target,
 	out->last = o.last;
 	out->has_first = o.has_first;
 	out->first = o.first;
+	out->has_kept = o.has_kept;
+	out->kept = o.kept;
 	out->event.n = o.event.n;
 	out->event.v = o.event.v;
 	return (0);
@@ -960,7 +1343,7 @@ arcana_firewall_firewall_trace_action(cbl_req *req,
     const struct arcana_firewall_firewall_trace_input *in,
     struct arcana_firewall_firewall_trace_output *out, cbl_yarena *a)
 {
-	struct arc_fw_trace_rsp	 r;
+	struct json_rsp		 r;
 	const char		*addr, *e;
 	const void		**k;
 	struct work		*w;
@@ -988,22 +1371,70 @@ arcana_firewall_firewall_trace_action(cbl_req *req,
 	return (yfw_trace_from_json(r.json, a, out));
 }
 
+/*
+ * How the agent samples and its limits, as committed: the whole of it
+ * (an EDIT replaces the container), each rule kind:name=limit as
+ * history.c takes them; none, the defaults.
+ */
 int
 arcana_history_history_edit(cbl_req *req, const struct arcana_history *before,
     const struct arcana_history *after)
 {
+	static const char *const kinds[] = { "net", "disk", "jail-cpu",
+	    "jail-mem" };
+	const struct arcana_history_history	*h;
+	struct json_rsp				 r;
+	struct work				 w;
+	uint32_t				 lim[4];
+	uint32_t				 step, keep;
+	char					*rl;
+	size_t					 len;
+	int					 rc;
 
-	(void)req;
 	(void)before;
-	(void)after;
-	return (EOPNOTSUPP);
+	h = after != NULL ? after->history : NULL;
+	step = h != NULL && h->sampling != NULL && h->sampling->has_step ?
+	    h->sampling->step : 5;
+	keep = h != NULL && h->sampling != NULL && h->sampling->has_keep ?
+	    h->sampling->keep : 720;
+	memset(lim, 0, sizeof(lim));
+	if (h != NULL && h->limits != NULL) {
+		lim[0] = h->limits->has_cpu ? h->limits->cpu : 0;
+		lim[1] = h->limits->has_memory ? h->limits->memory : 0;
+		lim[2] = h->limits->has_swap ? h->limits->swap : 0;
+		lim[3] = h->limits->has_storage ? h->limits->storage : 0;
+	}
+	len = 1;
+	for (size_t i = 0; h != NULL && i < h->rule.n; i++)
+		len += strlen(h->rule.v[i].name) + 32;
+	if ((rl = calloc(1, len)) == NULL)
+		return (ENOMEM);
+	for (size_t i = 0; h != NULL && i < h->rule.n; i++) {
+		const struct arcana_history_history_rule *ru = &h->rule.v[i];
+
+		if ((size_t)ru->kind >= nitems(kinds)) {
+			free(rl);
+			return (said(req, "a rule's kind is net, disk, jail-cpu "
+			    "or jail-mem"));
+		}
+		snprintf(rl + strlen(rl), len - strlen(rl), "%s%s:%s=%ju",
+		    i > 0 ? "," : "", kinds[ru->kind], ru->name, (uintmax_t)
+		    (ru->has_limit ? ru->limit : 0));
+	}
+	work_init(&w);
+	memset(&r, 0, sizeof(r));
+	(void)do_history(&w, UINT64_MAX, true, step, keep, lim, rl, &r);
+	rc = r.ok ? 0 : said(req, r.error);
+	work_free(&w);
+	free(rl);
+	return (rc);
 }
 
 int
 arcana_history_history_get(cbl_req *req, struct arcana_history *data,
     cbl_yarena *a)
 {
-	struct arc_history_rsp		 r;
+	struct json_rsp			 r;
 	struct arcana_history_history	*o;
 	struct work			*w;
 	int				 error;
@@ -1028,7 +1459,7 @@ arcana_history_history_read_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_history_history_read_input *in,
     struct arcana_history_history_read_output *out, cbl_yarena *a)
 {
-	struct arc_history_rsp		 r;
+	struct json_rsp			 r;
 	struct arcana_history_history	 o;
 	struct work			*w;
 	time_t				 after = 0;
@@ -1046,9 +1477,35 @@ arcana_history_history_read_action(cbl_req *req, const struct cbl_bytes *target,
 	memset(&o, 0, sizeof(o));
 	if ((error = yhist_from_json(r.json, a, &o)) != 0)
 		return (error);
+	/* With how it samples and the sampler as it is: the output's
+	 * containers and list have the module's layouts. */
+	out->sampling = (const void *)o.sampling;
+	out->limits = (const void *)o.limits;
+	out->rule.n = o.rule.n;
+	out->rule.v = (const void *)o.rule.v;
 	if (o.state != NULL) {
-		out->sample.n = o.state->sample.n;
-		out->sample.v = o.state->sample.v;
+		const struct arcana_history_history_state *st = o.state;
+
+		out->has_bytes = st->has_bytes;
+		out->bytes = st->bytes;
+		out->has_ncpu = st->has_ncpu;
+		out->ncpu = st->ncpu;
+		out->has_memory_total = st->has_memory_total;
+		out->memory_total = st->memory_total;
+		out->has_swap_total = st->has_swap_total;
+		out->swap_total = st->swap_total;
+		out->has_racct = st->has_racct;
+		out->racct = st->racct;
+		out->interface.n = st->interface.n;
+		out->interface.v = st->interface.v;
+		out->disk.n = st->disk.n;
+		out->disk.v = st->disk.v;
+		out->jail.n = st->jail.n;
+		out->jail.v = st->jail.v;
+		out->relay.n = st->relay.n;
+		out->relay.v = st->relay.v;
+		out->sample.n = st->sample.n;
+		out->sample.v = st->sample.v;
 	}
 	return (0);
 }
@@ -1284,7 +1741,7 @@ arcana_kernel_load_rpc(cbl_req *req, const struct arcana_kernel_load_input *in,
 int
 arcana_log_logs_get(cbl_req *req, struct arcana_log *data, cbl_yarena *a)
 {
-	struct arc_log_rsp		 r;
+	struct json_rsp			 r;
 	struct arcana_log_logs	*o;
 	struct work			*w;
 	int				 error;
@@ -1309,7 +1766,8 @@ arcana_log_logs_read_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_log_logs_read_input *in,
     struct arcana_log_logs_read_output *out, cbl_yarena *a)
 {
-	struct arc_log_rsp	 r;
+	struct json_rsp		 r;
+	const char		*e;
 	struct work		*w;
 	int			 error;
 
@@ -1321,7 +1779,10 @@ arcana_log_logs_read_action(cbl_req *req, const struct cbl_bytes *target,
 		return (said(req, "invalid jail name"));
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
-	w->jail = in->jail;
+	/* A jail's own log directory, under its root. */
+	e = NULL;
+	if (scope_enter_jail(w, in->jail, &e, false) != 0)
+		return (said(req, e));
 	memset(&r, 0, sizeof(r));
 	(void)do_log(w, in->name, in->filter, in->has_position,
 	    in->position, in->has_lines ? in->lines : 0, &r);
@@ -1355,10 +1816,37 @@ arcana_netgraph_netgraph_get(cbl_req *req, struct arcana_netgraph *data,
 	}
 	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL)
 		return (ENOMEM);
-	if ((error = yng_from_json(r.json, a, o)) != 0)
+	if ((error = yng_from_json(r.json, a, &o->node.n, &o->node.v)) != 0)
 		return (error);
 	data->netgraph = o;
 	return (0);
+}
+
+/* The graph now, the host's or a vnet jail's, what ngctl said if not. */
+int
+arcana_netgraph_netgraph_read_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_netgraph_netgraph_read_input *in,
+    struct arcana_netgraph_netgraph_read_output *out, cbl_yarena *a)
+{
+	struct arc_network_rsp	 r;
+	struct work		*w;
+	int			 error, root;
+
+	(void)target;
+	if ((w = ywork_told(req, a, "the netgraph graph", &root)) == NULL)
+		return (ENOMEM);
+	if ((error = yjail_in(req, in->jail, w)) != 0) {
+		step_end(w, root, false, NULL);
+		return (error);
+	}
+	memset(&r, 0, sizeof(r));
+	(void)do_network(w, ARC_NET_KIND_NETGRAPH, ARC_NET_FAMILY_ALL, NULL, 0,
+	    0, &r);
+	step_end(w, root, r.ok, NULL);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (yng_from_json(r.json, a, &out->node.n, &out->node.v));
 }
 
 int
@@ -1543,15 +2031,119 @@ arcana_packages_packages_upgrade_action(cbl_req *req,
 	return (ypackages_upgraded(&r, a, out));
 }
 
+/* An edge of probes' (jail NULL: the host's), as a jail entry has it. */
+static void
+probe_edge(const struct arcana_probe_probes *p, const char *jail,
+    struct arcana_probe_probes_jail *out)
+{
+
+	memset(out, 0, sizeof(*out));
+	out->name = jail;
+	if (p == NULL)
+		return;
+	if (jail == NULL) {
+		out->target.n = p->target.n;
+		out->target.v = p->target.v;
+		out->link.n = p->link.n;
+		out->link.v = p->link.v;
+		out->monitor.n = p->monitor.n;
+		out->monitor.v = p->monitor.v;
+		return;
+	}
+	for (size_t i = 0; i < p->jail.n; i++)
+		if (strcmp(p->jail.v[i].name, jail) == 0) {
+			*out = p->jail.v[i];
+			return;
+		}
+}
+
+/*
+ * An edge's lists as they were and are to be: each set anew that
+ * differs, the SD-WAN targets with the links, the monitors apart.
+ */
+static int
+probe_edge_set(struct work *w, const char *jail,
+    const struct arcana_probe_probes_jail *was,
+    const struct arcana_probe_probes_jail *now, const char **errp)
+{
+	char	*a, *b;
+	int	 rc = 0;
+
+	a = yprobe_edge_json(jail, was->target.n, was->target.v, was->link.n,
+	    was->link.v);
+	b = yprobe_edge_json(jail, now->target.n, now->target.v, now->link.n,
+	    now->link.v);
+	if (a == NULL || b == NULL) {
+		*errp = "no memory";
+		rc = -1;
+	} else if (strcmp(a, b) != 0)
+		rc = do_probes_set(w, b, errp);
+	free(a);
+	free(b);
+	if (rc != 0)
+		return (rc);
+	a = yprobe_monitors_json(jail, was->monitor.n, was->monitor.v);
+	b = yprobe_monitors_json(jail, now->monitor.n, now->monitor.v);
+	if (a == NULL || b == NULL) {
+		*errp = "no memory";
+		rc = -1;
+	} else if (strcmp(a, b) != 0)
+		rc = do_monitors_set(w, b, errp);
+	free(a);
+	free(b);
+	return (rc);
+}
+
 int
 arcana_probe_probes_edit(cbl_req *req, const struct arcana_probe *before,
     const struct arcana_probe *after)
 {
+	const struct arcana_probe_probes	*b, *f;
+	struct arcana_probe_probes_jail		 was, now;
+	struct work				 w;
+	const char				*why, *jail;
+	int					 rc, root;
 
-	(void)req;
-	(void)before;
-	(void)after;
-	return (EOPNOTSUPP);
+	b = before != NULL ? before->probes : NULL;
+	f = after != NULL ? after->probes : NULL;
+	for (size_t i = 0; f != NULL && i < f->jail.n; i++)
+		if (!valid_jail(f->jail.v[i].name))
+			return (said(req, "invalid jail name"));
+	if (!change_begin("the probes"))
+		return (said(req, "not done: arcana-agent is stopping"));
+	work_init(&w);
+	trace_tell(&w, req);
+	root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+	    "the probes' targets, links and monitors");
+	why = NULL;
+	/* The host's, then each jail's that is or was. */
+	probe_edge(b, NULL, &was);
+	probe_edge(f, NULL, &now);
+	rc = probe_edge_set(&w, NULL, &was, &now, &why);
+	for (size_t k = 0; rc == 0 && f != NULL && k < f->jail.n; k++) {
+		jail = f->jail.v[k].name;
+		probe_edge(b, jail, &was);
+		probe_edge(f, jail, &now);
+		rc = probe_edge_set(&w, jail, &was, &now, &why);
+	}
+	/* A jail no longer there: its lists emptied. */
+	for (size_t k = 0; rc == 0 && b != NULL && k < b->jail.n; k++) {
+		size_t	m;
+
+		jail = b->jail.v[k].name;
+		for (m = 0; f != NULL && m < f->jail.n && strcmp(
+		    f->jail.v[m].name, jail) != 0; m++)
+			;
+		if (f != NULL && m < f->jail.n)
+			continue;
+		probe_edge(b, jail, &was);
+		probe_edge(NULL, jail, &now);
+		rc = probe_edge_set(&w, jail, &was, &now, &why);
+	}
+	change_end();
+	step_end(&w, root, rc == 0, NULL);
+	work_free(&w);
+	return (rc == 0 ? 0 : said(req, why));
 }
 
 int
@@ -1561,23 +2153,32 @@ arcana_probe_probes_get(cbl_req *req, struct arcana_probe *data, cbl_yarena *a)
 	struct arcana_probe_probes	*o;
 	struct arcana_probe_probes_state *st;
 	struct work			*w;
+	char				*json;
 	int				 error;
 
-	(void)req;
-	if ((w = ywork(a)) == NULL)
+	if ((w = ywork(a)) == NULL || (o = cbl_yarena_alloc(a,
+	    sizeof(*o))) == NULL)
 		return (ENOMEM);
+	memset(o, 0, sizeof(*o));
+	/* Each edge's lists, as the prober has them. */
+	if ((json = probe_conf_json()) == NULL)
+		return (ENOMEM);
+	error = yprobe_conf_from_json(json, a, o);
+	free(json);
+	if (error != 0)
+		return (error);
+	data->probes = o;
+	if (cbl_req_ydatastore(req) != CBL_YDS_OPERATIONAL)
+		return (0);
 	memset(&r, 0, sizeof(r));
 	(void)do_sdwan(w, 0, &r);
 	if (!r.ok)
 		return (failed("sdwan", r.error));
-	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL ||
-	    (st = cbl_yarena_alloc(a, sizeof(*st))) == NULL)
+	if ((st = cbl_yarena_alloc(a, sizeof(*st))) == NULL)
 		return (ENOMEM);
-	memset(o, 0, sizeof(*o));
 	if ((error = yprobe_state_from_json(r.json, a, st)) != 0)
 		return (error);
 	o->state = st;
-	data->probes = o;
 	return (0);
 }
 
@@ -1635,7 +2236,7 @@ int
 arcana_processes_processes_get(cbl_req *req, struct arcana_processes *data,
     cbl_yarena *a)
 {
-	struct arc_processes_rsp		 r;
+	struct json_rsp				 r;
 	struct arcana_processes_processes	*o;
 	struct work			*w;
 	int				 error;
@@ -1669,6 +2270,31 @@ arcana_processes_processes_process_renice_action(cbl_req *req,
 	return (process_action(req, target, "renice", in->has_nice ?
 	    wfmt(w, "%d", in->nice) : NULL, in->has_start_time,
 	    in->start_time, a));
+}
+
+int
+arcana_processes_processes_process_read_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_processes_processes_process_read_input *in,
+    struct arcana_processes_processes_process_read_output *out, cbl_yarena *a)
+{
+	struct json_rsp	 r;
+	const void	**k;
+	struct work	*w;
+	uint64_t	 pid;
+
+	(void)in;
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (EINVAL);
+	if ((pid = *(const uint64_t *)k[0]) == 0 || pid > INT32_MAX)
+		return (said(req, "no such process"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	(void)do_process(w, (uint32_t)pid, &r);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (yprocs_read_from_json(r.json, a, out));
 }
 
 int
@@ -2139,8 +2765,8 @@ arcana_troubleshoot_troubleshoot_capture_action(cbl_req *req,
     struct arcana_troubleshoot_troubleshoot_capture_output *out,
     cbl_yarena *a)
 {
-	struct arc_capture_req	 q;
-	struct arc_capture_rsp	 r;
+	struct capture_req	 q;
+	struct json_rsp		 r;
 	const char		*e;
 	struct work		*w;
 
@@ -2151,11 +2777,9 @@ arcana_troubleshoot_troubleshoot_capture_action(cbl_req *req,
 		return (ENOMEM);
 	memset(&q, 0, sizeof(q));
 	q.interface = in->interface;
-	q.net_filter = in->filter;
-	q.has_seconds = in->has_seconds;
-	q.seconds = in->seconds;
-	q.has_packets = in->has_packets;
-	q.packets = in->packets;
+	q.filter = in->filter;
+	q.seconds = in->has_seconds ? in->seconds : 0;
+	q.packets = in->has_packets ? in->packets : 0;
 	memset(&r, 0, sizeof(r));
 	r.has_ok = true;
 	e = NULL;
@@ -2198,8 +2822,9 @@ arcana_troubleshoot_troubleshoot_path_check_action(cbl_req *req,
     struct arcana_troubleshoot_troubleshoot_path_check_output *out,
     cbl_yarena *a)
 {
-	static const char *const protos[] = { "tcp", "udp", "icmp", "ip" };
-	struct arc_path_check_rsp	 r;
+	static const char *const protos[] = { "tcp", "udp", "icmp", "ip",
+	    "sctp" };
+	struct json_rsp			 r;
 	const char			*e;
 	struct work			*w;
 
@@ -2233,7 +2858,7 @@ arcana_troubleshoot_troubleshoot_traceroute_action(cbl_req *req,
     struct arcana_troubleshoot_troubleshoot_traceroute_output *out,
     cbl_yarena *a)
 {
-	struct arc_traceroute_rsp	 r;
+	struct json_rsp			 r;
 	const char			*addr;
 	struct work			*w;
 
@@ -2274,10 +2899,39 @@ arcana_wireguard_wireguard_get(cbl_req *req, struct arcana_wireguard *data,
 	}
 	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL)
 		return (ENOMEM);
-	if ((error = ywg_from_json(r.json, a, o)) != 0)
+	if ((error = ywg_from_json(r.json, a, &o->now, &o->interface.n,
+	    &o->interface.v)) != 0)
 		return (error);
 	data->wireguard = o;
 	return (0);
+}
+
+/* The interfaces now, the host's or a vnet jail's, what wg said if not. */
+int
+arcana_wireguard_wireguard_read_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_wireguard_wireguard_read_input *in,
+    struct arcana_wireguard_wireguard_read_output *out, cbl_yarena *a)
+{
+	struct arc_network_rsp	 r;
+	struct work		*w;
+	int			 error, root;
+
+	(void)target;
+	if ((w = ywork_told(req, a, "the WireGuard interfaces", &root)) == NULL)
+		return (ENOMEM);
+	if ((error = yjail_in(req, in->jail, w)) != 0) {
+		step_end(w, root, false, NULL);
+		return (error);
+	}
+	memset(&r, 0, sizeof(r));
+	(void)do_network(w, ARC_NET_KIND_WIREGUARD, ARC_NET_FAMILY_ALL, NULL,
+	    0, 0, &r);
+	step_end(w, root, r.ok, NULL);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (ywg_from_json(r.json, a, &out->now, &out->interface.n,
+	    &out->interface.v));
 }
 
 /* The host: hello's facts, the stats, the certificates. */

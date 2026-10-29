@@ -3018,8 +3018,11 @@ module arcana {
       "The host's routing table, nexthops, connections or sockets, as
        netstat(1) and sockstat(1) print them with --libxo json.
        With jail, those of a running jail that has a network of its own
-       (vnet), read from the host: nothing runs in the jail for it but
-       the jail's own birdc and wg.  As a dump, the routes, connections
+       (vnet), read from the host: nothing runs in the jail for it.  The
+       kinds of a plugin's program (netgraph, wireguard, bird,
+       bird-routes, bird-ospf) are refused: their modules have them
+       (arcana-netgraph, arcana-wireguard, arcana-bird).  As a dump, the
+       routes, connections
        and sockets come in parts as they are taken: each item has total,
        how many rows the table has, and the next rows: routes, typed,
        for the routes, and json, an array of them, for the connections
@@ -3207,43 +3210,6 @@ module arcana {
     }
   }
 
-  rpc bird-config {
-    fam:command 22;
-    fam:auth;
-    description
-      "BIRD's configuration.  Without conf-text, read a file of it: the
-       main one, or with conf-path one it includes; the reply has its
-       text, the SHA-256 of that, and the files the configuration is made
-       of.  With conf-text, put that in the file's place: sha256 must be
-       that of the text it was made from, so that what somebody else
-       changed meanwhile is not lost.  The whole configuration is parsed
-       by bird(8) first, and what it refuses is not left in place; then
-       the daemon is told to read it.  With dry-run it is parsed only,
-       and the file left as it was.  With safe the daemon takes it back
-       by itself unless a request with confirm comes by confirm-by, and
-       the file is then as it was before.";
-    input {
-      uses attr-conf-path;
-      uses attr-conf-text;
-      uses attr-sha256;
-      uses attr-dry-run;
-      uses attr-jail;
-      uses attr-safe;
-      uses attr-confirm;
-      uses attr-safe-wait;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-conf-path;
-      uses attr-conf-text;
-      uses attr-sha256;
-      uses attr-files;
-      uses attr-trace;
-      uses attr-confirm-by;
-    }
-  }
-
   rpc transport {
     fam:command 25;
     fam:auth;
@@ -3309,235 +3275,6 @@ module arcana {
       uses attr-sha256;
       uses attr-trace;
       uses attr-rc-file;
-    }
-  }
-
-  rpc processes {
-    fam:command 27;
-    fam:auth;
-    description
-      "What runs on the host, as a JSON object: \"processes\", each with
-       its pid, ppid, user, jid and jail, state, nice, pri, threads, rss
-       and size in bytes, time (the CPU seconds it has used), wcpu (the
-       kernel's decayed share of one CPU, in percent, as top(1) shows
-       it), cpu (its share between this look and the one before), in
-       and out (blocks read and written) and io (blocks a second since
-       the look before), start, comm and args; \"jails\", each jail with
-       its jid, name, procs, threads, cpu, wcpu and rss added up;
-       \"ncpu\"; and \"elapsed\", the seconds between the two looks.  With
-       jail, only the processes of that jail.  With pid, one process
-       alone and more of it: \"files\", each with its fd, type, path or
-       socket's addresses; \"threads\", each with its tid, name, state,
-       priority and cpu.";
-    input {
-      uses attr-jail;
-      uses attr-pid;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-json;
-      uses attr-trace;
-    }
-  }
-
-  rpc log {
-    fam:command 28;
-    fam:auth;
-    description
-      "A log of the host, as syslogd(8) wrote it, as a JSON object:
-       \"files\", the logs of the log directory that can be read, each
-       with its name, size and when it was last written; \"name\", the
-       one read (messages, when log-name names none); \"lines\", its last
-       lines, each with its time, host, tag, pid and text when the line
-       is one of syslog's, with level when syslogd writes one (-v),
-       and its text alone when not; \"position\", where the file ended;
-       and \"rotated\", when the file is shorter than position said.
-       A packed log (.bz2, .gz, .xz, .zst) is unpacked to be read,
-       and not followed.  @dmesg is the kernel's message buffer,
-       followed as it comes: each line has seq, its number, and seen,
-       when the agent saw it (none for what was there when it
-       started); position is then the newest number, after which
-       the next asking is answered.  @audit the audit trail of now (praudit).  With jail, the logs
-       of that jail's own /var/log.  With net-filter only the lines that have
-       that text in them, in either case.  With position only what was
-       written after it, which is how a log is followed.  lines is how
-       many to send at most: 200, when it is not given.";
-    input {
-      uses attr-log-name;
-      uses attr-net-filter;
-      uses attr-position;
-      uses attr-lines;
-      uses attr-jail;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-json;
-      uses attr-trace;
-    }
-  }
-
-  rpc history {
-    fam:command 29;
-    fam:auth;
-    description
-      "How busy the host has been, which the agent samples by itself
-       and keeps the last of, as a JSON object: \"step\", the seconds
-       between two samples; \"keep\", how many are kept; \"bytes\", the
-       memory that takes; \"fields\", the names of what a sample begins
-       with, in order (t, cpu, load, mem, swap, rx, tx, read, write: a
-       time, a percentage, the load average, bytes of memory and of
-       swap in use, bytes a second received and sent on all interfaces
-       but the loopback, and read from and written to all disks);
-       \"nets\" and \"disks\", the names of the interfaces and the disks
-       told apart, at most 16 of each; \"jails\" and \"relays\", the jails
-       racct accounts for and the FEC relays by their syslog tag;
-       \"samples\", each an array of the fields, then bytes a second in
-       and out of each of nets, then read and written of each of disks,
-       then each jail's CPU and memory, then the bytes a second each
-       relay took in plain and its FEC added; \"mem_total\", \"swap_total\" and
-       \"ncpu\".  With after only the samples after that time.  With
-       sample-step and sample-keep, both, the agent first samples that
-       way from now on, and keeps it for its next start: an hour every
-       five seconds until it is told otherwise; limit-cpu, limit-mem
-       and limit-swap with them are the percentages above which an
-       event (kind threshold) is made, limit-storage that of a file
-       system, looked at each minute, also a storage fault (Mplify 119's
-       resource faults), and limit-rules the limits of an interface, a
-       disk or a jail.  The reply has \"limits\", and
-       \"rules\", each with its kind, name, limit and whether it is over.
-       Each running jail is told apart as well, at most 16, in \"jails\":
-       its share of one CPU in percent and its memory in bytes, as the
-       kernel's resource accounting has them, follow the disks' in a
-       sample.  That needs kern.racct.enable=1 in loader.conf(5):
-       \"racct\" says whether the kernel accounts.  The
-       samples are written down when the agent stops and every few
-       minutes, and read again when it starts.";
-    input {
-      uses attr-after;
-      uses attr-sample-step;
-      uses attr-sample-keep;
-      uses attr-limit-cpu;
-      uses attr-limit-mem;
-      uses attr-limit-swap;
-      uses attr-limit-rules;
-      uses attr-limit-storage;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-json;
-      uses attr-trace;
-    }
-  }
-
-  rpc events {
-    fam:command 30;
-    fam:auth;
-    description
-      "What happened on the host, as it happened, as a JSON object:
-       \"events\", each with its number n, its time t, its kind and data,
-       what it is about; \"last\", the number of the newest; \"first\",
-       that of the oldest still kept, of \"kept\" at most.  With after
-       only the events of a greater number: asked again with the last
-       number seen, none is missed, unless first is beyond it.  The
-       kinds: route-add and route-del, a route with its attributes as
-       network's routes have them; routes, with changed, how many more
-       routes changed in a second than are said one by one; link and
-       link-del, an interface with up, carrier and mtu; address-add
-       and address-del, an interface's address and prefixlen; neigh
-       and neigh-del, a neighbour (ARP, NDP) as network's neighbours
-       has one.  They are the kernel's own netlink(4) messages, of the
-       host's network, and of each jail's own (vnet) too: one of a
-       jail's has \"jail\", its name, beside its kind.  threshold, with
-       what (cpu, mem, swap, net, disk, jail-cpu or jail-mem; the last
-       four with name, the device's or the jail's), value, limit and
-       over, when a figure of history crosses its limit, either way.
-       kmsg, with seq and text, a line the kernel wrote, the moment the
-       agent sees it; or with more, how many came in that second
-       beyond the twenty said one by one.  sdwan-tunnel, with id,
-       address, state (up or down) and misses, when a tunnel the agent
-       measures (sdwan-probes) goes down or comes up, or by bfd when
-       BFD says so.  sdwan-fault, with type, severity, object, by,
-       description and state (set or cleared), when a fault is seen or
-       cleared (Mplify 119 §11.3): the sdwan reply lists the day's.
-       sdwan-security, with seq, rule, action, src, dst, iface and
-       comment, when a rule logged to the routing socket (ipfw's logdst
-       rtsock) sees a packet: the security policies' denies; twenty a
-       second at most, the rest counted into the record.  The sdwan reply
-       has \"rules\" (the set, how many rules and which tables),
-       \"steer\" (each prefix's candidates with their states and which
-       is chosen), \"record\" (count, the day's; seq; last, the latest
-       500, each t, seq, rule, action, src, dst, iface, comment) and
-       \"proxy\" (each instance's name, fib, mode, running and ca, its
-       certificate) too.  job, with id, title, ok and error, when a
-       job ends.  jail-state, with jail, state (running or stopped) and
-       jid, when a jail is made or removed, the host's or one made in a
-       jail (its name parent.child), as kqueue(2)'s EVFILT_JAIL tells
-       it.  crash, with pid, process (its name), jid, jail (its name,
-       empty for the host's), uid, signal, core (whether it dumped
-       one) and, when it did not and the kernel said why, reason, its
-       words (\"sugid process denied by kern.sugid_coredump\", a daemon
-       that set its group, as bird -g does; \"bad address\"), when the
-       kernel says a process died of a signal that dumps core
-       (kern.logsigexit).  Such a death is a fault too, crash, Major,
-       of host:bird or jail:web/nginx, by kernel: the signal by name,
-       how many times in 24 hours and the reason, said anew at each
-       crash and cleared after an hour without one.";
-    input {
-      uses attr-after;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-json;
-      uses attr-trace;
-    }
-  }
-
-  sx:structure event-ntf {
-    fam:command 31;
-    fam:group "events";
-    description
-      "One event, the moment it happens: json is it as events has
-       one, {\"n\",\"t\",\"kind\",\"data\"}, of the same number.  What is sent
-       while nobody listens is not kept for them; events has the last
-       512, to read what came before a subscription or while it was
-       gone.";
-    uses attr-json;
-  }
-
-  rpc fw-trace {
-    fam:command 32;
-    fam:auth;
-    description
-      "Packets followed by the kernel itself through the firewall: each
-       that ipfw decides on whose source or destination is net-filter
-       (an address), as the kernel's ipfw:::rule-matched probe tells it
-       to dtrace(1), for up to seconds (10) or packets (100), whichever
-       ends first.  json: {\"packets\":[...],\"seconds\",\"limit\"}, each
-       with ms (since it began), verdict (pass, deny, divert, tee,
-       dummynet, netgraph, ngtee, nat, reass, nat64), family, source,
-       destination, proto, sport, dport, rule (its number), interface
-       and direction (in or out).  With jail, of a jail's own firewall
-       (vnet): the packets on the jail's interfaces.  It needs
-       dtraceall(4) loaded.";
-    input {
-      uses attr-jail;
-      uses attr-net-filter {
-        refine net-filter {
-          mandatory true;
-        }
-      }
-      uses attr-seconds;
-      uses attr-packets;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-json;
-      uses attr-trace;
     }
   }
 
@@ -3673,62 +3410,6 @@ module arcana {
       uses attr-host-keys;
       uses attr-fingerprints;
       uses attr-deploy-key;
-      uses attr-trace;
-    }
-  }
-
-  rpc traceroute {
-    fam:command 38;
-    fam:auth;
-    description
-      "One round of traceroute(8), or traceroute6(8), from this host to
-       an address: a probe for each hop, numeric, a second's wait each,
-       30 hops at most.  A JSON object with \"address\", \"family\", \"hops\"
-       (each with its \"ttl\" and the \"address\" that answered, its \"rtt\"
-       in milliseconds and what traceroute noted of it, or \"lost\") and
-       \"reached\".  The console asks again and again, as mtr(8) does.";
-    input {
-      uses attr-lookup {
-        refine lookup {
-          mandatory true;
-        }
-      }
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-json;
-      uses attr-trace;
-    }
-  }
-
-  rpc sdwan-probes {
-    fam:command 39;
-    fam:auth;
-    description
-      "The tunnels the agent is to measure from now on, as the console
-       has an SD-WAN edge measure them (Mplify 119 §11.4): json, an
-       array of targets, each with its \"id\" and \"address\", and maybe
-       \"fib\" (the table it is reached by, 0), \"interval\" (ms between
-       two probes, 100), \"size\" (bytes, 64), \"count\" (probes, 0 for
-       without end), \"dscp\" (0), \"down\" and \"up\" (misses in a row that
-       make it down, 3; answers that make it up, 3), \"timeout\" (ms,
-       1000), \"eval\" (ms of one sample, 1000), \"history\" (samples kept,
-       3600), \"report\" and \"tca\" (thresholds a metric: \"delay\" and
-       \"ipdv\" in ms, \"loss\" a fraction, and \"damping\", intervals in a
-       row, 1; a metric over its threshold is a fault, tca, cleared
-       under it again).  Kept for the next start.  An empty array
-       stops them all.  Each is ICMP echo on a raw socket: root.";
-    input {
-      uses attr-json {
-        refine json {
-          mandatory true;
-        }
-      }
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
       uses attr-trace;
     }
   }
@@ -4074,34 +3755,6 @@ module arcana {
     }
   }
 
-  rpc capture {
-    fam:command 51;
-    fam:auth;
-    description
-      "Packets taken with tcpdump(1) off interface, of the host or of
-       jail's own network (vnet): an interface, a bridge's span port, or
-       a bpf(4) tap, as ipfw's per-rule ipfw<number> of a rule with log
-       (logdst bpf).  net-filter is a pcap-filter(7) expression; packets
-       (50, 500 at most) or seconds (10, 60 at most), whichever ends
-       first.  json: \"source\", \"filter\", \"lines\" (tcpdump -n -tttt's,
-       one a packet), \"packets\", \"limit\", \"seconds\", \"timed_out\",
-       \"bytes\" and \"pcap\", the capture as a pcap file in base64.
-       Without interface, \"sources\", what tcpdump -D lists.";
-    input {
-      uses attr-jail;
-      uses attr-interface;
-      uses attr-net-filter;
-      uses attr-seconds;
-      uses attr-packets;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-json;
-      uses attr-trace;
-    }
-  }
-
   rpc tls {
     fam:command 53;
     fam:auth;
@@ -4209,54 +3862,6 @@ module arcana {
       uses attr-dry-run;
       uses attr-anyway;
       uses attr-new-hostname;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-json;
-      uses attr-trace;
-    }
-  }
-
-  rpc path-check {
-    fam:command 57;
-    fam:auth;
-    description
-      "What this host does with a packet from path-src to path-dst (of
-       path-proto, to path-port), and with its reply, without one being
-       sent: as a JSON object, \"host\" and \"addresses\" (each of the host's
-       own, its interface, prefix and the interface's FIB), whether the
-       source and the destination are the host's or on a network it is
-       on (\"src\", \"dst\"), \"forwarding\" (net.inet.ip.forwarding and its
-       IPv6 twin), \"ingress\" (the interface it comes in on: interface if
-       given, else the one the route back to the source is by), \"fib\",
-       \"route\" (the route to the destination: the send route, as
-       route-lookup's best, or none), \"neighbor\" (the next hop's ARP or
-       NDP entry), \"return\" (the route back to the source from where the
-       reply comes in: the receive route, and \"symmetric\", whether it is
-       by the interface the request came in on), \"firewall\" (ipfw's
-       ruleset walked for the request in and out and the reply in and
-       out, each \"verdict\", \"rule\", \"text\", \"by_state\", what it could not
-       judge, \"setfib\", \"fwd\"), and \"findings\", each \"severity\" (bad,
-       warn, info, ok) and \"what\", in words.  With jail, of a vnet
-       jail's own network.  Nothing is sent, nothing is changed.";
-    input {
-      uses attr-path-src {
-        refine path-src {
-          mandatory true;
-        }
-      }
-      uses attr-path-dst {
-        refine path-dst {
-          mandatory true;
-        }
-      }
-      uses attr-path-proto;
-      uses attr-path-port;
-      uses attr-interface;
-      uses attr-net-fib;
-      uses attr-jail;
-      uses attr-path-reply;
     }
     output {
       uses attr-ok;

@@ -10,7 +10,9 @@
  *
  *	{"id": 9, "server": "<id>", "what": "events"}
  *
- * and is told, for that id, each event the host tells its subscribers,
+ * and is told, for that id, each event the host tells its subscribers
+ * (arcana-events' event notifications, of family 1's group notify, each
+ * made the JSON the events reply has: ygula.c),
  *
  *	{"id": 9, "event": {"n": 41, "t": 1791234567, "kind": ..., ...}}
  *
@@ -35,6 +37,7 @@
 #include <string.h>
 
 #include "console.h"
+#include "ygula.h"
 
 #define	FOLLOW_MAX	32		/* at once, on all sockets */
 #define	FOLLOW_QUEUE	256		/* events not yet passed on, at most */
@@ -92,24 +95,32 @@ tell(struct follow *f, char *text)
 	pthread_mutex_unlock(&f->lock);
 }
 
+/* A notification of the host's models: its events alone, passed on. */
 static void
-heard(const struct arc_event_ntf *ntf, void *arg)
+heard(cbl_conn *conn, cbl_msg *msg, void *arg)
 {
 	struct follow	*f = arg;
+	ucl_object_t	*o;
+	unsigned char	*json;
 	char		*text;
 
-	if (ntf->json == NULL || ntf->json[0] != '{')
+	(void)conn;
+	if ((o = ygula_event_of(msg)) == NULL)
+		return;
+	json = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(o);
+	if (json == NULL)
 		return;
 	if (asprintf(&text, "{\"id\":%ju,\"event\":%s}", (uintmax_t)f->id,
-	    ntf->json) == -1)
-		return;
+	    (char *)json) == -1)
+		text = NULL;
+	free(json);
 	tell(f, text);
 }
 
 static void *
 follow_run(void *arg)
 {
-	static const struct arc_events_handlers h = { .event = heard };
 	struct follow	*f = arg;
 	struct arc_client cl;
 	struct pollfd	 pfd;
@@ -128,7 +139,8 @@ follow_run(void *arg)
 		atomic_store(&f->ended, true);
 		return (NULL);
 	}
-	if ((error = arc_events_subscribe(&cl, &h, f, &sub)) != 0) {
+	if ((error = cbl_subscribe(conn, "cblink.yang", "notify", heard, f,
+	    &sub)) != 0) {
 		if (asprintf(&text, "{\"id\":%ju,\"error\":\"the host refused: "
 		    "%s\"}", (uintmax_t)f->id, strerror(error)) != -1)
 			tell(f, text);

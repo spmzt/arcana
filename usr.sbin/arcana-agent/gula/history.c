@@ -1089,7 +1089,7 @@ names(FILE *fp, const char *key, const struct dev *v, size_t n)
 int
 do_history(struct work *w, uint64_t after, bool set, uint32_t step,
     uint32_t keep, const uint32_t lim[4], const char *rlist,
-    struct arc_history_rsp *rsp)
+    struct json_rsp *rsp)
 {
 	struct rule	 was[HIST_RULES];
 	size_t		 nwas;

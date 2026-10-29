@@ -19,12 +19,17 @@ module: arcana-log
            +--ro position?   uint64
            +--ro rotated?    boolean
            +--ro line*
-              +--ro time?       string
-              +--ro host?       string
-              +--ro facility?   identityref
-              +--ro severity?   syslog:syslog-severity
-              +--ro tag?        string
-              +--ro pid?        string
-              +--ro text?       string
-              +--ro sequence?   uint64
-              +--ro seen?       yang:date-and-time
+           |  +--ro time?       string
+           |  +--ro host?       string
+           |  +--ro facility?   identityref
+           |  +--ro severity?   syslog:syslog-severity
+           |  +--ro tag?        string
+           |  +--ro pid?        string
+           |  +--ro text?       string
+           |  +--ro sequence?   uint64
+           |  +--ro seen?       yang:date-and-time
+           +--ro file* [name]
+              +--ro name        string
+              +--ro size?       uint64
+              +--ro modified?   yang:date-and-time
+              +--ro packed?     boolean

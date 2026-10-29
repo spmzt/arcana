@@ -53,6 +53,28 @@ module: arcana-history
         +---w input
         |  +---w after?   yang:date-and-time
         +--ro output
+           +--ro sampling
+           |  +--ro step?   uint16
+           |  +--ro keep?   uint32
+           +--ro limits
+           |  +--ro cpu?       uint8
+           |  +--ro memory?    uint8
+           |  +--ro swap?      uint8
+           |  +--ro storage?   uint8
+           +--ro rule* [kind name]
+           |  +--ro kind     enumeration
+           |  +--ro name     string
+           |  +--ro limit?   uint64
+           |  +--ro over?    boolean
+           +--ro bytes?          uint64
+           +--ro ncpu?           uint16
+           +--ro memory-total?   uint64
+           +--ro swap-total?     uint64
+           +--ro racct?          boolean
+           +--ro interface*      string
+           +--ro disk*           string
+           +--ro jail*           string
+           +--ro relay*          string
            +--ro sample* [time]
               +--ro time        yang:date-and-time
               +--ro cpu?        percent

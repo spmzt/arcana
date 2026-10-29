@@ -73,6 +73,10 @@ walk_of(cbl_yarena *a, const ucl_object_t *o, const ywalk **outp)
 		for (i = 0; i < nitems(verdicts); i++)
 			if (strcmp(v, verdicts[i]) == 0)
 				w->verdict = (int)i;
+		/* Another of ipfw's actions: its word kept. */
+		if (w->verdict ==
+		    ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_OTHER)
+			w->action = v;
 	}
 	YJ_NUM(o, "rule", w, rule);
 	w->text = yj_str(a, o, "text");
@@ -143,6 +147,7 @@ yts_path_from_json(const char *json, cbl_yarena *a, ypath *out)
 		ad[n].interface = yj_str(a, e, "interface");
 		YJ_NUM(e, "fib", &ad[n], fib);
 		ad[n].up = yj_yes(e, "up", &ad[n].has_up);
+		ad[n].loopback = yj_yes(e, "loopback", &ad[n].has_loopback);
 		n++;
 	}
 	out->address.n = n;
@@ -178,8 +183,10 @@ yts_path_from_json(const char *json, cbl_yarena *a, ypath *out)
 		if ((rt = cbl_yarena_alloc(a, sizeof(*rt))) == NULL)
 			goto out;
 		memset(rt, 0, sizeof(*rt));
-		rt->has_destination = addr_union(a, o, "destination",
-		    &rt->destination);
+		rt->destination = yj_str(a, o, "destination");
+		rt->to = yj_str(a, o, "to");
+		YJ_NUM(o, "metric", rt, metric);
+		YJ_NUM(o, "weight", rt, weight);
 		YJ_NUM(o, "prefixlen", rt, prefix_length);
 		rt->gateway = yj_str(a, o, "gateway");
 		rt->interface = yj_str(a, o, "interface");
@@ -369,6 +376,12 @@ yts_capture_from_json(const char *json, cbl_yarena *a,
 	YJ_NUM(top, "seconds", out, seconds);
 	out->timed_out = yj_yes(top, "timed_out", &out->has_timed_out);
 	YJ_NUM(top, "bytes", out, bytes);
+	/* Without an interface, the sources alone. */
+	if (yj_strs(a, ucl_object_lookup(top, "sources"),
+	    &out->capture_source.n, &out->capture_source.v) != 0) {
+		ucl_object_unref(top);
+		return (ENOMEM);
+	}
 	if ((v = yj_str(a, top, "pcap")) != NULL && !b64(a, v, &out->pcap)) {
 		ucl_object_unref(top);
 		return (ENOMEM);

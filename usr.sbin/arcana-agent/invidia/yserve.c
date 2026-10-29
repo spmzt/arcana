@@ -1021,7 +1021,10 @@ ietf_alarms_alarms_get(cbl_req *req, struct ietf_alarms *data, cbl_yarena *a)
 	char		*json;
 	int		 error;
 
-	(void)req;
+	/* Running, the candidate: its control is not served, and the list
+	 * is state, which a commit's reading of running has no use for. */
+	if (cbl_req_ydatastore(req) != CBL_YDS_OPERATIONAL)
+		return (0);
 	top = ucl_object_typed_new(UCL_OBJECT);
 	faults_json(top);
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);

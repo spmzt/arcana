@@ -45,7 +45,7 @@ static api_cb	 key_added_cb;
  * A name a host gave, to go into the path of a request: only what
  * leaves the path the one that was meant.
  */
-static bool
+bool
 url_word(const char *s)
 {
 

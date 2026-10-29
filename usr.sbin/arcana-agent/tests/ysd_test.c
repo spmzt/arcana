@@ -38,27 +38,68 @@ main(int argc, char **argv)
 		err(1, "cbl_yarena_new");
 	if (strcmp(argv[1], "targets") == 0) {
 		struct arcana_probe_probes p = { 0 }, back;
+		struct arcana_probe_probes_jail host = { 0 };
 
-		if ((error = yprobe_targets_from_json(slurp(argv[2]), a,
-		    &p.target.n, &p.target.v)) != 0)
-			errc(1, error, "yprobe_targets_from_json");
-		for (size_t i = 0; i < p.target.n; i++) {
-			const struct arcana_probe_probes_target *t =
-			    &p.target.v[i];
+		if ((error = yprobe_conf_from_json(slurp(argv[2]), a, &p)) != 0)
+			errc(1, error, "yprobe_conf_from_json");
+		host.target.n = p.target.n;
+		host.target.v = p.target.v;
+		host.link.n = p.link.n;
+		host.link.v = p.link.v;
+		host.monitor.n = p.monitor.n;
+		host.monitor.v = p.monitor.v;
+		for (size_t e = 0; e <= p.jail.n; e++) {
+			const struct arcana_probe_probes_jail *j = e == 0 ?
+			    &host : &p.jail.v[e - 1];
 
-			printf("target %s %s fib=%u interval=%u size=%u count=%u "
-			    "dscp=%u down=%u up=%u timeout=%u eval=%u history=%u "
-			    "report=%u", t->id, t->has_address ? t->address.v.m0 :
-			    "-", t->fib, t->interval, t->size, t->count, t->dscp,
-			    t->down, t->up, t->timeout, t->eval, t->history,
-			    t->report);
-			if (t->tca != NULL)
-				printf(" tca delay=%jd ipdv=%jd loss=%jd damping=%u",
-				    (intmax_t)t->tca->delay, (intmax_t)t->tca->ipdv,
-				    (intmax_t)t->tca->loss, t->tca->damping);
-			if (t->jail != NULL)
-				printf(" jail=%s", t->jail);
-			printf("\n");
+			if (e > 0)
+				printf("jail %s\n", j->name);
+			for (size_t i = 0; i < j->target.n; i++) {
+				const struct arcana_probe_target *t =
+				    &j->target.v[i];
+
+				printf("target %s %s fib=%u interval=%u size=%u "
+				    "count=%u dscp=%u down=%u up=%u timeout=%u "
+				    "eval=%u history=%u report=%u", t->id,
+				    t->has_address ? t->address.v.m0 : "-",
+				    t->fib, t->interval, t->size, t->count,
+				    t->dscp, t->down, t->up, t->timeout,
+				    t->eval, t->history, t->report);
+				if (t->tca != NULL)
+					printf(" tca delay=%jd ipdv=%jd loss=%jd "
+					    "damping=%u", (intmax_t)t->tca->delay,
+					    (intmax_t)t->tca->ipdv,
+					    (intmax_t)t->tca->loss,
+					    t->tca->damping);
+				printf("\n");
+			}
+			for (size_t i = 0; i < j->link.n; i++)
+				printf("link %s %s %s\n", j->link.v[i].id, str(
+				    j->link.v[i].interface), j->link.v[i].role ==
+				    ARCANA_PROBE_LINK_ROLE_UNI ? "uni" : "ucs");
+			for (size_t i = 0; i < j->monitor.n; i++)
+				printf("monitor %s %s %s fib=%u eval=%u\n",
+				    j->monitor.v[i].name, str(
+				    j->monitor.v[i].interface),
+				    j->monitor.v[i].has_address ?
+				    j->monitor.v[i].address.v.m0 : "-",
+				    j->monitor.v[i].fib, j->monitor.v[i].eval);
+			/* Back as the JSON the agent's setters take. */
+			if (j->target.n + j->link.n > 0) {
+				char *js = yprobe_edge_json(e > 0 ? j->name :
+				    NULL, j->target.n, j->target.v, j->link.n,
+				    j->link.v);
+
+				printf("set %s\n", js);
+				free(js);
+			}
+			if (j->monitor.n > 0) {
+				char *js = yprobe_monitors_json(e > 0 ?
+				    j->name : NULL, j->monitor.n, j->monitor.v);
+
+				printf("set %s\n", js);
+				free(js);
+			}
 		}
 		same((void *)arcana_probe_probes_encode, (void *)
 		    arcana_probe_probes_decode, &p, &back, a);

@@ -95,7 +95,7 @@ main(int argc, char **argv)
 			printf("%s%s", j > 0 ? "|" : "", s->args.v[j]);
 		printf(" start=%ju util=%u memory=%ju ppid=%ju user=%s "
 		    "jail=%u/%s state=%s wait=%s nice=%d pri=%d threads=%u "
-		    "size=%ju time=%s cpu=%s wcpu=%s in=%ju out=%ju io=%s\n",
+		    "size=%ju time=%s cpu=%s wcpu=%s in=%ju out=%ju io=%s%s\n",
 		    (uintmax_t)s->start_time, s->cpu_utilization,
 		    (uintmax_t)s->memory_usage, (uintmax_t)s->ppid,
 		    str(s->user), s->jid, str(s->jail), str(s->run_state),
@@ -103,7 +103,8 @@ main(int argc, char **argv)
 		    (uintmax_t)s->size, dec2(s->has_cpu_time, s->cpu_time),
 		    dec2(s->has_cpu, s->cpu), dec2(s->has_wcpu, s->wcpu),
 		    (uintmax_t)s->blocks_in, (uintmax_t)s->blocks_out,
-		    dec2(s->has_io, s->io));
+		    dec2(s->has_io, s->io), s->has_kernel && s->kernel ?
+		    " kernel" : "");
 		for (size_t j = 0; j < e->file.n; j++) {
 			const struct arcana_processes_processes_process_file
 			    *f = &e->file.v[j];
@@ -122,10 +123,11 @@ main(int argc, char **argv)
 			    *t = &e->thread.v[j];
 
 			printf("  thread %ju name=%s state=%s wait=%s pri=%d "
-			    "wcpu=%s time=%s\n", (uintmax_t)t->tid,
+			    "wcpu=%s time=%s on=%d\n", (uintmax_t)t->tid,
 			    str(t->name), str(t->run_state), str(t->wait),
 			    t->priority, dec2(t->has_wcpu, t->wcpu),
-			    dec2(t->has_cpu_time, t->cpu_time));
+			    dec2(t->has_cpu_time, t->cpu_time), t->has_last_cpu ?
+			    t->last_cpu : -1);
 		}
 	}
 	for (size_t i = 0; i < p.jail.n; i++)

@@ -73,6 +73,32 @@ ask(cbl_conn *conn, cbl_msg *req, cbl_msg **rep, char *err, size_t errlen)
 }
 
 int
+yq_get(cbl_conn *conn, const struct cbl_ynode *n, int ds, void *data,
+    cbl_yarena *a, char *err, size_t errlen)
+{
+	cbl_msg	*req, *rep;
+	int	 error;
+
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_GET, 0, &req)) != 0) {
+		snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	if ((error = cbl_msg_put_yget(req, &n->sid, 1)) != 0 || (ds >= 0 &&
+	    (error = cbl_msg_set_datastore(req, (enum cbl_yds_name)ds)) !=
+	    0)) {
+		cbl_msg_free(req);
+		snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	if ((error = ask(conn, req, &rep, err, errlen)) != 0)
+		return (error);
+	error = cbl_msg_ydecode_member(rep, n, data, a, 0, err, errlen);
+	cbl_msg_free(rep);
+	return (error == ENOENT ? 0 : error);
+}
+
+int
 yq_call(cbl_conn *conn, const struct cbl_ynode *list, const void *key,
     const struct cbl_ynode *act, const void *in, void *out, cbl_yarena *a,
     char *err, size_t errlen)
@@ -165,7 +191,6 @@ yq_list(cbl_conn *conn, cbl_yarena *a, struct yq_jobs *out, char *err,
 	const struct cbl_ynode		*n;
 	struct arcana_jobs		 d;
 	struct arc_job			*v = NULL;
-	cbl_msg				*req, *rep;
 	int				 error;
 
 	memset(out, 0, sizeof(*out));
@@ -173,22 +198,8 @@ yq_list(cbl_conn *conn, cbl_yarena *a, struct yq_jobs *out, char *err,
 		snprintf(err, errlen, "arcana-jobs is not in the tables");
 		return (ENOENT);
 	}
-	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
-	    CBL_YCMD_GET, 0, &req)) != 0) {
-		snprintf(err, errlen, "%s", strerror(error));
-		return (error);
-	}
-	if ((error = cbl_msg_put_yget(req, &n->sid, 1)) != 0) {
-		cbl_msg_free(req);
-		snprintf(err, errlen, "%s", strerror(error));
-		return (error);
-	}
-	if ((error = ask(conn, req, &rep, err, errlen)) != 0)
-		return (error);
 	memset(&d, 0, sizeof(d));
-	error = cbl_msg_ydecode_member(rep, n, &d, a, 0, err, errlen);
-	cbl_msg_free(rep);
-	if (error != 0 && error != ENOENT)
+	if ((error = yq_get(conn, n, -1, &d, a, err, errlen)) != 0)
 		return (error);
 	if ((js = d.jobs) == NULL)
 		return (0);
@@ -407,15 +418,9 @@ netconf(cbl_conn *conn, const char *name, const void *in, cbl_yarena *a,
 int
 yq_lanes(cbl_conn *conn, int lanes, char *err, size_t errlen)
 {
-	struct ietf_netconf_commit_input		 cin;
-	struct ietf_netconf_discard_changes_input	 din;
 	struct arcana_jobs_jobs				 js;
 	struct arcana_jobs				 d;
 	const struct cbl_ynode				*n;
-	cbl_yarena					*a;
-	cbl_msg						*req, *rep;
-	char						 why[16];
-	int						 error;
 
 	if (lanes < 1 || lanes > 32) {
 		snprintf(err, errlen, "lanes is 1 to 32");
@@ -430,13 +435,27 @@ yq_lanes(cbl_conn *conn, int lanes, char *err, size_t errlen)
 	js.lanes = (uint8_t)lanes;
 	memset(&d, 0, sizeof(d));
 	d.jobs = &js;
+	return (yq_commit(conn, n, &d, err, errlen));
+}
+
+int
+yq_commit(cbl_conn *conn, const struct cbl_ynode *n, const void *d, char *err,
+    size_t errlen)
+{
+	struct ietf_netconf_commit_input		 cin;
+	struct ietf_netconf_discard_changes_input	 din;
+	cbl_yarena					*a;
+	cbl_msg						*req, *rep;
+	char						 why[16];
+	int						 error;
+
 	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_EDIT, 0, &req)) != 0) {
 		snprintf(err, errlen, "%s", strerror(error));
 		return (error);
 	}
 	if ((error = cbl_msg_set_datastore(req, CBL_YDS_CANDIDATE)) != 0 ||
-	    (error = cbl_msg_put_ymember(req, n, &d)) != 0) {
+	    (error = cbl_msg_put_ymember(req, n, d)) != 0) {
 		cbl_msg_free(req);
 		snprintf(err, errlen, "%s", strerror(error));
 		return (error);

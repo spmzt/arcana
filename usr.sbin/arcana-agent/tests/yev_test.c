@@ -17,6 +17,7 @@
 #include <stddef.h>
 
 #include "ycommon.h"
+#include "yevjson.h"
 
 static const char *
 ident(bool has, uint64_t sid)
@@ -31,7 +32,8 @@ ident(bool has, uint64_t sid)
 }
 
 static const char *const whats[] = { "cpu", "mem", "swap", "net", "disk",
-    "jail-cpu", "jail-mem" };
+    "jail-cpu", "jail-mem", "storage" };
+static const char *const tstates[] = { "up", "down", "unknown" };
 
 static void
 event(const struct arcana_events_event_entry *e)
@@ -42,11 +44,12 @@ event(const struct arcana_events_event_entry *e)
 	    NULL ? e->jail : "");
 	switch (e->data) {
 	case ARCANA_EVENTS_EVENT_ENTRY_DATA_ROUTE:
-		printf("route %s/%u via %s on %s fib=%d flags=%s source=%s",
-		    e->route->has_destination ? e->route->destination.v.m0 :
-		    "-", e->route->prefix_length, str(e->route->gateway), str(
+		printf("route %s/%u via %s on %s fib=%d flags=%s source=%s "
+		    "nhop=%d", str(e->route->destination),
+		    e->route->prefix_length, str(e->route->gateway), str(
 		    e->route->interface), e->route->has_fib ? e->route->fib :
-		    -1, str(e->route->flags), str(e->route->source));
+		    -1, str(e->route->flags), str(e->route->source),
+		    e->route->has_nhop ? (int)e->route->nhop : -1);
 		break;
 	case ARCANA_EVENTS_EVENT_ENTRY_DATA_ROUTES:
 		printf("routes changed=%u", e->routes->changed);
@@ -62,11 +65,12 @@ event(const struct arcana_events_event_entry *e)
 		    e->address->prefix_length);
 		break;
 	case ARCANA_EVENTS_EVENT_ENTRY_DATA_NEIGHBOR:
-		printf("neighbor %s %s lladdr=%s state=%s router=%s", str(
-		    e->neighbor->interface), e->neighbor->has_address ?
+		printf("neighbor %s %s lladdr=%s state=%s router=%s family=%s",
+		    str(e->neighbor->interface), e->neighbor->has_address ?
 		    e->neighbor->address.v.m0 : "-", str(
 		    e->neighbor->link_address), str(e->neighbor->state),
-		    e->neighbor->router ? "yes" : "no");
+		    e->neighbor->router ? "yes" : "no", str(
+		    e->neighbor->family));
 		break;
 	case ARCANA_EVENTS_EVENT_ENTRY_DATA_THRESHOLD:
 		printf("threshold %s name=%s value=%ju limit=%ju over=%s",
@@ -80,10 +84,11 @@ event(const struct arcana_events_event_entry *e)
 		    e->kmsg->sequence, str(e->kmsg->text), e->kmsg->more);
 		break;
 	case ARCANA_EVENTS_EVENT_ENTRY_DATA_TUNNEL:
-		printf("tunnel %s %s %s misses=%u by=%s", str(e->tunnel->id),
-		    e->tunnel->has_address ? e->tunnel->address.v.m0 : "-",
-		    e->tunnel->has_state ? (e->tunnel->state == 0 ? "up" :
-		    "down") : "-", e->tunnel->misses, str(e->tunnel->by));
+		printf("tunnel %s %s %s misses=%u by=%s jail=%s",
+		    str(e->tunnel->id), e->tunnel->has_address ?
+		    e->tunnel->address.v.m0 : "-", e->tunnel->has_state ?
+		    tstates[e->tunnel->state] : "-", e->tunnel->misses,
+		    str(e->tunnel->by), str(e->tunnel->jail));
 		break;
 	case ARCANA_EVENTS_EVENT_ENTRY_DATA_FAULT:
 		printf("fault %s %s %s by=%s %s: %s", str(e->fault->type), str(
@@ -143,6 +148,10 @@ event(const struct arcana_events_event_entry *e)
 		    str(e->alert->interface), e->alert->severity,
 		    str(e->alert->action), str(e->alert->signature));
 		break;
+	case ARCANA_EVENTS_EVENT_ENTRY_DATA_UNDO:
+		printf("undo %s errno=%d %s", str(e->undo->node),
+		    e->undo->errno_, str(e->undo->message));
+		break;
 	default:
 		printf("no data");
 	}
@@ -156,7 +165,7 @@ main(int argc, char **argv)
 	int error;
 
 	if (argc != 3)
-		errx(2, "usage: yev list|one reply.json");
+		errx(2, "usage: yev list|one|back reply.json");
 	if ((a = cbl_yarena_new()) == NULL)
 		err(1, "cbl_yarena_new");
 	if (strcmp(argv[1], "list") == 0) {
@@ -192,7 +201,22 @@ main(int argc, char **argv)
 		}
 		same((void *)arcana_events_event_encode, (void *)
 		    arcana_events_event_decode, &e, &back, a);
+	} else if (strcmp(argv[1], "back") == 0) {
+		struct arcana_events_events l;
+		ucl_object_t *o;
+		unsigned char *s;
+
+		/* As the console makes the operation's JSON of the read. */
+		if ((error = yev_from_json(slurp(argv[2]), a, &l)) != 0)
+			errc(1, error, "yev_from_json");
+		o = yev_list_json(l.has_last, l.last, l.has_first, l.first,
+		    l.has_kept, l.kept, l.event.v, l.event.n);
+		if ((s = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT)) == NULL)
+			errx(1, "ucl_object_emit");
+		printf("%s\n", (char *)s);
+		free(s);
+		ucl_object_unref(o);
 	} else
-		errx(2, "%s: list or one", argv[1]);
+		errx(2, "%s: list, one or back", argv[1]);
 	return (0);
 }

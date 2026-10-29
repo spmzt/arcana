@@ -492,9 +492,11 @@ yfw_trace_from_json(const char *json, cbl_yarena *a,
 		memset(&v[n], 0, sizeof(v[n]));
 		YJ_NUM(e, "ms", &v[n], ms);
 		v[n].verdict = yj_str(a, e, "verdict");
+		/* do_fw_trace() says inet and inet6. */
 		if ((s = yj_str(a, e, "family")) != NULL) {
 			v[n].has_family = true;
-			v[n].family = strcmp(s, "ipv6") == 0 ?
+			v[n].family = strcmp(s, "inet6") == 0 ||
+			    strcmp(s, "ipv6") == 0 ?
 			    ARCANA_FIREWALL_FIREWALL_TRACE_OUTPUT_PACKET_FAMILY_IPV6 :
 			    ARCANA_FIREWALL_FIREWALL_TRACE_OUTPUT_PACKET_FAMILY_IPV4;
 		}

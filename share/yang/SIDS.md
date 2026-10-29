@@ -86,7 +86,7 @@ on the wire.
 | 63 400 | 200 | `arcana-storage` | `share/yang/arcana-storage@2026-10-14.sid` (200 used; its rest at 79 600) |
 | 63 600 | 100 | `arcana-sysctl` | `share/yang/arcana-sysctl@2026-10-14.sid` (12 used) |
 | 63 700 | 100 | `arcana-kernel` | `share/yang/arcana-kernel@2026-10-14.sid` (37 used) |
-| 63 800 | 100 | `arcana-processes`, `openconfig-procmon`'s grouping used in it | `share/yang/arcana-processes@2026-10-14.sid` (66 used) |
+| 63 800 | 100 | `arcana-processes`, `openconfig-procmon`'s grouping used in it | `share/yang/arcana-processes@2026-10-14.sid` (90 used) |
 | 63 900 | 1 900 | `ietf-ospf@2022-10-19` (no IETF range; its identities used) | `share/yang/ietf-ospf@2022-10-19.sid` (1 725 used) |
 | 65 800 | 200 | `ietf-rip@2020-02-20` (no IETF range; its identities used) | `share/yang/ietf-rip@2020-02-20.sid` (158 used) |
 | 66 000 | 1 000 | `ietf-isis@2022-10-19` (no IETF range; its identities used) | `share/yang/ietf-isis@2022-10-19.sid` (821 used) |
@@ -105,24 +105,24 @@ on the wire.
 | 69 400 | 300 | `ieee802-dot1q-bridge@2023-10-26`, IEEE 802.1Q | `share/yang/ieee802-dot1q-bridge@2023-10-26.sid` (262 used) |
 | 69 700 | 100 | `ieee802-dot1q-rstp@2025-02-04`, IEEE 802.1Q (groupings only) | `share/yang/ieee802-dot1q-rstp@2025-02-04.sid` (1 used) |
 | 69 800 | 100 | `ieee802-dot1q-rstp-bridge@2025-02-04`, IEEE 802.1Q | `share/yang/ieee802-dot1q-rstp-bridge@2025-02-04.sid` (58 used) |
-| 69 900 | 100 | `arcana-log` | `share/yang/arcana-log@2026-10-14.sid` (30 used) |
+| 69 900 | 100 | `arcana-log` | `share/yang/arcana-log@2026-10-14.sid` (35 used) |
 | 70 000 | 200 | `ietf-syslog@2025-04-30`, RFC 9742 (no IETF range) | `share/yang/ietf-syslog@2025-04-30.sid` (109 used) |
 | 70 200 | 300 | `arcana-firewall` | `share/yang/arcana-firewall@2026-10-15.sid` (223 used) |
-| 70 500 | 200 | `arcana-troubleshoot` | `share/yang/arcana-troubleshoot@2026-10-15.sid` (148 used) |
-| 70 700 | 100 | `arcana-history` | `share/yang/arcana-history@2026-10-15.sid` (72 used) |
-| 70 800 | 400 | `arcana-events` | `share/yang/arcana-events@2026-10-15.sid` (384 used) |
-| 71 200 | 200 | `arcana-bird` | `share/yang/arcana-bird@2026-10-15.sid` (165 used) |
-| 71 400 | 100 | `arcana-wireguard` | `share/yang/arcana-wireguard@2026-10-15.sid` (33 used) |
-| 71 500 | 100 | `arcana-netgraph` | `share/yang/arcana-netgraph@2026-10-15.sid` (23 used) |
+| 70 500 | 200 | `arcana-troubleshoot` | `share/yang/arcana-troubleshoot@2026-10-15.sid` (157 used) |
+| 70 700 | 100 | `arcana-history` | `share/yang/arcana-history@2026-10-15.sid` (100 used; its rest at 80 000) |
+| 70 800 | 400 | `arcana-events` | `share/yang/arcana-events@2026-10-15.sid` (400 used; its rest at 80 100) |
+| 71 200 | 200 | `arcana-bird` | `share/yang/arcana-bird@2026-10-15.sid` (200 used, 170 obsolete with the second range's: the jail augment, the actions' jail input and arcana-bird's jail in its place; its rest at 80 400) |
+| 71 400 | 100 | `arcana-wireguard` | `share/yang/arcana-wireguard@2026-10-15.sid` (70 used, 34 obsolete: the jail augment, the read action's jail input in its place) |
+| 71 500 | 100 | `arcana-netgraph` | `share/yang/arcana-netgraph@2026-10-15.sid` (50 used, 24 obsolete: the jail augment, the read action's jail input in its place) |
 | 71 600 | 100 | `arcana-host` | `share/yang/arcana-host@2026-10-15.sid` (77 used) |
 | 71 700 | 200 | `arcana-agent` | `share/yang/arcana-agent@2026-10-15.sid` (179 used) |
 | 71 900 | 100 | `arcana-jail-files` | `share/yang/arcana-jail-files@2026-10-15.sid` (12 used) |
-| 72 000 | 100 | `arcana-probe` | `share/yang/arcana-probe@2026-10-15.sid` (75 used) |
+| 72 000 | 100 | `arcana-probe` | `share/yang/arcana-probe@2026-10-15.sid` (100 used, 1 obsolete: a target's jail, the jail list's now; its rest at 80 300) |
 | 72 100 | 200 | `arcana-sdwan` | `share/yang/arcana-sdwan@2026-10-15.sid` (173 used) |
 | 72 300 | 100 | `arcana-sshd` | `share/yang/arcana-sshd@2026-10-15.sid` (69 used) |
 | 72 400 | 200 | `arcana-builder` | `share/yang/arcana-builder@2026-10-17.sid` (98 used) |
 | 72 600 | 100 | `arcana-notify` | `share/yang/arcana-notify@2026-10-17.sid` (7 used) |
-| 73 000 | 4 000 | `arcana`, the wire of the family spec (`share/arcana/arcana.yaml`, written by `share/arcana/wire.awk`: an rpc an operation) | `share/yang/arcana@2026-10-22.sid` (1 807 used, 603 obsolete; `make regen-wire` numbers a new item, `make check-wire` holds the rest) |
+| 73 000 | 4 000 | `arcana`, the wire of the family spec (`share/arcana/arcana.yaml`, written by `share/arcana/wire.awk`: an rpc an operation) | `share/yang/arcana@2026-10-22.sid` (1 807 used, 783 obsolete; `make regen-wire` numbers a new item, `make check-wire` holds the rest) |
 | 77 000 | 200 | `arcana-cluster`, the consoles' own family (`share/arcana/cluster.yaml`) | `share/yang/arcana-cluster@2026-10-22.sid` (84 used) |
 | 77 200 | 100 | `ietf-yang-library@2019-01-04`, RFC 8525 (no IETF range) | `share/yang/ietf-yang-library@2019-01-04.sid` (51 used) |
 | 77 300 | 100 | `ietf-datastores@2018-02-14`, RFC 8342 (no IETF range; its identities used) | `share/yang/ietf-datastores@2018-02-14.sid` (9 used) |
@@ -144,6 +144,10 @@ on the wire.
 | 79 400 | 100 | `arcana-ra`, rtadvd.conf(5) beyond RFC 8349 and rtadvctl(8) show | `share/yang/arcana-ra@2026-10-28.sid` (61 used) |
 | 79 500 | 100 | `arcana-packages`, its second range: the read action, pkgbase, the refresh action's update, ignore-osversion and output, every-jail | `share/yang/arcana-packages@2026-10-14.sid` (17 used) |
 | 79 600 | 200 | `arcana-storage`, its second range: the read action's output, create-encrypted | `share/yang/arcana-storage@2026-10-14.sid` (76 used) |
+| 80 000 | 100 | `arcana-history`, its second range: the read action's settings and totals | `share/yang/arcana-history@2026-10-15.sid` (3 used) |
+| 80 100 | 100 | `arcana-events`, its second range: a route's nexthop and paths, a neighbour's family, a tunnel's jail, undo-failed's data, the read's kept | `share/yang/arcana-events@2026-10-15.sid` (22 used) |
+| 80 300 | 100 | `arcana-probe`, its second range: the links, the monitors, the jails' edges | `share/yang/arcana-probe@2026-10-15.sid` (40 used) |
+| 80 400 | 300 | `arcana-bird`, its second range: the read, ospf and check actions, a protocol's detail, the jails' configuration | `share/yang/arcana-bird@2026-10-15.sid` (153 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

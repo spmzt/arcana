@@ -28,6 +28,7 @@ module: arcana-processes
      |  |  +--ro blocks-in?            uint64
      |  |  +--ro blocks-out?           uint64
      |  |  +--ro io?                   decimal64
+     |  |  +--ro kernel?               boolean
      |  +--ro file*
      |  |  +--ro fd?       int32
      |  |  +--ro use?      string
@@ -45,14 +46,36 @@ module: arcana-processes
      |  |  +--ro priority?    int32
      |  |  +--ro wcpu?        decimal64
      |  |  +--ro cpu-time?    decimal64
+     |  |  +--ro last-cpu?    uint16
      |  +---x signal
      |  |  +---w input
      |  |     +---w signal        string
      |  |     +---w start-time?   uint64
      |  +---x renice
-     |     +---w input
-     |        +---w nice          int32
-     |        +---w start-time?   uint64
+     |  |  +---w input
+     |  |     +---w nice          int32
+     |  |     +---w start-time?   uint64
+     |  +---x read
+     |     +--ro output
+     |        +--ro name?   string
+     |        +--ro file*
+     |        |  +--ro fd?       int32
+     |        |  +--ro use?      string
+     |        |  +--ro type?     string
+     |        |  +--ro path?     string
+     |        |  +--ro proto?    string
+     |        |  +--ro local?    string
+     |        |  +--ro remote?   string
+     |        |  +--ro mode?     string
+     |        +--ro thread* [tid]
+     |           +--ro tid          uint64
+     |           +--ro name?        string
+     |           +--ro run-state?   string
+     |           +--ro wait?        string
+     |           +--ro priority?    int32
+     |           +--ro wcpu?        decimal64
+     |           +--ro cpu-time?    decimal64
+     |           +--ro last-cpu?    uint16
      +--ro ncpu?      uint32
      +--ro elapsed?   decimal64
      +--ro jail* [jid]

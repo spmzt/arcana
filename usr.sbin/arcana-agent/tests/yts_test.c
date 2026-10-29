@@ -16,6 +16,7 @@
  */
 
 #include "ycommon.h"
+#include "ytsjson.h"
 
 static const char *const verdicts[] = { "allow", "deny", "fwd", "nat",
     "pipe", "divert", "unknown", "none", "other" };
@@ -47,7 +48,7 @@ main(int argc, char **argv)
 	int error;
 
 	if (argc != 3)
-		errx(2, "usage: yts path|traceroute|capture reply.json");
+		errx(2, "usage: yts path|traceroute|capture|back-* reply.json");
 	if ((a = cbl_yarena_new()) == NULL)
 		err(1, "cbl_yarena_new");
 	if (strcmp(argv[1], "path") == 0) {
@@ -78,11 +79,10 @@ main(int argc, char **argv)
 			    str(p.ingress->how));
 		if (p.route != NULL)
 			printf("route %s/%u via %s on %s fib=%d flags=%s\n",
-			    p.route->has_destination ?
-			    p.route->destination.v.m0 : "-",
-			    p.route->prefix_length, str(p.route->gateway), str(
-			    p.route->interface), p.route->has_fib ? p.route->fib
-			    : -1, str(p.route->flags));
+			    str(p.route->destination), p.route->prefix_length,
+			    str(p.route->gateway), str(p.route->interface),
+			    p.route->has_fib ? p.route->fib : -1,
+			    str(p.route->flags));
 		if (p.neighbor != NULL)
 			printf("neighbor %s %s\n", p.neighbor->has_address ?
 			    p.neighbor->address.v.m0 : "-", str(
@@ -140,7 +140,36 @@ main(int argc, char **argv)
 		same((void *)arcana_troubleshoot_troubleshoot_capture_output_encode,
 		    (void *)arcana_troubleshoot_troubleshoot_capture_output_decode,
 		    &c, &back, a);
+	} else if (strncmp(argv[1], "back-", 5) == 0) {
+		struct arcana_troubleshoot_troubleshoot_path_check_output p;
+		struct arcana_troubleshoot_troubleshoot_traceroute_output t;
+		struct arcana_troubleshoot_troubleshoot_capture_output c;
+		ucl_object_t *o;
+		unsigned char *s;
+
+		/* As the console makes the operation's JSON of the output. */
+		if (strcmp(argv[1], "back-path") == 0) {
+			if ((error = yts_path_from_json(slurp(argv[2]), a,
+			    &p)) != 0)
+				errc(1, error, "yts_path_from_json");
+			o = yts_path_json(&p);
+		} else if (strcmp(argv[1], "back-traceroute") == 0) {
+			if ((error = yts_traceroute_from_json(slurp(argv[2]), a,
+			    &t)) != 0)
+				errc(1, error, "yts_traceroute_from_json");
+			o = yts_traceroute_json(&t);
+		} else {
+			if ((error = yts_capture_from_json(slurp(argv[2]), a,
+			    &c)) != 0)
+				errc(1, error, "yts_capture_from_json");
+			o = yts_capture_json(&c);
+		}
+		if ((s = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT)) == NULL)
+			errx(1, "ucl_object_emit");
+		printf("%s\n", (char *)s);
+		free(s);
+		ucl_object_unref(o);
 	} else
-		errx(2, "%s: path, traceroute or capture", argv[1]);
+		errx(2, "%s: path, traceroute, capture or back-*", argv[1]);
 	return (0);
 }

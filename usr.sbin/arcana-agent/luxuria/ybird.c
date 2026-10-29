@@ -5,10 +5,10 @@
  */
 
 /*
- * Luxuria: BIRD as YANG, arcana-bird: the bird
- * kind of the network operation (bird.c, do_bird()) read back as the
- * module's state, the bird-routes kind as the routes action's output,
- * the bird-config operation's reply as the configuration's file.
+ * Luxuria: BIRD as YANG, arcana-bird: what bird.c reads (do_bird(),
+ * do_bird_routes(), do_bird_ospf()) as the module's state, the read,
+ * routes and ospf actions' output; its configuration's files as the
+ * module's configuration.
  */
 
 #include <sys/param.h>
@@ -23,13 +23,13 @@
 #include "collect.h"
 #include "yjson.h"
 
-typedef struct arcana_bird_bird_state ystate;
-typedef struct arcana_bird_bird_state_protocol yproto;
+typedef struct arcana_bird_state ystate;
+typedef struct arcana_bird_protocol yproto;
 
 static bool
 addr_union(cbl_yarena *a, const ucl_object_t *o, const char *key, void *u)
 {
-	struct arcana_bird_bird_state_protocol_bgp_neighbor	*s = u;
+	struct arcana_bird_protocol_bgp_neighbor	*s = u;
 	const char						*v;
 
 	if ((v = yj_str(a, o, key)) == NULL)
@@ -54,9 +54,9 @@ addr_union(cbl_yarena *a, const ucl_object_t *o, const char *key, void *u)
 static int
 protocol_of(cbl_yarena *a, const ucl_object_t *o, yproto *p)
 {
-	struct arcana_bird_bird_state_protocol_bgp	*b;
-	struct arcana_bird_bird_state_protocol_rpki	*r;
-	struct arcana_bird_bird_state_protocol_channel	*c;
+	struct arcana_bird_protocol_bgp		*b;
+	struct arcana_bird_protocol_rpki	*r;
+	struct arcana_bird_protocol_channel	*c;
 	const ucl_object_t				*e;
 	ucl_object_iter_t				 it;
 	size_t						 n = 0;
@@ -69,6 +69,9 @@ protocol_of(cbl_yarena *a, const ucl_object_t *o, yproto *p)
 	p->since = yj_str(a, o, "since");
 	p->info = yj_str(a, o, "info");
 	p->description = yj_str(a, o, "description");
+	if (yj_strs(a, ucl_object_lookup(o, "detail"), &p->detail.n,
+	    &p->detail.v) != 0)
+		return (ENOMEM);
 	if (ucl_object_lookup(o, "bgp-state") != NULL || ucl_object_lookup(o,
 	    "neighbor") != NULL) {
 		if ((b = cbl_yarena_alloc(a, sizeof(*b))) == NULL)
@@ -120,9 +123,9 @@ protocol_of(cbl_yarena *a, const ucl_object_t *o, yproto *p)
 int
 ybird_from_json(const char *json, cbl_yarena *a, ystate *out)
 {
-	struct arcana_bird_bird_state_ospf_neighbor	*on;
-	struct arcana_bird_bird_state_bfd_session	*bs;
-	struct arcana_bird_bird_state_table		*t;
+	struct arcana_bird_state_ospf_neighbor	*on;
+	struct arcana_bird_state_bfd_session	*bs;
+	struct arcana_bird_state_table		*t;
 	yproto						*p;
 	const ucl_object_t				*e;
 	ucl_object_iter_t				 it;
@@ -203,10 +206,10 @@ out:
 
 int
 ybird_routes_from_json(const char *json, cbl_yarena *a,
-    struct arcana_bird_bird_routes_output *out)
+    struct arcana_bird_routes *out)
 {
-	struct arcana_bird_bird_routes_output_route		*r;
-	struct arcana_bird_bird_routes_output_route_nexthop	*nh;
+	struct arcana_bird_routes_route		*r;
+	struct arcana_bird_routes_route_nexthop	*nh;
 	const ucl_object_t					*e, *h;
 	ucl_object_iter_t					 it, hit;
 	ucl_object_t						*top;
@@ -259,39 +262,116 @@ ybird_routes_from_json(const char *json, cbl_yarena *a,
 	return (0);
 }
 
-/* The bird-config reply: the file read, with the files the
- * configuration is made of (their texts not read here). */
-int
-ybird_config_from(const char *path, const char *text, const char *sha256,
-    const char *const *files, size_t nfiles, cbl_yarena *a,
-    struct arcana_bird_bird_configuration *out)
+/* An OSPF router of an area, as ospf_topology() made it. */
+static int
+ospf_router(cbl_yarena *a, const ucl_object_t *o,
+    struct arcana_bird_ospf_protocol_topology_router *r)
 {
-	struct arcana_bird_bird_configuration_file	*f;
-	size_t						 i, n = 0;
-	bool						 seen = false;
+	struct arcana_bird_ospf_protocol_topology_router_link	*l;
+	const ucl_object_t					*e;
+	ucl_object_iter_t					 it;
+	size_t							 n = 0;
+
+	memset(r, 0, sizeof(*r));
+	r->id = yj_str(a, o, "id");
+	YJ_NUM(o, "distance", r, distance);
+	r->unreachable = yj_yes(o, "unreachable", &r->has_unreachable);
+	if ((l = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(o,
+	    "links")) + 1) * sizeof(*l))) == NULL)
+		return (ENOMEM);
+	YJ_EACH(ucl_object_lookup(o, "links"), it, e) {
+		memset(&l[n], 0, sizeof(l[n]));
+		l[n].kind = yj_str(a, e, "kind");
+		l[n].to = yj_str(a, e, "to");
+		YJ_NUM(e, "metric", &l[n], metric);
+		YJ_NUM(e, "metric2", &l[n], metric2);
+		n++;
+	}
+	r->link.n = n;
+	r->link.v = l;
+	return (0);
+}
+
+/* An area's topology. */
+static int
+ospf_area(cbl_yarena *a, const ucl_object_t *o,
+    struct arcana_bird_ospf_protocol_topology *t)
+{
+	struct arcana_bird_ospf_protocol_topology_router	*r;
+	struct arcana_bird_ospf_protocol_topology_network	*nw;
+	const ucl_object_t					*e;
+	ucl_object_iter_t					 it;
+	size_t							 n;
+	int							 error;
+
+	memset(t, 0, sizeof(*t));
+	t->area = yj_str(a, o, "area");
+	if ((r = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(o,
+	    "routers")) + 1) * sizeof(*r))) == NULL ||
+	    (nw = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(o,
+	    "networks")) + 1) * sizeof(*nw))) == NULL)
+		return (ENOMEM);
+	n = 0;
+	YJ_EACH(ucl_object_lookup(o, "routers"), it, e)
+		if ((error = ospf_router(a, e, &r[n++])) != 0)
+			return (error);
+	t->router.n = n;
+	t->router.v = r;
+	n = 0;
+	YJ_EACH(ucl_object_lookup(o, "networks"), it, e) {
+		memset(&nw[n], 0, sizeof(nw[n]));
+		nw[n].id = yj_str(a, e, "id");
+		nw[n].dr = yj_str(a, e, "dr");
+		YJ_NUM(e, "distance", &nw[n], distance);
+		if (yj_strs(a, ucl_object_lookup(e, "routers"),
+		    &nw[n].router.n, &nw[n].router.v) != 0)
+			return (ENOMEM);
+		n++;
+	}
+	t->network.n = n;
+	t->network.v = nw;
+	return (0);
+}
+
+int
+ybird_ospf_from_json(const char *json, cbl_yarena *a,
+    struct arcana_bird_ospf *out)
+{
+	struct arcana_bird_ospf_protocol		*p;
+	struct arcana_bird_ospf_protocol_topology	*t;
+	const ucl_object_t				*e, *ae;
+	ucl_object_iter_t				 it, ait;
+	ucl_object_t					*top;
+	size_t						 n = 0, k;
+	int						 error = ENOMEM;
 
 	memset(out, 0, sizeof(*out));
-	if ((f = cbl_yarena_alloc(a, (nfiles + 2) * sizeof(*f))) == NULL)
-		return (ENOMEM);
-	for (i = 0; i < nfiles; i++) {
-		memset(&f[n], 0, sizeof(f[n]));
-		f[n].path = files[i];
-		if (path != NULL && strcmp(files[i], path) == 0) {
-			f[n].text = text;
-			f[n].sha256 = sha256;
-			seen = true;
-		}
+	if ((top = yj_parse(json)) == NULL)
+		return (EINVAL);
+	if ((p = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top,
+	    "protocols")) + 1) * sizeof(*p))) == NULL)
+		goto out;
+	YJ_EACH(ucl_object_lookup(top, "protocols"), it, e) {
+		memset(&p[n], 0, sizeof(p[n]));
+		if ((p[n].name = yj_str(a, e, "name")) == NULL)
+			continue;
+		if (yj_strs(a, ucl_object_lookup(e, "areas"), &p[n].area.n,
+		    &p[n].area.v) != 0 || (t = cbl_yarena_alloc(a, (yj_count(
+		    ucl_object_lookup(e, "topology")) + 1) * sizeof(*t))) ==
+		    NULL)
+			goto out;
+		k = 0;
+		YJ_EACH(ucl_object_lookup(e, "topology"), ait, ae)
+			if ((error = ospf_area(a, ae, &t[k++])) != 0)
+				goto out;
+		p[n].topology.n = k;
+		p[n].topology.v = t;
 		n++;
 	}
-	if (!seen && path != NULL) {
-		memset(&f[n], 0, sizeof(f[n]));
-		f[n].path = path;
-		f[n].text = text;
-		f[n].sha256 = sha256;
-		n++;
-	}
-	out->path = nfiles > 0 ? files[0] : path;
-	out->file.n = n;
-	out->file.v = f;
-	return (0);
+	out->protocol.n = n;
+	out->protocol.v = p;
+	error = 0;
+out:
+	ucl_object_unref(top);
+	return (error);
 }

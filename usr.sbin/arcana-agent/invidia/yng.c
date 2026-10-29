@@ -5,9 +5,9 @@
  */
 
 /*
- * Invidia: netgraph as YANG, arcana-netgraph: the
- * netgraph kind of the network operation (netgraph.c, ngctl list -l)
- * read back as the module has it.
+ * Invidia: netgraph as YANG, arcana-netgraph: what netgraph.c reads
+ * (ngctl list -l) as the module's nodes, the host's state or the read
+ * action's output.
  */
 
 #include <sys/param.h>
@@ -23,17 +23,18 @@
 #include "yjson.h"
 
 int
-yng_from_json(const char *json, cbl_yarena *a,
-    struct arcana_netgraph_netgraph *out)
+yng_from_json(const char *json, cbl_yarena *a, size_t *np,
+    const struct arcana_netgraph_node **vp)
 {
-	struct arcana_netgraph_netgraph_node		*v;
-	struct arcana_netgraph_netgraph_node_hook	*h;
+	struct arcana_netgraph_node		*v;
+	struct arcana_netgraph_node_hook	*h;
 	const ucl_object_t				*e, *he;
 	ucl_object_iter_t				 it, hit;
 	ucl_object_t					*top;
 	size_t						 n = 0, k;
 
-	memset(out, 0, sizeof(*out));
+	*np = 0;
+	*vp = NULL;
 	if ((top = yj_parse(json)) == NULL)
 		return (EINVAL);
 	if ((v = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top,
@@ -67,8 +68,8 @@ yng_from_json(const char *json, cbl_yarena *a,
 		v[n].hook.v = h;
 		n++;
 	}
-	out->node.n = n;
-	out->node.v = v;
+	*np = n;
+	*vp = v;
 	ucl_object_unref(top);
 	return (0);
 }

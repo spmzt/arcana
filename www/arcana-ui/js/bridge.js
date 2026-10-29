@@ -1835,11 +1835,14 @@ addToLibrary({
 
 		if (bodyp !== 0)
 			body = UTF8ToString(bodyp);
+		/* A YANG Patch (RFC 8072) is its own media type. */
 		opts = {
 			method: method,
 			credentials: "same-origin",
 			cache: "no-store",
-			headers: { "Content-Type": "application/json",
+			headers: { "Content-Type": body !== null &&
+			    body.indexOf('{"ietf-yang-patch:yang-patch"') === 0 ?
+			    "application/yang-patch+json" : "application/json",
 			    "X-Arcana": "1" },
 			signal: ctl.signal
 		};

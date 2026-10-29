@@ -128,7 +128,19 @@ static const struct {
 static uint64_t
 facility_sid(const char *bsd, size_t n)
 {
+	char		 num[4];
+	const char	*e;
+	long long	 v;
 
+	/* A number, syslog.h's: local0 is 16, after the one unnamed. */
+	if (n > 0 && n < sizeof(num)) {
+		memcpy(num, bsd, n);
+		num[n] = '\0';
+		v = strtonum(num, 0, 23, &e);
+		if (e == NULL && v != 15)
+			return (ident("ietf-syslog", facilities[v < 15 ? v : v -
+			    1].ietf));
+	}
 	for (size_t i = 0; i < nitems(facilities); i++)
 		if (strlen(facilities[i].bsd) == n && strncmp(bsd,
 		    facilities[i].bsd, n) == 0)
@@ -139,7 +151,13 @@ facility_sid(const char *bsd, size_t n)
 static int
 level_of(const char *s)
 {
+	const char	*e;
+	long long	 n;
 
+	/* syslogd -v writes numbers, -vv names. */
+	n = strtonum(s, 0, (long long)nitems(levels) - 1, &e);
+	if (e == NULL)
+		return ((int)n);
 	for (size_t i = 0; i < nitems(levels); i++)
 		for (size_t k = 0; k < 2; k++)
 			if (levels[i].names[k] != NULL && strcmp(s,
@@ -150,27 +168,22 @@ level_of(const char *s)
 
 /* ---- The log operation's replies ----------------------------------- */
 
-int
-ylog_files_from_json(const char *json, const char *dir, cbl_yarena *a,
-    struct arcana_log_logs *out)
+/* The files of the reply, *np of them; NULL: no memory.  The read's
+ * output's list has the state's layout. */
+static struct arcana_log_logs_file *
+files_of(const ucl_object_t *top, cbl_yarena *a, size_t *np)
 {
 	struct arcana_log_logs_file	*v;
 	const ucl_object_t		*e;
 	ucl_object_iter_t		 it;
-	ucl_object_t			*top;
 	int64_t				 n;
 	size_t				 k = 0;
 
-	memset(out, 0, sizeof(*out));
-	if ((top = yj_parse(json)) == NULL)
-		return (EINVAL);
-	out->directory = dir != NULL ? astrdup(a, dir) : NULL;
 	if ((v = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top,
-	    "files")) + 1) * sizeof(*v))) == NULL) {
-		ucl_object_unref(top);
-		return (ENOMEM);
-	}
+	    "files")) + 1) * sizeof(*v))) == NULL)
+		return (NULL);
 	YJ_EACH(ucl_object_lookup(top, "files"), it, e) {
+		memset(&v[k], 0, sizeof(v[k]));
 		v[k].name = yj_str(a, e, "name");
 		YJ_NUM(e, "size", &v[k], size);
 		if (yj_num(e, "mtime", &n))
@@ -179,10 +192,23 @@ ylog_files_from_json(const char *json, const char *dir, cbl_yarena *a,
 		if (v[k].name != NULL)
 			k++;
 	}
-	out->file.n = k;
-	out->file.v = v;
+	*np = k;
+	return (v);
+}
+
+int
+ylog_files_from_json(const char *json, const char *dir, cbl_yarena *a,
+    struct arcana_log_logs *out)
+{
+	ucl_object_t	*top;
+
+	memset(out, 0, sizeof(*out));
+	if ((top = yj_parse(json)) == NULL)
+		return (EINVAL);
+	out->directory = dir != NULL ? astrdup(a, dir) : NULL;
+	out->file.v = files_of(top, a, &out->file.n);
 	ucl_object_unref(top);
-	return (0);
+	return (out->file.v == NULL ? ENOMEM : 0);
 }
 
 int
@@ -234,8 +260,9 @@ ylog_read_from_json(const char *json, cbl_yarena *a,
 	}
 	out->line.n = k;
 	out->line.v = v;
+	out->file.v = (const void *)files_of(top, a, &out->file.n);
 	ucl_object_unref(top);
-	return (0);
+	return (out->file.v == NULL ? ENOMEM : 0);
 }
 
 /* ---- syslog.conf and newsyslog.conf as ietf-syslog ------------------- */

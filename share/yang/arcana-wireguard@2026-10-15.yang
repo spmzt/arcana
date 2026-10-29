@@ -3,6 +3,9 @@ module arcana-wireguard {
   namespace "urn:arcana:yang:arcana-wireguard";
   prefix arcwg;
 
+  import cblink-gen {
+    prefix cg;
+  }
   import ietf-inet-types {
     prefix inet;
     reference
@@ -12,9 +15,6 @@ module arcana-wireguard {
     prefix yang;
     reference
       "RFC 9911: Common YANG Data Types";
-  }
-  import arcana-jails {
-    prefix arcj;
   }
 
   organization
@@ -30,8 +30,10 @@ module arcana-wireguard {
      one is said.  The interfaces are made by ifconfig(8) (the base
      system's, arcana-interfaces); their keys and peers by jobs of kind
      wireguard (init, peer, unpeer, kept in rc.conf's wireguard_
-     variables and /usr/local/etc/wireguard).  The wireguard kind of
-     the network operation of arcana.yaml converted (Y-3).";
+     variables and /usr/local/etc/wireguard).  A vnet jail's are the
+     read action's, given the jail.  The wireguard kind
+     of the network operation of arcana.yaml converted and retired
+     (Y-3).";
 
   revision 2026-10-15 {
     description
@@ -47,100 +49,112 @@ module arcana-wireguard {
       "A WireGuard key, base64.";
   }
 
-  grouping wireguard {
+  grouping interfaces {
     description
-      "The WireGuard interfaces.";
-    container wireguard {
-      config false;
+      "The WireGuard interfaces, as read.";
+    leaf now {
+      type yang:date-and-time;
       description
-        "WireGuard, where it runs.";
-      leaf now {
-        type yang:date-and-time;
+        "When it was read, which the handshakes are measured
+         against.";
+    }
+    list interface {
+      cg:struct "interface";
+      key "name";
+      description
+        "An if_wg(4) interface.";
+      leaf name {
+        type string;
         description
-          "When it was read, which the handshakes are measured
-           against.";
+          "Its name, wgN.";
       }
-      list interface {
-        key "name";
+      leaf private-key {
+        type boolean;
         description
-          "An if_wg(4) interface.";
-        leaf name {
-          type string;
-          description
-            "Its name, wgN.";
-        }
-        leaf private-key {
-          type boolean;
-          description
-            "It has a private key.";
-        }
+          "It has a private key.";
+      }
+      leaf public-key {
+        type key;
+        description
+          "Its public key.";
+      }
+      leaf listen-port {
+        type inet:port-number;
+        description
+          "The port it listens on.";
+      }
+      list peer {
+        key "public-key";
+        description
+          "Its peers.";
         leaf public-key {
           type key;
           description
-            "Its public key.";
+            "The peer's public key.";
         }
-        leaf listen-port {
-          type inet:port-number;
+        leaf preshared-key {
+          type boolean;
           description
-            "The port it listens on.";
+            "A preshared key is set.";
         }
-        list peer {
-          key "public-key";
+        leaf endpoint {
+          type string;
           description
-            "Its peers.";
-          leaf public-key {
-            type key;
-            description
-              "The peer's public key.";
-          }
-          leaf preshared-key {
-            type boolean;
-            description
-              "A preshared key is set.";
-          }
-          leaf endpoint {
-            type string;
-            description
-              "Where it is: address and port.";
-          }
-          leaf-list allowed-ip {
-            type inet:ip-prefix;
-            description
-              "What goes to it, and may come from it.";
-          }
-          leaf latest-handshake {
-            type yang:date-and-time;
-            description
-              "When the last handshake was; none, never.";
-          }
-          leaf received {
-            type uint64;
-            units "bytes";
-            description
-              "Bytes from it.";
-          }
-          leaf sent {
-            type uint64;
-            units "bytes";
-            description
-              "Bytes to it.";
-          }
-          leaf keepalive {
-            type uint16;
-            units "seconds";
-            description
-              "The persistent keepalive; 0 none.";
-          }
+            "Where it is: address and port.";
+        }
+        leaf-list allowed-ip {
+          type inet:ip-prefix;
+          description
+            "What goes to it, and may come from it.";
+        }
+        leaf latest-handshake {
+          type yang:date-and-time;
+          description
+            "When the last handshake was; none, never.";
+        }
+        leaf received {
+          type uint64;
+          units "bytes";
+          description
+            "Bytes from it.";
+        }
+        leaf sent {
+          type uint64;
+          units "bytes";
+          description
+            "Bytes to it.";
+        }
+        leaf keepalive {
+          type uint16;
+          units "seconds";
+          description
+            "The persistent keepalive; 0 none.";
         }
       }
     }
   }
 
-  uses wireguard;
-
-  augment "/arcj:jails/arcj:jail" {
+  container wireguard {
+    config false;
     description
-      "A vnet jail's own WireGuard interfaces.";
-    uses wireguard;
+      "WireGuard, where it runs.";
+    uses interfaces;
+    action read {
+      description
+        "The interfaces as wg show dump tells of them now, the host's
+         or a vnet jail's, what it said where it could not (no
+         wg(8)).";
+      input {
+        leaf jail {
+          type string;
+          description
+            "A running vnet jail's, which a read of the jails leaves
+             out; none, the host's.";
+        }
+      }
+      output {
+        uses interfaces;
+      }
+    }
   }
 }

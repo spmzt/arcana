@@ -16,6 +16,7 @@ module: arcana-bird
      |  |  +--ro since?         string
      |  |  +--ro info?          string
      |  |  +--ro description?   string
+     |  |  +--ro detail*        string
      |  |  +--ro bgp
      |  |  |  +--ro state?         string
      |  |  |  +--ro neighbor?      inet:ip-address-no-zone
@@ -61,26 +62,121 @@ module: arcana-bird
      |     +--ro name        string
      |     +--ro routes?     uint64
      |     +--ro networks?   uint64
+     +--rw jail* [name]
+     |  +--rw name             string
+     |  +--rw configuration
+     |     +--rw path?   string
+     |     +--rw file* [path]
+     |        +--rw path      string
+     |        +--rw text?     string
+     |        +--ro sha256?   string
+     +---x read
+     |  +---w input
+     |  |  +---w jail?   string
+     |  +--ro output
+     |     +--ro status*          string
+     |     +--ro protocol* [name]
+     |     |  +--ro name           string
+     |     |  +--ro type?          string
+     |     |  +--ro table?         string
+     |     |  +--ro state?         string
+     |     |  +--ro since?         string
+     |     |  +--ro info?          string
+     |     |  +--ro description?   string
+     |     |  +--ro detail*        string
+     |     |  +--ro bgp
+     |     |  |  +--ro state?         string
+     |     |  |  +--ro neighbor?      inet:ip-address-no-zone
+     |     |  |  +--ro neighbor-as?   inet:as-number
+     |     |  |  +--ro local-as?      inet:as-number
+     |     |  |  +--ro neighbor-id?   string
+     |     |  |  +--ro source?        inet:ip-address-no-zone
+     |     |  |  +--ro session?       string
+     |     |  |  +--ro hold?          string
+     |     |  |  +--ro keepalive?     string
+     |     |  |  +--ro last-error?    string
+     |     |  +--ro rpki
+     |     |  |  +--ro cache?         string
+     |     |  |  +--ro status?        string
+     |     |  |  +--ro serial?        string
+     |     |  |  +--ro last-update?   string
+     |     |  +--ro channel* [name]
+     |     |     +--ro name             string
+     |     |     +--ro state?           string
+     |     |     +--ro table?           string
+     |     |     +--ro input-filter?    string
+     |     |     +--ro output-filter?   string
+     |     |     +--ro routes?          string
+     |     |     +--ro imported?        uint64
+     |     |     +--ro exported?        uint64
+     |     +--ro ospf-neighbor*
+     |     |  +--ro protocol?    string
+     |     |  +--ro router-id?   string
+     |     |  +--ro priority?    string
+     |     |  +--ro state?       string
+     |     |  +--ro dead-time?   string
+     |     |  +--ro interface?   string
+     |     |  +--ro address?     string
+     |     +--ro bfd-session*
+     |     |  +--ro protocol?    string
+     |     |  +--ro address?     string
+     |     |  +--ro interface?   string
+     |     |  +--ro state?       string
+     |     |  +--ro since?       string
+     |     |  +--ro interval?    string
+     |     |  +--ro timeout?     string
+     |     +--ro table* [name]
+     |        +--ro name        string
+     |        +--ro routes?     uint64
+     |        +--ro networks?   uint64
      +---x routes
+     |  +---w input
+     |  |  +---w jail?     string
+     |  |  +---w filter?   string
+     |  +--ro output
+     |     +--ro count?     uint64
+     |     +--ro message?   string
+     |     +--ro route*
+     |        +--ro table?        string
+     |        +--ro prefix?       string
+     |        +--ro type?         string
+     |        +--ro protocol?     string
+     |        +--ro from?         string
+     |        +--ro since?        string
+     |        +--ro primary?      boolean
+     |        +--ro preference?   string
+     |        +--ro info?         string
+     |        +--ro nexthop*
+     |        |  +--ro via?         string
+     |        |  +--ro interface?   string
+     |        +--ro attribute*    string
+     +---x ospf
+     |  +---w input
+     |  |  +---w jail?       string
+     |  |  +---w topology?   boolean
+     |  |  +---w protocol?   string
+     |  +--ro output
+     |     +--ro protocol* [name]
+     |        +--ro name        string
+     |        +--ro area*       string
+     |        +--ro topology*
+     |           +--ro area?      string
+     |           +--ro router*
+     |           |  +--ro id?            string
+     |           |  +--ro distance?      uint32
+     |           |  +--ro unreachable?   boolean
+     |           |  +--ro link*
+     |           |     +--ro kind?      string
+     |           |     +--ro to?        string
+     |           |     +--ro metric?    uint32
+     |           |     +--ro metric2?   uint32
+     |           +--ro network*
+     |              +--ro id?         string
+     |              +--ro dr?         string
+     |              +--ro distance?   uint32
+     |              +--ro router*     string
+     +---x check
         +---w input
-        |  +---w filter?   string
-        +--ro output
-           +--ro count?     uint64
-           +--ro message?   string
-           +--ro route*
-              +--ro table?        string
-              +--ro prefix?       string
-              +--ro type?         string
-              +--ro protocol?     string
-              +--ro from?         string
-              +--ro since?        string
-              +--ro primary?      boolean
-              +--ro preference?   string
-              +--ro info?         string
-              +--ro nexthop*
-              |  +--ro via?         string
-              |  +--ro interface?   string
-              +--ro attribute*    string
-
-  augment /arcj:jails/arcj:jail:
-    +---u bird
+           +---w jail?   string
+           +---w path    string
+           +---w text    string

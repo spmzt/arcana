@@ -30,10 +30,13 @@ module arcana-probe {
      mean round trip), the delay variation, the loss ratio, the least
      and the most, and the probes sent and answered; thresholds a
      metric over which is a fault (tca).  The targets are
-     configuration, kept for the agent's next start; what the probes
-     have seen is state.  The sdwan-probes operation and the targets
-     of the sdwan read of arcana.yaml converted (Y-3); a target that
-     goes down or comes up is an arcana-events sdwan-tunnel event.";
+     configuration, the host's and each vnet jail edge's, with the
+     interfaces whose links are watched and the admin's own monitors
+     on any tunnel: each edge's lists set together by a commit, kept
+     for the agent's next start; what the probes have seen is state.
+     The sdwan-probes operation (retired) and the targets of the sdwan
+     read of arcana.yaml converted (Y-3); a target that goes down or
+     comes up is an arcana-events sdwan-tunnel event.";
 
   revision 2026-10-15 {
     description
@@ -97,13 +100,132 @@ module arcana-probe {
     }
   }
 
-  container probes {
+  grouping tca {
     description
-      "The targets, and what the probes have seen.";
+      "Threshold crossing alerts (Mplify 119 section 11.4, MEF 105
+       section 7.4).";
+    container tca {
+      cg:struct "tca";
+      description
+        "Thresholds a metric over which is a fault, cleared under
+         it again.";
+      leaf delay {
+        type ms;
+        description
+          "The delay's.";
+      }
+      leaf ipdv {
+        type ms;
+        description
+          "The delay variation's.";
+      }
+      leaf loss {
+        type decimal64 {
+          fraction-digits 6;
+          range "0..1";
+        }
+        description
+          "The loss ratio's.";
+      }
+      leaf damping {
+        type uint8 {
+          range "1..100";
+        }
+        default "1";
+        description
+          "Intervals in a row over it before the fault.";
+      }
+    }
+  }
+
+  grouping probing {
+    description
+      "How a far end is probed.";
+    leaf fib {
+      type uint16;
+      default "0";
+      description
+        "The table it is reached by.";
+    }
+    leaf interval {
+      type uint32 {
+        range "10..60000";
+      }
+      units "milliseconds";
+      default "100";
+      description
+        "Between two probes.";
+    }
+    leaf size {
+      type uint16 {
+        range "8..10000";
+      }
+      units "bytes";
+      default "64";
+      description
+        "A probe's size.";
+    }
+    leaf dscp {
+      type uint8 {
+        range "0..63";
+      }
+      default "0";
+      description
+        "The DSCP of the probes.";
+    }
+    leaf down {
+      type uint8 {
+        range "1..100";
+      }
+      default "3";
+      description
+        "Misses in a row that make it down.";
+    }
+    leaf up {
+      type uint8 {
+        range "1..100";
+      }
+      default "3";
+      description
+        "Answers in a row that make it up again.";
+    }
+    leaf timeout {
+      type uint32 {
+        range "10..60000";
+      }
+      units "milliseconds";
+      default "1000";
+      description
+        "How long an answer is waited for.";
+    }
+    leaf eval {
+      type uint32 {
+        range "100..86400000";
+      }
+      units "milliseconds";
+      default "1000";
+      description
+        "One sample's interval.";
+    }
+    leaf history {
+      type uint32 {
+        range "0..100000";
+      }
+      default "3600";
+      description
+        "Samples kept.";
+    }
+    uses tca;
+  }
+
+  grouping edge {
+    description
+      "What an edge measures and watches: the host, or a vnet jail.";
     list target {
+      cg:struct "target";
       key "id";
       description
-        "A tunnel to measure.";
+        "A tunnel to measure, SD-WAN's.";
       leaf id {
         type string;
         description
@@ -115,122 +237,103 @@ module arcana-probe {
         description
           "Its far end, which answers the echo.";
       }
-      leaf fib {
-        type uint16;
-        default "0";
-        description
-          "The table it is reached by.";
-      }
-      leaf interval {
-        type uint32 {
-          range "10..60000";
-        }
-        units "milliseconds";
-        default "100";
-        description
-          "Between two probes.";
-      }
-      leaf size {
-        type uint16 {
-          range "28..9000";
-        }
-        units "bytes";
-        default "64";
-        description
-          "A probe's size.";
-      }
       leaf count {
-        type uint32;
+        type uint32 {
+          range "0..2147483647";
+        }
         default "0";
         description
           "How many probes; 0 without end.";
       }
-      leaf dscp {
-        type uint8 {
-          range "0..63";
-        }
-        default "0";
-        description
-          "The DSCP of the probes.";
-      }
-      leaf down {
-        type uint8 {
-          range "1..255";
-        }
-        default "3";
-        description
-          "Misses in a row that make it down.";
-      }
-      leaf up {
-        type uint8 {
-          range "1..255";
-        }
-        default "3";
-        description
-          "Answers in a row that make it up again.";
-      }
-      leaf timeout {
-        type uint32;
-        units "milliseconds";
-        default "1000";
-        description
-          "How long an answer is waited for.";
-      }
-      leaf eval {
-        type uint32;
-        units "milliseconds";
-        default "1000";
-        description
-          "One sample's interval.";
-      }
-      leaf history {
-        type uint32;
-        default "3600";
-        description
-          "Samples kept.";
-      }
       leaf report {
-        type uint32;
-        units "milliseconds";
+        type uint16 {
+          range "1..1000";
+        }
+        default "1";
         description
-          "How often to report, a multiple of eval.";
+          "Every how many samples one is reported.";
       }
-      container tca {
-        description
-          "Thresholds a metric over which is a fault, cleared under
-           it again.";
-        leaf delay {
-          type ms;
-          description
-            "The delay's.";
-        }
-        leaf ipdv {
-          type ms;
-          description
-            "The delay variation's.";
-        }
-        leaf loss {
-          type decimal64 {
-            fraction-digits 6;
-            range "0..1";
-          }
-          description
-            "The loss ratio's.";
-        }
-        leaf damping {
-          type uint8;
-          default "1";
-          description
-            "Intervals in a row over it before the fault.";
-        }
-      }
-      leaf jail {
+      uses probing;
+    }
+    list link {
+      cg:struct "link";
+      key "id";
+      description
+        "An interface whose link is watched: a fault while it has
+         none.";
+      leaf id {
         type string;
         description
-          "The edge that is this vnet jail probes it, from its network;
-           none, the host itself.  The targets of an edge are set
-           together, a jail's apart from the host's and each other's.";
+          "What is on it: the UNI's or the UCS end point's id.";
       }
+      leaf interface {
+        type string;
+        mandatory true;
+        description
+          "The interface.";
+      }
+      leaf role {
+        type enumeration {
+          enum uni {
+            description
+              "A UNI.";
+          }
+          enum ucs {
+            description
+              "A UCS end point.";
+          }
+        }
+        default "ucs";
+        description
+          "What it is to SD-WAN.";
+      }
+    }
+    list monitor {
+      cg:struct "monitor";
+      key "name";
+      description
+        "A tunnel of the admin's measured outside SD-WAN, by the same
+         prober: its state and thresholds are events (monitor,
+         monitor-threshold), not SD-WAN's faults.";
+      leaf name {
+        type string {
+          length "1..63";
+          pattern '[A-Za-z0-9_.@-]+';
+        }
+        description
+          "Its name.";
+      }
+      leaf interface {
+        type string;
+        description
+          "The tunnel interface it measures.";
+      }
+      leaf address {
+        type inet:ip-address-no-zone;
+        description
+          "The far end; none, on the host, the interface's own
+           (a point-to-point one's), and its FIB with it.";
+      }
+      uses probing;
+    }
+  }
+
+  container probes {
+    description
+      "The targets, links and monitors of the host and of each vnet
+       jail that is an edge, and what the probes have seen.";
+    uses edge;
+    list jail {
+      key "name";
+      description
+        "An edge that is a vnet jail: probed from its network, its
+         lists set apart from the host's and each other's.";
+      leaf name {
+        type string;
+        description
+          "The jail.";
+      }
+      uses edge;
     }
     container state {
       config false;

@@ -990,7 +990,7 @@ whose first part is served.
   jobs of kind sysctl and kmod stay as jobs (3.1.4).  Check:
   `datastores_sysctl`, `datastores_kernel`, `kernel`, `yang_system`;
   the console's `services`, `churn`, `mtls`, `tls_ec`.
-- 3.1.7 A: syslog.conf written from `ietf-syslog`; the processes,
+- 3.1.7 A (done): syslog.conf written from `ietf-syslog`; the processes,
   log, history, events and event operations retired; check: tests.
   Done, the first half (gula/ylog.c, gula/ysyslog.c): a commit of
   `syslog` writes Arcana's lines in /usr/local/etc/syslog.d/arcana.conf
@@ -1004,16 +1004,149 @@ whose first part is served.
   file put back where that fails; refused: TLS, a destination named
   otherwise than by its address, facility-override, block and stop,
   cron2, retention, a rollover not in whole hours. Check:
-  `datastores_syslog`, `yang_log`. Left: the operations' retirement.
+  `datastores_syslog`, `yang_log`.  The processes operation retired
+  (2026-10-29): its read is arcana-processes' list, a process's files
+  and threads its `read` action (with the CPU each thread ran on last,
+  `last-cpu`), a kernel process told by `kernel`; the agent's own
+  struct for the JSON its readers give (agent.h's json_rsp); the console
+  and arcanactl make the operation's JSON of them (ygula.c), a jail's
+  processes taken from the list (a running jail without a process is
+  said not to run, as one that does not).  Check: `yang_processes`,
+  `observe`; the console's `services`; `pwa_storage`.  The log
+  operation retired: arcana-log's `read` gives the files of the
+  directory it read too (the host's or the jail's, which the action now
+  enters as the operation did), a level syslogd -v wrote as numbers
+  taken as -vv's names; the console and arcanactl make the operation's
+  JSON (ygula.c), the level as syslogd -vv names it.  Check:
+  `yang_log`, `observe`, agent_root_test's `kmsg`; the console's
+  `services`.  The history operation retired: arcana-history's `read`
+  gives the samples after a time with the settings and the sampler's
+  totals beside them (groupings history-settings and history-totals,
+  the second SID range 80 000), a commit of `history` (sampling,
+  limits, rules: the whole container, as an EDIT replaces it) is
+  history.c's set, the console and arcanactl putting what running has
+  with the change in the candidate; `keep` 0 to 5000 as history.c takes
+  it; two samples of one second told apart in the key by hundredths of
+  it.  Check: `yang_history`, `observe`; the console's `services`.
+  The events and event operations retired: arcana-events' `read` (with
+  `kept`) and its `event` notification on family 1's group notify, which
+  the console's follow (follow.c), its workflows' triggers (workflows.c)
+  and `arcanactl events -f` subscribe to, the `events` group of the
+  family kept, empty, so the groups keep their numbers: a subscription,
+  no stream, so nothing waits for 3.4.  The kinds the model lost now
+  kept: a route's `interface-name` (it read `interface`), nexthop,
+  paths and expire time, its destination a string as netstat prints it
+  (with a length, or default); a neighbour's family and next; a
+  tunnel's jail and BFD's unknown state; `monitor` (an identity, the
+  tunnel's case); a storage threshold; undo-failed's data (case
+  `undo`); the second SID range 80 100.  The console and arcanactl make
+  each event as its source wrote it (yevjson.c, the members in each
+  source's order), which agent_test's `yang_events` takes there and back
+  for every kind.  Check: `yang_events`, `observe`, `sdwan`,
+  `host_watch`, `bird_watch`; agent_root_test's `routes`, `yang_events`,
+  `sdwan_probe`, `sdwan_jail_edge`, `sdwan_record`, `monitors_probe`,
+  `crash_event`, `devd_watch`, `jail_events_nested`; the console's
+  `churn`, `workflows`, `mail`, `restconf_etag`, `sdwan_notices`,
+  `services`; `pwa_storage`.
 - 3.1.8 A: `arcana-bird`, `arcana-wireguard`, `arcana-netgraph`: the
   network operation's kinds and bird-config retired; check: the plugin
-  tests.
+  tests.  Done, netgraph and WireGuard (invidia/yng.c, ywg.c,
+  yarcana.c; the console's yplug.c): the graph and the interfaces are
+  state, and each module's `read` action reads them now, the host's
+  or a vnet jail's (its input's `jail`, as arcana-storage's read; the
+  jail augments are gone, their SIDs obsolete: their copies of every
+  action and of the state cost the agent the room it has under the
+  6 MiB an agent-update carries), with what ngctl or wg said where it
+  could not, its steps told; the network operation's netgraph and wireguard
+  kinds are refused, their numbers kept.  The keys and peers stay the
+  wireguard job's.  The console makes each kind's JSON of the
+  action's output, so /net/netgraph and /net/wireguard keep their
+  shapes (and SD-WAN's reads of an edge's keys); arcanactl's `net
+  netgraph` and `net wireguard` print the output as RFC 7951's JSON.
+  BIRD (luxuria/bird.c, ybird.c, yarcana.c): the bird, bird-routes and
+  bird-ospf kinds and the bird-config operation retired, their numbers
+  kept.  The state is the operational datastore's, and the `read`
+  action's (a jail's, by its input's `jail`, as every action of the
+  module takes one), with each protocol's lines as
+  show protocols all has them (`detail`, which the page draws); the
+  routes and `ospf` actions (topology, a protocol) the other kinds'.
+  The configuration is running's: the host's files, and each running
+  vnet jail's under `jail` (arcana-bird's own list, so that one edit
+  handler writes both and the jails' commit is left alone; the jail
+  augment obsolete), each file's text and SHA-256.  A
+  commit changes one file at a time; bird -p first, birdc configure
+  then; a confirmed commit's edit reads the commit's confirm-timeout
+  from its request and tells BIRD `configure timeout` five seconds
+  longer, a thread asks the datastores whether the commit still waits
+  and tells BIRD `configure confirm` once it does not, the commit's
+  undo is `configure undo` and the file put back (one somebody changed
+  since left to them, a dead BIRD not undone) - the operation's safe
+  mode, with the commit's own timer in place of the agent's.  A BIRD
+  that does not answer, or goes away when told, leaves the commit
+  standing with a warning (`bird-not-told`).  The `check` action is
+  bird -p alone.  The console (yplug.c) keeps /net/bird*, and
+  /bird/config's reply: read from running (the SHA-256 its own), the
+  page's sha256 checked against it, a plain commit, or in safe mode a
+  confirmed one of the host's safe wait (a minute where none) whose
+  persist-id it keeps for the page's confirm.  arcanactl: `net bird`,
+  `bird routes`, `bird ospf` the actions' JSON; `bird config -w` a
+  commit, with -s or -c a confirmed one, `bird confirm id` its
+  confirm; -n the check action.  The second SID range is 80 000.
+  Check: `vpn`, `vnet`, `yang_plugins`, `safe_bird`, `bird_watch`;
+  agent_root_test's `bird_live`; the console's `services`, `users`.
 - 3.1.9 A: the hello, list, stats, certs, agent and jail-files
   operations retired; check: `hello`'s tests.
 - 3.1.10 A: the ipfw-rules, fw-trace, path-check, traceroute and
-  capture operations retired; check: the firewall tests.
+  capture operations retired; check: the firewall tests.  The fw-trace
+  operation retired (2026-10-29): arcana-firewall's `trace`, of the
+  host's firewall or of a jail's (the action of the firewall container
+  under the jail's entry), the console and arcanactl making the
+  operation's JSON (ytshoot.c); the family do_fw_trace() writes, inet
+  and inet6, read as the model's (it read ipv6).  Check: `fw_trace`,
+  agent_root_test's `fw_trace`; the console's `services`.  Left, the
+  ipfw-rules operation, whole: its write (the kept rules replaced, a
+  dry run) and its read from rc.conf (from-rc) have no path in the
+  model yet (arcana-firewall's EDIT says EOPNOTSUPP, a jail's kept rules
+  are not read into its entry), and the kept rules are the admin's: they
+  are written through EDIT only when that is decided (the user's).
+  The path-check, traceroute and capture operations retired:
+  arcana-troubleshoot's actions, the console and arcanactl making the
+  operations' JSON (ytsjson.c, in the agent's order; agent_test's
+  `yang_troubleshoot` takes each there and back).  What the model lost
+  now kept: path-check's protocol sctp, an address's loopback, the
+  route as the route lookup has it (to, metric, weight, its destination
+  a string: default), a walk's action word where its verdict is other;
+  capture's interface optional, the sources there are its
+  `capture-source` without one.  Check: `yang_troubleshoot`,
+  `traceroute`, `capture`, agent_root_test's `path_check` and
+  `fwmatch_kernel`; the console's `troubleshoot`, `services`;
+  `pwa_firewall`, `pwa_nettab`, `pwa_plugins`, `pwa_flows`.
 - 3.1.11 A: `arcana-probe`'s targets written through `EDIT`; the
-  sdwan-probes operation retired; check: the probe tests.
+  sdwan-probes operation retired; check: the probe tests.  Done
+  (gula/probe.c, yprobe.c, yarcana.c; the console's yprobes.c, shared
+  with arcanactl; the page's topo.c): the configuration is each edge's
+  lists, the host's at the top and each vnet jail's under `jail` (a
+  target's `jail` leaf obsolete: an edge's ids are its own, both ends of
+  a tunnel on one host having the same), its SD-WAN `target`s, the
+  `link`s it watches (what the operation's JSON carried beside them)
+  and the admin's `monitor`s (the monitor job's, which stays); read
+  from the prober as it runs, an edge and a kind set anew where a
+  commit changes them, as the operation and the job did.  The bounds
+  are the prober's (size 8 to 10 000, down and up to 100, report a
+  count of samples).  The console's SD-WAN apply puts the edge's lists
+  in the candidate (running's, the edge's replaced, by RFC 7951's JSON)
+  and commits confirmed; arcanactl's `sdwan probes` the same, a plain
+  commit.  The Quality dialog writes each end's monitors by a YANG
+  Patch of its host's candidate and a confirmed commit (ycommit.c),
+  two hosts two commits, in place of four monitor jobs.  Found on the
+  way: a commit reads running whole, and the alarms' list (state) was
+  read for it, refusing every commit once two status changes of an
+  alarm fell in one second: running has no alarms now, and a clearing
+  in the second of the raising is the clearing alone.  The second SID
+  range is 80 300.  Check: `sdwan`, `sdwan_jail`, `yang_sdwan`,
+  `monitors`; agent_root_test's `monitors_*`, `sdwan_probe`,
+  `sdwan_jail_edge`, `sdwan_links`; the console's `monitors`, the sdwan
+  cases.
 - 3.1.12 A: `arcana-sdwan` written through `EDIT` in place of the
   console's JSON; the sdwan, sdwan-rules, sdwan-steer, sdwan-bird,
   sdwan-dhcp, sdwan-dns, sdwan-proxy and sdwan-ids operations retired;

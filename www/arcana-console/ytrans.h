@@ -138,6 +138,22 @@ int	ytrans_jail_boot(cbl_conn *conn, const char *name, bool on,
 	    const char *const *acc, size_t nacc, char *err, size_t errlen,
 	    char *tag, size_t taglen);
 
+/*
+ * Top-level node n's data d (running's with a change) put in the
+ * candidate (d NULL: the candidate as it is) and committed confirmed,
+ * the warnings acc (nacc of them)
+ * accepted, token (toklen) its persist-id: confirmed at once, or with
+ * wait (s) left waiting that long for ytrans_confirm() of the token;
+ * wait < 0, committed not confirmed.  Refused, the candidate as running
+ * is; err the agent's words, tag its error-app-tag, "" none.
+ */
+int	ytrans_commit(cbl_conn *conn, const struct cbl_ynode *n,
+	    const void *d, const char *const *acc, size_t nacc, int wait,
+	    char *token, size_t toklen, char *err, size_t errlen, char *tag,
+	    size_t taglen);
+int	ytrans_confirm(cbl_conn *conn, const char *token, char *err,
+	    size_t errlen);
+
 #include "yjsonin.h"
 
 #endif	/* !_ARCANA_YTRANS_H_ */

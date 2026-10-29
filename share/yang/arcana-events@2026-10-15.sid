@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-events",
     "module-revision": "2026-10-15",
-    "sid-file-version": 4,
+    "sid-file-version": 5,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -22,6 +22,10 @@
       {
         "entry-point": "70800",
         "size": "400"
+      },
+      {
+        "entry-point": "80100",
+        "size": "100"
       }
     ],
     "item": [
@@ -1944,6 +1948,196 @@
         "namespace": "identity",
         "identifier": "undo-failed",
         "sid": "71183"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "monitor",
+        "sid": "71184"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/neighbor/family",
+        "sid": "71185"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/neighbor/next",
+        "sid": "71186"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/expire-time",
+        "sid": "71187"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/nhop",
+        "sid": "71188"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/path",
+        "sid": "71189"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/paths",
+        "sid": "71190"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/tunnel/jail",
+        "sid": "71191"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/undo",
+        "sid": "71192"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/undo/errno",
+        "sid": "71193"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/undo/message",
+        "sid": "71194"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/undo/node",
+        "sid": "71195"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/undo/report",
+        "sid": "71196"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/neighbor/family",
+        "sid": "71197"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/neighbor/next",
+        "sid": "71198"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/expire-time",
+        "sid": "71199"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/nhop",
+        "sid": "80100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/path",
+        "sid": "80101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/paths",
+        "sid": "80102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/tunnel/jail",
+        "sid": "80103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/undo",
+        "sid": "80104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/undo/errno",
+        "sid": "80105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/undo/message",
+        "sid": "80106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/undo/node",
+        "sid": "80107"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/undo/report",
+        "sid": "80108"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/neighbor/family",
+        "sid": "80109"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/neighbor/next",
+        "sid": "80110"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/expire-time",
+        "sid": "80111"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/nhop",
+        "sid": "80112"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/path",
+        "sid": "80113"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/paths",
+        "sid": "80114"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/tunnel/jail",
+        "sid": "80115"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/undo",
+        "sid": "80116"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/undo/errno",
+        "sid": "80117"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/undo/message",
+        "sid": "80118"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/undo/node",
+        "sid": "80119"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/undo/report",
+        "sid": "80120"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/kept",
+        "sid": "80121"
       }
     ]
   }

@@ -2,9 +2,13 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-processes",
     "module-revision": "2026-10-14",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 63 800, 100.",
     "dependency-revision": [
+      {
+        "module-name": "ietf-netconf-acm",
+        "module-revision": "2018-02-14"
+      },
       {
         "module-name": "openconfig-procmon",
         "module-revision": "2019-03-15"
@@ -351,6 +355,126 @@
         "namespace": "data",
         "identifier": "/arcana-processes:processes/process/thread/wcpu",
         "sid": "63866"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read",
+        "sid": "63867"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/input",
+        "sid": "63868"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output",
+        "sid": "63869"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/file",
+        "sid": "63870"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/file/fd",
+        "sid": "63871"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/file/local",
+        "sid": "63872"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/file/mode",
+        "sid": "63873"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/file/path",
+        "sid": "63874"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/file/proto",
+        "sid": "63875"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/file/remote",
+        "sid": "63876"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/file/type",
+        "sid": "63877"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/file/use",
+        "sid": "63878"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/name",
+        "sid": "63879"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/thread",
+        "sid": "63880"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/thread/cpu-time",
+        "sid": "63881"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/thread/last-cpu",
+        "sid": "63882"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/thread/name",
+        "sid": "63883"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/thread/priority",
+        "sid": "63884"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/thread/run-state",
+        "sid": "63885"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/thread/tid",
+        "sid": "63886"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/thread/wait",
+        "sid": "63887"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/read/output/thread/wcpu",
+        "sid": "63888"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/kernel",
+        "sid": "63889"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/thread/last-cpu",
+        "sid": "63890"
       }
     ]
   }

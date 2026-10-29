@@ -3506,7 +3506,7 @@ trace_ifs(struct work *w, FILE *fp)
 
 int
 do_fw_trace(struct work *w, const char *address, uint32_t seconds,
-    uint32_t packets, struct arc_fw_trace_rsp *rsp)
+    uint32_t packets, struct json_rsp *rsp)
 {
 	struct execres	 res;
 	unsigned char	 a[16];

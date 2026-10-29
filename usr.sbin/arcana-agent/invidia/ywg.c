@@ -5,9 +5,9 @@
  */
 
 /*
- * Invidia: WireGuard as YANG, arcana-wireguard:
- * the wireguard kind of the network operation (wireguard.c,
- * do_wireguard(), wg show dump) read back as the module has it.
+ * Invidia: WireGuard as YANG, arcana-wireguard: what wireguard.c reads
+ * (do_wireguard(), wg show dump) as the module's interfaces, the
+ * host's state or the read action's output.
  */
 
 #include <sys/param.h>
@@ -39,23 +39,25 @@ datetime(cbl_yarena *a, int64_t t)
 }
 
 int
-ywg_from_json(const char *json, cbl_yarena *a,
-    struct arcana_wireguard_wireguard *out)
+ywg_from_json(const char *json, cbl_yarena *a, const char **now,
+    size_t *nifp, const struct arcana_wireguard_interface **ifp)
 {
-	struct arcana_wireguard_wireguard_interface		*v;
-	struct arcana_wireguard_wireguard_interface_peer	*p;
-	struct arcana_wireguard_wireguard_interface_peer_allowed_ip *ip;
+	struct arcana_wireguard_interface			*v;
+	struct arcana_wireguard_interface_peer			*p;
+	struct arcana_wireguard_interface_peer_allowed_ip	*ip;
 	const ucl_object_t					*e, *pe, *ie;
 	ucl_object_iter_t					 it, pit, iit;
 	ucl_object_t						*top;
 	int64_t							 n;
 	size_t							 ni = 0, np, na;
 
-	memset(out, 0, sizeof(*out));
+	*now = NULL;
+	*nifp = 0;
+	*ifp = NULL;
 	if ((top = yj_parse(json)) == NULL)
 		return (EINVAL);
 	if (yj_num(top, "now", &n))
-		out->now = datetime(a, n);
+		*now = datetime(a, n);
 	if ((v = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top,
 	    "interfaces")) + 1) * sizeof(*v))) == NULL) {
 		ucl_object_unref(top);
@@ -121,8 +123,8 @@ ywg_from_json(const char *json, cbl_yarena *a,
 		v[ni].peer.v = p;
 		ni++;
 	}
-	out->interface.n = ni;
-	out->interface.v = v;
+	*nifp = ni;
+	*ifp = v;
 	ucl_object_unref(top);
 	return (0);
 }

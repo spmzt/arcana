@@ -210,7 +210,7 @@ str(ucl_object_t *o, const char *key, const char *v)
 
 /* {"processes":[...],"ncpu":n,"elapsed":s}; of one jail, with jail. */
 int
-do_processes(struct work *w, const char *jail, struct arc_processes_rsp *rsp)
+do_processes(struct work *w, const char *jail, struct json_rsp *rsp)
 {
 	struct {
 		int	 jid;
@@ -592,7 +592,7 @@ sock_text(struct work *w, const struct sockaddr_storage *ss)
  * each is (a vnode's path, a socket's addresses), and its threads.
  */
 int
-do_process(struct work *w, uint32_t pid, struct arc_processes_rsp *rsp)
+do_process(struct work *w, uint32_t pid, struct json_rsp *rsp)
 {
 	static const char *const types[] = { [PS_FST_TYPE_VNODE] = "file",
 	    [PS_FST_TYPE_FIFO] = "fifo", [PS_FST_TYPE_SOCKET] = "socket",

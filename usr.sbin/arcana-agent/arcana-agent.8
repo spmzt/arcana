@@ -169,6 +169,46 @@ and upgraded with
 on the host or, with
 .Ql pkg -j ,
 in a running jail.
+What runs is arcana-processes' list, read with
+.Va kern.proc.proc
+twice for the CPU shares between the looks; one process's files and
+threads its
+.Ic read
+action, with
+.Xr libprocstat 3 .
+A log is read by arcana-log's
+.Ic read
+action, of the log directory or a jail's own, the files there with
+it.
+How busy the host has been is arcana-history's
+.Ic read ,
+the samples after a time with how they are taken; how it samples and
+its limits are arcana-history's configuration, a commit of it written
+to its history file
+.Pq Fl 1 .
+What happened on the host is arcana-events'
+.Ic read ,
+the events after a number, and its
+.Ic event
+notification, each as it happens.
+Packets are followed through the firewall by arcana-firewall's
+.Ic trace ,
+the kernel's
+.Ql ipfw:::rule-matched
+probe told to
+.Xr dtrace 1 ;
+what the host does with a packet and its reply, nothing sent, by
+arcana-troubleshoot's
+.Ic path-check ,
+one round of
+.Xr traceroute 8
+by its
+.Ic traceroute ,
+and packets taken with
+.Xr tcpdump 1
+by its
+.Ic capture
+(without an interface, the sources there are).
 .Pp
 Every reply carries a trace: the library calls, system calls, files and
 programs the request used, with the output of every program.
@@ -307,7 +347,8 @@ Default
 .It Fl V
 Print the version and exit.
 .It Fl w Ar seconds
-How long a change made in safe mode waits to be confirmed.
+How long a change made in safe mode waits to be confirmed (a job's; a
+commit's is the commit's own).
 Default 60.
 .It Fl -sctp-also Ar addresses
 More addresses, separated by spaces, that every SCTP listener is bound
@@ -722,6 +763,34 @@ variables (arcana-services), a service at a time; and a jail started at
 boot or not, arcana-jails'
 .Ic boot
 .Pq Va jail_list , jail_enable ;
+.It
+BIRD's configuration (arcana-bird), the host's and each running vnet
+jail's, a file at a time: its main file
+.Pq Fl a
+or a
+.Pa .conf
+beside it, the one before kept as
+.Pa .arcana-old ,
+the whole parsed by
+.Xr bird 8
+.Fl p
+first, then
+.Ql birdc configure ;
+by a confirmed commit
+.Ql configure timeout ,
+BIRD's own timer five seconds longer than the commit's, then
+.Ql configure confirm
+once the commit is confirmed, or
+.Ql configure undo
+and the file put back when it is undone;
+.It
+the probes (arcana-probe): each edge's SD-WAN targets with the
+interfaces whose links it watches, and the admin's monitors on any
+tunnel, the host's and each vnet jail edge's, set together an edge and
+a kind at a time, kept beside the history file for the next start
+.Pq Pa sdwan-probes.json , monitors.json , No and their Pa @ Ns Ar jail No files ;
+a monitor without an address, on the host, probes its interface's far
+end through the interface's FIB;
 .It
 the network instance an interface is in, its FIB
 .Pq Dq fib Ar N No first on Va ifconfig_ Ns Ar if ,

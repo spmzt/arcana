@@ -67,8 +67,14 @@ hosts.o: jobs_spec.h
 # arcana-jobs over the YANG family (yqueue.c): a job-spec made the
 # change submit takes as jobs.yaml says, by jobs.awk over the wire's
 # header (which members have a has_); arcana-storage's parts as the
-# pages read them (ystore.c).  arcanactl builds the same.
-SRCS+=		yqueue.c ychange.c ystore.c
+# pages read them (ystore.c); arcana-processes' and the others of what
+# runs and was written down (ygula.c); packets and paths followed
+# (ytshoot.c); the plugins' programs through their modules, the network
+# operation's kinds as the pages read them (yplug.c); an SD-WAN edge's
+# probes in arcana-probe's candidate (yprobes.c).  arcanactl builds the
+# same.
+SRCS+=		yqueue.c ychange.c ystore.c ygula.c yevjson.c ytshoot.c \
+		ytsjson.c yplug.c yprobes.c
 CFLAGS.ychange.c+= -I${.CURDIR}
 CLEANFILES+=	ychange.c ychange.c.tmp
 ychange.c: ${ARC_TOP}/share/arcana/jobs.awk ${ARC_TOP}/share/arcana/jobs.yaml \

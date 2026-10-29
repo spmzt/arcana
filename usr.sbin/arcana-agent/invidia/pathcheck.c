@@ -509,7 +509,7 @@ where(struct pc *c, const struct fwverdict *v, const struct fwset *set)
 
 static int	path_check(struct work *, const char *, const char *,
 		    const char *, uint32_t, const char *, bool, uint32_t, bool,
-		    struct arc_path_check_rsp *, struct fwset *);
+		    struct json_rsp *, struct fwset *);
 
 /*
  * The rule set is the call's own, freed when it ends: several path
@@ -519,7 +519,7 @@ static int	path_check(struct work *, const char *, const char *,
 int
 do_path_check(struct work *w, const char *srcs, const char *dsts,
     const char *proto, uint32_t port, const char *iface, bool has_fib,
-    uint32_t fib0, bool reply, struct arc_path_check_rsp *rsp)
+    uint32_t fib0, bool reply, struct json_rsp *rsp)
 {
 	struct fwset	set;
 	int		rc;
@@ -534,7 +534,7 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 static int
 path_check(struct work *w, const char *srcs, const char *dsts,
     const char *proto, uint32_t port, const char *iface, bool has_fib,
-    uint32_t fib0, bool reply, struct arc_path_check_rsp *rsp,
+    uint32_t fib0, bool reply, struct json_rsp *rsp,
     struct fwset *setp)
 {
 #define	set	(*setp)

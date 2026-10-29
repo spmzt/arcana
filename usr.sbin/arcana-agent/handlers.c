@@ -33,7 +33,6 @@
 struct job {
 	cbl_req			*req;
 	uint16_t		 cmd;
-	bool			 config_only;	/* bird-config: confirm */
 	char			*jail;
 	uint8_t			 action;
 	struct arc_address_req	 addr;
@@ -42,7 +41,6 @@ struct job {
 	uint32_t		 offset;		/* network: rows to leave out */
 	uint64_t		 pos;		/* log: where to read on; history: since */
 	bool			 has_pos;
-	uint32_t		 lim[4];	/* history: the limits */
 	struct pkg_upgrade	 pkg;	/* its names: what many take */
 	bool			 refresh;
 	bool			 from_rc;	/* ipfw-rules: rc.conf's file */
@@ -58,7 +56,6 @@ struct job {
 	char			*host_keys;
 	char			*ssh_key;
 	uint32_t		 log_count;	/* source-log: commits at most */
-	int			 safe_wait;	/* bird-config: s, 0 the agent's */
 	char			*peer;
 	char			*bundle;	/* config-apply */
 	bool			 anyway;
@@ -311,8 +308,6 @@ worker(void *arg)
 	struct arc_address_rsp	 dr;
 	struct arc_network_rsp	 nr;
 	struct arc_route_lookup_rsp rlr;
-	struct arc_traceroute_rsp trr;
-	struct arc_sdwan_probes_rsp spr;
 	struct arc_sdwan_rsp	sdr;
 	struct arc_sdwan_rules_rsp srr;
 	struct arc_sdwan_steer_rsp sstr;
@@ -321,8 +316,6 @@ worker(void *arg)
 	struct arc_sdwan_dns_rsp sdnr;
 	struct arc_sdwan_proxy_rsp sdpr;
 	struct arc_sdwan_ids_rsp sdir;
-	struct arc_bird_config_req bcq;
-	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
 	struct arc_jail_files_rsp jfr;
 	struct arc_builder_rsp	 bur;
@@ -337,21 +330,13 @@ worker(void *arg)
 	struct arc_job_spec	 bsp;
 	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
-	struct arc_capture_req	 capq;
-	struct arc_capture_rsp	 capr;
 	struct arc_tls_rsp	 tlr;
 	struct arc_transport_rsp tpr;
 	struct arc_config_export_rsp cxr;
 	struct arc_config_apply_rsp car;
-	struct arc_path_check_rsp pcr;
 	struct arc_notify_rsp	 ntr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
-	struct arc_processes_rsp prr;
-	struct arc_log_rsp	 lgr;
-	struct arc_fw_trace_rsp	 ftr;
-	struct arc_history_rsp	 hsr;
-	struct arc_events_rsp	 evr;
 	struct arc_agent_update_rsp aur;
 	struct arc_agent_build_rsp abr;
 	struct arc_source_head_rsp shr;
@@ -374,14 +359,12 @@ worker(void *arg)
 	case ARC_CMD_CONFIG_APPLY:
 	case ARC_CMD_TRANSPORT:
 	case ARC_CMD_TLS:
-	case ARC_CMD_SDWAN_PROBES:
 	case ARC_CMD_SDWAN_RULES:
 	case ARC_CMD_SDWAN_STEER:
 	case ARC_CMD_SDWAN_IDS:
 	case ARC_CMD_CONSOLE_UPDATE:
 	case ARC_CMD_AGENT_BUILD:
 	case ARC_CMD_AGENT_UPDATE:
-	case ARC_CMD_BIRD_CONFIG:
 		break;
 	default:
 		w.nice = true;
@@ -448,21 +431,6 @@ worker(void *arg)
 		trace_steps(&w, &ntr.trace.v, &ntr.trace.n);
 		rc = arc_notify_reply(j->req, &ntr);
 		break;
-	case ARC_CMD_PATH_CHECK:
-		what = "path-check";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "path-check %s to %s", j->psrc, j->pdst);
-		memset(&pcr, 0, sizeof(pcr));
-		pcr.has_ok = true;
-		if (scope_enter(&w, j->jail, &pcr.error) == 0)
-			do_path_check(&w, j->psrc, j->pdst, j->pproto, j->pport,
-			    j->piface, j->has_fib, j->fib, j->preply, &pcr);
-		ok = pcr.ok;
-		error = pcr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &pcr.trace.v, &pcr.trace.n);
-		rc = arc_path_check_reply(j->req, &pcr);
-		break;
 	case ARC_CMD_CONFIG_EXPORT:
 		what = j->refresh ? "config-export, secrets too" :
 		    "config-export";
@@ -503,80 +471,6 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &tpr.trace.v, &tpr.trace.n);
 		rc = arc_transport_reply(j->req, &tpr);
-		break;
-	case ARC_CMD_PROCESSES:
-		what = "processes";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "processes");
-		memset(&prr, 0, sizeof(prr));
-		if (j->fib != 0)
-			do_process(&w, j->fib, &prr);
-		else
-			do_processes(&w, j->jail, &prr);
-		ok = prr.ok;
-		error = prr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &prr.trace.v, &prr.trace.n);
-		rc = arc_processes_reply(j->req, &prr);
-		break;
-	case ARC_CMD_LOG:
-		what = "log";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "log %s", j->ref != NULL ? j->ref : "messages");
-		memset(&lgr, 0, sizeof(lgr));
-		if (scope_enter_jail(&w, j->jail, &lgr.error, false) != 0)
-			lgr.has_ok = true;
-		else
-			do_log(&w, j->ref, j->source, j->has_pos, j->pos,
-			    j->offset, &lgr);
-		ok = lgr.ok;
-		error = lgr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &lgr.trace.v, &lgr.trace.n);
-		rc = arc_log_reply(j->req, &lgr);
-		break;
-	case ARC_CMD_FW_TRACE:
-		/* The address rides in source, seconds in fib, packets in
-		 * offset. */
-		what = "fw-trace";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "follow %s through the firewall", j->source);
-		memset(&ftr, 0, sizeof(ftr));
-		if (scope_enter_jail(&w, j->jail, &ftr.error, true) != 0)
-			ftr.has_ok = true;
-		else
-			do_fw_trace(&w, j->source, j->fib, j->offset, &ftr);
-		ok = ftr.ok;
-		error = ftr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &ftr.trace.v, &ftr.trace.n);
-		rc = arc_fw_trace_reply(j->req, &ftr);
-		break;
-	case ARC_CMD_HISTORY:
-		/* How to sample rides in fib and offset. */
-		what = j->refresh ? "history set" : "history";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "%s", what);
-		memset(&hsr, 0, sizeof(hsr));
-		do_history(&w, j->pos, j->refresh, j->fib, j->offset,
-		    j->restart ? j->lim : NULL, j->source, &hsr);
-		ok = hsr.ok;
-		error = hsr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &hsr.trace.v, &hsr.trace.n);
-		rc = arc_history_reply(j->req, &hsr);
-		break;
-	case ARC_CMD_EVENTS:
-		what = "events";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "events");
-		memset(&evr, 0, sizeof(evr));
-		do_events(&w, j->pos, &evr);
-		ok = evr.ok;
-		error = evr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &evr.trace.v, &evr.trace.n);
-		rc = arc_events_reply(j->req, &evr);
 		break;
 	case ARC_CMD_CERTS:
 		what = j->jail != NULL ? wfmt(&w, "certificates of %s", j->jail) :
@@ -627,29 +521,6 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &tlr.trace.v, &tlr.trace.n);
 		rc = arc_tls_reply(j->req, &tlr);
-		break;
-	case ARC_CMD_CAPTURE:
-		what = wfmt(&w, "capture %s%s%s", j->ref != NULL ? j->ref :
-		    "sources", j->jail != NULL ? " in " : "", j->jail != NULL ?
-		    j->jail : "");
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "%s", what);
-		memset(&capq, 0, sizeof(capq));
-		memset(&capr, 0, sizeof(capr));
-		capr.has_ok = true;
-		capq.interface = j->ref;
-		capq.net_filter = j->sha256;
-		capq.has_seconds = j->fib > 0;
-		capq.seconds = j->fib;
-		capq.has_packets = j->offset > 0;
-		capq.packets = j->offset;
-		if (scope_enter(&w, j->jail, &capr.error) == 0)
-			do_capture(&w, &capq, &capr);
-		ok = capr.ok;
-		error = capr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &capr.trace.v, &capr.trace.n);
-		rc = arc_capture_reply(j->req, &capr);
 		break;
 	case ARC_CMD_SSH:
 		what = j->jail != NULL ? wfmt(&w, "sshd of %s", j->jail) : "sshd";
@@ -816,32 +687,6 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &rlr.trace.v, &rlr.trace.n);
 		rc = arc_route_lookup_reply(j->req, &rlr);
-		break;
-	case ARC_CMD_TRACEROUTE:
-		what = wfmt(&w, "traceroute to %s", j->source);
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&trr, 0, sizeof(trr));
-		do_traceroute(&w, j->source, &trr);
-		ok = trr.ok;
-		error = trr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &trr.trace.v, &trr.trace.n);
-		rc = arc_traceroute_reply(j->req, &trr);
-		break;
-	case ARC_CMD_SDWAN_PROBES:
-		what = "sdwan probes";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
-		    what);
-		memset(&spr, 0, sizeof(spr));
-		error = NULL;
-		ok = do_probes_set(&w, j->ref, &error) == 0;
-		spr.has_ok = true;
-		spr.ok = ok;
-		spr.error = error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &spr.trace.v, &spr.trace.n);
-		rc = arc_sdwan_probes_reply(j->req, &spr);
 		break;
 	case ARC_CMD_SDWAN_RULES:
 		what = "sdwan rules";
@@ -1073,45 +918,6 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &aur.trace.v, &aur.trace.n);
 		rc = arc_agent_update_reply(j->req, &aur);
-		break;
-	case ARC_CMD_BIRD_CONFIG:
-		/* The path rides in source, the text in ref. */
-		what = wfmt(&w, "bird config %s%s", j->config_only ? "confirm" :
-		    j->ref == NULL ? "read" : j->refresh ? "check" : j->restart ?
-		    "write (safe)" : "write", j->source != NULL ? " " : "");
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s%s",
-		    what, j->source != NULL ? j->source : "");
-		memset(&bcq, 0, sizeof(bcq));
-		memset(&bcr, 0, sizeof(bcr));
-		bcq.conf_path = j->source;
-		bcq.conf_text = j->ref;
-		bcq.sha256 = j->sha256;
-		bcq.dry_run = j->refresh;
-		bcq.safe = j->restart;
-		bcq.confirm = j->config_only;
-		bcq.has_safe_wait = j->safe_wait > 0;
-		bcq.safe_wait = (uint32_t)j->safe_wait;
-		bcr.has_ok = true;
-		if (scope_enter(&w, j->jail, &bcr.error) != 0)
-			;
-		else if (j->ref == NULL && !bcq.confirm)
-			do_bird_config(&w, &bcq, &bcr);
-		else {
-			pthread_mutex_lock(&change_lock);
-			if (change_note("%s", what))
-				do_bird_config(&w, &bcq, &bcr);
-			else {
-				bcr.has_ok = true;
-				bcr.error = STOPPING;
-			}
-			(void)change_note(NULL);
-			pthread_mutex_unlock(&change_lock);
-		}
-		ok = bcr.ok;
-		error = bcr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &bcr.trace.v, &bcr.trace.n);
-		rc = arc_bird_config_reply(j->req, &bcr);
 		break;
 	default:
 		what = wfmt(&w, "address %s %s %s%s%s%s", j->addr.jail,
@@ -1391,6 +1197,18 @@ arc_network_doit(cbl_req *req, const struct arc_network_req *rq,
 
 	if (rq->net_kind >= nitems(net_kind_names))
 		return (reject(req, "invalid kind"));
+	/* Read through their modules now (Y-3), their numbers kept. */
+	if (rq->net_kind == ARC_NET_KIND_NETGRAPH)
+		return (reject(req, "the netgraph kind is retired: "
+		    "arcana-netgraph's netgraph, its read action"));
+	if (rq->net_kind == ARC_NET_KIND_WIREGUARD)
+		return (reject(req, "the wireguard kind is retired: "
+		    "arcana-wireguard's wireguard, its read action"));
+	if (rq->net_kind == ARC_NET_KIND_BIRD || rq->net_kind ==
+	    ARC_NET_KIND_BIRD_ROUTES || rq->net_kind == ARC_NET_KIND_BIRD_OSPF)
+		return (reject(req, "the bird, bird-routes and bird-ospf kinds "
+		    "are retired: arcana-bird's bird, its read, routes and ospf "
+		    "actions"));
 	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
 		return (reject(req, "invalid jail name"));
 	if (rq->has_net_family && rq->net_family > ARC_NET_FAMILY_INET6)
@@ -1429,41 +1247,6 @@ arc_route_lookup_doit(cbl_req *req, const struct arc_route_lookup_req *rq,
 	j->fib = rq->has_net_fib ? rq->net_fib : 0;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
-	return (start(j));
-}
-
-int
-arc_traceroute_doit(cbl_req *req, const struct arc_traceroute_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->lookup == NULL || rq->lookup[0] == '-' || rq->lookup[strspn(
-	    rq->lookup, "0123456789abcdefABCDEF.:")] != '\0')
-		return (reject(req, "an address to trace the route to is "
-		    "needed"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_TRACEROUTE;
-	j->source = xstrdup(rq->lookup);
-	return (start(j));
-}
-
-int
-arc_sdwan_probes_doit(cbl_req *req, const struct arc_sdwan_probes_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	/* An array, the host's; {"jail", "targets"}, a jail's. */
-	if (rq->json == NULL || (rq->json[0] != '[' && rq->json[0] != '{'))
-		return (reject(req, "the targets are a JSON array"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SDWAN_PROBES;
-	j->ref = xstrdup(rq->json);
 	return (start(j));
 }
 
@@ -1608,36 +1391,6 @@ arc_monitors_doit(cbl_req *req, const struct arc_monitors_req *rq,
 }
 
 int
-arc_bird_config_doit(cbl_req *req, const struct arc_bird_config_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->conf_path != NULL && rq->conf_path[0] != '\0' &&
-	    rq->conf_path[0] != '/')
-		return (reject(req, "a configuration file is named by its "
-		    "whole path"));
-	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
-		return (reject(req, "invalid jail name"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_BIRD_CONFIG;
-	j->source = rq->conf_path != NULL && rq->conf_path[0] != '\0' ?
-	    xstrdup(rq->conf_path) : NULL;
-	j->ref = rq->conf_text != NULL ? xstrdup(rq->conf_text) : NULL;
-	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
-	j->refresh = rq->dry_run;
-	/* Safe rides where a restart does, confirm where config-only. */
-	j->restart = rq->safe;
-	j->config_only = rq->confirm;
-	j->safe_wait = rq->has_safe_wait ? (int)rq->safe_wait : 0;
-	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
-	    NULL;
-	return (start(j));
-}
-
-int
 arc_ipfw_rules_doit(cbl_req *req, const struct arc_ipfw_rules_req *rq,
     void *arg __unused)
 {
@@ -1654,29 +1407,6 @@ arc_ipfw_rules_doit(cbl_req *req, const struct arc_ipfw_rules_req *rq,
 	    rq->conf_text) : NULL;
 	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
 	j->refresh = rq->dry_run;
-	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
-	    NULL;
-	return (start(j));
-}
-
-int
-arc_path_check_doit(cbl_req *req, const struct arc_path_check_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_PATH_CHECK;
-	j->psrc = xstrdup(rq->path_src);
-	j->pdst = xstrdup(rq->path_dst);
-	j->pproto = rq->path_proto != NULL ? xstrdup(rq->path_proto) : NULL;
-	j->piface = rq->interface != NULL ? xstrdup(rq->interface) : NULL;
-	j->pport = rq->has_path_port ? rq->path_port : 0;
-	j->preply = rq->path_reply;
-	j->has_fib = rq->has_net_fib;
-	j->fib = rq->has_net_fib ? rq->net_fib : 0;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
 	return (start(j));
@@ -1748,118 +1478,6 @@ arc_transport_doit(cbl_req *req, const struct arc_transport_req *rq,
 	    xstrdup(rq->unlisten) : NULL;
 	j->listen_keep = rq->listen_keep;
 	j->sctp_also = rq->sctp_also != NULL ? xstrdup(rq->sctp_also) : NULL;
-	return (start(j));
-}
-
-int
-arc_processes_doit(cbl_req *req, const struct arc_processes_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
-		return (reject(req, "invalid jail name"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_PROCESSES;
-	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
-	    NULL;
-	j->fib = rq->has_pid ? rq->pid : 0;
-	return (start(j));
-}
-
-int
-arc_log_doit(cbl_req *req, const struct arc_log_req *rq, void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->log_name != NULL && rq->log_name[0] != '\0' &&
-	    rq->log_name[0] != '@' && !log_name_ok(rq->log_name))
-		return (reject(req, "a log is named with letters, digits "
-		    "and . _ -"));
-	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
-		return (reject(req, "invalid jail name"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_LOG;
-	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
-	    NULL;
-	j->ref = rq->log_name != NULL && rq->log_name[0] != '\0' ?
-	    xstrdup(rq->log_name) : NULL;
-	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
-	    xstrdup(rq->net_filter) : NULL;
-	j->has_pos = rq->has_position;
-	j->pos = rq->position;
-	j->offset = rq->has_lines ? rq->lines : 0;
-	return (start(j));
-}
-
-int
-arc_fw_trace_doit(cbl_req *req, const struct arc_fw_trace_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
-		return (reject(req, "invalid jail name"));
-	if (rq->net_filter == NULL || strlen(rq->net_filter) > 64)
-		return (reject(req, "the address to follow is an IPv4 or IPv6 "
-		    "address"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_FW_TRACE;
-	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
-	    NULL;
-	j->source = xstrdup(rq->net_filter);
-	j->fib = rq->has_seconds ? rq->seconds : 0;
-	j->offset = rq->has_packets ? rq->packets : 0;
-	return (start(j));
-}
-
-int
-arc_history_doit(cbl_req *req, const struct arc_history_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->has_sample_step != rq->has_sample_keep)
-		return (reject(req, "how to sample is both: every how many "
-		    "seconds, and how many are kept"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_HISTORY;
-	j->pos = rq->has_after ? rq->after : 0;
-	j->refresh = rq->has_sample_step;
-	j->fib = rq->sample_step;
-	j->offset = rq->sample_keep;
-	j->restart = rq->has_limit_cpu && rq->has_limit_mem &&
-	    rq->has_limit_swap;
-	j->lim[0] = rq->limit_cpu;
-	j->lim[1] = rq->limit_mem;
-	j->lim[2] = rq->limit_swap;
-	/* Not said: as it was. */
-	j->lim[3] = rq->has_limit_storage ? rq->limit_storage : UINT32_MAX;
-	/* The rules ride in source; empty takes them all away. */
-	j->source = j->refresh && rq->limit_rules != NULL ?
-	    xstrdup(rq->limit_rules) : NULL;
-	return (start(j));
-}
-
-int
-arc_events_doit(cbl_req *req, const struct arc_events_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_EVENTS;
-	j->pos = rq->has_after ? rq->after : 0;
 	return (start(j));
 }
 
@@ -1949,30 +1567,6 @@ arc_tls_doit(cbl_req *req, const struct arc_tls_req *rq, void *arg __unused)
 	j->source = rq->tls_cert != NULL ? xstrdup(rq->tls_cert) : NULL;
 	j->ref = rq->tls_ca != NULL ? xstrdup(rq->tls_ca) : NULL;
 	j->host_keys = rq->tls_peer != NULL ? xstrdup(rq->tls_peer) : NULL;
-	return (start(j));
-}
-
-int
-arc_capture_doit(cbl_req *req, const struct arc_capture_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
-		return (reject(req, "invalid jail name"));
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_CAPTURE;
-	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
-	    NULL;
-	/* The source rides in ref, the filter in sha256. */
-	j->ref = rq->interface != NULL && rq->interface[0] != '\0' ?
-	    xstrdup(rq->interface) : NULL;
-	j->sha256 = rq->net_filter != NULL ? xstrdup(rq->net_filter) : NULL;
-	/* As fw-trace's: seconds in fib, packets in offset. */
-	j->fib = rq->has_seconds ? rq->seconds : 0;
-	j->offset = rq->has_packets ? rq->packets : 0;
 	return (start(j));
 }
 

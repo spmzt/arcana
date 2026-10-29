@@ -82,8 +82,8 @@ sources(struct work *w, const char *prog)
 }
 
 void
-do_capture(struct work *w, const struct arc_capture_req *rq,
-    struct arc_capture_rsp *rsp)
+do_capture(struct work *w, const struct capture_req *rq,
+    struct json_rsp *rsp)
 {
 	struct execres	 res;
 	ucl_object_t	*top, *lines;
@@ -108,7 +108,7 @@ do_capture(struct work *w, const struct arc_capture_req *rq,
 		rsp->error = "a source is an interface or a tap's name";
 		return;
 	}
-	if (rq->net_filter != NULL && strpbrk(rq->net_filter, "\r\n") != NULL) {
+	if (rq->filter != NULL && strpbrk(rq->filter, "\r\n") != NULL) {
 		ucl_object_unref(top);
 		rsp->error = "a filter is one line of pcap-filter(7)";
 		return;
@@ -118,10 +118,10 @@ do_capture(struct work *w, const struct arc_capture_req *rq,
 		rsp->error = "there is no timeout(1) here";
 		return;
 	}
-	packets = rq->has_packets && rq->packets > 0 ? (int)MIN(rq->packets,
-	    CAPTURE_PACKETS) : 50;
-	seconds = rq->has_seconds && rq->seconds > 0 ? (int)MIN(rq->seconds,
-	    CAPTURE_SECONDS) : 10;
+	packets = rq->packets > 0 ? (int)MIN(rq->packets, CAPTURE_PACKETS) :
+	    50;
+	seconds = rq->seconds > 0 ? (int)MIN(rq->seconds, CAPTURE_SECONDS) :
+	    10;
 	/* A directory of its own, root's alone: what was on the wire is
 	 * nobody else's to read while it is there. */
 	tdir = wfmt(w, "%s/tmp", w->jail == NULL && opts.tools_dir != NULL ?
@@ -155,7 +155,7 @@ do_capture(struct work *w, const struct arc_capture_req *rq,
 	 * (-w a file, -z a command), which runs as root.
 	 */
 	argv[n++] = (char *)(uintptr_t)"--";
-	for (f = rq->net_filter != NULL ? rq->net_filter : ""; *f != '\0' &&
+	for (f = rq->filter != NULL ? rq->filter : ""; *f != '\0' &&
 	    n < 60; f = e) {
 		f += strspn(f, " \t");
 		if (*f == '\0')
@@ -218,8 +218,8 @@ do_capture(struct work *w, const struct arc_capture_req *rq,
 	close(tfd);
 	ucl_object_insert_key(top, ucl_object_fromstring(rq->interface),
 	    "source", 0, false);
-	ucl_object_insert_key(top, ucl_object_fromstring(rq->net_filter !=
-	    NULL ? rq->net_filter : ""), "filter", 0, false);
+	ucl_object_insert_key(top, ucl_object_fromstring(rq->filter != NULL ?
+	    rq->filter : ""), "filter", 0, false);
 	ucl_object_insert_key(top, ucl_object_fromint(got), "packets", 0,
 	    false);
 	ucl_object_insert_key(top, ucl_object_fromint(packets), "limit", 0,

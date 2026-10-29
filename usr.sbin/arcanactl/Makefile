@@ -1,6 +1,8 @@
 PROG=		arcanactl
-SRCS=		arcanactl.c yjsonin.c yqueue.c ychange.c ystore.c
-# RFC 7951's JSON in, arcana-jobs and arcana-storage, the console's.
+SRCS=		arcanactl.c yjsonin.c yqueue.c ychange.c ystore.c ygula.c \
+		yevjson.c ytshoot.c ytsjson.c yprobes.c
+# RFC 7951's JSON in, arcana-jobs, arcana-storage, what runs and was
+# written down, packets and paths followed, arcana-probe: the console's.
 .PATH:		${.CURDIR}/../../www/arcana-console
 MAN=		arcanactl.8
 

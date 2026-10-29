@@ -198,9 +198,9 @@ module arcana-history {
     }
   }
 
-  container history {
+  grouping history-settings {
     description
-      "The sampler and what it kept.";
+      "How the agent samples, and its limits.";
     container sampling {
       description
         "How the agent samples, kept for its next start: an hour
@@ -216,11 +216,11 @@ module arcana-history {
       }
       leaf keep {
         type uint32 {
-          range "1..100000";
+          range "0..5000";
         }
         default "720";
         description
-          "How many samples are kept.";
+          "How many samples are kept; 0, none taken.";
       }
     }
     container limits {
@@ -301,59 +301,71 @@ module arcana-history {
           "Over it at the last sample.";
       }
     }
+  }
+
+  grouping history-totals {
+    description
+      "The sampler as it is, but its samples.";
+    leaf bytes {
+      type uint64;
+      units "bytes";
+      description
+        "The memory the samples take.";
+    }
+    leaf ncpu {
+      type uint16;
+      description
+        "How many CPUs the host has.";
+    }
+    leaf memory-total {
+      type uint64;
+      units "bytes";
+      description
+        "The host's memory.";
+    }
+    leaf swap-total {
+      type uint64;
+      units "bytes";
+      description
+        "Its swap.";
+    }
+    leaf racct {
+      type boolean;
+      description
+        "The kernel accounts resources per jail
+         (kern.racct.enable).";
+    }
+    leaf-list interface {
+      type string;
+      description
+        "The interfaces told apart.";
+    }
+    leaf-list disk {
+      type string;
+      description
+        "The disks told apart.";
+    }
+    leaf-list jail {
+      type string;
+      description
+        "The jails told apart.";
+    }
+    leaf-list relay {
+      type string;
+      description
+        "The FEC relays told apart.";
+    }
+  }
+
+  container history {
+    description
+      "The sampler and what it kept.";
+    uses history-settings;
     container state {
       config false;
       description
         "The sampler as it is.";
-      leaf bytes {
-        type uint64;
-        units "bytes";
-        description
-          "The memory the samples take.";
-      }
-      leaf ncpu {
-        type uint16;
-        description
-          "How many CPUs the host has.";
-      }
-      leaf memory-total {
-        type uint64;
-        units "bytes";
-        description
-          "The host's memory.";
-      }
-      leaf swap-total {
-        type uint64;
-        units "bytes";
-        description
-          "Its swap.";
-      }
-      leaf racct {
-        type boolean;
-        description
-          "The kernel accounts resources per jail
-           (kern.racct.enable).";
-      }
-      leaf-list interface {
-        type string;
-        description
-          "The interfaces told apart.";
-      }
-      leaf-list disk {
-        type string;
-        description
-          "The disks told apart.";
-      }
-      leaf-list jail {
-        type string;
-        description
-          "The jails told apart.";
-      }
-      leaf-list relay {
-        type string;
-        description
-          "The FEC relays told apart.";
-      }
+      uses history-totals;
       list sample {
         cg:struct "sample";
         key "time";
@@ -364,8 +376,9 @@ module arcana-history {
     }
     action read {
       description
-        "The samples after a time: what a page that has the ones
-         before asks for.";
+        "The samples after a time, with how they are taken and the
+         sampler as it is: what a page that has the ones before asks
+         for.";
       input {
         leaf after {
           type yang:date-and-time;
@@ -374,6 +387,8 @@ module arcana-history {
         }
       }
       output {
+        uses history-settings;
+        uses history-totals;
         list sample {
           cg:struct "sample";
           key "time";
