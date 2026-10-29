@@ -1374,9 +1374,11 @@ carp_body()
 	atf_check jexec arcw_c2 ifconfig "${ep%a}b" inet 192.0.2.3/24 up
 	start_daemon
 	# Not kept (-p): these jails' rc.conf would be the host's.
-	echo 'the-lab-key' | atf_check -o match:"done +arcw_c1: ${ep%a}a: carp add vhid 7 192.0.2.1/24" \
+	echo 'the-lab-key' > stdin.in
+	atf_check < stdin.in -o match:"done +arcw_c1: ${ep%a}a: carp add vhid 7 192.0.2.1/24" \
 	    -o not-match:'the-lab-key' "$JGC" -t -c "$SOCK" -j arcw_c1 carp add "${ep%a}a" 192.0.2.1/24 vhid=7 key
-	echo 'the-lab-key' | atf_check -o match:'done' \
+	echo 'the-lab-key' > stdin.in
+	atf_check < stdin.in -o match:'done' \
 	    "$JGC" -c "$SOCK" -j arcw_c2 carp add "${ep%a}b" 192.0.2.1/24 vhid=7 advskew=100 key
 	sleep 4
 	atf_check -o match:'"carp":true' -o match:'"carp":\[\{"vhid":7,"state":"MASTER","version":2,"advbase":1,"advskew":0' \
@@ -1653,32 +1655,41 @@ zfs_key_body()
 	md=$(mdconfig -a -t swap -s 128m) || atf_skip "no memory disk"
 	echo "$md" > md
 	atf_check zpool create -O mountpoint=none arcw_zk "$md"
-	echo 'first passphrase' | atf_check zfs create -o encryption=on \
+	echo 'first passphrase' > stdin.in
+	atf_check < stdin.in zfs create -o encryption=on \
 	    -o keyformat=passphrase -o keylocation=prompt -o mountpoint=none \
 	    arcw_zk/enc
 	atf_check zfs unload-key arcw_zk/enc
 	atf_check -o inline:'unavailable\n' zfs get -H -o value keystatus arcw_zk/enc
 	start_daemon
 	# A wrong one: zfs's own words, nothing loaded.
-	echo 'not the key' | atf_check -s exit:1 -e match:'[Ii]ncorrect key' -o ignore \
+	echo 'not the key' > stdin.in
+	atf_check < stdin.in -s exit:1 -e match:'[Ii]ncorrect key' -o ignore \
 	    "$JGC" -c "$SOCK" zfskey arcw_zk/enc
-	echo 'first passphrase' | atf_check -o ignore "$JGC" -c "$SOCK" zfskey arcw_zk/enc
+	echo 'first passphrase' > stdin.in
+	atf_check < stdin.in -o ignore "$JGC" -c "$SOCK" zfskey arcw_zk/enc
 	atf_check -o inline:'available\n' zfs get -H -o value keystatus arcw_zk/enc
-	echo 'first passphrase' | atf_check -s exit:1 -e match:'loaded already' -o ignore \
+	echo 'first passphrase' > stdin.in
+	atf_check < stdin.in -s exit:1 -e match:'loaded already' -o ignore \
 	    "$JGC" -c "$SOCK" zfskey arcw_zk/enc
 	# Changed, and asked for at a prompt again.
-	printf '\nsecond passphrase\n' | atf_check -o ignore "$JGC" -c "$SOCK" zfskey -n arcw_zk/enc
+	printf '\nsecond passphrase\n' > stdin.in
+	atf_check < stdin.in -o ignore "$JGC" -c "$SOCK" zfskey -n arcw_zk/enc
 	atf_check -o inline:'prompt\n' zfs get -H -o value keylocation arcw_zk/enc
 	atf_check zfs unload-key arcw_zk/enc
-	echo 'first passphrase' | atf_check -s exit:1 -e match:'[Ii]ncorrect key' -o ignore \
+	echo 'first passphrase' > stdin.in
+	atf_check < stdin.in -s exit:1 -e match:'[Ii]ncorrect key' -o ignore \
 	    "$JGC" -c "$SOCK" zfskey arcw_zk/enc
 	# Not loaded: the key now first, then the new one.
-	printf 'second passphrase\nthird passphrase\n' | atf_check -o ignore \
+	printf 'second passphrase\nthird passphrase\n' > stdin.in
+	atf_check < stdin.in -o ignore \
 	    "$JGC" -c "$SOCK" zfskey -n arcw_zk/enc
 	atf_check zfs unload-key arcw_zk/enc
-	echo 'third passphrase' | atf_check -o ignore "$JGC" -c "$SOCK" zfskey arcw_zk/enc
+	echo 'third passphrase' > stdin.in
+	atf_check < stdin.in -o ignore "$JGC" -c "$SOCK" zfskey arcw_zk/enc
 	# Too short; and no key left anywhere, nor in what was said.
-	printf '\nshort\n' | atf_check -s exit:1 -e match:'8 characters at least' -o ignore \
+	printf '\nshort\n' > stdin.in
+	atf_check < stdin.in -s exit:1 -e match:'8 characters at least' -o ignore \
 	    "$JGC" -c "$SOCK" zfskey -n arcw_zk/enc
 	ls -a /tmp | grep -q '^\.arcana-key\.' && atf_fail "a key file was left"
 	grep -Eq '(first|second|third) passphrase' daemon.out && atf_fail "a key in the log"

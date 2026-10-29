@@ -11280,7 +11280,8 @@ exit 0
 EOS
 	chmod +x fake-ifconfig
 	start_daemon
-	echo 'sekrit' | atf_check -o match:'done +lo0: carp add vhid 3 10.0.0.100/24$' \
+	echo 'sekrit' > stdin.in
+	atf_check < stdin.in -o match:'done +lo0: carp add vhid 3 10.0.0.100/24$' \
 	    -o not-match:'sekrit' "$JGC" -t -p -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=3 advskew=20 key
 	atf_check -o inline:'carp-set lo0 3 advskew=20 key=sekrit\n' cat carp.log
 	atf_check -o match:'^lo0 inet 10.0.0.100/24 vhid 3 alias$' cat ifconfig.log
@@ -11301,7 +11302,8 @@ EOS
 	    "$JGC" -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=0
 	atf_check -s exit:1 -e match:'the words are vhid' -o ignore \
 	    "$JGC" -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=3 peer=10.0.0.9
-	echo 'a key with spaces' | atf_check -s exit:1 -e match:'19 characters at most' -o ignore \
+	echo 'a key with spaces' > stdin.in
+	atf_check < stdin.in -s exit:1 -e match:'19 characters at most' -o ignore \
 	    "$JGC" -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=3 key
 	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
 	    "$JGC" -s -c "$SOCK" carp set lo0 vhid=3 advskew=1

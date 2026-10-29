@@ -540,6 +540,12 @@ rc_vh(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			break;
 		if (strstr(line, wfmt(w, "vhid %s ", vh)) == NULL)
 			continue;
+		/* The key it keeps is no trace's either. */
+		if (sp->preshared_key == NULL && (v = strstr(line, "pass ")) !=
+		    NULL) {
+			v += 5;
+			exec_set_hide(wstrndup(w, v, strcspn(v, " ")));
+		}
 		out = wstrdup(w, "");
 		for (tok = line; *tok != '\0'; tok += len) {
 			tok += strspn(tok, " ");
@@ -595,8 +601,28 @@ rc_vh(struct work *w, const struct arc_job_spec *sp, const char **errp)
  * with the vhid's words (and its key, which rc.conf then holds), loaded
  * at boot with carp in kld_list.
  */
+static int	carp_do(struct work *, const struct arc_job_spec *,
+		    const char **);
+
+/*
+ * The key is in no trace: the programs' words have it hidden, and what
+ * they say of rc.conf, which holds it, is not kept.
+ */
 int
 do_carp(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	int	rc;
+
+	exec_set_hide(sp->preshared_key);
+	exec_set_secret(sp->persist);
+	rc = carp_do(w, sp, errp);
+	exec_set_secret(false);
+	exec_set_hide(NULL);
+	return (rc);
+}
+
+static int
+carp_do(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
 	struct execres	 res;
 	const char	*addr, *vh, *spec, *v;
