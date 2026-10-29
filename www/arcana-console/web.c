@@ -1172,6 +1172,8 @@ static const struct {
 	{ "pdf", "application/pdf" },
 };
 
+static int	sec_add(struct lws *, unsigned char **, unsigned char *);
+
 /* A file of the web root; 0 when it is being sent, -1 for none. */
 static int
 serve_file(struct lws *wsi, const char *path)
@@ -1179,6 +1181,7 @@ serve_file(struct lws *wsi, const char *path)
 	struct stat	 sb;
 	const char	*dot, *type;
 	char		 full[MAXPATHLEN];
+	unsigned char	 hdrs[2048], *p;
 	size_t		 i;
 	int		 n;
 
@@ -1204,7 +1207,11 @@ serve_file(struct lws *wsi, const char *path)
 				type = mimes[i].type;
 				break;
 			}
-	return (lws_serve_http_file(wsi, full, type, NULL, 0) < 0 ? -2 : 0);
+	p = hdrs;
+	if (sec_add(wsi, &p, hdrs + sizeof(hdrs)) != 0)
+		return (-2);
+	return (lws_serve_http_file(wsi, full, type, (const char *)hdrs,
+	    (int)(p - hdrs)) < 0 ? -2 : 0);
 }
 
 /* A reply of our own, before any handler: 404, 405, 413. */
@@ -1275,6 +1282,62 @@ done(struct lws *wsi, const char *why)
 	return (0);
 }
 
+/*
+ * What every reply carries, the page's and the API's alike.  The page's
+ * own policy (web/index.html's) with no framing of it by any other page;
+ * no other site's page takes a reply into its own (an <img> or a
+ * <script> of another origin), nor is one read as other than its type
+ * says; no window of another site shares the page's; nothing of the
+ * address is sent on; and of the browser's features only those the page
+ * uses: passkeys, fullscreen and the clipboard.
+ */
+static const struct {
+	const unsigned char	*name;
+	const unsigned char	*value;
+} sec_headers[] = {
+	{ (const unsigned char *)"content-security-policy:",
+	  (const unsigned char *)"default-src 'self'; script-src 'self' "
+	  "'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src "
+	  "'self' data:; font-src 'self'; connect-src 'self'; manifest-src "
+	  "'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; "
+	  "object-src 'none'; frame-ancestors 'none'" },
+	{ (const unsigned char *)"x-frame-options:",
+	  (const unsigned char *)"DENY" },
+	{ (const unsigned char *)"cross-origin-resource-policy:",
+	  (const unsigned char *)"same-origin" },
+	{ (const unsigned char *)"cross-origin-opener-policy:",
+	  (const unsigned char *)"same-origin" },
+	{ (const unsigned char *)"x-content-type-options:",
+	  (const unsigned char *)"nosniff" },
+	{ (const unsigned char *)"referrer-policy:",
+	  (const unsigned char *)"no-referrer" },
+	{ (const unsigned char *)"permissions-policy:",
+	  (const unsigned char *)"publickey-credentials-get=(self), "
+	  "publickey-credentials-create=(self), fullscreen=(self), "
+	  "clipboard-write=(self), camera=(), microphone=(), geolocation=(), "
+	  "payment=(), usb=(), serial=(), bluetooth=(), hid=(), midi=(), "
+	  "display-capture=(), screen-wake-lock=(), xr-spatial-tracking=(), "
+	  "browsing-topics=()" },
+};
+
+/* sec_headers, and over TLS the browser's keeping to it, at *pp. */
+static int
+sec_add(struct lws *wsi, unsigned char **pp, unsigned char *end)
+{
+	size_t	i;
+	int	rc;
+
+	for (rc = 0, i = 0; rc == 0 && i < nitems(sec_headers); i++)
+		rc = lws_add_http_header_by_name(wsi, sec_headers[i].name,
+		    sec_headers[i].value,
+		    (int)strlen((const char *)sec_headers[i].value), pp, end);
+	if (rc == 0 && lws_is_ssl(wsi))
+		rc = lws_add_http_header_by_name(wsi, (const unsigned char *)
+		    "strict-transport-security:", (const unsigned char *)
+		    "max-age=31536000", 16, pp, end);
+	return (rc);
+}
+
 /* The next piece of the reply; -1 when the connection is to close. */
 static int
 req_write(struct lws *wsi, struct pss *pss)
@@ -1309,6 +1372,8 @@ req_write(struct lws *wsi, struct pss *pss)
 				    (unsigned char *)name, (unsigned char *)
 				    h->value, (int)strlen(h->value), &p, end);
 		}
+		if (rc == 0)
+			rc = sec_add(wsi, &p, end);
 		/* A stream's length is not known: it goes until it ends,
 		 * chunked over HTTP/1.1 (no :method pseudo-header: not
 		 * HTTP/2, which frames its own) so that its end is told. */

@@ -2102,6 +2102,25 @@ ATF_TC_BODY(csrf, tc)
 	origin_hdr = NULL;
 	http("GET", path, NULL, &r);
 	ATF_CHECK_MSG(r.status != 403, "HTTP %d: %s", r.status, r.body);
+	/* Nor can another site's page take the reply into its own, or
+	 * frame it, and so on (web.c's sec_headers). */
+	ATF_CHECK(strcasestr(r.head, "cross-origin-resource-policy: "
+	    "same-origin") != NULL);
+	ATF_CHECK(strcasestr(r.head, "x-content-type-options: nosniff") !=
+	    NULL);
+	ATF_CHECK(strcasestr(r.head, "frame-ancestors 'none'") != NULL);
+	ATF_CHECK(strcasestr(r.head, "x-frame-options: DENY") != NULL);
+	ATF_CHECK(strcasestr(r.head, "cross-origin-opener-policy: "
+	    "same-origin") != NULL);
+	ATF_CHECK(strcasestr(r.head, "referrer-policy: no-referrer") !=
+	    NULL);
+	ATF_CHECK(strcasestr(r.head, "camera=()") != NULL);
+	resp_free(&r);
+	/* The page itself, the same. */
+	http("GET", "/", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strcasestr(r.head, "content-security-policy: default-src "
+	    "'self'") != NULL);
 	resp_free(&r);
 	send_xjg = true;
 	origin_hdr = "https://evil.example";

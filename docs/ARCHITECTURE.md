@@ -123,7 +123,16 @@ a tenant, a fleet of its own, and then sees that tenant's hosts alone.
   Idle timeout 30 min, absolute 12 h.  One guard checks every protected
   route; state-changing requests also need the console's own `Origin`
   (a browser sends it), or `X-Arcana: 1` from a client that sends no
-  `Origin`.
+  `Origin`.  A GET changes nothing, so it needs neither, even where a
+  read is kept to the roles that may change (a host's system files).
+* **Headers.**  Every reply, the page's and the API's: a
+  Content-Security-Policy (only the console's own scripts, styles, images
+  and connections; WebAssembly; no framing), `X-Frame-Options: DENY`,
+  `Cross-Origin-Resource-Policy` and `Cross-Origin-Opener-Policy`
+  `same-origin`, `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+  no-referrer`, a Permissions-Policy allowing passkeys, fullscreen and
+  the clipboard alone, and over TLS `Strict-Transport-Security` (a
+  year, this host only).
 
 ## Enrolment (host to console)
 
