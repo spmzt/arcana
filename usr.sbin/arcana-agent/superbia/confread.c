@@ -98,7 +98,7 @@ conf_scope_read(struct work *w, const char *scope, struct cjail **outp,
 	argv[4] = sep;
 	argv[5] = NULL;
 	*errp = NULL;
-	if (run_exec(w, argv, &res) != 0) {
+	if (run_read(w, argv, &res) != 0) {
 		*errp = res.errlen > 0 ? wtext(w, wstrndup(w, res.err,
 		    res.errlen > 0 && res.err[res.errlen - 1] == '\n' ?
 		    res.errlen - 1 : res.errlen)) : exec_error(w, &res, "jail");

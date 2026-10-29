@@ -204,13 +204,15 @@ do_action(struct work *w, const char *name, uint8_t action,
 		}
 		step = step_begin(w, STEP_SYSCALL, "jail_remove(2)",
 		    "jid %d", jid);
-		if (jail_remove(jid) == -1) {
+		if (work_dry(w, step))
+			;
+		else if (jail_remove(jid) == -1) {
 			rsp->error = wfmt(w, "jail_remove: %s",
 			    strerror(errno));
 			step_end(w, step, false, "%s", strerror(errno));
 			goto out;
-		}
-		step_end(w, step, true, "jid %d removed", jid);
+		} else
+			step_end(w, step, true, "jid %d removed", jid);
 		rsp->ok = true;
 		drop_aliases(w, ji, cj, true);
 		goto out;

@@ -2180,6 +2180,51 @@ arcana_jobs_submit_rpc(cbl_req *req, const struct arcana_jobs_submit_input *in,
 	return (0);
 }
 
+/*
+ * submit's changes run dry, or a waiting job's undo: the steps they
+ * would take, nothing done (jobs_dry_run(), jobs_undo_preview()).
+ */
+int
+arcana_jobs_dry_run_rpc(cbl_req *req,
+    const struct arcana_jobs_dry_run_input *in,
+    struct arcana_jobs_dry_run_output *out, cbl_yarena *a)
+{
+	struct arcana_jobs_submit_input	 sin;
+	const struct arc_job_spec	*specs;
+	const struct arcana_jobs_step	*v;
+	struct work			*w;
+	const char			*e, **notes;
+	size_t				 n, nn, bad;
+	int				 error;
+
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	if (in->has_undo == (in->change.n > 0))
+		return (said(req, "a dry run is of changes, or of a job's "
+		    "undo: one of them"));
+	if (in->has_undo) {
+		if (jobs_undo_preview(in->undo, w, &notes, &nn, &e) != 0)
+			return (said(req, e));
+	} else {
+		bad = 0;
+		memset(&sin, 0, sizeof(sin));
+		sin.change.n = in->change.n;
+		sin.change.v = in->change.v;
+		if ((error = yjobs_specs(&sin, a, &specs, &n, &bad)) != 0)
+			return (said(req, error == ENOMEM ? "out of memory" :
+			    "a change is no kind of job, or not the one it "
+			    "names"));
+		if (jobs_dry_checked(req, specs, n, w, &notes, &nn, &e) != 0)
+			return (said(req, e));
+	}
+	trace_copy(w, w, &v, &n);
+	out->step.n = n;
+	out->step.v = (struct arcana_jobs_step *)(uintptr_t)v;
+	out->note.n = nn;
+	out->note.v = notes;
+	return (0);
+}
+
 int
 arcana_kernel_kernel_file_unload_action(cbl_req *req,
     const struct cbl_bytes *target,

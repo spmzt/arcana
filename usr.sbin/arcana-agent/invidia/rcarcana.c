@@ -360,6 +360,15 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 		    "them in Arcana's file alone, commented out in yours", said);
 		error = refuse(req, "rc-conf-conflict", text, err, errlen);
 	}
+	/* A dry run's: what else would be written, said in err; nothing
+	 * written. */
+	if (error == 0 && x->dry) {
+		(void)snprintf(err, errlen, "%s%s%s%s%s%s", conflict ?
+		    "commented out in your files: " : "", conflict ? said : "",
+		    conflict && rcf ? "; " : "", rcf ? RC_ARCANA : "", rcf ?
+		    " added to rc_conf_files in " : "", rcf ? RC_CONF : "");
+		conflict = rcf = false;
+	}
 	/* Accepted: theirs commented out where they are, every file kept
 	 * as it was first. */
 	for (size_t i = 0; error == 0 && conflict && i < x->nuser; i++) {
@@ -400,7 +409,7 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 			free(nl);
 		}
 	}
-	if (error == 0) {
+	if (error == 0 && !x->dry) {
 		char	dir[MAXPATHLEN], *slash;
 
 		(void)snprintf(dir, sizeof(dir), "%s", x->path);

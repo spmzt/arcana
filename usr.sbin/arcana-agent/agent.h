@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.238.0"
+#define	ARCANA_AGENT_VERSION	"0.239.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -218,6 +218,7 @@ struct step {
 	size_t		 outlen;
 	const char	*err;
 	size_t		 errlen;
+	bool		 notrun;	/* a dry run's program: not run */
 };
 
 struct work {
@@ -253,6 +254,14 @@ struct work {
 	 * watched program it runs (exec_set_watch()) is stopped.
 	 */
 	_Atomic bool	 cancel;
+	/*
+	 * A dry run's (jobs_dry_run()): every step is taken as a job's
+	 * would be, but what would change something is said and not
+	 * done.  A program is traced and not started, unless run_read()
+	 * runs it, which only reads; a file written, the kernel's state
+	 * changed or a signal sent is a step saying so (work_dry()).
+	 */
+	bool		 dry;
 };
 
 void		 work_init(struct work *);
@@ -272,6 +281,8 @@ void		 step_end(struct work *, int, bool, const char *, ...)
 		    __printflike(4, 5);
 void		 step_exec(struct work *, int, char *const [], int,
 		    const char *, size_t, const char *, size_t);
+void		 step_notrun(struct work *, int, char *const []);
+bool		 work_dry(struct work *, int);
 struct arcana_jobs_step;
 void		 trace_copy(struct work *, struct work *,
 		    const struct arcana_jobs_step **, size_t *);
@@ -292,6 +303,9 @@ struct execres {
 };
 
 int		 run_exec(struct work *, char *const [], struct execres *);
+int		 run_read(struct work *, char *const [], struct execres *);
+int		 run_read_max(struct work *, char *const [],
+		    struct execres *, size_t);
 bool		 pid_alive(pid_t);
 bool		 pid_is(pid_t, const char *);
 pid_t		 pidfile_of(const char *, const char *);
@@ -1438,6 +1452,13 @@ const struct arc_job *jobs_get(struct work *, uint64_t,
 		    const struct arcana_jobs_step **, size_t *);
 const struct arc_job *jobs_cancel(struct work *, uint64_t, const char **);
 const struct arc_job *jobs_confirm(struct work *, uint64_t, const char **);
+int		 jobs_dry_run(const struct arc_job_spec *, size_t,
+		    struct work *, const char ***, size_t *, const char **);
+int		 jobs_dry_checked(cbl_req *, const struct arc_job_spec *,
+		    size_t, struct work *, const char ***, size_t *,
+		    const char **);
+int		 jobs_undo_preview(uint64_t, struct work *, const char ***,
+		    size_t *, const char **);
 
 /* invidia/address.c, superbia/confedit.c */
 int		 ifaddr_change(struct work *, const char *, int, const void *,

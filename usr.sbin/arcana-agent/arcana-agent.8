@@ -1182,6 +1182,24 @@ was read before, a bridge's member, flag, vlanfilter or static address
 taken back by the inverse word, a geneve made destroyed again.
 What has to be read before the change for that, and cannot be, fails
 the job before the change is made.
+.Pp
+arcana-jobs'
+.Li dry-run
+rpc runs the changes submit would queue dry, at once and with no job:
+every step a job would take is taken, but a program is run only when it
+reads
+.Pq Cm sysrc -n , service status , jail -e ,
+and any other is a step with its arguments and no exit status; a file
+written, an address taken off with an ioctl,
+.Xr jail_remove 2
+or the daemon's own restart is a step saying so, and is not done.
+Jobs of the kinds jail-action, service-action, service-config, if-state,
+if-address, route, sysctl, kmod and reboot can be run so; any other is
+refused, not previewable.
+Given a job waiting to be confirmed instead, it says what undoing it
+would do now, the job held while it does and left as it was, neither
+confirmed nor cancelled.
+Its rights are submit's.
 .Sh BUILDS
 A client may ask for
 .Nm

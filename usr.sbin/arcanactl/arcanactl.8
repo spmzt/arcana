@@ -12,7 +12,7 @@
 .Sh SYNOPSIS
 .Nm
 .Op Fl -libxo Ar options
-.Op Fl qst
+.Op Fl nqst
 .Op Fl W Ar seconds
 .Op Fl u Ar user
 .Op Fl c Ar uri
@@ -73,6 +73,24 @@ a change is kept in the jail's own
 Keep a change to an interface or a route in
 .Xr rc.conf 5
 as well, so that it is there after a boot.
+.It Fl n
+Run the change dry, as a job, by the agent's
+.Ic dry-run
+rpc: the steps it would take are printed as a job's trace, each
+program with its arguments, and nothing is done; programs that only
+read are run.
+With
+.Cm job-cancel ,
+what undoing a change waiting to be confirmed would do, the job left
+waiting.
+Only
+.Cm start , stop , restart , kill , enable , disable , service ,
+.Cm interface , route , sysctl Ar name Ns = Ns Ar value ,
+.Cm kmod , reboot
+and
+.Cm job-cancel
+are taken; the agent refuses a kind of job whose work cannot be said
+without doing it.
 .It Fl q
 Queue the change as a job; see the end of the command list.
 .It Fl s

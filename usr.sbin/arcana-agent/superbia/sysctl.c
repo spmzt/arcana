@@ -642,6 +642,8 @@ do_sysctl_set(struct work *w, const char *name, const char *value,
 	step = step_begin(w, STEP_FILE, w->jail != NULL ? wfmt(w,
 	    "%s's /etc/sysctl.conf", w->jail) : sysctl_conf_path(path,
 	    sizeof(path)), "%s=%s", name, value);
+	if (work_dry(w, step))
+		return (0);
 	if (conf_set(w, name, value, errp) != 0) {
 		step_end(w, step, false, "%s", *errp);
 		return (-1);
@@ -667,6 +669,8 @@ sysctl_conf_restore(struct work *w, const char *name, const char *value,
 	    sizeof(path)), value != NULL ?
 	    "%s=%s again" : "%s no longer set%s", name, value != NULL ? value :
 	    "");
+	if (work_dry(w, step))
+		return (0);
 	if (conf_set(w, name, value, errp) != 0) {
 		step_end(w, step, false, "%s", *errp);
 		return (-1);
@@ -695,7 +699,7 @@ sysctl_get(struct work *w, const char *name, const char **errp)
 	argv[1] = (char *)(uintptr_t)"-n";
 	argv[2] = (char *)(uintptr_t)name;
 	argv[3] = NULL;
-	if (run_exec(w, argv, &res) != 0) {
+	if (run_read(w, argv, &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, "sysctl"));
 		return (NULL);
 	}

@@ -10,6 +10,7 @@ service-config	arcana-services@2026-10-14
 packages	arcana-packages@2026-10-14
 pkg-upgrade	arcana-packages@2026-10-14
 job-submit	arcana-jobs@2026-10-14
+job-dry-run	arcana-jobs@2026-10-14
 jobs	arcana-jobs@2026-10-14
 job	arcana-jobs@2026-10-14
 job-cancel	arcana-jobs@2026-10-14

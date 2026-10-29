@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-jobs",
     "module-revision": "2026-10-14",
-    "sid-file-version": 18,
+    "sid-file-version": 19,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 400, 1 000.",
     "dependency-revision": [
       {
@@ -2003,6 +2003,1591 @@
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/service-config/accept",
         "sid": "62788"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run",
+        "sid": "62789"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input",
+        "sid": "62790"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change",
+        "sid": "62791"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/address",
+        "sid": "62792"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/address/address",
+        "sid": "62793"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/address/interface",
+        "sid": "62794"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/address/jail",
+        "sid": "62795"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/address/live",
+        "sid": "62796"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/address/persist",
+        "sid": "62797"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/address/remove",
+        "sid": "62798"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/bird",
+        "sid": "62799"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/bird/args",
+        "sid": "62800"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/bird/jail",
+        "sid": "62801"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/bird/verb",
+        "sid": "62802"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/bridge",
+        "sid": "62803"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/bridge/args",
+        "sid": "62804"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/bridge/interface",
+        "sid": "62805"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/bridge/jail",
+        "sid": "62806"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/bridge/persist",
+        "sid": "62807"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/bridge/verb",
+        "sid": "62808"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/cam",
+        "sid": "62809"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/cam/args",
+        "sid": "62810"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/cam/verb",
+        "sid": "62811"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/carp",
+        "sid": "62812"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/carp/address",
+        "sid": "62813"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/carp/args",
+        "sid": "62814"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/carp/interface",
+        "sid": "62815"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/carp/jail",
+        "sid": "62816"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/carp/persist",
+        "sid": "62817"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/carp/preshared-key",
+        "sid": "62818"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/carp/verb",
+        "sid": "62819"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/cert",
+        "sid": "62820"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/cert/jail",
+        "sid": "62821"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/cert/path",
+        "sid": "62822"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/cert/text",
+        "sid": "62823"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/cert/verb",
+        "sid": "62824"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/clamav",
+        "sid": "62825"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/clamav/args",
+        "sid": "62826"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/clamav/text",
+        "sid": "62827"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/clamav/verb",
+        "sid": "62828"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/geneve",
+        "sid": "62829"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/geneve/args",
+        "sid": "62830"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/geneve/interface",
+        "sid": "62831"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/geneve/jail",
+        "sid": "62832"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/geneve/persist",
+        "sid": "62833"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/geneve/verb",
+        "sid": "62834"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/geom",
+        "sid": "62835"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/geom/args",
+        "sid": "62836"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/geom/text",
+        "sid": "62837"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/geom/verb",
+        "sid": "62838"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/gpart",
+        "sid": "62839"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/gpart/args",
+        "sid": "62840"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/gpart/force",
+        "sid": "62841"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/gpart/verb",
+        "sid": "62842"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/hast",
+        "sid": "62843"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/hast/args",
+        "sid": "62844"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/hast/text",
+        "sid": "62845"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/hast/verb",
+        "sid": "62846"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-address",
+        "sid": "62847"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-address/address",
+        "sid": "62848"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-address/interface",
+        "sid": "62849"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-address/jail",
+        "sid": "62850"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-address/live",
+        "sid": "62851"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-address/persist",
+        "sid": "62852"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-address/remove",
+        "sid": "62853"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create",
+        "sid": "62854"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/address",
+        "sid": "62855"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/description",
+        "sid": "62856"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/destination",
+        "sid": "62857"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/fib",
+        "sid": "62858"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/id",
+        "sid": "62859"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/interface",
+        "sid": "62860"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/jail",
+        "sid": "62861"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/mtu",
+        "sid": "62862"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/parent",
+        "sid": "62863"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/persist",
+        "sid": "62864"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/reqid",
+        "sid": "62865"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/tunnel-local",
+        "sid": "62866"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/tunnel-remote",
+        "sid": "62867"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-create/tunnelfib",
+        "sid": "62868"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-destroy",
+        "sid": "62869"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-destroy/interface",
+        "sid": "62870"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-destroy/jail",
+        "sid": "62871"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-destroy/persist",
+        "sid": "62872"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-set",
+        "sid": "62873"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-set/addressing",
+        "sid": "62874"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-set/description",
+        "sid": "62875"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-set/fib",
+        "sid": "62876"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-set/interface",
+        "sid": "62877"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-set/jail",
+        "sid": "62878"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-set/mtu",
+        "sid": "62879"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-set/persist",
+        "sid": "62880"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-set/tunnelfib",
+        "sid": "62881"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-state",
+        "sid": "62882"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-state/interface",
+        "sid": "62883"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-state/jail",
+        "sid": "62884"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-state/persist",
+        "sid": "62885"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-state/up",
+        "sid": "62886"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-vnet",
+        "sid": "62887"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-vnet/interface",
+        "sid": "62888"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-vnet/jail",
+        "sid": "62889"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-vnet/parent",
+        "sid": "62890"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-vnet/persist",
+        "sid": "62891"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/if-vnet/remove",
+        "sid": "62892"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipfw",
+        "sid": "62893"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipfw/args",
+        "sid": "62894"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipfw/jail",
+        "sid": "62895"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipfw/live",
+        "sid": "62896"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipfw/persist",
+        "sid": "62897"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipfw/text",
+        "sid": "62898"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipfw/verb",
+        "sid": "62899"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec",
+        "sid": "62900"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec-sa",
+        "sid": "62901"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec-sa/args",
+        "sid": "62902"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec-sa/interface",
+        "sid": "62903"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec-sa/reqid",
+        "sid": "62904"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec-sa/tunnel-local",
+        "sid": "62905"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec-sa/tunnel-remote",
+        "sid": "62906"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec-sa/verb",
+        "sid": "62907"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/child",
+        "sid": "62908"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/conn",
+        "sid": "62909"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/ipsec-mode",
+        "sid": "62910"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/jail",
+        "sid": "62911"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/local-cert",
+        "sid": "62912"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/local-id",
+        "sid": "62913"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/local-ts",
+        "sid": "62914"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/persist",
+        "sid": "62915"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/pubkey",
+        "sid": "62916"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/remote-ca",
+        "sid": "62917"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/remote-cert",
+        "sid": "62918"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/remote-id",
+        "sid": "62919"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/remote-ts",
+        "sid": "62920"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/reqid",
+        "sid": "62921"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/start-action",
+        "sid": "62922"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/tunnel-local",
+        "sid": "62923"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/tunnel-remote",
+        "sid": "62924"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ipsec/verb",
+        "sid": "62925"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/iscsi",
+        "sid": "62926"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/iscsi/args",
+        "sid": "62927"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/iscsi/text",
+        "sid": "62928"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/iscsi/verb",
+        "sid": "62929"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-action",
+        "sid": "62930"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-action/action",
+        "sid": "62931"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-action/jail",
+        "sid": "62932"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-allow",
+        "sid": "62933"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-allow/args",
+        "sid": "62934"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-allow/jail",
+        "sid": "62935"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-allow/live",
+        "sid": "62936"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-allow/persist",
+        "sid": "62937"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-base",
+        "sid": "62938"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-base/force",
+        "sid": "62939"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-base/jail",
+        "sid": "62940"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-base/packages",
+        "sid": "62941"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-base/pkg-ip",
+        "sid": "62942"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-base/pkg-repo",
+        "sid": "62943"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-base/release",
+        "sid": "62944"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-base/verb",
+        "sid": "62945"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-conf",
+        "sid": "62946"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-conf/args",
+        "sid": "62947"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-conf/copy",
+        "sid": "62948"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-conf/dataset",
+        "sid": "62949"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-conf/jail",
+        "sid": "62950"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-conf/path",
+        "sid": "62951"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-conf/snapshot",
+        "sid": "62952"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-conf/start",
+        "sid": "62953"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-conf/text",
+        "sid": "62954"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/jail-conf/verb",
+        "sid": "62955"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/kmod",
+        "sid": "62956"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/kmod/args",
+        "sid": "62957"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/kmod/persist",
+        "sid": "62958"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/kmod/verb",
+        "sid": "62959"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/monitor",
+        "sid": "62960"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/monitor/args",
+        "sid": "62961"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/monitor/jail",
+        "sid": "62962"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/monitor/verb",
+        "sid": "62963"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/mount",
+        "sid": "62964"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/mount/args",
+        "sid": "62965"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/mount/force",
+        "sid": "62966"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/mount/verb",
+        "sid": "62967"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/neighbour",
+        "sid": "62968"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/neighbour/address",
+        "sid": "62969"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/neighbour/jail",
+        "sid": "62970"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/neighbour/live",
+        "sid": "62971"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/neighbour/lladdr",
+        "sid": "62972"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/neighbour/persist",
+        "sid": "62973"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/neighbour/temporary",
+        "sid": "62974"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/neighbour/verb",
+        "sid": "62975"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/netgraph",
+        "sid": "62976"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/netgraph/args",
+        "sid": "62977"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/netgraph/jail",
+        "sid": "62978"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/netgraph/verb",
+        "sid": "62979"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/nfs",
+        "sid": "62980"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/nfs/args",
+        "sid": "62981"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/nfs/text",
+        "sid": "62982"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/nfs/verb",
+        "sid": "62983"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ntp",
+        "sid": "62984"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ntp/args",
+        "sid": "62985"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ntp/persist",
+        "sid": "62986"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ntp/remove",
+        "sid": "62987"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-clean",
+        "sid": "62988"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-clean/force",
+        "sid": "62989"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-clean/jail",
+        "sid": "62990"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-install",
+        "sid": "62991"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-install/force",
+        "sid": "62992"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-install/jail",
+        "sid": "62993"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-install/packages",
+        "sid": "62994"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-install/pkg-ip",
+        "sid": "62995"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-install/pkg-repo",
+        "sid": "62996"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-upgrade",
+        "sid": "62997"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-upgrade/force",
+        "sid": "62998"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-upgrade/jail",
+        "sid": "62999"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-upgrade/packages",
+        "sid": "63000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-upgrade/pkg-ip",
+        "sid": "63001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/pkg-upgrade/pkg-repo",
+        "sid": "63002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/poudriere",
+        "sid": "63003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/poudriere/args",
+        "sid": "63004"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/poudriere/text",
+        "sid": "63005"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/poudriere/verb",
+        "sid": "63006"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/process",
+        "sid": "63007"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/process/args",
+        "sid": "63008"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/process/jail",
+        "sid": "63009"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/process/verb",
+        "sid": "63010"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/reboot",
+        "sid": "63011"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route",
+        "sid": "63012"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route/destination",
+        "sid": "63013"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route/fib",
+        "sid": "63014"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route/gateway",
+        "sid": "63015"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route/jail",
+        "sid": "63016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route/metric",
+        "sid": "63017"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route/persist",
+        "sid": "63018"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route/remove",
+        "sid": "63019"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route/route-name",
+        "sid": "63020"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route/source",
+        "sid": "63021"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route/verb",
+        "sid": "63022"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/route/weight",
+        "sid": "63023"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/rtadvd",
+        "sid": "63024"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/rtadvd/args",
+        "sid": "63025"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/rtadvd/interface",
+        "sid": "63026"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/rtadvd/persist",
+        "sid": "63027"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/rtadvd/remove",
+        "sid": "63028"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/safe",
+        "sid": "63029"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/safe-wait",
+        "sid": "63030"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/service-action",
+        "sid": "63031"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/service-action/accept",
+        "sid": "63032"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/service-action/action",
+        "sid": "63033"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/service-action/service",
+        "sid": "63034"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/service-config",
+        "sid": "63035"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/service-config/accept",
+        "sid": "63036"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/service-config/service",
+        "sid": "63037"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/service-config/set",
+        "sid": "63038"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/service-config/set/name",
+        "sid": "63039"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/service-config/set/value",
+        "sid": "63040"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/service-config/unset",
+        "sid": "63041"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/smtpd",
+        "sid": "63042"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/smtpd/args",
+        "sid": "63043"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/smtpd/force",
+        "sid": "63044"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/smtpd/jail",
+        "sid": "63045"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/smtpd/text",
+        "sid": "63046"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/smtpd/verb",
+        "sid": "63047"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/speeder",
+        "sid": "63048"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/speeder/args",
+        "sid": "63049"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/speeder/jail",
+        "sid": "63050"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/speeder/verb",
+        "sid": "63051"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ssh",
+        "sid": "63052"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ssh/args",
+        "sid": "63053"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ssh/jail",
+        "sid": "63054"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ssh/path",
+        "sid": "63055"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ssh/text",
+        "sid": "63056"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ssh/user",
+        "sid": "63057"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/ssh/verb",
+        "sid": "63058"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/suricata",
+        "sid": "63059"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/suricata/args",
+        "sid": "63060"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/suricata/text",
+        "sid": "63061"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/suricata/verb",
+        "sid": "63062"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/sysctl",
+        "sid": "63063"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/sysctl/args",
+        "sid": "63064"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/sysctl/jail",
+        "sid": "63065"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/sysctl/persist",
+        "sid": "63066"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/sysfile",
+        "sid": "63067"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/sysfile/args",
+        "sid": "63068"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/sysfile/text",
+        "sid": "63069"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/sysfile/verb",
+        "sid": "63070"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/wireguard",
+        "sid": "63071"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/wireguard/allowed-ips",
+        "sid": "63072"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/wireguard/endpoint",
+        "sid": "63073"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/wireguard/interface",
+        "sid": "63074"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/wireguard/jail",
+        "sid": "63075"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/wireguard/keepalive",
+        "sid": "63076"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/wireguard/listen-port",
+        "sid": "63077"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/wireguard/peer",
+        "sid": "63078"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/wireguard/persist",
+        "sid": "63079"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/wireguard/preshared-key",
+        "sid": "63080"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/wireguard/verb",
+        "sid": "63081"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/zfs",
+        "sid": "63082"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/zfs/args",
+        "sid": "63083"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/zfs/force",
+        "sid": "63084"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/zfs/recursive",
+        "sid": "63085"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/zfs/verb",
+        "sid": "63086"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/zpool",
+        "sid": "63087"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/zpool/args",
+        "sid": "63088"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/zpool/force",
+        "sid": "63089"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/change/zpool/verb",
+        "sid": "63090"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/input/undo",
+        "sid": "63091"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output",
+        "sid": "63092"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/note",
+        "sid": "63093"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step",
+        "sid": "63094"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step/argv",
+        "sid": "63095"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step/detail",
+        "sid": "63096"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step/duration",
+        "sid": "63097"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step/error-output",
+        "sid": "63098"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step/exit",
+        "sid": "63099"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step/id",
+        "sid": "63100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step/kind",
+        "sid": "63101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step/label",
+        "sid": "63102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step/output",
+        "sid": "63103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step/parent",
+        "sid": "63104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:dry-run/output/step/status",
+        "sid": "63105"
       },
       {
         "namespace": "data",

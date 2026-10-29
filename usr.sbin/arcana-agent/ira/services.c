@@ -161,6 +161,11 @@ svc_run(struct work *w, const char *name, const char *verb,
 		argv[i++] = (char *)(uintptr_t)name;
 	argv[i++] = (char *)(uintptr_t)verb;
 	argv[i] = NULL;
+	/* What only asks is run in a dry run too. */
+	if (strcmp(verb, "status") == 0 || strcmp(verb, "rcvar") == 0 ||
+	    strcmp(verb, "enabled") == 0 || strcmp(verb, "describe") == 0 ||
+	    strcmp(verb, "extracommands") == 0)
+		return (run_read(w, argv, res));
 	return (run_exec(w, argv, res));
 }
 
@@ -188,7 +193,7 @@ sysrc_all(struct work *w, struct execres *res)
 	argv[0] = (char *)(uintptr_t)opts.sysrc_bin;
 	argv[1] = (char *)(uintptr_t)"-A";
 	argv[2] = NULL;
-	return (run_exec(w, argv, res));
+	return (run_read(w, argv, res));
 }
 
 /*
@@ -414,7 +419,13 @@ do_service_action(struct work *w, const char *name, uint8_t action,
 		    ARC_SERVICE_ACTION_STOP || action ==
 		    ARC_SERVICE_ACTION_RESTART)) {
 			n = (size_t)step_begin(w, STEP_DAEMON,
-			    "own service", "service %s %s", name, verb);
+			    "own service", "service %s %s: arcana-agent %s",
+			    name, verb, action == ARC_SERVICE_ACTION_STOP ?
+			    "stops" : "restarts");
+			if (work_dry(w, (int)n)) {
+				rsp->ok = true;
+				break;
+			}
 			service_detached(name, verb);
 			step_end(w, (int)n, true, "handed to a process of its "
 			    "own: this daemon is stopped by it in a moment");

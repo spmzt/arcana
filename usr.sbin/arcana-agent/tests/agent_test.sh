@@ -74,6 +74,7 @@ EOF
 for a; do
 	[ "$a" = "-e" ] && exec /usr/sbin/jail "$@"
 done
+echo "$*" >> "${0%/*}/jail.log"
 echo "fake-jail: jail $*"
 echo "fake-jail: on stderr" >&2
 [ -f fail ] && exit 3
@@ -150,6 +151,7 @@ fi
 # arcana_relay_<profile> (its verbs noted); dhclient's, its interface,
 # the same service.
 name=\$1; verb=\$2; r=\$name
+echo "\$name \$verb" >> $(pwd)/service.log
 [ "\$name" = arcana_relay ] && r=\$name\${3:+_\$3} && echo "\$verb \$r" >> arcana_relay.verbs
 case "\$verb" in
 rcvar)		echo "# \$name"; echo "\${name}_enable=\"NO\""; echo '#   (default: "")' ;;
@@ -3808,6 +3810,129 @@ jobs_body()
 	atf_check -s exit:1 -e match:'no such job' "$JGC" -c "$SOCK" job 99
 }
 jobs_cleanup()
+{
+	stop_daemon
+}
+
+# A trace as arcanactl prints it, each step's kind and label in its
+# tree: what a dry run and the job it stands for are compared by.
+trace_steps()
+{
+	sed -n 's/^\( *\[[a-z]*\] [^:(]*\).*/\1/p' "$1" | sed -e 's/ *$//'
+}
+
+# A job's id, from what arcanactl -q printed.
+queued_id()
+{
+	awk '{ print $1; exit }' "$1"
+}
+
+atf_test_case dry_run cleanup
+dry_run_head()
+{
+	atf_set "descr" "a job run dry by arcana-jobs' dry-run: the steps the" \
+	    "job takes, nothing done; a safe change's undo the same, the job" \
+	    "left waiting; a kind that cannot be is refused; submit's rights"
+}
+dry_run_body()
+{
+	local a id i
+
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'ntpd_enable="NO"\n' > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	# jail(8)'s: the dry run's steps are the job's, and jail(8) is
+	# not run (what only reads jail.conf, jail -e, is); web is not
+	# running, so that stop fails, in both alike.
+	for a in start restart stop; do
+		: > jail.log
+		atf_check -o save:dry.out "$JGC" -n -c "$SOCK" $a web
+		if [ $a = stop ]; then
+			atf_check -o match:"Note: stop web: would fail: jail 'web' is not running" \
+			    cat dry.out
+		else
+			atf_check -o match:"fake-jail .* web: not run: a dry run" \
+			    cat dry.out
+		fi
+		atf_check -o not-match:" web\$" cat jail.log
+		atf_check -o save:q.out "$JGC" -q -c "$SOCK" $a web
+		id=$(queued_id q.out)
+		atf_check -s ignore -o save:job.out "$JGC" -c "$SOCK" job -w "$id"
+		[ $a = stop ] || atf_check -o match:" web\$" cat jail.log
+		trace_steps dry.out > dry.steps
+		trace_steps job.out > job.steps
+		atf_check -o match:"^  \\[daemon\\] arcana-agent$" -o match:"\\[exec\\] .*fake-jail .* -e" cat dry.steps
+		atf_check -o file:job.steps cat dry.steps
+	done
+	# service(8)'s the same: what only reads (status, sysrc -A) runs.
+	rm -f running.sshd running.ntpd
+	for a in "sshd restart" "ntpd start"; do
+		: > service.log
+		atf_check -o save:dry.out "$JGC" -n -c "$SOCK" service $a
+		atf_check -o match:"fake-service $a: not run: a dry run" \
+		    cat dry.out
+		atf_check -o not-match:"$a" cat service.log
+		atf_check -s exit:1 test -e "running.${a%% *}"
+		atf_check -o save:q.out "$JGC" -q -c "$SOCK" service $a
+		id=$(queued_id q.out)
+		atf_check -o save:job.out "$JGC" -c "$SOCK" job -w "$id"
+		atf_check -o match:"^$a\$" cat service.log
+		trace_steps dry.out > dry.steps
+		trace_steps job.out > job.steps
+		atf_check -o match:"^    \\[exec\\] .*fake-service $a$" cat dry.steps
+		atf_check -o file:job.steps cat dry.steps
+	done
+	# The agent's own restart is said, not handed on: it still answers.
+	printf '#!/bin/sh\n' > local/rc.d/arcana_agent
+	chmod +x local/rc.d/arcana_agent
+	atf_check -o match:'arcana-agent restarts; not done: a dry run' \
+	    "$JGC" -n -c "$SOCK" service arcana_agent restart
+	atf_check -o ignore "$JGC" -c "$SOCK" jobs
+	# Enabled as a commit writes it: what it would write, nothing
+	# written; unaccepted, it would fail as the job would.
+	atf_check -o match:'ntpd_enable="YES"; commented out in your files: ntpd_enable .*rc.conf.d/arcana added to rc_conf_files in /etc/rc.conf; not done: a dry run' \
+	    "$JGC" -n -c "$SOCK" service -a rc-conf-files -a rc-conf-conflict \
+	    ntpd enable
+	atf_check -o match:'Note: service ntpd enable: would fail: .*accept rc-conf-files' \
+	    "$JGC" -n -c "$SOCK" service ntpd enable
+	atf_check -s exit:1 test -e root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o inline:'ntpd_enable="NO"\n' cat root/etc/rc.conf
+	# What cannot be said without being done is refused, nothing run;
+	# arcanactl takes -n with jobs alone.
+	atf_check -s exit:1 -e match:'lo0: set mtu: not previewable' \
+	    "$JGC" -n -c "$SOCK" interface lo0 mtu 9000
+	atf_check -s exit:2 -e match:'-n: ps is no job' "$JGC" -n -c "$SOCK" ps
+	# submit's rights: NACM denies both to another user.
+	atf_check -s exit:1 -e match:'access denied' \
+	    "$JGC" -n -u bob -c "$SOCK" service sshd restart
+	atf_check -s exit:1 -e match:'access denied' \
+	    "$JGC" -q -u bob -c "$SOCK" service sshd restart
+	# A safe change waiting to be confirmed: what its undo would run,
+	# the job left waiting, unconfirmed.
+	rm -f running.ntpd
+	atf_check -o save:q.out "$JGC" -q -s -W 60 -c "$SOCK" service ntpd start
+	id=$(queued_id q.out)
+	for i in $(seq 1 600); do
+		"$JGC" -c "$SOCK" jobs | grep -Eq "^ *$id unconfirmed" && break
+		sleep 0.1
+	done
+	: > service.log
+	atf_check -o save:undo.out "$JGC" -n -c "$SOCK" job-cancel "$id"
+	atf_check -o match:"undo of job $id: service ntpd start" \
+	    -o match:'fake-service ntpd stop: not run: a dry run' cat undo.out
+	atf_check -o not-match:'ntpd stop' cat service.log
+	atf_check test -f running.ntpd
+	atf_check -o match:"^ *$id unconfirmed" "$JGC" -c "$SOCK" jobs
+	atf_check -s exit:1 -e match:'access denied' \
+	    "$JGC" -n -u bob -c "$SOCK" job-cancel "$id"
+	atf_check -s exit:1 -e match:'no undo to preview' \
+	    "$JGC" -n -c "$SOCK" job-cancel 1
+	# Taken back for real, as cancel does.
+	atf_check -o ignore "$JGC" -c "$SOCK" job-cancel "$id"
+}
+dry_run_cleanup()
 {
 	stop_daemon
 }
@@ -13650,4 +13775,5 @@ atf_init_test_cases()
 	atf_add_test_case packages
 	atf_add_test_case jail_base
 	atf_add_test_case jobs
+	atf_add_test_case dry_run
 }

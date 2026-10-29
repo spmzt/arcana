@@ -381,6 +381,7 @@ service_job_rc(struct work *w, const struct arc_job_spec *sp,
 	}
 	x->accept = sp->accept.v;
 	x->naccept = sp->accept.n;
+	x->dry = w->dry;
 	if (enable != 0)
 		error = rca_set(x, rcvar, enable > 0 ? "YES" : "NO", err,
 		    sizeof(err));
@@ -392,6 +393,25 @@ service_job_rc(struct work *w, const struct arc_job_spec *sp,
 	/* rca_write() puts back what it wrote when it fails. */
 	if (error == 0)
 		error = rca_write(x, NULL, err, sizeof(err));
+	if (error == 0 && w->dry) {
+		/* What would be written, each variable, and what else. */
+		const char	*said = "";
+
+		if (enable != 0)
+			said = wfmt(w, "%s=\"%s\"", rcvar, enable > 0 ? "YES" :
+			    "NO");
+		for (size_t k = 0; k < sp->variables.n; k++)
+			said = wfmt(w, "%s%s%s%s%s%s", said, said[0] != '\0' ?
+			    " " : "", sp->variables.v[k].remove ? "-x " : "",
+			    sp->variables.v[k].key, sp->variables.v[k].remove ?
+			    "" : "=", sp->variables.v[k].remove ? "" : wfmt(w,
+			    "\"%s\"", sp->variables.v[k].value != NULL ?
+			    sp->variables.v[k].value : ""));
+		step_end(w, step, true, "%s: %s%s%s; not done: a dry run",
+		    RC_ARCANA, said, err[0] != '\0' ? "; " : "", err);
+		service_job_forget(x);
+		return (0);
+	}
 	step_end(w, step, error == 0, error == 0 ? NULL : "%s", err[0] !=
 	    '\0' ? err : strerror(error));
 	if (error != 0) {
@@ -417,6 +437,17 @@ service_job_undo(struct work *w, struct rca *x, const char **errp)
 	(void)errp;
 	step = step_begin(w, STEP_FILE, "write", "%s and your rc.conf "
 	    "files, as they were", RC_ARCANA);
+	if (w->dry) {
+		const char	*said = "";
+
+		for (size_t i = 0; i < x->nwas; i++)
+			said = wfmt(w, "%s%s%s%s", said, i > 0 ? ", " : "",
+			    x->was[i].path, x->was[i].there ? "" :
+			    " (removed)");
+		step_end(w, step, true, "put back as they were: %s; not done: "
+		    "a dry run", said);
+		return (0);
+	}
 	rca_undo(x);
 	step_end(w, step, true, NULL);
 	return (0);

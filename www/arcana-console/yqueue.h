@@ -63,6 +63,17 @@ int	yq_cancel(cbl_conn *conn, uint64_t id, cbl_yarena *a,
 	    struct arc_job *j, char *err, size_t errlen);
 int	yq_confirm(cbl_conn *conn, uint64_t id, char *err, size_t errlen);
 int	yq_lanes(cbl_conn *conn, int lanes, char *err, size_t errlen);
+/*
+ * yq_dry_run(): the job-specs v (n of them) run dry, or with n 0 the
+ * undo of job undo, waiting to be confirmed: the steps they would take
+ * in *steps, *nsteps, what those do not say in *notes, *nnotes; nothing
+ * is queued, done, confirmed or cancelled (arcana-jobs' dry-run).
+ */
+int	yq_dry_run(cbl_conn *conn, const struct arc_job_spec *v, size_t n,
+	    uint64_t undo, cbl_yarena *a,
+	    const struct arcana_jobs_step **steps, size_t *nsteps,
+	    const char *const **notes, size_t *nnotes, char *err,
+	    size_t errlen);
 
 /*
  * The helpers, for ystore.c and ygula.c too: yq_top(), the top-level

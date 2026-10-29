@@ -75,6 +75,29 @@ run_exec(struct work *w, char *const argv[], struct execres *res)
 }
 
 /*
+ * The next program this thread runs only reads (sysrc -n, service
+ * status): a dry run runs it too, so that what follows from what it
+ * says is as a job's would be.  Taken by run_exec_max() at once.
+ */
+static _Thread_local bool	exec_reads;
+
+int
+run_read(struct work *w, char *const argv[], struct execres *res)
+{
+
+	return (run_read_max(w, argv, res, ARC_MAX_OUTPUT));
+}
+
+int
+run_read_max(struct work *w, char *const argv[], struct execres *res,
+    size_t max)
+{
+
+	exec_reads = true;
+	return (run_exec_max(w, argv, res, max));
+}
+
+/*
  * HOME for the programs this thread runs, or none.  A build sets it to
  * its directory: compilers keep caches under it (emcc refuses to run
  * without one), and the build user has no home of its own.
@@ -222,7 +245,7 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	pid_t				 pid;
 	int				 op[2], ep[2], ip[2], status, rc, step,
 					 n;
-	bool				 exited;
+	bool				 exited, reads;
 	const char			*in;
 	size_t				 inlen, off;
 	ssize_t				 wr;
@@ -232,6 +255,8 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	inlen = exec_inlen;
 	exec_in = NULL;
 	exec_inlen = 0;
+	reads = exec_reads;
+	exec_reads = false;
 
 	memset(res, 0, sizeof(*res));
 	cmdline = wvis(w, argv[0]);
@@ -240,6 +265,13 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	cmdline = traced(w, cmdline);
 	step = step_begin(w, STEP_EXEC, cmdline,
 	    "posix_spawn(3), no shell");
+	/* A dry run's: what would be run, said, and taken as done. */
+	if (w->dry && !reads) {
+		res->out = res->err = "";
+		step_notrun(w, step, argv);
+		step_end(w, step, true, "not run: a dry run");
+		return (0);
+	}
 
 	memset(&out, 0, sizeof(out));
 	memset(&eout, 0, sizeof(eout));
@@ -468,6 +500,11 @@ run_exec_lines(struct work *w, char *const argv[],
 	cmdline = traced(w, cmdline);
 	step = step_begin(w, STEP_EXEC, cmdline,
 	    "posix_spawn(3), no shell; read line by line");
+	if (w->dry) {
+		step_notrun(w, step, argv);
+		step_end(w, step, true, "not run: a dry run");
+		return (0);
+	}
 	if (pipe2(op, O_CLOEXEC) == -1)
 		err(1, "pipe2");
 	posix_spawn_file_actions_init(&fa);

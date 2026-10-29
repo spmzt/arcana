@@ -295,6 +295,8 @@ const struct route routes[] = {
 	    HTTP_METHOD_GET | HTTP_METHOD_POST },
 	{ "^/api/servers/([0-9a-f]+)/jobs/config$", api_jobs_config, api_call_free,
 	    HTTP_METHOD_POST },
+	{ "^/api/servers/([0-9a-f]+)/jobs/dry-run$", api_jobs_dry_run, api_call_free,
+	    HTTP_METHOD_POST },
 	{ "^/api/servers/([0-9a-f]+)/jobs/([0-9]+)$", api_job, api_call_free,
 	    HTTP_METHOD_GET | HTTP_METHOD_DELETE },
 	{ "^/api/.*$", api_not_found, NULL,

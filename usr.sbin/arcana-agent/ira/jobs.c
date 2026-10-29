@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -114,6 +115,7 @@ static bool	 await_confirm(struct qjob *);
 static const char *undo_prepare(struct qjob *);
 static const char *confirm_apply(struct qjob *);
 static const char *undo(struct qjob *);
+static int	 undo_steps(struct qjob *, struct work *, const char **);
 static void	*runner(void *);
 static void	 fill(struct work *, struct arc_job *, struct qjob *);
 
@@ -664,7 +666,7 @@ undo_snap_file(struct qjob *j, const char *path)
 
 /* The files back as they were: the text written, or the file gone. */
 static int
-undo_files_back(struct qjob *j, const char **errp)
+undo_files_back(struct qjob *j, struct work *w, const char **errp)
 {
 	const struct undo_file	*f;
 	int			 i, step, rc;
@@ -672,17 +674,19 @@ undo_files_back(struct qjob *j, const char **errp)
 	rc = 0;
 	for (i = 0; i < j->undo_nfiles; i++) {
 		f = &j->undo_files[i];
-		step = step_begin(&j->w, STEP_FILE, f->had ? "write" :
+		step = step_begin(w, STEP_FILE, f->had ? "write" :
 		    "remove", "%s, as it was", f->path);
+		if (work_dry(w, step))
+			continue;
 		if (f->had)
-			rc = scope_replace(&j->w, f->path, f->text, f->len, 0600,
+			rc = scope_replace(w, f->path, f->text, f->len, 0600,
 			    NULL) == 0 ? rc : -1;
-		else if (scope_unlink(&j->w, f->path) != 0 && errno != ENOENT)
+		else if (scope_unlink(w, f->path) != 0 && errno != ENOENT)
 			rc = -1;
-		step_end(&j->w, step, rc == 0, rc == 0 ? NULL : "%s",
+		step_end(w, step, rc == 0, rc == 0 ? NULL : "%s",
 		    strerror(errno));
 		if (rc != 0) {
-			*errp = wfmt(&j->w, "%s: %s", f->path, strerror(errno));
+			*errp = wfmt(w, "%s: %s", f->path, strerror(errno));
 			return (-1);
 		}
 	}
@@ -702,7 +706,7 @@ undo_snap_rc(struct qjob *j, const char *name)
 }
 
 static int
-undo_rc_back(struct qjob *j, const char **errp)
+undo_rc_back(struct qjob *j, struct work *w, const char **errp)
 {
 	const struct undo_rc	*r;
 	int			 i;
@@ -710,8 +714,8 @@ undo_rc_back(struct qjob *j, const char **errp)
 	for (i = 0; i < j->undo_nrc; i++) {
 		r = &j->undo_rc[i];
 		if (r->value == NULL)
-			rc_unset(&j->w, r->name);
-		else if (rc_set(&j->w, r->name, "=", r->value, errp) != 0)
+			rc_unset(w, r->name);
+		else if (rc_set(w, r->name, "=", r->value, errp) != 0)
 			return (-1);
 	}
 	return (0);
@@ -1173,6 +1177,31 @@ confirm_apply(struct qjob *j)
 static const char *
 undo(struct qjob *j)
 {
+	const struct arc_job_spec	*sp;
+	const char			*e;
+
+	sp = &j->spec;
+	if (j->undo_none)
+		return (wfmt(&j->w, "not confirmed within %d s; it was so "
+		    "before, and is left so", safe_wait(sp)));
+	if (j->undo_note != NULL)
+		return (wfmt(&j->w, "not confirmed within %d s; %s",
+		    safe_wait(sp), j->undo_note));
+	if (undo_steps(j, &j->w, &e) != 0)
+		return (wfmt(&j->w, "not confirmed within %d s, and it could "
+		    "not be undone: %s", safe_wait(sp), e != NULL ? e :
+		    "failed"));
+	return (wfmt(&j->w, "not confirmed within %d s: undone",
+	    safe_wait(sp)));
+}
+
+/*
+ * The steps that take j's change back, in w: the job's own, or a dry
+ * run's that says them (jobs_undo_preview()).  -1 and *ep: failed.
+ */
+static int
+undo_steps(struct qjob *j, struct work *w, const char **ep)
+{
 	struct address_req		 dq;
 	struct address_rsp		 dr;
 	struct service_action_rsp	 sar;
@@ -1183,18 +1212,12 @@ undo(struct qjob *j)
 
 	sp = &j->spec;
 	e = NULL;
-	if (j->undo_none)
-		return (wfmt(&j->w, "not confirmed within %d s; it was so "
-		    "before, and is left so", safe_wait(sp)));
-	if (j->undo_note != NULL)
-		return (wfmt(&j->w, "not confirmed within %d s; %s",
-		    safe_wait(sp), j->undo_note));
 	switch (sp->kind) {
 	case ARC_JOB_KIND_IF_DESTROY:
-		rc = if_recreate(&j->w, sp->interface, j->undo_if, j->undo_fib,
+		rc = if_recreate(w, sp->interface, j->undo_if, j->undo_fib,
 		    j->undo_tunnelfib, &e);
 		if (rc == 0 && sp->persist)
-			rc = undo_rc_back(j, &e);
+			rc = undo_rc_back(j, w, &e);
 		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:
@@ -1211,7 +1234,7 @@ undo(struct qjob *j)
 			nv[1] = sp->names.n > 1 ? sp->names.v[1] : NULL;
 			if (sp->kind == ARC_JOB_KIND_GENEVE) {
 				/* Made: destroyed again, rc.conf aside. */
-				rc = l2_destroy(&j->w, sp->interface, &e);
+				rc = l2_destroy(w, sp->interface, &e);
 			} else {
 				if (strcmp(sp->verb, "addm") == 0)
 					back.verb = "deletem";
@@ -1222,82 +1245,82 @@ undo(struct qjob *j)
 					    "on";
 				else if (strcmp(sp->verb, "flag") == 0)
 					nv[1] = sp->names.v[1][0] == '-' ?
-					    sp->names.v[1] + 1 : wfmt(&j->w, "-%s",
+					    sp->names.v[1] + 1 : wfmt(w, "-%s",
 					    sp->names.v[1]);
 				else if (strcmp(sp->verb, "static") == 0) {
 					back.verb = "deladdr";
 					nv[0] = sp->names.v[1];
 					back.names.n = 1;
 				}
-				rc = do_l2_job(&j->w, &back, &e);
+				rc = do_l2_job(w, &back, &e);
 			}
 			if (rc == 0 && sp->persist)
-				rc = undo_rc_back(j, &e);
+				rc = undo_rc_back(j, w, &e);
 		}
 		break;
 	case ARC_JOB_KIND_SYSFILE:
 		if (strcmp(sp->verb, "rc") == 0)
-			rc = undo_rc_back(j, &e);
+			rc = undo_rc_back(j, w, &e);
 		else
-			rc = undo_files_back(j, &e) == 0 ? sysfile_tell(&j->w,
+			rc = undo_files_back(j, w, &e) == 0 ? sysfile_tell(w,
 			    sp->verb, &e) : -1;
 		break;
 	case ARC_JOB_KIND_IPSEC:
 		if (strcmp(sp->verb, "up") == 0 || strcmp(sp->verb, "down") == 0)
-			rc = ipsec_toggle(&j->w, sp->conn, sp->verb[0] == 'd', &e);
+			rc = ipsec_toggle(w, sp->conn, sp->verb[0] == 'd', &e);
 		else
-			rc = undo_files_back(j, &e) == 0 ? ipsec_undo(&j->w,
+			rc = undo_files_back(j, w, &e) == 0 ? ipsec_undo(w,
 			    sp->conn, !j->undo_kept, &e) : -1;
 		break;
 	case ARC_JOB_KIND_IPSEC_SA:
-		rc = undo_files_back(j, &e) == 0 ? sa_undo(&j->w, sp, &e) : -1;
+		rc = undo_files_back(j, w, &e) == 0 ? sa_undo(w, sp, &e) : -1;
 		break;
 	case ARC_JOB_KIND_JAIL_ALLOW:
-		rc = undo_files_back(j, &e) == 0 ? jail_allow_undo(&j->w, sp,
+		rc = undo_files_back(j, w, &e) == 0 ? jail_allow_undo(w, sp,
 		    j->undo_vars, j->undo_nvars, &e) : -1;
 		break;
 	case ARC_JOB_KIND_WIREGUARD:
-		rc = wg_syncconf(&j->w, sp->interface, j->undo_secret, &e);
-		if (sp->persist && (undo_files_back(j, &e) != 0 ||
-		    undo_rc_back(j, &e) != 0))
+		rc = wg_syncconf(w, sp->interface, j->undo_secret, &e);
+		if (sp->persist && (undo_files_back(j, w, &e) != 0 ||
+		    undo_rc_back(j, w, &e) != 0))
 			rc = -1;
 		break;
 	case ARC_JOB_KIND_BIRD:
 		if (strcmp(sp->verb, "configure") == 0)
-			rc = bird_configure_undo(&j->w, &e);
+			rc = bird_configure_undo(w, &e);
 		else
-			rc = do_bird_verb(&j->w, sp->verb[0] == 'e' ? "disable" :
+			rc = do_bird_verb(w, sp->verb[0] == 'e' ? "disable" :
 			    "enable", sp->names.v, sp->names.n, &e);
 		break;
 	case ARC_JOB_KIND_IF_ADDRESS:
-		rc = do_if_address(&j->w, sp->interface, j->undo_address != NULL ?
+		rc = do_if_address(w, sp->interface, j->undo_address != NULL ?
 		    j->undo_address : sp->address, !sp->remove, sp->persist,
 		    &e);
 		break;
 	case ARC_JOB_KIND_IF_STATE:
-		rc = do_if_state(&j->w, sp->interface, !sp->up, &e);
+		rc = do_if_state(w, sp->interface, !sp->up, &e);
 		break;
 	case ARC_JOB_KIND_CARP:
 		/* Only an address added is in safe mode: off again. */
-		rc = do_if_address(&j->w, sp->interface, sp->address, true,
+		rc = do_if_address(w, sp->interface, sp->address, true,
 		    sp->persist, &e);
 		break;
 	case ARC_JOB_KIND_KMOD:
 		/* Each verb's opposite: load and unload, keep and
 		 * forget. */
-		rc = do_kmod(&j->w, strcmp(sp->verb, "load") == 0 ? "unload" :
+		rc = do_kmod(w, strcmp(sp->verb, "load") == 0 ? "unload" :
 		    strcmp(sp->verb, "unload") == 0 ? "load" : strcmp(sp->verb,
 		    "keep") == 0 ? "forget" : "keep", sp->names.v[0],
 		    sp->persist, &e);
 		break;
 	case ARC_JOB_KIND_NTP:
-		rc = do_ntp(&j->w, NULL, 0, true, sp->persist, &e);
+		rc = do_ntp(w, NULL, 0, true, sp->persist, &e);
 		break;
 	case ARC_JOB_KIND_SSH:
-		rc = ssh_undo(&j->w, sp, &e);
+		rc = ssh_undo(w, sp, &e);
 		break;
 	case ARC_JOB_KIND_RTADVD:
-		rc = do_rtadvd(&j->w, sp->interface, NULL, 0, true, sp->persist,
+		rc = do_rtadvd(w, sp->interface, NULL, 0, true, sp->persist,
 		    &e);
 		break;
 	case ARC_JOB_KIND_IPFW:
@@ -1306,9 +1329,9 @@ undo(struct qjob *j)
 		 * added is deleted; on becomes off, and off on.
 		 */
 		if (strcmp(sp->verb, "apply") == 0)
-			e = ipfw_settle(&j->w, false);
+			e = ipfw_settle(w, false);
 		else if (strcmp(sp->verb, "add") == 0)
-			e = ipfw_unadd(&j->w, sp);
+			e = ipfw_unadd(w, sp);
 		else {
 			struct arc_job_spec	back;
 			bool			held;
@@ -1317,21 +1340,21 @@ undo(struct qjob *j)
 			back.safe = false;
 			back.verb = strcmp(sp->verb, "enable") == 0 ?
 			    "disable" : "enable";
-			(void)do_ipfw_job(&j->w, &back, &held, &e);
+			(void)do_ipfw_job(w, &back, &held, &e);
 		}
 		rc = e == NULL ? 0 : -1;
 		break;
 	case ARC_JOB_KIND_IF_VNET:
-		rc = do_if_vnet(&j->w, j->made != NULL ? j->made :
+		rc = do_if_vnet(w, j->made != NULL ? j->made :
 		    sp->interface, sp->jail, !sp->remove, sp->persist, &e);
 		/* A pair made for the jail goes with it. */
 		if (rc == 0 && j->made != NULL) {
 			if (sp->parent != NULL && sp->parent[0] != '\0' &&
 			    sp->persist)
-				bridge_keep(&j->w, sp->parent, wfmt(&j->w,
+				bridge_keep(w, sp->parent, wfmt(w,
 				    "%.*sa", (int)strlen(j->made) - 1, j->made),
 				    false);
-			rc = do_if_destroy(&j->w, j->made, sp->persist, &e);
+			rc = do_if_destroy(w, j->made, sp->persist, &e);
 		}
 		break;
 	case ARC_JOB_KIND_IF_SET:
@@ -1345,24 +1368,24 @@ undo(struct qjob *j)
 			ch.tunnelfib = sp->has_tunnelfib ? j->undo_tunnelfib :
 			    -1;
 			ch.addressing = NULL;
-			rc = do_if_set(&j->w, sp->interface, &ch, sp->persist,
+			rc = do_if_set(w, sp->interface, &ch, sp->persist,
 			    &e);
 			/* Its addressing as it was before the job, not
 			 * static: a host on SLAAC or DHCP stays so. */
 			if (rc == 0 && sp->addressing != NULL) {
-				rc = if_addr_restore(&j->w, sp->interface,
+				rc = if_addr_restore(w, sp->interface,
 				    &j->undo_addr, sp->persist, &e);
 				/* And was's record as it was: kept again
 				 * when the job let it go, let go when the
 				 * job made it. */
 				if (rc == 0)
-					if_addr_record_set(&j->w, sp->interface,
+					if_addr_record_set(w, sp->interface,
 					    j->undo_addr_rec);
 			}
 		}
 		break;
 	case ARC_JOB_KIND_IF_CREATE:
-		rc = do_if_destroy(&j->w, j->made != NULL ? j->made :
+		rc = do_if_destroy(w, j->made != NULL ? j->made :
 		    sp->interface, sp->persist && !j->undo_live, &e);
 		break;
 	case ARC_JOB_KIND_ADDRESS:
@@ -1375,30 +1398,30 @@ undo(struct qjob *j)
 		dq.remove = !sp->remove;
 		dq.live = sp->live;
 		dq.persist = sp->persist;
-		do_address(&j->w, &dq, &dr);
+		do_address(w, &dq, &dr);
 		rc = dr.ok ? 0 : -1;
 		e = dr.error;
 		break;
 	case ARC_JOB_KIND_SERVICE_ACTION:
 		if (j->undo_rca != NULL) {
-			rc = service_job_undo(&j->w, j->undo_rca, &e);
+			rc = service_job_undo(w, j->undo_rca, &e);
 			break;
 		}
 		memset(&sar, 0, sizeof(sar));
-		do_service_action(&j->w, sp->service,
+		do_service_action(w, sp->service,
 		    svc_reverse[sp->service_action], &sar);
 		rc = sar.ok ? 0 : -1;
 		e = sar.error;
 		break;
 	case ARC_JOB_KIND_SERVICE_CONFIG:
-		rc = j->undo_rca != NULL ? service_job_undo(&j->w, j->undo_rca,
+		rc = j->undo_rca != NULL ? service_job_undo(w, j->undo_rca,
 		    &e) : 0;
 		break;
 	case ARC_JOB_KIND_ROUTE:
 		if (j->undo_gateway != NULL) {
 			/* Back as the kernel listed it; into rc.conf only
 			 * when it was there. */
-			rc = do_route(&j->w, sp->destination, j->undo_gateway,
+			rc = do_route(w, sp->destination, j->undo_gateway,
 			    false, sp->has_fib ? sp->fib : 0, &j->undo_more,
 			    sp->persist && j->undo_kept, &e);
 			break;
@@ -1408,7 +1431,7 @@ undo(struct qjob *j)
 		rm.source = sp->source;
 		rm.name = sp->names.n > 0 ? sp->names.v[0] : NULL;
 		rm.rc_only = false;
-		rc = do_route(&j->w, sp->destination, sp->gateway, !sp->remove,
+		rc = do_route(w, sp->destination, sp->gateway, !sp->remove,
 		    sp->has_fib ? sp->fib : 0, &rm, sp->persist, &e);
 		break;
 	case ARC_JOB_KIND_SYSCTL:
@@ -1421,16 +1444,16 @@ undo(struct qjob *j)
 		{
 			const char	*ce;
 
-			rc = do_sysctl_set(&j->w, sp->names.v[0], j->undo_value,
+			rc = do_sysctl_set(w, sp->names.v[0], j->undo_value,
 			    false, &e);
 			ce = NULL;
-			if (sp->persist && sysctl_conf_restore(&j->w,
+			if (sp->persist && sysctl_conf_restore(w,
 			    sp->names.v[0], j->undo_conf, &ce) != 0) {
-				e = e != NULL ? wfmt(&j->w, "%s; and %s", e, ce) :
+				e = e != NULL ? wfmt(w, "%s; and %s", e, ce) :
 				    ce;
 				rc = -1;
 			} else if (rc != 0) {
-				e = wfmt(&j->w, "%s: the kernel keeps %s=%s "
+				e = wfmt(w, "%s: the kernel keeps %s=%s "
 				    "until it boots again%s", e, sp->names.v[0],
 				    sp->names.v[1], sp->persist ? ", when "
 				    "sysctl.conf, put back as it was, sets it" :
@@ -1439,7 +1462,7 @@ undo(struct qjob *j)
 		}
 		break;
 	case ARC_JOB_KIND_SPEEDER:
-		rc = speeder_back(&j->w, &j->undo_speeder, &e);
+		rc = speeder_back(w, &j->undo_speeder, &e);
 		break;
 	default:
 		/* A kind with no undo is refused as safe at its check: this
@@ -1448,12 +1471,300 @@ undo(struct qjob *j)
 		e = "this kind of job cannot be undone";
 		break;
 	}
-	if (rc != 0)
-		return (wfmt(&j->w, "not confirmed within %d s, and it could "
-		    "not be undone: %s", safe_wait(sp), e != NULL ? e :
-		    "failed"));
-	return (wfmt(&j->w, "not confirmed within %d s: undone",
-	    safe_wait(sp)));
+	*ep = e;
+	return (rc != 0 ? -1 : 0);
+}
+
+/*
+ * What job j's kind does, in w: the job's own work, or a dry run's
+ * (jobs_dry_run()), in which nothing is changed.  *heldp: the
+ * firewall's old rules wait (do_ipfw_job()).  False and *errorp: it
+ * failed.
+ */
+static bool
+run_kind(struct qjob *j, struct work *w, bool *heldp, const char **errorp)
+{
+	struct jail_done		 ar;
+	struct address_req		 dq;
+	struct address_rsp		 dr;
+	struct service_action_rsp	 sar;
+	struct route_more		 rm;
+	struct pkg_upgrade		 uq;
+	struct pkg_upgraded		 ur;
+	const struct arc_job_spec	*sp;
+	const char			*error;
+	bool				 ok;
+
+	sp = &j->spec;
+	error = NULL;
+	switch (sp->kind) {
+	case ARC_JOB_KIND_JAIL_ACTION:
+		memset(&ar, 0, sizeof(ar));
+		do_action(w, sp->jail, sp->action, &ar);
+		ok = ar.ok;
+		error = ar.error;
+		break;
+	case ARC_JOB_KIND_ADDRESS:
+		memset(&dq, 0, sizeof(dq));
+		memset(&dr, 0, sizeof(dr));
+		dq.jail = sp->jail;
+		dq.address = sp->address;
+		dq.interface = sp->interface;
+		dq.remove = sp->remove;
+		dq.live = sp->live;
+		dq.persist = sp->persist;
+		do_address(w, &dq, &dr);
+		ok = dr.ok;
+		error = dr.error;
+		break;
+	case ARC_JOB_KIND_SERVICE_ACTION:
+		/* Enabled or disabled: Arcana's rc.conf file, as a commit
+		 * writes it. */
+		if (sp->service_action == ARC_SERVICE_ACTION_ENABLE ||
+		    sp->service_action == ARC_SERVICE_ACTION_DISABLE) {
+			error = NULL;
+			ok = service_job_rc(w, sp, sp->safe ? &j->undo_rca :
+			    NULL, &error) == 0;
+			break;
+		}
+		memset(&sar, 0, sizeof(sar));
+		do_service_action(w, sp->service, sp->service_action, &sar);
+		ok = sar.ok;
+		error = sar.error;
+		break;
+	case ARC_JOB_KIND_IF_ADDRESS:
+		error = NULL;
+		ok = do_if_address(w, sp->interface, sp->address,
+		    sp->remove, sp->persist, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IF_SET:
+		error = NULL;
+		{
+			struct if_change	 ch;
+
+			ch.mtu = sp->has_mtu ? sp->mtu : 0;
+			ch.descr = sp->description;
+			ch.fib = sp->has_fib ? (int)sp->fib : -1;
+			ch.tunnelfib = sp->has_tunnelfib ? (int)sp->tunnelfib :
+			    -1;
+			ch.addressing = sp->addressing;
+			ok = do_if_set(w, sp->interface, &ch, sp->persist,
+			    &error) == 0;
+		}
+		break;
+	case ARC_JOB_KIND_IF_CREATE:
+		error = NULL;
+		ok = do_if_create(w, sp, &j->made, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IF_DESTROY:
+		error = NULL;
+		ok = do_if_destroy(w, sp->interface, sp->persist,
+		    &error) == 0;
+		break;
+	case ARC_JOB_KIND_NETGRAPH:
+		error = NULL;
+		ok = do_ng(w, sp->verb, sp->names.v, sp->names.n,
+		    &error) == 0;
+		break;
+	case ARC_JOB_KIND_WIREGUARD:
+		error = NULL;
+		ok = do_wg(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_JAIL_CONF:
+		error = NULL;
+		ok = do_jail_conf(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_JAIL_ALLOW:
+		error = NULL;
+		ok = do_jail_allow(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_NEIGHBOUR:
+		error = NULL;
+		ok = do_neigh(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_CARP:
+		error = NULL;
+		ok = do_carp(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_SSH:
+		/* As a certificate: any jail's. */
+		error = NULL;
+		ok = scope_enter_jail(w, sp->jail, &error, false) == 0 &&
+		    do_ssh_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_POUDRIERE:
+		error = NULL;
+		ok = do_poudriere_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_CLAMAV:
+		error = NULL;
+		ok = do_clamav_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_SURICATA:
+		error = NULL;
+		ok = do_suricata_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_NFS:
+	case ARC_JOB_KIND_ISCSI:
+	case ARC_JOB_KIND_HAST:
+		error = NULL;
+		ok = do_netstore_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_SYSFILE:
+		error = NULL;
+		ok = do_sysfile_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_GEOM:
+		error = NULL;
+		ok = do_geom_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_SMTPD:
+		/* A jail's, with or without a network of its own. */
+		error = NULL;
+		ok = scope_enter_jail(w, sp->jail, &error, false) == 0 &&
+		    do_smtpd_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_SPEEDER:
+		error = NULL;
+		ok = scope_enter_jail(w, sp->jail, &error, false) == 0 &&
+		    do_speeder_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_MONITOR:
+		/* A jail's is probed from its network by the prober; the
+		 * job itself stays on the host. */
+		error = NULL;
+		ok = do_monitor_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_CERT:
+		/* Any jail's: its files, not its network. */
+		error = NULL;
+		ok = scope_enter_jail(w, sp->jail, &error, false) == 0 &&
+		    do_cert(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_BIRD:
+		/* Safe, configure runs on BIRD's own timer, a little longer
+		 * than the job's wait: the job confirms it, or BIRD takes it
+		 * back by itself should the daemon be stopped. */
+		error = NULL;
+		if (sp->safe && strcmp(sp->verb, "configure") == 0)
+			ok = bird_configure_safe(w, safe_wait(sp) + 5,
+			    &error) == 0;
+		else
+			ok = do_bird_verb(w, sp->verb, sp->names.v,
+			    sp->names.n, &error) == 0;
+		break;
+	case ARC_JOB_KIND_KMOD:
+		error = NULL;
+		ok = do_kmod(w, sp->verb, sp->names.v[0], sp->persist,
+		    &error) == 0;
+		break;
+	case ARC_JOB_KIND_NTP:
+		error = NULL;
+		ok = do_ntp(w, sp->names.v, sp->names.n, sp->remove,
+		    sp->persist, &error) == 0;
+		break;
+	case ARC_JOB_KIND_RTADVD:
+		error = NULL;
+		ok = do_rtadvd(w, sp->interface, sp->names.v, sp->names.n,
+		    sp->remove, sp->persist, &error) == 0;
+		break;
+	case ARC_JOB_KIND_SYSCTL:
+		error = NULL;
+		ok = do_sysctl_set(w, sp->names.v[0], sp->names.v[1],
+		    sp->persist, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IPFW:
+		error = NULL;
+		ok = do_ipfw_job(w, sp, heldp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_PROCESS:
+		error = NULL;
+		ok = do_proc_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_PKG_CLEAN:
+		error = NULL;
+		ok = do_pkg_clean(w, sp->jail, sp->force, &error) == 0;
+		break;
+	case ARC_JOB_KIND_JAIL_BASE:
+		error = NULL;
+		ok = do_jail_base(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_REBOOT:
+		error = NULL;
+		ok = do_reboot(w, &error) == 0;
+		break;
+	case ARC_JOB_KIND_PKG_INSTALL:
+		error = NULL;
+		ok = do_pkg_install(w, sp, &error) == 0;
+		/* A plugin may be there now: asked again, not remembered. */
+		plugins_forget();
+		break;
+	case ARC_JOB_KIND_IPSEC:
+		error = NULL;
+		ok = do_ipsec_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IPSEC_SA:
+		error = NULL;
+		ok = do_sa_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_BRIDGE:
+	case ARC_JOB_KIND_GENEVE:
+		error = NULL;
+		ok = do_l2_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_ZFS:
+	case ARC_JOB_KIND_ZPOOL:
+	case ARC_JOB_KIND_MOUNT:
+	case ARC_JOB_KIND_GPART:
+	case ARC_JOB_KIND_CAM:
+		error = NULL;
+		ok = do_storage_job(w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IF_VNET:
+		error = NULL;
+		if (!sp->remove && strcmp(sp->interface, "epair") == 0) {
+			ok = give_pair(j, &error);
+			break;
+		}
+		ok = do_if_vnet(w, sp->interface, sp->jail, sp->remove,
+		    sp->persist, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IF_STATE:
+		error = NULL;
+		ok = do_if_state(w, sp->interface, sp->up, &error) == 0;
+		break;
+	case ARC_JOB_KIND_ROUTE:
+		error = NULL;
+		rm.metric = sp->has_metric ? sp->metric : 0;
+		rm.weight = sp->has_weight ? sp->weight : 0;
+		rm.source = sp->source;
+		rm.name = sp->names.n > 0 ? sp->names.v[0] : NULL;
+		rm.rc_only = sp->verb != NULL && strcmp(sp->verb, "keep") == 0;
+		ok = do_route(w, sp->destination, sp->gateway, sp->remove,
+		    sp->has_fib ? sp->fib : 0, &rm, sp->persist, &error) == 0;
+		break;
+	case ARC_JOB_KIND_SERVICE_CONFIG:
+		error = NULL;
+		ok = service_job_rc(w, sp, sp->safe ? &j->undo_rca : NULL,
+		    &error) == 0;
+		break;
+	default:
+		memset(&uq, 0, sizeof(uq));
+		memset(&ur, 0, sizeof(ur));
+		uq.jail = sp->jail;
+		uq.names.v = sp->names.v;
+		uq.names.n = sp->names.n;
+		/* Forced: to packages built for a newer FreeBSD too. */
+		uq.ignore_osversion = sp->force;
+		uq.pkg_ip = sp->has_pkg_ip ? sp->pkg_ip : 0;
+		uq.pkg_repo = sp->pkg_repo;
+		do_pkg_upgrade(w, &uq, &ur);
+		ok = ur.ok;
+		error = ur.error;
+		break;
+	}
+	*errorp = error;
+	return (ok);
 }
 
 /*
@@ -1463,13 +1774,6 @@ undo(struct qjob *j)
 static void
 run(struct qjob *j, bool lane)
 {
-	struct jail_done		 ar;
-	struct address_req		 dq;
-	struct address_rsp		 dr;
-	struct service_action_rsp	 sar;
-	struct route_more		 rm;
-	struct pkg_upgrade		 uq;
-	struct pkg_upgraded		 ur;
 	const struct arc_job_spec	*sp;
 	const char			*error;
 	bool				 ok, go, inside, held;
@@ -1503,272 +1807,8 @@ run(struct qjob *j, bool lane)
 		ok = false;
 		if (error == NULL)
 			error = "not run: arcana-agent was stopping";
-	} else switch (sp->kind) {
-	case ARC_JOB_KIND_JAIL_ACTION:
-		memset(&ar, 0, sizeof(ar));
-		do_action(&j->w, sp->jail, sp->action, &ar);
-		ok = ar.ok;
-		error = ar.error;
-		break;
-	case ARC_JOB_KIND_ADDRESS:
-		memset(&dq, 0, sizeof(dq));
-		memset(&dr, 0, sizeof(dr));
-		dq.jail = sp->jail;
-		dq.address = sp->address;
-		dq.interface = sp->interface;
-		dq.remove = sp->remove;
-		dq.live = sp->live;
-		dq.persist = sp->persist;
-		do_address(&j->w, &dq, &dr);
-		ok = dr.ok;
-		error = dr.error;
-		break;
-	case ARC_JOB_KIND_SERVICE_ACTION:
-		/* Enabled or disabled: Arcana's rc.conf file, as a commit
-		 * writes it. */
-		if (sp->service_action == ARC_SERVICE_ACTION_ENABLE ||
-		    sp->service_action == ARC_SERVICE_ACTION_DISABLE) {
-			error = NULL;
-			ok = service_job_rc(&j->w, sp, sp->safe ? &j->undo_rca :
-			    NULL, &error) == 0;
-			break;
-		}
-		memset(&sar, 0, sizeof(sar));
-		do_service_action(&j->w, sp->service, sp->service_action, &sar);
-		ok = sar.ok;
-		error = sar.error;
-		break;
-	case ARC_JOB_KIND_IF_ADDRESS:
-		error = NULL;
-		ok = do_if_address(&j->w, sp->interface, sp->address,
-		    sp->remove, sp->persist, &error) == 0;
-		break;
-	case ARC_JOB_KIND_IF_SET:
-		error = NULL;
-		{
-			struct if_change	 ch;
-
-			ch.mtu = sp->has_mtu ? sp->mtu : 0;
-			ch.descr = sp->description;
-			ch.fib = sp->has_fib ? (int)sp->fib : -1;
-			ch.tunnelfib = sp->has_tunnelfib ? (int)sp->tunnelfib :
-			    -1;
-			ch.addressing = sp->addressing;
-			ok = do_if_set(&j->w, sp->interface, &ch, sp->persist,
-			    &error) == 0;
-		}
-		break;
-	case ARC_JOB_KIND_IF_CREATE:
-		error = NULL;
-		ok = do_if_create(&j->w, sp, &j->made, &error) == 0;
-		break;
-	case ARC_JOB_KIND_IF_DESTROY:
-		error = NULL;
-		ok = do_if_destroy(&j->w, sp->interface, sp->persist,
-		    &error) == 0;
-		break;
-	case ARC_JOB_KIND_NETGRAPH:
-		error = NULL;
-		ok = do_ng(&j->w, sp->verb, sp->names.v, sp->names.n,
-		    &error) == 0;
-		break;
-	case ARC_JOB_KIND_WIREGUARD:
-		error = NULL;
-		ok = do_wg(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_JAIL_CONF:
-		error = NULL;
-		ok = do_jail_conf(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_JAIL_ALLOW:
-		error = NULL;
-		ok = do_jail_allow(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_NEIGHBOUR:
-		error = NULL;
-		ok = do_neigh(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_CARP:
-		error = NULL;
-		ok = do_carp(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_SSH:
-		/* As a certificate: any jail's. */
-		error = NULL;
-		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
-		    do_ssh_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_POUDRIERE:
-		error = NULL;
-		ok = do_poudriere_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_CLAMAV:
-		error = NULL;
-		ok = do_clamav_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_SURICATA:
-		error = NULL;
-		ok = do_suricata_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_NFS:
-	case ARC_JOB_KIND_ISCSI:
-	case ARC_JOB_KIND_HAST:
-		error = NULL;
-		ok = do_netstore_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_SYSFILE:
-		error = NULL;
-		ok = do_sysfile_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_GEOM:
-		error = NULL;
-		ok = do_geom_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_SMTPD:
-		/* A jail's, with or without a network of its own. */
-		error = NULL;
-		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
-		    do_smtpd_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_SPEEDER:
-		error = NULL;
-		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
-		    do_speeder_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_MONITOR:
-		/* A jail's is probed from its network by the prober; the
-		 * job itself stays on the host. */
-		error = NULL;
-		ok = do_monitor_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_CERT:
-		/* Any jail's: its files, not its network. */
-		error = NULL;
-		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
-		    do_cert(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_BIRD:
-		/* Safe, configure runs on BIRD's own timer, a little longer
-		 * than the job's wait: the job confirms it, or BIRD takes it
-		 * back by itself should the daemon be stopped. */
-		error = NULL;
-		if (sp->safe && strcmp(sp->verb, "configure") == 0)
-			ok = bird_configure_safe(&j->w, safe_wait(sp) + 5,
-			    &error) == 0;
-		else
-			ok = do_bird_verb(&j->w, sp->verb, sp->names.v,
-			    sp->names.n, &error) == 0;
-		break;
-	case ARC_JOB_KIND_KMOD:
-		error = NULL;
-		ok = do_kmod(&j->w, sp->verb, sp->names.v[0], sp->persist,
-		    &error) == 0;
-		break;
-	case ARC_JOB_KIND_NTP:
-		error = NULL;
-		ok = do_ntp(&j->w, sp->names.v, sp->names.n, sp->remove,
-		    sp->persist, &error) == 0;
-		break;
-	case ARC_JOB_KIND_RTADVD:
-		error = NULL;
-		ok = do_rtadvd(&j->w, sp->interface, sp->names.v, sp->names.n,
-		    sp->remove, sp->persist, &error) == 0;
-		break;
-	case ARC_JOB_KIND_SYSCTL:
-		error = NULL;
-		ok = do_sysctl_set(&j->w, sp->names.v[0], sp->names.v[1],
-		    sp->persist, &error) == 0;
-		break;
-	case ARC_JOB_KIND_IPFW:
-		error = NULL;
-		ok = do_ipfw_job(&j->w, sp, &held, &error) == 0;
-		break;
-	case ARC_JOB_KIND_PROCESS:
-		error = NULL;
-		ok = do_proc_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_PKG_CLEAN:
-		error = NULL;
-		ok = do_pkg_clean(&j->w, sp->jail, sp->force, &error) == 0;
-		break;
-	case ARC_JOB_KIND_JAIL_BASE:
-		error = NULL;
-		ok = do_jail_base(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_REBOOT:
-		error = NULL;
-		ok = do_reboot(&j->w, &error) == 0;
-		break;
-	case ARC_JOB_KIND_PKG_INSTALL:
-		error = NULL;
-		ok = do_pkg_install(&j->w, sp, &error) == 0;
-		/* A plugin may be there now: asked again, not remembered. */
-		plugins_forget();
-		break;
-	case ARC_JOB_KIND_IPSEC:
-		error = NULL;
-		ok = do_ipsec_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_IPSEC_SA:
-		error = NULL;
-		ok = do_sa_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_BRIDGE:
-	case ARC_JOB_KIND_GENEVE:
-		error = NULL;
-		ok = do_l2_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_ZFS:
-	case ARC_JOB_KIND_ZPOOL:
-	case ARC_JOB_KIND_MOUNT:
-	case ARC_JOB_KIND_GPART:
-	case ARC_JOB_KIND_CAM:
-		error = NULL;
-		ok = do_storage_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_IF_VNET:
-		error = NULL;
-		if (!sp->remove && strcmp(sp->interface, "epair") == 0) {
-			ok = give_pair(j, &error);
-			break;
-		}
-		ok = do_if_vnet(&j->w, sp->interface, sp->jail, sp->remove,
-		    sp->persist, &error) == 0;
-		break;
-	case ARC_JOB_KIND_IF_STATE:
-		error = NULL;
-		ok = do_if_state(&j->w, sp->interface, sp->up, &error) == 0;
-		break;
-	case ARC_JOB_KIND_ROUTE:
-		error = NULL;
-		rm.metric = sp->has_metric ? sp->metric : 0;
-		rm.weight = sp->has_weight ? sp->weight : 0;
-		rm.source = sp->source;
-		rm.name = sp->names.n > 0 ? sp->names.v[0] : NULL;
-		rm.rc_only = sp->verb != NULL && strcmp(sp->verb, "keep") == 0;
-		ok = do_route(&j->w, sp->destination, sp->gateway, sp->remove,
-		    sp->has_fib ? sp->fib : 0, &rm, sp->persist, &error) == 0;
-		break;
-	case ARC_JOB_KIND_SERVICE_CONFIG:
-		error = NULL;
-		ok = service_job_rc(&j->w, sp, sp->safe ? &j->undo_rca : NULL,
-		    &error) == 0;
-		break;
-	default:
-		memset(&uq, 0, sizeof(uq));
-		memset(&ur, 0, sizeof(ur));
-		uq.jail = sp->jail;
-		uq.names.v = sp->names.v;
-		uq.names.n = sp->names.n;
-		/* Forced: to packages built for a newer FreeBSD too. */
-		uq.ignore_osversion = sp->force;
-		uq.pkg_ip = sp->has_pkg_ip ? sp->pkg_ip : 0;
-		uq.pkg_repo = sp->pkg_repo;
-		do_pkg_upgrade(&j->w, &uq, &ur);
-		ok = ur.ok;
-		error = ur.error;
-		break;
-	}
+	} else
+		ok = run_kind(j, &j->w, &held, &error);
 	/* A safe change stays only when the client is heard from again;
 	 * and what runs on a timer of its own (BIRD) is then told so. */
 	if (ok && go && sp->safe && !await_confirm(j)) {
@@ -2282,5 +2322,185 @@ jobs_wake(void)
 	pthread_mutex_lock(&jobs_lock);
 	pthread_cond_broadcast(&confirm_cv);
 	pthread_mutex_unlock(&jobs_lock);
+}
+
+/*
+ * Whether a job of sp's kind can be run dry, or with undo its change
+ * taken back dry: every step it takes only reads, or is a program, a
+ * file, a system call or a signal said and not done.  NULL, or why not.
+ */
+static const char *
+dry_refusal(struct work *w, const struct arc_job_spec *sp, bool undo)
+{
+
+	switch (sp->kind) {
+	case ARC_JOB_KIND_JAIL_ACTION:
+	case ARC_JOB_KIND_REBOOT:
+		if (undo)
+			break;
+		return (NULL);
+	case ARC_JOB_KIND_SERVICE_ACTION:
+	case ARC_JOB_KIND_SERVICE_CONFIG:
+	case ARC_JOB_KIND_IF_STATE:
+	case ARC_JOB_KIND_IF_ADDRESS:
+	case ARC_JOB_KIND_ROUTE:
+	case ARC_JOB_KIND_SYSCTL:
+	case ARC_JOB_KIND_KMOD:
+		return (NULL);
+	default:
+		break;
+	}
+	return (wfmt(w, "%s: not previewable: what %s does cannot be said "
+	    "without doing it", (char *)wadopt(w, title_of(sp)), undo ?
+	    "undoing this kind of job" : "this kind of job"));
+}
+
+/* A note on a dry run, in w's pool. */
+static void
+dry_note(struct work *w, const char ***vp, size_t *np, const char *fmt, ...)
+{
+	const char	**v;
+	va_list		  ap;
+	char		 *s;
+
+	va_start(ap, fmt);
+	if (vasprintf(&s, fmt, ap) == -1)
+		err(1, "vasprintf");
+	va_end(ap);
+	v = wcalloc(w, *np + 2, sizeof(*v));
+	if (*np > 0)
+		memcpy(v, *vp, *np * sizeof(*v));
+	v[(*np)++] = wtext(w, wadopt(w, s));
+	*vp = v;
+}
+
+/*
+ * A dry run of n jobs, checked by the caller as submit's are: each
+ * taken as run() takes it, its kind's steps in w, which is dry (struct
+ * work): what only reads is done, what would change something is said
+ * and not done.  No job is queued, no lock taken: nothing changes.
+ * *notesp: what the steps do not say (a safe change's timer, a job
+ * that would fail).  -1 and *errp: a kind that cannot be run dry, and
+ * nothing is run.
+ */
+int
+jobs_dry_run(const struct arc_job_spec *specs, size_t n, struct work *w,
+    const char ***notesp, size_t *nnotesp, const char **errp)
+{
+	const struct arc_job_spec	*sp;
+	struct qjob			*dj;
+	const char			*error, *title;
+	size_t				 i;
+	bool				 ok, held;
+	int				 root;
+
+	*notesp = NULL;
+	*nnotesp = 0;
+	for (i = 0; i < n; i++)
+		if ((*errp = dry_refusal(w, &specs[i], false)) != NULL)
+			return (-1);
+	w->dry = true;
+	for (i = 0; i < n; i++) {
+		sp = &specs[i];
+		title = wadopt(w, title_of(sp));
+		/* A job of its own, never queued: the kinds' code takes
+		 * one.  What it would keep for an undo is let go. */
+		if ((dj = calloc(1, sizeof(*dj))) == NULL)
+			err(1, "calloc");
+		dj->spec = *sp;
+		dj->title = (char *)(uintptr_t)title;
+		root = step_begin(w, STEP_DAEMON, "arcana-agent", "dry run: %s",
+		    title);
+		error = NULL;
+		held = false;
+		if (scoped(sp) && scope_enter(w, sp->jail, &error) != 0)
+			ok = false;
+		else
+			ok = run_kind(dj, w, &held, &error);
+		service_job_forget(dj->undo_rca);
+		free(dj);
+		w->jail = NULL;
+		w->jid = 0;
+		w->jroot = NULL;
+		if (ok && sp->safe)
+			dry_note(w, notesp, nnotesp, "%s: a safe change: kept "
+			    "when it is confirmed within %d s, else undone",
+			    title, safe_wait(sp));
+		if (!ok)
+			dry_note(w, notesp, nnotesp, "%s: would fail: %s",
+			    title, error != NULL ? error : "failed");
+		step_end(w, root, ok, ok ? NULL : "%s", error != NULL ? error :
+		    "failed");
+	}
+	return (0);
+}
+
+/*
+ * What undoing job id's change would do now: a safe change waiting to
+ * be confirmed, its undo's steps in w, dry as jobs_dry_run()'s.  The
+ * job is held (jobs_lock) while they are taken, so that what its undo
+ * keeps stays, and is left as it was: neither confirmed nor cancelled.
+ * *notesp: what the steps do not say.  -1 and *errp: no such job, none
+ * waiting, or an undo that cannot be run dry.
+ */
+int
+jobs_undo_preview(uint64_t id, struct work *w, const char ***notesp,
+    size_t *nnotesp, const char **errp)
+{
+	struct qjob	*j;
+	const char	*e;
+	int		 root, rc;
+
+	*notesp = NULL;
+	*nnotesp = 0;
+	*errp = "no such job";
+	rc = -1;
+	pthread_mutex_lock(&jobs_lock);
+	TAILQ_FOREACH(j, &jobs, link) {
+		if (j->id != id)
+			continue;
+		if (j->state != ARC_JOB_STATE_UNCONFIRMED || j->rejected) {
+			*errp = "the job is not a change waiting to be "
+			    "confirmed: it has no undo to preview";
+			break;
+		}
+		*errp = NULL;
+		rc = 0;
+		if (j->undo_none) {
+			dry_note(w, notesp, nnotesp, "%s: it was so before the "
+			    "job: nothing is undone", j->title);
+			break;
+		}
+		if (j->undo_note != NULL) {
+			dry_note(w, notesp, nnotesp, "%s: %s", j->title,
+			    j->undo_note);
+			break;
+		}
+		if ((*errp = dry_refusal(w, &j->spec, true)) != NULL) {
+			rc = -1;
+			break;
+		}
+		/* Where the job worked: a jail's network, or the host. */
+		w->dry = true;
+		w->jail = j->w.jail;
+		w->jid = j->w.jid;
+		w->jroot = j->w.jroot;
+		root = step_begin(w, STEP_DAEMON, "arcana-agent", "undo of "
+		    "job %ju: %s", (uintmax_t)j->id, j->title);
+		e = NULL;
+		if (undo_steps(j, w, &e) != 0) {
+			dry_note(w, notesp, nnotesp, "%s: the undo would fail: "
+			    "%s", j->title, e != NULL ? e : "failed");
+			step_end(w, root, false, "%s", e != NULL ? e :
+			    "failed");
+		} else
+			step_end(w, root, true, NULL);
+		w->jail = NULL;
+		w->jid = 0;
+		w->jroot = NULL;
+		break;
+	}
+	pthread_mutex_unlock(&jobs_lock);
+	return (rc);
 }
 

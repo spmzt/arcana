@@ -152,6 +152,36 @@ step_exec(struct work *w, int idx, char *const argv[], int status,
 		yang_changed(YANG_JOBS);
 }
 
+/* A dry run's program: what it would be run with, and not run. */
+void
+step_notrun(struct work *w, int idx, char *const argv[])
+{
+
+	step_exec(w, idx, argv, 0, NULL, 0, NULL, 0);
+	if (idx < 0 || idx >= w->nsteps)
+		return;
+	pthread_mutex_lock(&w->lock);
+	w->steps[idx].notrun = true;
+	pthread_mutex_unlock(&w->lock);
+}
+
+/*
+ * In a dry run, step idx (begun, saying what would be done) ends there,
+ * not done: true, and the caller does nothing.  False otherwise.
+ */
+bool
+work_dry(struct work *w, int idx)
+{
+	const char	*d;
+
+	if (!w->dry)
+		return (false);
+	d = idx >= 0 && idx < w->nsteps ? w->steps[idx].detail : NULL;
+	step_end(w, idx, true, "%s%snot done: a dry run", d != NULL ? d : "",
+	    d != NULL ? "; " : "");
+	return (true);
+}
+
 /*
  * Step s, the trace's i-th, as arcana-jobs' step, allocated from dst;
  * with copy, its strings too, as from another work.
@@ -184,7 +214,8 @@ step_fill(struct work *dst, const struct step *s, int i, bool copy,
 		}
 		v->argv.n = s->argc;
 		v->argv.v = av;
-		v->has_exit = true;
+		/* Not run, a dry run's: no exit status. */
+		v->has_exit = !s->notrun;
 		v->exit = s->status;
 		v->output.p = s->out == NULL ? "" : copy ?
 		    wstrndup(dst, s->out, s->outlen) : s->out;

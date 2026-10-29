@@ -312,34 +312,41 @@ module arcana-jobs {
     }
   }
 
+  grouping submitted-change {
+    description
+      "A change as it is given: what it is, and whether it is safe.";
+    uses change;
+    leaf safe {
+      type boolean;
+      description
+        "Undo the change unless confirm comes in time: the client
+         that still reaches the host after it confirms, one it cut
+         off cannot, and the host comes back by itself.  A kind,
+         or a verb of one, that cannot be undone refuses it, saying
+         why.";
+    }
+    leaf safe-wait {
+      type uint32 {
+        range "10..max";
+      }
+      units "seconds";
+      description
+        "With safe: how long the change waits to be confirmed
+         before it is undone, in place of the agent's own (-w).";
+    }
+  }
+
   rpc submit {
     nacm:default-deny-all;
     description
       "Changes queued, to run in the order given.";
     input {
       list change {
+        cg:struct "submit_input_change";
         min-elements 1;
         description
           "A change.";
-        uses change;
-        leaf safe {
-          type boolean;
-          description
-            "Undo the change unless confirm comes in time: the client
-             that still reaches the host after it confirms, one it cut
-             off cannot, and the host comes back by itself.  A kind,
-             or a verb of one, that cannot be undone refuses it, saying
-             why.";
-        }
-        leaf safe-wait {
-          type uint32 {
-            range "10..max";
-          }
-          units "seconds";
-          description
-            "With safe: how long the change waits to be confirmed
-             before it is undone, in place of the agent's own (-w).";
-        }
+        uses submitted-change;
       }
     }
     output {
@@ -347,6 +354,52 @@ module arcana-jobs {
         type uint64;
         description
           "The jobs queued, in the order given.";
+      }
+    }
+  }
+
+  rpc dry-run {
+    nacm:default-deny-all;
+    description
+      "What submit would do with the same changes, or what undoing a
+       job waiting to be confirmed would do, said by the agent and
+       done by nothing: no job is queued, the job named is neither
+       confirmed nor cancelled.  The steps are those a job's trace
+       would have, in the order taken; a program that only reads is
+       run, so that what follows from it is as a job's, any other is
+       a step with its arguments and no exit status; a file written,
+       a system call that changes the kernel's state, a signal or
+       the agent's own restart is a step saying so.  A kind whose
+       work cannot be said without doing it is refused, saying so.
+       Its rights are submit's: nacm:default-deny-all.";
+    input {
+      list change {
+        cg:struct "submit_input_change";
+        description
+          "A change, as submit takes it; none with undo.";
+        uses submitted-change;
+      }
+      leaf undo {
+        type uint64;
+        description
+          "A job waiting to be confirmed: what its undo would do,
+           as cancel or its timer would do it now.";
+      }
+    }
+    output {
+      list step {
+        cg:struct "step";
+        key "id";
+        description
+          "A step it would take, as a job's trace has it; each names
+           its parent, the tree in a flat list.";
+        uses step;
+      }
+      leaf-list note {
+        type string;
+        description
+          "What the steps do not say: a safe change's timer, a step
+           that would fail, an undo with nothing to put back.";
       }
     }
   }

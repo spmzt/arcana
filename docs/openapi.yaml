@@ -2483,6 +2483,66 @@ paths:
                   lanes: { type: integer }
         "400":
           description: lanes is not 1 to 32.
+  /api/servers/{server}/jobs/dry-run:
+    post:
+      tags: [servers]
+      summary: What a batch of changes, or a job's undo, would do
+      description: |
+        The agent runs the batch dry (arcana-jobs' dry-run): every step
+        a job would take, in the order it would take it, and nothing is
+        done.  A program that only reads runs, so that what follows from
+        it is as the job's; any other is a step with its arguments and no
+        exit; a file written, the kernel's state changed or the agent's
+        own restart is a step saying so.  The kinds that can be run dry
+        are jail-action, service-action, service-config, if-state,
+        if-address, route, sysctl, kmod and reboot; another is refused,
+        "not previewable".  With undo instead of jobs, what undoing job
+        undo, a safe change waiting to be confirmed, would do now, the job
+        left waiting: neither read (a read confirms it) nor cancelled.
+        The rights are POST …/jobs' and DELETE …/jobs/{job}'s.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: jobs as POST …/jobs takes them, or undo.
+              properties:
+                jobs: { type: array, minItems: 1, maxItems: 64,
+                  items: { type: object } }
+                undo: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: The steps it would take, and what they do not say.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        parent: { type: integer, description: "-1, the root." }
+                        kind: { type: string, enum: [daemon, lib, syscall,
+                          file, exec] }
+                        label: { type: string, description: "A program's command line." }
+                        detail: { type: string }
+                        status: { type: string, enum: [ok, failed,
+                          incomplete] }
+                        argv: { type: array, items: { type: string } }
+                        exit: { type: integer, description: "A program that ran, one that only reads." }
+                  notes: { type: array, items: { type: string },
+                    description: "A safe change's timer, a step that would fail, an undo with nothing to put back." }
+        "400":
+          description: Neither jobs nor undo, or not as they are made.
+        "502":
+          description: The agent refused it, saying why (error.message).
   /api/servers/{server}/jobs:
     get:
       tags: [servers]

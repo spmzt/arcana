@@ -324,6 +324,59 @@ yq_submit(cbl_conn *conn, const struct arc_job_spec *v, size_t n,
 }
 
 int
+yq_dry_run(cbl_conn *conn, const struct arc_job_spec *v, size_t n,
+    uint64_t undo, cbl_yarena *a, const struct arcana_jobs_step **steps,
+    size_t *nsteps, const char *const **notes, size_t *nnotes, char *err,
+    size_t errlen)
+{
+	struct arcana_jobs_dry_run_input	 in;
+	struct arcana_jobs_submit_input_change	*ch;
+	struct arcana_jobs_dry_run_output	 out;
+	const struct cbl_ynode			*rpc;
+	const char				*bad;
+	size_t					 i;
+	int					 error;
+
+	*steps = NULL;
+	*nsteps = 0;
+	*notes = NULL;
+	*nnotes = 0;
+	if ((rpc = yq_top("arcana-jobs", "dry-run")) == NULL) {
+		snprintf(err, errlen, "arcana-jobs has no dry-run");
+		return (ENOENT);
+	}
+	memset(&in, 0, sizeof(in));
+	if (n == 0) {
+		in.has_undo = true;
+		in.undo = undo;
+	} else {
+		if ((ch = cbl_yarena_alloc(a, n * sizeof(*ch))) == NULL)
+			return (ENOMEM);
+		for (i = 0; i < n; i++)
+			if ((error = yq_change(&v[i], a, &ch[i], &bad)) != 0) {
+				if (error == EINVAL)
+					snprintf(err, errlen, "job %zu: %s",
+					    i + 1, bad);
+				else
+					snprintf(err, errlen, "%s",
+					    strerror(error));
+				return (error);
+			}
+		in.change.n = n;
+		in.change.v = ch;
+	}
+	memset(&out, 0, sizeof(out));
+	if ((error = yq_call(conn, NULL, NULL, rpc, &in, &out, a, err,
+	    errlen)) != 0)
+		return (error);
+	*steps = out.step.v;
+	*nsteps = out.step.n;
+	*notes = out.note.v;
+	*nnotes = out.note.n;
+	return (0);
+}
+
+int
 yq_job(cbl_conn *conn, uint64_t id, cbl_yarena *a, struct arc_job *j,
     const struct arcana_jobs_step **steps, size_t *nsteps, char *err,
     size_t errlen)

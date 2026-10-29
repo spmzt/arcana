@@ -66,6 +66,8 @@ ifaddr_change_peer(struct work *w, const char *ifname, int af,
 	    (add ? "ioctl(SIOCAIFADDR)" : "ioctl(SIOCDIFADDR)") :
 	    (add ? "ioctl(SIOCAIFADDR_IN6)" : "ioctl(SIOCDIFADDR_IN6)"),
 	    "%s alias on %s", add ? "add" : "remove", ifname);
+	if (work_dry(w, step))
+		return (0);
 	if ((s = socket(af, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1) {
 		*errp = wfmt(w, "socket: %s", strerror(errno));
 		step_end(w, step, false, "%s", *errp);

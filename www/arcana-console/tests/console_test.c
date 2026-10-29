@@ -1912,6 +1912,16 @@ ATF_TC_BODY(users, tc)
 	    &r);
 	EXPECT(&r, 403);
 	resp_free(&r);
+	/* A dry run, and a job's undo previewed, are submit's and cancel's:
+	 * a viewer's neither. */
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs/dry-run", ha);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"service-action\","
+	    "\"service\":\"sshd\",\"action\":\"restart\"}]}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("POST", path, "{\"undo\":1}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
 	snprintf(path, sizeof(path), "/api/servers/%s", ha);
 	http("DELETE", path, NULL, &r);
 	EXPECT(&r, 403);
@@ -1990,6 +2000,11 @@ ATF_TC_BODY(users, tc)
 	snprintf(path, sizeof(path), "/api/servers/%s/jobs", hb);
 	http("POST", path, "{\"kind\":\"sysctl\",\"args\":[\"kern.hostname\"]}",
 	    &r);
+	ATF_CHECK_MSG(r.status != 403 && r.status != 404, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs/dry-run", hb);
+	http("POST", path, "{\"undo\":1}", &r);
 	ATF_CHECK_MSG(r.status != 403 && r.status != 404, "%d %s", r.status,
 	    r.body);
 	resp_free(&r);
@@ -6042,6 +6057,32 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK(jstr(&r, "stats.cpu_pct") != NULL);
 	ATF_CHECK(atoll(jstr(&r, "stats.mem_total")) > 0);
+	resp_free(&r);
+
+	/* A dry run: the steps the job would take, said by the agent,
+	 * service(8)'s start not run; a job's undo with none waiting, or
+	 * a body that is neither, refused. */
+	snprintf(path, sizeof(path), "%.*s/jobs/dry-run",
+	    (int)(strlen(base) - strlen("/services")), base);
+	(void)unlink("running.ntpd");
+	http("POST", path, "{\"jobs\":[{\"kind\":\"service-action\","
+	    "\"service\":\"ntpd\",\"action\":\"start\"}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("daemon", jstr(&r, "steps.0.kind"));
+	ATF_CHECK_STREQ("arcana-agent", jstr(&r, "steps.0.label"));
+	ATF_CHECK_STREQ("-1", jstr(&r, "steps.0.parent"));
+	ATF_CHECK_MSG(strstr(r.body, "fake-service ntpd start\",\"detail\":"
+	    "\"not run: a dry run\"") != NULL, "%s", r.body);
+	ATF_CHECK(jstr(&r, "notes") != NULL);
+	resp_free(&r);
+	ATF_CHECK(access("running.ntpd", F_OK) == -1);
+	http("POST", path, "{\"undo\":424242}", &r);
+	EXPECT(&r, 502);
+	ATF_CHECK_STREQ("no such job", jstr(&r, "error.message"));
+	resp_free(&r);
+	http("POST", path, "{\"undo\":\"x\"}", &r);
+	EXPECT(&r, 400);
 	resp_free(&r);
 
 	/* Jobs: a batch is queued, runs in order, and can be read back. */

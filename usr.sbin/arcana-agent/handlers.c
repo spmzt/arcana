@@ -763,3 +763,21 @@ jobs_submit_checked(cbl_req *req, const struct arc_job_spec *specs, size_t n,
 	free(peer);
 	return (0);
 }
+
+/*
+ * The same batch run dry (jobs_dry_run()), refused as submit would
+ * refuse it: its steps w's trace, *notesp what they do not say.
+ * arcana-jobs' dry-run's (yarcana.c).
+ */
+int
+jobs_dry_checked(cbl_req *req, const struct arc_job_spec *specs, size_t n,
+    struct work *w, const char ***notesp, size_t *nnotesp, const char **errp)
+{
+	size_t	i;
+
+	for (i = 0; i < n; i++)
+		if ((*errp = check_spec(&specs[i])) != NULL ||
+		    (*errp = cuts_off(req, &specs[i])) != NULL)
+			return (-1);
+	return (jobs_dry_run(specs, n, w, notesp, nnotesp, errp));
+}

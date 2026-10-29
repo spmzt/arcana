@@ -78,6 +78,7 @@ static const char *status_names[] = {
 
 static bool	show_trace;
 static bool	queue;		/* -q: submit as a job */
+static bool	dryrun;		/* -n: run dry, nothing done */
 static bool	safe;		/* -s: undo the change unless confirmed */
 static uint32_t	safe_wait;	/* -W: for how long, 0 the agent's own */
 static bool	persist;	/* -p: keep the change in rc.conf too */
@@ -136,6 +137,8 @@ static int	cmd_ipsec(cbl_conn *, int, char **);
 static int	cmd_pkg_upgrade(cbl_conn *, int, char **);
 static void	emit_packages(const struct arcana_packages_package *, size_t);
 static int	submit(cbl_conn *, struct arc_job_spec *);
+static int	dry_run(cbl_conn *, const struct arc_job_spec *, size_t,
+		    uint64_t);
 static void	emit_job(const struct arc_job *);
 static int	cmd_jobs(cbl_conn *);
 static int	cmd_job(cbl_conn *, int, char **);
@@ -149,7 +152,7 @@ static void
 usage(void)
 {
 
-	xo_error("usage: arcanactl [-pqst] [-F fib] [-j jail] [-W seconds] "
+	xo_error("usage: arcanactl [-npqst] [-F fib] [-j jail] [-W seconds] "
 	    "[-c uri] [-u user] "
 	    "[-A cafile -C certfile\n                 -K keyfile] [-N name] "
 	    "command\n"
@@ -576,7 +579,9 @@ emit_trace(const struct arcana_jobs_step *v, size_t n)
 		if (s->argv.n > 0) {
 			for (k = 0; k < s->argv.n; k++)
 				xo_emit("{el:argv/%s}", s->argv.v[k]);
-			xo_emit("{e:exit/%d}", s->exit);
+			/* None: a dry run's, not run. */
+			if (s->has_exit)
+				xo_emit("{e:exit/%d}", s->exit);
 			emit_lines("| ", &s->output);
 			emit_lines("! ", &s->error_output);
 			xo_emit("{e:output/%.*s}{e:error-output/%.*s}",
@@ -7310,6 +7315,8 @@ submit(cbl_conn *conn, struct arc_job_spec *sp)
 		sp->accept.v = accepts;
 		sp->accept.n = naccepts;
 	}
+	if (dryrun)
+		return (dry_run(conn, sp, 1, 0));
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "queue");
 	if (yq_submit(conn, sp, 1, a, &v, &n, err, sizeof(err)) != 0 ||
@@ -7333,6 +7340,41 @@ submit(cbl_conn *conn, struct arc_job_spec *sp)
 	for (i = 0; i < n; i++)
 		emit_job(&v[i]);
 	xo_close_list("job");
+	cbl_yarena_free(a);
+	return (0);
+}
+
+/*
+ * -n: the jobs v (n of them) run dry by the agent, or with n 0 job
+ * undo's undo: the steps it would take, as a job's trace shows them,
+ * and what they do not say.  Nothing is queued or done.
+ */
+static int
+dry_run(cbl_conn *conn, const struct arc_job_spec *v, size_t n,
+    uint64_t undo)
+{
+	const struct arcana_jobs_step	*steps;
+	const char *const		*notes;
+	cbl_yarena			*a;
+	char				 err[512];
+	size_t				 nsteps, nnotes, i;
+
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "dry run");
+	if (yq_dry_run(conn, v, n, undo, a, &steps, &nsteps, &notes, &nnotes,
+	    err, sizeof(err)) != 0) {
+		xo_warnx("dry run: %s", err);
+		cbl_yarena_free(a);
+		return (1);
+	}
+	xo_open_container("dry-run");
+	show_trace = true;
+	emit_trace(steps, nsteps);
+	xo_open_list("note");
+	for (i = 0; i < nnotes; i++)
+		xo_emit("{Lwc:Note}{l:note/%s}\n", notes[i]);
+	xo_close_list("note");
+	xo_close_container("dry-run");
 	cbl_yarena_free(a);
 	return (0);
 }
@@ -7444,6 +7486,9 @@ cmd_job_cancel(cbl_conn *conn, int argc, char **argv)
 
 	if (argc != 2)
 		usage();
+	/* -n: what its undo would do, the job left waiting. */
+	if (dryrun)
+		return (dry_run(conn, NULL, 0, strtoull(argv[1], NULL, 10)));
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "job-cancel");
 	if (yq_cancel(conn, strtoull(argv[1], NULL, 10), a, &j, err,
@@ -7488,8 +7533,13 @@ main(int argc, char *argv[])
 	}
 	uri = PATH_SOCKET;
 	cafile = certfile = keyfile = name = user = NULL;
-	while ((ch = getopt(argc, argv, "+A:C:c:F:j:K:N:pqstu:W:")) != -1) {
+	while ((ch = getopt(argc, argv, "+A:C:c:F:j:K:N:npqstu:W:")) != -1) {
 		switch (ch) {
+		case 'n':
+			/* As a job, run dry: what does the change at once
+			 * goes by the job instead. */
+			dryrun = queue = true;
+			break;
 		case 'A':
 			cafile = optarg;
 			break;
@@ -7542,6 +7592,27 @@ main(int argc, char *argv[])
 	argv += optind;
 	if (argc < 1)
 		usage();
+	/*
+	 * -n: only a verb that is a job the agent can run dry; any other
+	 * would do what it says.
+	 */
+	if (dryrun) {
+		static const char *const dryable[] = { "start", "stop",
+		    "restart", "kill", "enable", "disable", "service",
+		    "interface", "route", "sysctl", "kmod", "reboot",
+		    "job-cancel" };
+
+		for (i = 0; i < (int)nitems(dryable); i++)
+			if (strcmp(argv[0], dryable[i]) == 0)
+				break;
+		/* What reads (sysctl name, kmod alone) is no job. */
+		if (i == (int)nitems(dryable) || (strcmp(argv[0],
+		    "sysctl") == 0 && (argc != 2 || strchr(argv[1],
+		    '=') == NULL)) || (strcmp(argv[0], "kmod") == 0 &&
+		    argc != 3))
+			xo_errx(2, "-n: %s is no job that can be run dry",
+			    argv[0]);
+	}
 
 	if ((error = cbl_ctx_new(&ctx)) != 0)
 		xo_errx(1, "cbl_ctx_new: %s", strerror(error));

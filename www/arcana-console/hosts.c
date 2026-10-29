@@ -64,6 +64,7 @@ enum op {
 	OP_PACKAGES,
 	OP_PKG_UPGRADE,
 	OP_JOB_SUBMIT,
+	OP_JOB_DRY_RUN,
 	OP_JOBS,
 	OP_JOB,
 	OP_JOB_CANCEL,
@@ -135,6 +136,7 @@ static const char *const op_names[] = {
 	[OP_PACKAGES] = "packages",
 	[OP_PKG_UPGRADE] = "pkg-upgrade",
 	[OP_JOB_SUBMIT] = "job-submit",
+	[OP_JOB_DRY_RUN] = "job-dry-run",
 	[OP_JOBS] = "jobs",
 	[OP_JOB] = "job",
 	[OP_JOB_CANCEL] = "job-cancel",
@@ -452,6 +454,8 @@ static void	 call_free_vars(struct call *);
 static ucl_object_t *job_object(struct call *, const struct arc_job *,
 		    const struct arcana_jobs_step *, size_t, bool, uint64_t);
 static const char *spec_from_json(const ucl_object_t *, struct arc_job_spec *);
+static ucl_object_t *dry_steps(const struct arcana_jobs_step *, size_t);
+static int	 jobs_post(struct http_request *, enum op);
 /*
  * What a read is asked by: the path and query string of a GET, or of a
  * read on the console's socket (stream.c) as the GET would have them.
@@ -512,6 +516,39 @@ strs(const char *const *v, size_t n)
 	a = ucl_object_typed_new(UCL_ARRAY);
 	for (i = 0; i < n; i++)
 		ucl_array_append(a, ucl_object_fromstring(v[i]));
+	return (a);
+}
+
+/*
+ * A dry run's steps as the agent said them, flat, each naming its
+ * parent: a program with its arguments, not run, has no exit.
+ */
+static ucl_object_t *
+dry_steps(const struct arcana_jobs_step *v, size_t n)
+{
+	const struct arcana_jobs_step	*s;
+	ucl_object_t			*a, *o;
+	size_t				 i;
+
+	a = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < n; i++) {
+		s = &v[i];
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put(o, "id", ucl_object_fromint(s->id));
+		put(o, "parent", ucl_object_fromint(s->has_parent ? s->parent :
+		    -1));
+		put_str(o, "kind", s->has_kind && s->kind < nitems(kind_names) ?
+		    kind_names[s->kind] : NULL);
+		put_str(o, "label", s->label);
+		put_str(o, "detail", s->detail);
+		put_str(o, "status", s->has_status && s->status <
+		    nitems(status_names) ? status_names[s->status] : NULL);
+		if (s->argv.n > 0)
+			put(o, "argv", strs(s->argv.v, s->argv.n));
+		if (s->has_exit)
+			put(o, "exit", ucl_object_fromint(s->exit));
+		ucl_array_append(a, o);
+	}
 	return (a);
 }
 
@@ -2236,6 +2273,33 @@ connected:
 			    false, 0));
 		put(top, "jobs", a);
 		break;
+	case OP_JOB_DRY_RUN:
+		/*
+		 * arcana-jobs' dry-run (yqueue.c): what the jobs would do,
+		 * or a waiting job's undo, nothing queued or done.  The job
+		 * is never read here: its read confirms it (OP_JOB).
+		 */
+		for (i = 0; c->safe_wait > 0 && i < c->nspecs; i++)
+			if (c->specs[i].safe) {
+				c->specs[i].has_safe_wait = true;
+				c->specs[i].safe_wait = (uint32_t)c->safe_wait;
+			}
+		if ((ya = cbl_yarena_new()) == NULL)
+			goto fail;
+		{
+			const struct arcana_jobs_step	*dv;
+			const char *const		*nv;
+			size_t				 ndv, nnv;
+
+			if ((error = yq_dry_run(conn, c->specs, c->nspecs,
+			    c->jobid, ya, &dv, &ndv, &nv, &nnv, ywhy,
+			    sizeof(ywhy))) != 0)
+				goto rpcfail;
+			ok = true;
+			put(top, "steps", dry_steps(dv, ndv));
+			put(top, "notes", strs(nv, nnv));
+		}
+		break;
 	case OP_JOBS:
 		/* arcana-jobs' state, the traces left out. */
 		if ((ya = cbl_yarena_new()) == NULL)
@@ -3232,7 +3296,8 @@ call_new(struct http_request *req, enum op op)
 	    op == OP_SYSTEM ||
 	    op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
-	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL || op == OP_CAPTURE ||
+	    op == OP_JOB_SUBMIT || op == OP_JOB_DRY_RUN ||
+	    op == OP_JOB_CANCEL || op == OP_CAPTURE ||
 	    op == OP_ZFS_KEY || op == OP_SDWAN_PROXY || op == OP_SDWAN_IDS ||
 	    (op == OP_TLS && req->method ==
 	    HTTP_METHOD_POST) ||
@@ -5497,23 +5562,54 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 int
 api_jobs(struct http_request *req)
 {
+
+	if (req->method != HTTP_METHOD_POST)
+		return (read_route(req, OP_JOBS, NULL));
+	return (jobs_post(req, OP_JOB_SUBMIT));
+}
+
+/*
+ * POST /api/servers/<id>/jobs/dry-run: what POST .../jobs with the same
+ * body would do, said by the agent, nothing queued or done: {"steps":
+ * [{"id", "parent", "kind", "label", "detail", "status", "argv"}, ...],
+ * "notes": [...]}; with {"undo": n} instead, what undoing job n, a
+ * safe change waiting to be confirmed, would do, the job left waiting
+ * (it is not read: a read confirms it).  The rights are POST .../jobs'.
+ */
+int
+api_jobs_dry_run(struct http_request *req)
+{
+
+	return (jobs_post(req, OP_JOB_DRY_RUN));
+}
+
+/* A POST of jobs, to queue (OP_JOB_SUBMIT) or to run dry. */
+static int
+jobs_post(struct http_request *req, enum op op)
+{
 	ucl_object_t		*body;
-	const ucl_object_t	*a, *v;
+	const ucl_object_t	*a, *v, *u;
 	ucl_object_iter_t	 it;
 	struct call		*c;
 	const char		*e;
 	size_t			 n;
 
-	if (req->method != HTTP_METHOD_POST)
-		return (read_route(req, OP_JOBS, NULL));
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
-	if ((c = call_new(req, OP_JOB_SUBMIT)) == NULL)
+	if ((c = call_new(req, op)) == NULL)
 		return (WEB_OK);
 	e = NULL;
 	body = read_json(req);
 	a = body != NULL ? ucl_object_lookup(body, "jobs") : NULL;
-	if ((n = ucl_array_size(a)) == 0 || n > ARC_MAX_BATCH)
+	u = op == OP_JOB_DRY_RUN && body != NULL ? ucl_object_lookup(body,
+	    "undo") : NULL;
+	if (u != NULL) {
+		if (a != NULL || ucl_object_type(u) != UCL_INT ||
+		    ucl_object_toint(u) < 1)
+			e = "undo is a job's number, without jobs";
+		else
+			c->jobid = (uint64_t)ucl_object_toint(u);
+	} else if ((n = ucl_array_size(a)) == 0 || n > ARC_MAX_BATCH)
 		e = "jobs is a list of 1 to 64 jobs";
 	else {
 		c->specs = xcalloc(n, sizeof(*c->specs));

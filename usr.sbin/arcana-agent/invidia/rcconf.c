@@ -83,7 +83,7 @@ rc_get(struct work *w, const char *name)
 	argv[2] = (char *)(uintptr_t)"-n";
 	argv[3] = (char *)(uintptr_t)name;
 	argv[4] = NULL;
-	if (run_exec(w, argv, &res) != 0 || res.out == NULL)
+	if (run_read(w, argv, &res) != 0 || res.out == NULL)
 		return (NULL);
 	v = wstrndup(w, res.out, strcspn(res.out, "\n"));
 	return (v[0] != '\0' ? v : NULL);

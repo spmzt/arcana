@@ -347,7 +347,7 @@ do_l2(struct work *w, bool geneve, struct net_rsp *rsp)
 	argv[1] = (char *)(uintptr_t)"-av";
 	argv[2] = NULL;
 	/* run_exec() runs it in w's jail: -j once. */
-	if (run_exec(w, argv, &res) != 0) {
+	if (run_read(w, argv, &res) != 0) {
 		rsp->error = scope_missing(w, &res, "ifconfig", NULL);
 		if (rsp->error == NULL)
 			rsp->error = wtext(w, exec_error(w, &res, "ifconfig"));

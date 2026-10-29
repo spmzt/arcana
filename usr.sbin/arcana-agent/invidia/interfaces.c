@@ -1583,7 +1583,7 @@ ifq(struct work *w, const char *what, const char *ifname, const char *arg)
 	argv[4] = (char *)(uintptr_t)(ifname != NULL ? ifname : "-");
 	argv[5] = (char *)(uintptr_t)(arg != NULL ? arg : "-");
 	argv[6] = NULL;
-	if (run_exec_max(w, argv, &res, ARC_MAX_JSON) != 0 || res.out == NULL)
+	if (run_read_max(w, argv, &res, ARC_MAX_JSON) != 0 || res.out == NULL)
 		return (NULL);
 	return (res.out);
 }

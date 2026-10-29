@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.338.0"
+#define	ARCW_VERSION		"0.339.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -544,6 +544,7 @@ int		 api_packages(struct http_request *);
 int		 api_pkg_upgrade(struct http_request *);
 int		 api_jobs(struct http_request *);
 int		 api_jobs_config(struct http_request *);
+int		 api_jobs_dry_run(struct http_request *);
 int		 api_job(struct http_request *);
 void		 api_call_free(struct http_request *);
 

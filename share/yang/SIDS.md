@@ -82,7 +82,7 @@ on the wire.
 | 62 100 | 100 | `arcana-jails` | `share/yang/arcana-jails@2026-10-14.sid` (53 used) |
 | 62 200 | 100 | `arcana-services` | `share/yang/arcana-services@2026-10-14.sid` (79 used) |
 | 62 300 | 100 | `arcana-packages` | `share/yang/arcana-packages@2026-10-14.sid` (100 used; its rest at 79 500) |
-| 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (385 used, 34 obsolete: a job's steps in the state, now its read action's, and each kind's safe, now the change's; room for the kinds to come; its rest at 83 200) |
+| 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (702 used, 34 obsolete: a job's steps in the state, now its read action's, and each kind's safe, now the change's; the dry-run rpc, its changes submit's again; room for the kinds to come; its rest at 83 200) |
 | 63 400 | 200 | `arcana-storage` | `share/yang/arcana-storage@2026-10-14.sid` (200 used, 9 obsolete: a snapshot's send action and the receive rpc, arcana-stream's now; its rest at 79 600) |
 | 63 600 | 100 | `arcana-sysctl` | `share/yang/arcana-sysctl@2026-10-14.sid` (12 used) |
 | 63 700 | 100 | `arcana-kernel` | `share/yang/arcana-kernel@2026-10-14.sid` (37 used) |

@@ -100,6 +100,9 @@ struct rca {
 	 * refusal then in err alone. */
 	const char	*const *accept;
 	size_t		 naccept;
+	/* A dry run's: rca_write() checks and writes nothing, what else
+	 * it would write said in err. */
+	bool		 dry;
 };
 
 int	rca_open(struct rca *x, const char *svc, char *err, size_t errlen);
