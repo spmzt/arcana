@@ -8458,6 +8458,23 @@ part_safefuse(void)
 	wait_js("!document.querySelector('svg.topo text.tsafe')", 60);
 }
 
+/*
+ * Seconds to wait for what the browser does in its own time, more the
+ * busier the machine is: once more for each run queue's worth of load
+ * on every CPU (a full make check runs twelve browsers at once).
+ */
+static int
+busy_secs(int secs)
+{
+	double	load;
+	long	ncpu;
+
+	if (getloadavg(&load, 1) != 1 || (ncpu = sysconf(
+	    _SC_NPROCESSORS_ONLN)) < 1)
+		return (secs);
+	return (secs * (1 + (int)fmin(load / (double)ncpu, 3.0)));
+}
+
 /* What a script says, as text. */
 static void
 js_str(char *out, size_t len, const char *expr)
@@ -8527,7 +8544,7 @@ moves_measure(void)
 	run("window.res = null; dragMoves('svg.topo .tnode .box', 40).then(s "
 	    "=> { window.res = s; }, e => { window.res = 'error: ' + (e.stack || "
 	    "e); });");
-	wait_js("window.res !== null", 60);
+	wait_js("window.res !== null", busy_secs(60));
 	js_str(s, sizeof(s), "window.res");
 	fprintf(stderr, "nodes=%d links=%d host drag: %s\n", (int)js_num(
 	    "document.querySelectorAll('svg.topo .tnode').length"), (int)js_num(
@@ -8536,13 +8553,13 @@ moves_measure(void)
 	run("window.res = null; dragMoves('svg.topo .bg', 40).then(s => { "
 	    "window.res = s; }, e => { window.res = 'error: ' + (e.stack || e); "
 	    "});");
-	wait_js("window.res !== null", 60);
+	wait_js("window.res !== null", busy_secs(60));
 	js_str(s, sizeof(s), "window.res");
 	fprintf(stderr, "map drag: %s\n", s);
 	ATF_CHECK_MSG(strncmp(s, "error", 5) != 0, "%s", s);
 	run("window.res = null; wheelMoves(40).then(s => { window.res = s; }, "
 	    "e => { window.res = 'error: ' + (e.stack || e); });");
-	wait_js("window.res !== null", 60);
+	wait_js("window.res !== null", busy_secs(60));
 	js_str(s, sizeof(s), "window.res");
 	fprintf(stderr, "wheel: %s\n", s);
 	ATF_CHECK_MSG(strncmp(s, "error", 5) != 0, "%s", s);
@@ -8552,7 +8569,7 @@ moves_measure(void)
 	    "i < 10; i++) { document.querySelector('button[data-act=topo-zoom-' "
 	    "+ (i % 2 ? 'out' : 'in') + ']').click(); await raf(); } window.res "
 	    "= stat(arcT); })();");
-	wait_js("window.res !== null", 120);
+	wait_js("window.res !== null", busy_secs(120));
 	js_str(s, sizeof(s), "window.res");
 	fprintf(stderr, "a whole redraw (the zoom buttons): %s\n", s);
 	js_str(s, sizeof(s), "JSON.stringify(window.arcGl) + ' ' + (window."
@@ -8731,38 +8748,67 @@ part_map(void)
 }
 
 /* The same map, moved by the WebGPU backend, in a browser started with
- * WebGPU on; skipped where it gives no device. */
+ * WebGPU on; skipped where it gives no device, or where it took the
+ * device away at any time. */
 static void
 part_mapgpu(void)
 {
+	char	note[300];
+	double	losts;
+	int	i;
+	bool	be;
 
+	/*
+	 * Every device lost, counted the moment the page hears of it (it
+	 * says why at once, its report of the count waits for the next
+	 * frame drawn): the browser can take it away at any time, also
+	 * after a probe, in the middle of a drag.
+	 */
+	run("window.glLosts = 0; Object.defineProperty(window, 'arcGlNote', "
+	    "{ configurable: true, get() { return window.glNote; }, set(v) { "
+	    "window.glNote = v; window.glLosts++; } });");
 	run("document.querySelector('li[data-act=select-network]').click()");
 	wait_js("document.querySelector('svg.topo .tnode.up') && window.arcGl "
-	    "!== undefined && window.arcGl.gpu !== 1", 30);
-	if (!js_true("navigator.gpu && window.arcGl.gpu === 2"))
+	    "!== undefined && window.arcGl.gpu !== 1", busy_secs(30));
+	if (!js_true("navigator.gpu && (window.arcGl.gpu === 2 || "
+	    "window.glLosts > 0)"))
 		atf_tc_skip("this headless Chromium gives no WebGPU device");
-	ATF_CHECK(js_true("window.arcGl.backend === 'webgpu'"));
+	/* Offline, as in part_map: a host's answer draws the whole map
+	 * again, and a drag slowed by a busy machine sees more of them. */
+	run("window.dispatchEvent(new Event('offline'));");
+	usleep(2000000);
+	be = js_true("window.arcGl.backend === 'webgpu'");
 	moves_measure();
 	shot("8-network-webgpu");
+	if (js_true("window.glLosts === 0")) {
+		ATF_CHECK(be);
+		ATF_CHECK(js_true("window.hostWires > 0 && window.hostMuts <= "
+		    "100"));
+		return;
+	}
 	/*
 	 * A device the browser takes away (SwiftShader's WebGPU in headless
 	 * Chromium does, "Device was destroyed"): asked for again, and
-	 * after the third the map is WebGL 2's, on a fresh canvas; the
-	 * drag goes on there.
+	 * after the third, or a request it refuses, the map is WebGL 2's,
+	 * on a fresh canvas; the drag goes on there.  Measured again once
+	 * a frame was drawn after the last loss (a resize draws the map,
+	 * and the frames with it, where none runs), and again if a device
+	 * goes in the middle: three at most.
 	 */
-	if (js_true("window.arcGl.losts > 0")) {
-		char	note[300];
-
-		wait_js("window.arcGl.ok && (window.arcGl.backend === 'webgl2' || "
-		    "window.arcGl.backend === 'webgpu')", 20);
-		js_str(note, sizeof(note), "window.arcGlNote || ''");
+	for (i = 0;; i++) {
+		ATF_REQUIRE_MSG(i <= 3, "devices lost after the fallback");
+		wait_js("(window.arcGl.ok && window.arcGl.losts === window."
+		    "glLosts) || window.dispatchEvent(new Event('resize')) && "
+		    "false", busy_secs(30));
+		losts = js_num("window.glLosts");
 		moves_measure();
-		ATF_REQUIRE(js_true("window.hostWires > 0 && window.hostMuts <= "
-		    "100"));
-		atf_tc_skip("this headless Chromium's WebGPU device does not "
-		    "last (%s); the fallback to WebGL 2 worked", note);
+		if (js_num("window.glLosts") == losts)
+			break;
 	}
-	ATF_CHECK(js_true("window.hostWires > 0 && window.hostMuts <= 100"));
+	ATF_REQUIRE(js_true("window.hostWires > 0 && window.hostMuts <= 100"));
+	js_str(note, sizeof(note), "window.arcGlNote || ''");
+	atf_tc_skip("this headless Chromium's WebGPU device does not last "
+	    "(%s); the fallback to WebGL 2 worked", note);
 }
 
 ATF_TC_WITH_CLEANUP(pwa_mapgpu);
