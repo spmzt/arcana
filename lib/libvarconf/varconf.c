@@ -659,6 +659,8 @@ line(struct lex *l)
 	l->f->na = first;
 	l->i = soff;
 	l->line = sline;
+	if (l->f->cmdline == 0)
+		l->f->cmdline = sline;
 	return (other_line(l, soff));
 }
 
@@ -1700,6 +1702,8 @@ void
 vc_rc_files_free(char **paths, size_t n)
 {
 
+	if (paths == NULL)
+		return;
 	for (size_t i = 0; i < n; i++)
 		free(paths[i]);
 	free(paths);
@@ -1833,6 +1837,55 @@ rcd_files(struct plist *out, const char *root, const char *base,
 }
 
 /*
+ * What source_rc_confs reads: /etc/defaults/rc.conf, its rc_conf_files,
+ * then those any of them names anew; the two lists kept.
+ */
+struct rcset {
+	struct vc_file	 dflt;
+	struct vc_file	*files;
+	size_t		 nfiles;
+	struct plist	 seen;
+	const char	*list[2];
+};
+
+static void
+rc_free(struct rcset *s)
+{
+
+	vc_rc_files_free(s->seen.v, s->seen.n);
+	for (size_t i = 0; i < s->nfiles; i++)
+		vc_free(&s->files[i]);
+	free(s->files);
+	vc_free(&s->dflt);
+}
+
+static int
+rc_read(const char *root, struct rcset *s, char *err, size_t errlen)
+{
+	char path[MAXPATHLEN];
+
+	memset(s, 0, sizeof(*s));
+	snprintf(path, sizeof(path), "%s/etc/defaults/rc.conf", root);
+	if (vc_read(&s->dflt, VC_SH, path, err, errlen) == -1)
+		return (-1);
+	if ((s->list[0] = list_var(&s->dflt, 1, "rc_conf_files",
+	    "/etc/rc.conf /etc/rc.conf.local", err, errlen)) == NULL ||
+	    read_list(root, s->list[0], &s->seen, &s->files, &s->nfiles, err,
+	    errlen) == -1)
+		goto bad;
+	/* Again, as rc_conf_files may now name others. */
+	if ((s->list[1] = list_var(s->files, s->nfiles, "rc_conf_files",
+	    s->list[0], err, errlen)) == NULL ||
+	    read_list(root, s->list[1], &s->seen, &s->files, &s->nfiles, err,
+	    errlen) == -1)
+		goto bad;
+	return (0);
+bad:
+	rc_free(s);
+	return (-1);
+}
+
+/*
  * The user's files rc(8) reads for service svc, in its order, owner's
  * fragment (/etc/rc.conf.d/svc/owner) not among them; each path under
  * root ("" for the system).  load_rc_config reads /etc/defaults/rc.conf,
@@ -1847,11 +1900,10 @@ vc_rc_files(const char *root, const char *localbase, const char *svc,
     const char *owner, char ***paths, size_t *npaths, char *err,
     size_t errlen)
 {
-	struct plist seen = { 0 }, out = { 0 };
-	struct vc_file *files = NULL, dflt;
-	char path[MAXPATHLEN], skip[MAXPATHLEN], ls[MAXPATHLEN];
-	const char *list, *startup;
-	size_t nfiles = 0;
+	struct plist out = { 0 };
+	struct rcset s;
+	char skip[MAXPATHLEN], ls[MAXPATHLEN];
+	const char *startup;
 	char *copy = NULL, *p, *w;
 	int rc = -1;
 
@@ -1863,25 +1915,18 @@ vc_rc_files(const char *root, const char *localbase, const char *svc,
 		errno = EINVAL;
 		return (-1);
 	}
-	snprintf(path, sizeof(path), "%s/etc/defaults/rc.conf", root);
-	if (vc_read(&dflt, VC_SH, path, err, errlen) == -1)
+	if (rc_read(root, &s, err, errlen) == -1) {
+		if (err != NULL && err[0] == '\0')
+			fail(err, errlen, "%s", strerror(errno));
 		return (-1);
-	if ((list = list_var(&dflt, 1, "rc_conf_files",
-	    "/etc/rc.conf /etc/rc.conf.local", err, errlen)) == NULL ||
-	    read_list(root, list, &seen, &files, &nfiles, err, errlen) == -1)
-		goto out;
-	/* Again, as rc_conf_files may now name others. */
-	if ((list = list_var(files, nfiles, "rc_conf_files", list, err,
-	    errlen)) == NULL ||
-	    read_list(root, list, &seen, &files, &nfiles, err, errlen) == -1)
-		goto out;
+	}
 	/* The rc_conf_files read, in order: their paths. */
-	for (size_t i = 0; i < seen.n; i++)
-		if (access(seen.v[i], R_OK) == 0 &&
-		    pl_add(&out, "", seen.v[i]) == -1)
+	for (size_t i = 0; i < s.seen.n; i++)
+		if (access(s.seen.v[i], R_OK) == 0 &&
+		    pl_add(&out, "", s.seen.v[i]) == -1)
 			goto out;
 	snprintf(ls, sizeof(ls), "%s/etc/rc.d", localbase);
-	if ((startup = list_var(files, nfiles, "local_startup", ls, err,
+	if ((startup = list_var(s.files, s.nfiles, "local_startup", ls, err,
 	    errlen)) == NULL)
 		goto out;
 	snprintf(skip, sizeof(skip), "/etc/rc.conf.d/%s/%s", svc, owner);
@@ -1907,12 +1952,203 @@ out:
 	if (rc == -1 && err != NULL && err[0] == '\0')
 		fail(err, errlen, "%s", strerror(errno));
 	free(copy);
-	vc_rc_files_free(seen.v, seen.n);
 	vc_rc_files_free(out.v, out.n);
-	for (size_t i = 0; i < nfiles; i++)
-		vc_free(&files[i]);
-	free(files);
-	vc_free(&dflt);
+	rc_free(&s);
+	return (rc);
+}
+
+static int
+by_str(const void *a, const void *b)
+{
+
+	return (strcmp(*(const char *const *)a, *(const char *const *)b));
+}
+
+/*
+ * The first line where one of names (sorted) may be written but by an
+ * assignment of the file's, comments aside: 0 if none.  "$name" and
+ * "${name...}" read it; "${name=...}" and "${name:=...}" may write it.
+ */
+static int
+written(const struct vc_file *f, const char **sorted, size_t n)
+{
+	const char *t = f->text, *key;
+	char word[VC_MAX_NAME + 1];
+	bool comment = false;
+	size_t e, k;
+	int line = 1;
+
+	for (size_t i = 0; i < f->len; i = e) {
+		e = i + 1;
+		if (t[i] == '\n') {
+			line++;
+			comment = false;
+			continue;
+		}
+		if (comment)
+			continue;
+		if (t[i] == '#' && (i == 0 ||
+		    isspace((unsigned char)t[i - 1]) || t[i - 1] == ';')) {
+			comment = true;
+			continue;
+		}
+		if (!name_start((unsigned char)t[i]) || (i > 0 &&
+		    name_char((unsigned char)t[i - 1])))
+			continue;
+		while (e < f->len && name_char((unsigned char)t[e]))
+			e++;
+		if (e - i > VC_MAX_NAME)
+			continue;
+		memcpy(word, t + i, e - i);
+		word[e - i] = '\0';
+		key = word;
+		if (bsearch(&key, sorted, n, sizeof(*sorted), by_str) == NULL)
+			continue;
+		if (i > 0 && t[i - 1] == '$')
+			continue;
+		if (i > 1 && t[i - 1] == '{' && t[i - 2] == '$' &&
+		    t[e] != '=' && !(t[e] == ':' && t[e + 1] == '='))
+			continue;
+		for (k = 0; k < f->na && f->a[k].off != i; k++)
+			;
+		if (k == f->na)
+			return (line);
+	}
+	return (0);
+}
+
+/* A list of absolute paths, which sh(1) neither expands nor looks up. */
+static bool
+paths_only(const char *l)
+{
+
+	if (strpbrk(l, "*?[\n") != NULL)
+		return (false);
+	for (l += strspn(l, " \t"); *l != '\0'; l += strspn(l, " \t")) {
+		if (*l != '/')
+			return (false);
+		l += strcspn(l, " \t");
+	}
+	return (true);
+}
+
+/*
+ * The values the files rc(8) reads give names, as sh(1) has them after
+ * /etc/defaults/rc.conf and source_rc_confs, which is what sysrc(8)
+ * reads: (*vals)[i] names[i]'s, NULL if unset; *paths (paths not NULL)
+ * the files read, the defaults first.  Refused, EINVAL and err said,
+ * where reading alone does not tell: vendor.conf there, rc_conf_files
+ * a pattern, a command in the user's files or a value there that may
+ * assign, an assignment of a name not settled, a name written another
+ * way.  Both freed with vc_rc_files_free().
+ */
+int
+vc_rc_values(const char *root, const char *const *names, size_t n,
+    char ***vals, char ***paths, size_t *npaths, char *err, size_t errlen)
+{
+	struct plist out = { 0 };
+	struct rcset s;
+	const struct vc_file *f;
+	const struct vc_assign *a, *x;
+	const char **sorted = NULL;
+	char path[MAXPATHLEN], **v = NULL;
+	int rc = -1, line;
+
+	*vals = NULL;
+	if (paths != NULL) {
+		*paths = NULL;
+		*npaths = 0;
+	}
+	snprintf(path, sizeof(path), "%s/etc/defaults/vendor.conf", root);
+	if (access(path, F_OK) == 0) {
+		fail(err, errlen, "%s: the defaults run it", path);
+		errno = EINVAL;
+		return (-1);
+	}
+	if (rc_read(root, &s, err, errlen) == -1)
+		return (-1);
+	snprintf(path, sizeof(path), "%s/etc/defaults/rc.conf", root);
+	if (pl_add(&out, "", path) == -1)
+		goto out;
+	for (size_t i = 0; i < s.seen.n; i++)
+		if (access(s.seen.v[i], R_OK) == 0 &&
+		    pl_add(&out, "", s.seen.v[i]) == -1)
+			goto out;
+	if (out.n != s.nfiles + 1) {
+		fail(err, errlen, "rc_conf_files changed as it was read");
+		goto inval;
+	}
+	for (int k = 0; k < 2; k++)
+		if (!paths_only(s.list[k])) {
+			fail(err, errlen, "rc_conf_files \"%s\": not paths "
+			    "alone", s.list[k]);
+			goto inval;
+		}
+	for (size_t i = 0; i < s.nfiles; i++) {
+		f = &s.files[i];
+		if (f->cmdline != 0) {
+			fail(err, errlen, "%s line %d: a command", out.v[i + 1],
+			    f->cmdline);
+			goto inval;
+		}
+		for (size_t k = 0; k < f->na; k++)
+			if ((f->a[k].flags & VC_COMPUTED) && memchr(f->text +
+			    f->a[k].voff, '=', f->a[k].vend - f->a[k].voff) !=
+			    NULL) {
+				fail(err, errlen, "%s line %d: %s's value may "
+				    "assign", out.v[i + 1], f->a[k].line,
+				    f->a[k].name);
+				goto inval;
+			}
+	}
+	if ((sorted = calloc(n + 1, sizeof(*sorted))) == NULL ||
+	    (v = calloc(n + 1, sizeof(*v))) == NULL)
+		goto out;
+	memcpy(sorted, names, n * sizeof(*names));
+	qsort(sorted, n, sizeof(*sorted), by_str);
+	for (size_t i = 0; i <= s.nfiles; i++) {
+		f = i == 0 ? &s.dflt : &s.files[i - 1];
+		if ((line = written(f, sorted, n)) != 0) {
+			fail(err, errlen, "%s line %d: a variable asked for, "
+			    "set as sh(1) alone tells", out.v[i], line);
+			goto inval;
+		}
+	}
+	for (size_t j = 0; j < n; j++) {
+		a = NULL;
+		for (size_t i = 0; i <= s.nfiles; i++) {
+			f = i == 0 ? &s.dflt : &s.files[i - 1];
+			if ((x = vc_get(f, names[j])) == NULL)
+				continue;
+			if (!vc_settled(f, names[j])) {
+				fail(err, errlen, "%s line %d: %s set where "
+				    "reading does not tell its value",
+				    out.v[i], x->line, names[j]);
+				goto inval;
+			}
+			a = x;
+		}
+		if (a != NULL && (v[j] = strdup(a->value)) == NULL)
+			goto out;
+	}
+	*vals = v;
+	v = NULL;
+	if (paths != NULL) {
+		*paths = out.v;
+		*npaths = out.n;
+		memset(&out, 0, sizeof(out));
+	}
+	rc = 0;
+	goto out;
+inval:
+	errno = EINVAL;
+out:
+	if (rc == -1 && err != NULL && err[0] == '\0')
+		fail(err, errlen, "%s", strerror(errno));
+	vc_rc_files_free(v, n);
+	free(sorted);
+	vc_rc_files_free(out.v, out.n);
+	rc_free(&s);
 	return (rc);
 }
 

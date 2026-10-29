@@ -3330,10 +3330,18 @@ services_body()
 	atf_check -o not-match:'README' cat services.out
 	# One listing, one status per enabled service, in the trace.
 	atf_check -o save:trace.out "$JGC" -t -c "$SOCK" services
-	atf_check -o match:'fake-sysrc -A' cat trace.out
+	# Enabled as the files say, read: sysrc -A takes seconds.
+	atf_check -o match:'read: 1 of 3 enabled: .*/root/etc/rc.conf' \
+	    -o not-match:'fake-sysrc' cat trace.out
 	atf_check -o not-match:'fake-service -e' cat trace.out
 	atf_check -o match:'fake-service sshd status' cat trace.out
 	atf_check -o not-match:'fake-service ntpd status' cat trace.out
+	# A command in them, which reading does not tell: sysrc -A.
+	printf 'if true; then :; fi\n' >> root/etc/rc.conf
+	atf_check -o save:trace.out "$JGC" -t -c "$SOCK" services
+	atf_check -o match:'^sshd +enabled' \
+	    -o match:'by sysrc -A: .*rc.conf line 4: a command' \
+	    -o match:'fake-sysrc -A' cat trace.out
 }
 services_cleanup()
 {

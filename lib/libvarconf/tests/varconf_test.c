@@ -862,6 +862,209 @@ check_absent(const struct vc_file *f, const char *name)
 	ATF_CHECK_MSG(vc_get(f, name) == NULL, "%s: read", name);
 }
 
+/*
+ * r, a root for vc_rc_values() that sysrc(8) reads as it is: the
+ * defaults' rc_conf_files name the files by their absolute paths, which
+ * r<cwd>, a link to cwd, leads back to.  The host's defaults, but that.
+ */
+static void
+rc_tree(char *root, size_t len, char *cwd, size_t clen)
+{
+	static const char was[] =
+	    "rc_conf_files=\"/etc/rc.conf /etc/rc.conf.local\"";
+	char cmd[3 * MAXPATHLEN], *s, *p;
+	size_t n;
+	FILE *fp;
+
+	ATF_REQUIRE(getcwd(cwd, clen) != NULL);
+	snprintf(root, len, "%s/r", cwd);
+	snprintf(cmd, sizeof(cmd), "mkdir -p r/etc/defaults "
+	    "r/usr/local/etc/rc.conf.d 'r%s' && rmdir 'r%s' && "
+	    "ln -s '%s' 'r%s'", cwd, cwd, cwd, cwd);
+	ATF_REQUIRE_EQ(0, system(cmd));
+	s = slurp("/etc/defaults/rc.conf", &n);
+	if ((p = strstr(s, was)) == NULL)
+		atf_tc_skip("the defaults set rc_conf_files otherwise");
+	ATF_REQUIRE((fp = fopen("r/etc/defaults/rc.conf", "w")) != NULL);
+	fwrite(s, 1, (size_t)(p - s), fp);
+	fprintf(fp, "rc_conf_files=\"%s/r/etc/rc.conf %s/r/etc/rc.conf.local\"",
+	    cwd, cwd);
+	fputs(p + sizeof(was) - 1, fp);
+	ATF_REQUIRE(fclose(fp) == 0);
+	free(s);
+}
+
+/* An rc.conf's ~200 variables, a value of every kind a line. */
+static void
+rc_standins(const char *cwd)
+{
+	static const char *const v[] = { "\"YES\"", "YES", "'yes'",
+	    "\"True\"", "\"on\"", "\"1\"", "\"\"", "\"NO\"", "\"off\"",
+	    "\"YESterday\"", "'0'", "no", "\"ON\"", "''" };
+	FILE *fp;
+
+	ATF_REQUIRE((fp = fopen("r/etc/rc.conf", "w")) != NULL);
+	fprintf(fp, "# The user's.\nhostname=\"lab\"\n\n"
+	    "rc_conf_files=\"%s/r/etc/rc.conf %s/r/etc/rc.conf.local "
+	    "%s/r/usr/local/etc/rc.conf.d/arcana\"\n", cwd, cwd, cwd);
+	fprintf(fp, "sshd_enable=\"YES\"\ncron_enable=\"NO\"\n"
+	    "#ntpd_enable=\"YES\"  # taken by Arcana\n"
+	    "#syslogd_enable=\"NO\"\n");
+	for (int i = 0; i < 200; i++) {
+		if (i % 11 == 0)
+			fprintf(fp, "#svc%03d_enable=\"YES\"\n", i);
+		if (i % 13 == 0)
+			fprintf(fp, "svc%03d_flags=\"-x\"; svc%03d_enable=%s\n",
+			    i, i, v[i % nitems(v)]);
+		else
+			fprintf(fp, "svc%03d_enable=%s%s\n", i,
+			    v[i % nitems(v)], i % 7 == 0 ?
+			    "\t# svc000_enable=\"YES\"" : "");
+	}
+	ATF_REQUIRE(fclose(fp) == 0);
+	puts_file("r/etc/rc.conf.local", "svc010_enable=\"NO\"\n"
+	    "svc011_enable=\"YES\"\n# svc012_enable=\"NO\"\n");
+	puts_file("r/usr/local/etc/rc.conf.d/arcana", "# Arcana's.\n"
+	    "svc020_enable=\"YES\"\nntpd_enable=\"YES\"\nsvc300_enable=YES\n"
+	    "svc021_enable=\"NO\"\n");
+}
+
+/*
+ * vc_rc_values() and sysrc -A agree on every <name>_enable asked: the
+ * stand-ins', the defaults' and some unset.
+ */
+ATF_TC(rc_values);
+ATF_TC_HEAD(rc_values, tc)
+{
+
+	atf_tc_set_md_var(tc, "require.progs", "/usr/sbin/sysrc");
+}
+ATF_TC_BODY(rc_values, tc)
+{
+	struct vc_file d;
+	char root[MAXPATHLEN], cwd[MAXPATHLEN], cmd[2 * MAXPATHLEN];
+	char err[256], **vals, **paths, **names, *out, *line, *sep, *got;
+	size_t n = 0, np, len;
+	int same = 0;
+
+	if (access("/etc/defaults/vendor.conf", F_OK) == 0)
+		atf_tc_skip("vendor.conf: sysrc(8) would read the host's");
+	rc_tree(root, sizeof(root), cwd, sizeof(cwd));
+	rc_standins(cwd);
+	ATF_REQUIRE_EQ(0, vc_read(&d, VC_SH, "r/etc/defaults/rc.conf", err,
+	    sizeof(err)));
+	ATF_REQUIRE((names = calloc(d.na + 210, sizeof(*names))) != NULL);
+	for (int i = 0; i < 200; i++)
+		ATF_REQUIRE(asprintf(&names[n++], "svc%03d_enable", i) != -1);
+	names[n++] = strdup("svc300_enable");
+	names[n++] = strdup("svc999_enable");
+	for (size_t i = 0; i < d.na; i++) {
+		size_t k, l = strlen(d.a[i].name);
+
+		if (l < 7 || strcmp(d.a[i].name + l - 7, "_enable") != 0)
+			continue;
+		for (k = 0; k < n && strcmp(names[k], d.a[i].name) != 0; k++)
+			;
+		if (k == n)
+			names[n++] = strdup(d.a[i].name);
+	}
+	vc_free(&d);
+	ATF_REQUIRE_MSG(vc_rc_values(root, (const char *const *)names, n,
+	    &vals, &paths, &np, err, sizeof(err)) == 0, "%s", err);
+	ATF_CHECK_EQ(4, np);
+	ATF_CHECK(np == 4 && strstr(paths[3], "rc.conf.d/arcana") != NULL);
+	snprintf(cmd, sizeof(cmd), "env RC_DEFAULTS=%s/etc/defaults/rc.conf "
+	    "/usr/sbin/sysrc -A > sysrc.out", root);
+	ATF_REQUIRE_EQ(0, system(cmd));
+	out = slurp("sysrc.out", &len);
+	for (size_t i = 0; i < n; i++) {
+		size_t l = strlen(names[i]);
+
+		got = NULL;
+		for (line = out; *line != '\0'; line = sep + 1) {
+			if (strncmp(line, names[i], l) == 0 &&
+			    strncmp(line + l, ": ", 2) == 0) {
+				got = line + l + 2;
+				break;
+			}
+			if ((sep = strchr(line, '\n')) == NULL)
+				break;
+		}
+		if (got != NULL)
+			got = strndup(got, strcspn(got, "\n"));
+		ATF_CHECK_MSG((got == NULL) == (vals[i] == NULL) &&
+		    (got == NULL || strcmp(got, vals[i]) == 0),
+		    "%s: sysrc -A %s, read %s", names[i], got != NULL ? got :
+		    "unset", vals[i] != NULL ? vals[i] : "unset");
+		if (got != NULL && vals[i] != NULL && strcmp(got, vals[i]) == 0)
+			same++;
+		free(got);
+	}
+	/* The stand-ins' and the defaults' set, the overrides taken. */
+	ATF_CHECK_MSG(same >= 300, "%d set alike", same);
+	for (size_t i = 0; i < n; i++)
+		if (strcmp(names[i], "svc010_enable") == 0 ||
+		    strcmp(names[i], "ntpd_enable") == 0)
+			ATF_CHECK_STREQ(i == 10 ? "NO" : "YES", vals[i]);
+	free(out);
+	vc_rc_files_free(vals, n);
+	vc_rc_files_free(paths, np);
+	vc_rc_files_free(names, n);
+}
+
+static void
+rc_refused(const char *dflt, const char *conf, const char *why)
+{
+	const char *const names[] = { "svc001_enable", "svc002_enable" };
+	char err[256], **vals, **paths;
+	size_t np;
+
+	puts_file("r/etc/defaults/rc.conf", dflt);
+	puts_file("r/etc/rc.conf", conf);
+	err[0] = '\0';
+	ATF_CHECK_EQ_MSG(-1, vc_rc_values("r", names, 2, &vals, &paths, &np,
+	    err, sizeof(err)), "%s", conf);
+	ATF_CHECK_EQ(EINVAL, errno);
+	ATF_CHECK_MSG(strstr(err, why) != NULL, "%s: %s", why, err);
+}
+
+/* What reading alone does not tell is refused, for sysrc(8) to read. */
+ATF_TC_WITHOUT_HEAD(rc_values_refused);
+ATF_TC_BODY(rc_values_refused, tc)
+{
+	static const char dflt[] = "rc_conf_files=\"/etc/rc.conf\"\n"
+	    ": ${_localbase:=/usr/local}\nsvc001_enable=\"NO\"\n";
+	const char *const names[] = { "svc001_enable", "svc002_enable" };
+	char err[256], **vals, **paths;
+	size_t np;
+
+	ATF_REQUIRE_EQ(0, system("mkdir -p r/etc/defaults"));
+	/* Told: the defaults' command sets none asked. */
+	puts_file("r/etc/defaults/rc.conf", dflt);
+	puts_file("r/etc/rc.conf", "svc002_enable=YES # svc001_enable=YES\n");
+	ATF_REQUIRE_MSG(vc_rc_values("r", names, 2, &vals, &paths, &np, err,
+	    sizeof(err)) == 0, "%s", err);
+	ATF_CHECK_STREQ("NO", vals[0]);
+	ATF_CHECK_STREQ("YES", vals[1]);
+	ATF_CHECK_EQ(2, np);
+	vc_rc_files_free(vals, 2);
+	vc_rc_files_free(paths, np);
+	rc_refused(dflt, "if true; then svc002_enable=YES; fi\n", "a command");
+	rc_refused(dflt, ". /etc/rc.conf.site\n", "a command");
+	rc_refused(dflt, "x=\"${svc002_enable:=YES}\"\n", "may assign");
+	rc_refused(dflt, "svc002_enable=\"$(echo YES)\"\n",
+	    "does not tell its value");
+	rc_refused("rc_conf_files=\"/etc/*.conf\"\n", "", "not paths alone");
+	rc_refused("rc_conf_files=\"rc.conf\"\n", "", "not paths alone");
+	rc_refused("rc_conf_files=\"/etc/rc.conf\"\n"
+	    ": ${svc001_enable:=YES}\n", "", "as sh(1) alone tells");
+	rc_refused("rc_conf_files=\"/etc/rc.conf\"\n"
+	    "if [ -r x ]; then svc001_enable=YES; fi\n", "",
+	    "does not tell its value");
+	puts_file("r/etc/defaults/vendor.conf", "svc001_enable=YES\n");
+	rc_refused(dflt, "", "the defaults run it");
+}
+
 /* loader-edge.conf's lines, each. */
 ATF_TC_WITHOUT_HEAD(loader);
 ATF_TC_BODY(loader, tc)
@@ -1322,6 +1525,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, errors);
 	ATF_TP_ADD_TC(tp, rcd);
 	ATF_TP_ADD_TC(tp, conflicts);
+	ATF_TP_ADD_TC(tp, rc_values);
+	ATF_TP_ADD_TC(tp, rc_values_refused);
 	ATF_TP_ADD_TC(tp, loader);
 	ATF_TP_ADD_TC(tp, sysctl);
 	ATF_TP_ADD_TC(tp, edits_lines);

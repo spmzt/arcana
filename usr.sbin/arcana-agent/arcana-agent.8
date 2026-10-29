@@ -173,8 +173,12 @@ Services are the executable scripts of
 .Pa /etc/rc.d
 and
 .Pa /usr/local/etc/rc.d :
-whether they are enabled is read from
-.Ql sysrc -A ,
+whether they are enabled is what
+.Ql sysrc -A
+says, read from the
+.Xr rc.conf 5
+files themselves, or by it where reading alone does not tell (a command
+in them, a computed value),
 whether the enabled ones run from
 .Ql service name status ;
 they are started, stopped, restarted and reloaded with

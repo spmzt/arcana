@@ -7,12 +7,13 @@
 /*
  * rc.d services, through service(8) and sysrc(8) so that what the host
  * does is what an administrator at the console would do: the scripts of
- * the rc.d directories, whether rc.conf enables them (<name>_enable in
- * "sysrc -A", which reads the configuration without running a single
- * script: "service -e" runs them all, and scripts without a default
- * for their rcvar warn each time), whether the enabled ones run
- * ("service x status"), and their rc.conf variables read and written by
- * sysrc(8).  Every program run is a step in the trace with its output.
+ * the rc.d directories, whether rc.conf enables them (<name>_enable as
+ * "sysrc -A" has it, which runs no script: "service -e" runs them all,
+ * and scripts without a default for their rcvar warn each time; read
+ * by libvarconf, as sysrc -A takes seconds, sysrc -A where reading does
+ * not tell), whether the enabled ones run ("service x status"), and
+ * their rc.conf variables read and written by sysrc(8).  Every program
+ * run is a step in the trace with its output.
  */
 
 #include <sys/param.h>
@@ -28,6 +29,7 @@
 #include <unistd.h>
 
 #include "agent.h"
+#include "varconf.h"
 
 struct script {
 	const char	*name;
@@ -44,8 +46,11 @@ static int	svc_run(struct work *, const char *, const char *,
 		    struct execres *);
 static void	svc_status(struct work *, struct arc_service *);
 static const char *svc_rcvar(struct work *, const char *, const char **);
+static bool	rc_yes(const char *);
 static bool	enabled_in(const struct execres *, const char *);
 static int	sysrc_all(struct work *, struct execres *);
+static int	enabled_all(struct work *, const struct script *, size_t,
+		    bool *, const char **);
 static const char *last_line(struct work *, const char *, size_t);
 static void	svc_about(struct work *, const char *,
 		    struct service_config_rsp *);
@@ -204,22 +209,72 @@ sysrc_all(struct work *w, struct execres *res)
 static bool
 enabled_in(const struct execres *res, const char *name)
 {
-	const char	*p, *e, *v;
+	const char	*p, *e;
 	size_t		 len;
 
 	len = strlen(name);
 	for (p = res->out; p != NULL && *p != '\0'; p = e != NULL ? e + 1 :
 	    NULL) {
 		e = strchr(p, '\n');
-		if (strncmp(p, name, len) != 0 || strncmp(p + len, "_enable: ",
-		    9) != 0)
-			continue;
-		v = p + len + 9;
-		return (strncasecmp(v, "yes", 3) == 0 ||
-		    strncasecmp(v, "true", 4) == 0 || strncasecmp(v, "on", 2) ==
-		    0 || *v == '1');
+		if (strncmp(p, name, len) == 0 && strncmp(p + len, "_enable: ",
+		    9) == 0)
+			return (rc_yes(p + len + 9));
 	}
 	return (false);
+}
+
+/* A value that says yes, as enabled_in() reads one. */
+static bool
+rc_yes(const char *v)
+{
+
+	return (strncasecmp(v, "yes", 3) == 0 || strncasecmp(v, "true", 4) ==
+	    0 || strncasecmp(v, "on", 2) == 0 || *v == '1');
+}
+
+/*
+ * on[i]: sc[i]'s <name>_enable says yes, as "sysrc -A" has it: the
+ * files read by libvarconf (milliseconds), sysrc -A (seconds) only
+ * where reading does not tell, the step saying why.
+ */
+static int
+enabled_all(struct work *w, const struct script *sc, size_t n, bool *on,
+    const char **errp)
+{
+	struct execres	  res;
+	const char	**names;
+	char		**vals, **paths, err[256], *d;
+	size_t		  np, i, k;
+	int		  step;
+
+	names = wcalloc(w, n + 1, sizeof(*names));
+	for (i = 0; i < n; i++)
+		names[i] = wfmt(w, "%s_enable", sc[i].name);
+	step = step_begin(w, STEP_FILE, "read", "rc.conf(5): <name>_enable "
+	    "of %zu scripts", n);
+	err[0] = '\0';
+	if (vc_rc_values(opts.root != NULL ? opts.root : "", names, n, &vals,
+	    &paths, &np, err, sizeof(err)) == 0) {
+		for (i = k = 0; i < n; i++)
+			if ((on[i] = vals[i] != NULL && rc_yes(vals[i])))
+				k++;
+		d = wfmt(w, "%zu of %zu enabled:", k, n);
+		for (i = 0; i < np; i++)
+			d = wfmt(w, "%s %s", d, paths[i]);
+		step_end(w, step, true, "%s", d);
+		vc_rc_files_free(vals, n);
+		vc_rc_files_free(paths, np);
+		return (0);
+	}
+	if (sysrc_all(w, &res) != 0) {
+		step_end(w, step, false, "%s", err);
+		*errp = wtext(w, exec_error(w, &res, "sysrc -A"));
+		return (-1);
+	}
+	for (i = 0; i < n; i++)
+		on[i] = enabled_in(&res, sc[i].name);
+	step_end(w, step, true, "by sysrc -A: %s", err);
+	return (0);
 }
 
 /* "service <name> status": running, and the pid if it says one. */
@@ -322,15 +377,17 @@ do_services(struct work *w, struct services_rsp *rsp)
 {
 	struct arc_service	*v;
 	struct script		*sc;
-	struct execres		 res;
+	const char		*e;
 	size_t			 n, i;
+	bool			*on;
 
 	rsp->has_ok = true;
 	rsp->ok = true;
 	scan_scripts(w, &sc, &n);
-	if (sysrc_all(w, &res) != 0) {
+	on = wcalloc(w, n + 1, sizeof(*on));
+	if (enabled_all(w, sc, n, on, &e) != 0) {
 		rsp->ok = false;
-		rsp->error = wtext(w, exec_error(w, &res, "sysrc -A"));
+		rsp->error = e;
 		return (0);
 	}
 	v = wcalloc(w, n + 1, sizeof(*v));
@@ -338,7 +395,7 @@ do_services(struct work *w, struct services_rsp *rsp)
 		v[i].name = wtext(w, sc[i].name);
 		v[i].path = wtext(w, sc[i].path);
 		v[i].has_enabled = true;
-		v[i].enabled = enabled_in(&res, sc[i].name);
+		v[i].enabled = on[i];
 		if (v[i].enabled)
 			svc_status(w, &v[i]);
 	}
@@ -352,14 +409,15 @@ static struct arc_service *
 svc_current(struct work *w, const struct script *sc)
 {
 	struct arc_service	*s;
-	struct execres		 res;
+	const char		*e;
+	bool			 on;
 
 	s = wcalloc(w, 1, sizeof(*s));
 	s->name = wtext(w, sc->name);
 	s->path = wtext(w, sc->path);
-	if (sysrc_all(w, &res) == 0) {
+	if (enabled_all(w, sc, 1, &on, &e) == 0) {
 		s->has_enabled = true;
-		s->enabled = enabled_in(&res, sc->name);
+		s->enabled = on;
 	}
 	svc_status(w, s);
 	return (s);

@@ -55,6 +55,7 @@ struct vc_file {
 	size_t		 len;
 	struct vc_assign *a;
 	size_t		 na;
+	int		 cmdline;	/* first line not assignments */
 };
 
 /*
@@ -111,6 +112,8 @@ int		 vc_rcd_path(const char *, const char *, const char *, char *,
 int		 vc_rc_files(const char *, const char *, const char *,
 		    const char *, char ***, size_t *, char *, size_t);
 void		 vc_rc_files_free(char **, size_t);
+int		 vc_rc_values(const char *, const char *const *, size_t,
+		    char ***, char ***, size_t *, char *, size_t);
 int		 vc_cap_parse(struct vc_capfile *, const char *, size_t, char *,
 		    size_t);
 int		 vc_cap_read(struct vc_capfile *, const char *, char *, size_t);

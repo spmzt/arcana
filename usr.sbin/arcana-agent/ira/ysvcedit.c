@@ -177,7 +177,7 @@ arcana_services_services_get(cbl_req *req, struct arcana_services *data,
 
 		if ((error = from_rc(a, &v[i])) != 0)
 			return (error);
-		/* What sysrc -A said, where it did: the defaults included. */
+		/* What do_services() read, the defaults included. */
 		if (has && !v[i].has_enabled) {
 			v[i].has_enabled = true;
 			v[i].enabled = on;
