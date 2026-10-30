@@ -2346,7 +2346,7 @@ ATF_TC_BODY(console_plugins, tc)
 	struct authn	a, b;
 	struct resp	r;
 	char		cwd[MAXPATHLEN], sri[128], hdr[256], owner[160];
-	char		other[160], invite[80];
+	char		other[160], invite[80], tag[40], stag[40], tok[80];
 	const char	*js = "window.x = 1;\n";
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
@@ -2577,17 +2577,154 @@ ATF_TC_BODY(console_plugins, tc)
 	EXPECT(&r, 200);
 	resp_free(&r);
 
-	/* Disabled by the owner: not served again; both in the audit
-	 * trail. */
+	/* Its store: the owner's own, written first with no tag, then
+	 * only in place of the tag read. */
+	snprintf(cookie, sizeof(cookie), "%s", owner);
+	http("GET", "/api/plugins/good/store", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("null", jstr(&r, "data"));
+	ATF_CHECK_STREQ("null", jstr(&r, "etag"));
+	resp_free(&r);
+	http("PUT", "/api/plugins/good/store", "{\"level\":3}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "etag") != NULL);
+	snprintf(tag, sizeof(tag), "%s", jstr(&r, "etag"));
+	resp_free(&r);
+	ATF_CHECK(access("data/plugin-store/good.user.admin.json", F_OK) == 0);
+	http("PUT", "/api/plugins/good/store", "{\"level\":9}", &r);
+	EXPECT(&r, 412);
+	resp_free(&r);
+	http_with("PUT", "/api/plugins/good/store", "If-Match: \"0\"\r\n",
+	    "{\"level\":9}", &r);
+	EXPECT(&r, 412);
+	resp_free(&r);
+	snprintf(hdr, sizeof(hdr), "If-Match: %s\r\n", tag);
+	http_with("PUT", "/api/plugins/good/store", hdr, "{\"level\":4,"
+	    "\"seen\":[\"a\"]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "etag") != NULL && strcmp(jstr(&r, "etag"), tag) !=
+	    0);
+	snprintf(tag, sizeof(tag), "%s", jstr(&r, "etag"));
+	resp_free(&r);
+	/* The old tag is stale now. */
+	http_with("PUT", "/api/plugins/good/store", hdr, "{\"level\":5}", &r);
+	EXPECT(&r, 412);
+	resp_free(&r);
+	http("GET", "/api/plugins/good/store", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("4", jstr(&r, "data.level"));
+	ATF_CHECK_STREQ("a", jstr(&r, "data.seen.0"));
+	ATF_CHECK_STREQ(tag, jstr(&r, "etag"));
+	ATF_CHECK(resp_header(&r, "etag", hdr, sizeof(hdr)) != NULL &&
+	    strcmp(hdr, tag) == 0);
+	resp_free(&r);
+	/* A JSON object alone, of 16 KB at most. */
+	snprintf(hdr, sizeof(hdr), "If-Match: %s\r\n", tag);
+	http_with("PUT", "/api/plugins/good/store", hdr, "[1]", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http_with("PUT", "/api/plugins/good/store", hdr, "level = 1;", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	{
+		char	*big;
+
+		big = malloc(17 * 1024 + 16);
+		ATF_REQUIRE(big != NULL);
+		memcpy(big, "{\"x\":\"", 6);
+		memset(big + 6, 'a', 17 * 1024);
+		memcpy(big + 6 + 17 * 1024, "\"}", 3);
+		http_with("PUT", "/api/plugins/good/store", hdr, big, &r);
+		EXPECT(&r, 413);
+		resp_free(&r);
+		free(big);
+	}
+	/* The shared one, by the owner; not for an API token. */
+	http("PUT", "/api/plugins/good/store/shared", "{\"motd\":\"hi\"}", &r);
+	EXPECT(&r, 200);
+	snprintf(stag, sizeof(stag), "%s", jstr(&r, "etag"));
+	resp_free(&r);
+	http("POST", "/api/tokens", "{\"name\":\"w\",\"kind\":\"write\"}", &r);
+	EXPECT(&r, 200);
+	snprintf(tok, sizeof(tok), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	http_bearer("GET", "/api/plugins/good/store/shared", tok, NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http_bearer("PUT", "/api/plugins/good/store", tok, "{\"t\":1}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	/* bob, a member now: his own, empty, not the owner's; the shared
+	 * one read and not written. */
+	snprintf(cookie, sizeof(cookie), "%s", other);
+	http("GET", "/api/plugins/good/store", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("null", jstr(&r, "data"));
+	resp_free(&r);
+	http("PUT", "/api/plugins/good/store", "{\"mine\":true}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/plugins/good/store", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.mine"));
+	ATF_CHECK(jstr(&r, "data.level") == NULL);
+	resp_free(&r);
+	ATF_CHECK(access("data/plugin-store/good.user.bob.json", F_OK) == 0);
+	http("GET", "/api/plugins/good/store/shared", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("hi", jstr(&r, "data.motd"));
+	ATF_CHECK_STREQ(stag, jstr(&r, "etag"));
+	resp_free(&r);
+	snprintf(hdr, sizeof(hdr), "If-Match: %s\r\n", stag);
+	http_with("PUT", "/api/plugins/good/store/shared", hdr,
+	    "{\"motd\":\"bob\"}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	/* An operator writes it. */
+	snprintf(cookie, sizeof(cookie), "%s", owner);
+	http("PUT", "/api/users/bob", "{\"roles\":[\"operator\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(cookie, sizeof(cookie), "%s", other);
+	http_with("PUT", "/api/plugins/good/store/shared", hdr,
+	    "{\"motd\":\"bob\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/plugins/good/store/shared", NULL, &r);
+	ATF_CHECK_STREQ("bob", jstr(&r, "data.motd"));
+	resp_free(&r);
+	/* A plugin not there: not found. */
+	http("GET", "/api/plugins/nosuch/store", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	cookie[0] = '\0';
+	http("GET", "/api/plugins/good/store", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+
+	/* Disabled by the owner: not served again, its store neither,
+	 * which is kept; both in the audit trail. */
 	snprintf(cookie, sizeof(cookie), "%s", owner);
 	http("POST", "/api/plugins/good", "{\"enabled\":false}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("false", cplug_str(&r, "good", "enabled"));
 	resp_free(&r);
+	http("GET", "/api/plugins/good/store", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	ATF_CHECK(access("data/plugin-store/good.user.admin.json", F_OK) == 0);
 	snprintf(cookie, sizeof(cookie), "%s", other);
 	http("GET", "/plugins/good/main.js", NULL, &r);
 	EXPECT(&r, 404);
 	resp_free(&r);
+	/* A user removed: their store with them, no one else's. */
+	snprintf(cookie, sizeof(cookie), "%s", owner);
+	http("DELETE", "/api/users/bob", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(access("data/plugin-store/good.user.bob.json", F_OK) == -1);
+	ATF_CHECK(access("data/plugin-store/good.user.admin.json", F_OK) == 0);
+	ATF_CHECK(access("data/plugin-store/good.shared.json", F_OK) == 0);
 	snprintf(cookie, sizeof(cookie), "%s", owner);
 	http("GET", "/api/sdwan/audit", NULL, &r);
 	EXPECT(&r, 200);

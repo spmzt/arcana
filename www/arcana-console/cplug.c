@@ -34,9 +34,13 @@
  * enabled is console-plugins.json in the data directory, {"enabled":
  * {"<id>": {"by": who, "at": time}}}, read again when it changed (a
  * cluster's other node wrote it).
+ *
+ * And a store each, for what a plugin keeps of a user's or of all its
+ * users' (api_cplug_store(), below): not for secrets.
  */
 
 #include <sys/param.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 
 #include <dirent.h>
@@ -947,4 +951,295 @@ api_cplug_file(struct http_request *req)
 	http_response(req, 200, buf, (size_t)sb.st_size);
 	free(buf);
 	return (WEB_OK);
+}
+
+/*
+ * A plugin's store: a JSON object of 16 KB at most for each console user
+ * and one its users share, in plugin-store/ of the data directory,
+ *
+ *	<plugin>.shared.json
+ *	<plugin>.user.<user>.json
+ *
+ * the user's name with its '_', '.' and '@' written _5f, _2e and _40:
+ * a name the cluster replicates (store_save()), which no user's can be
+ * mistaken for the shared one's.  Written under a lock every worker
+ * and the cluster's nodes take, each tagged by the SHA-256 of its
+ * compact JSON: a write names the tag it replaces (If-Match), or finds
+ * none stored.  Kept while the plugin is disabled; a user's go with the
+ * user.
+ */
+#define	PSTORE_DIR	"plugin-store"
+#define	PSTORE_LOCK	"plugin-store.lock"
+#define	PSTORE_MAX	(16 * 1024)
+#define	PSTORE_USER	(3 * 64 + 1)
+
+/* user's name as its file has it; false when it does not fit. */
+static bool
+pstore_user(const char *user, char *buf, size_t len)
+{
+	size_t	i, n;
+
+	for (i = n = 0; user[i] != '\0'; i++) {
+		if (n + 4 > len)
+			return (false);
+		if (user[i] == '_' || user[i] == '.' || user[i] == '@')
+			n += (size_t)snprintf(buf + n, len - n, "_%02x",
+			    (unsigned char)user[i]);
+		else
+			buf[n++] = user[i];
+	}
+	buf[n] = '\0';
+	return (n > 0);
+}
+
+/* The store of plugin id: user's, or with user NULL the shared one. */
+static bool
+pstore_name(const char *id, const char *user, char *buf, size_t len)
+{
+	char	u[PSTORE_USER];
+
+	if (user == NULL) {
+		snprintf(buf, len, "%s/%s.shared.json", PSTORE_DIR, id);
+		return (true);
+	}
+	if (!pstore_user(user, u, sizeof(u)))
+		return (false);
+	snprintf(buf, len, "%s/%s.user.%s.json", PSTORE_DIR, id, u);
+	return (true);
+}
+
+/* o's tag, "<32 hex>" quoted, into etag; its compact JSON's length, or
+ * -1. */
+static ssize_t
+pstore_tag(const ucl_object_t *o, char etag[36])
+{
+	unsigned char	 md[EVP_MAX_MD_SIZE];
+	unsigned int	 mdlen;
+	char		*js;
+	size_t		 len;
+	int		 i;
+
+	if ((js = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT)) == NULL)
+		return (-1);
+	len = strlen(js);
+	if (EVP_Digest(js, len, md, &mdlen, EVP_sha256(), NULL) != 1) {
+		free(js);
+		return (-1);
+	}
+	free(js);
+	etag[0] = '"';
+	for (i = 0; i < 16; i++)
+		snprintf(etag + 1 + 2 * i, 3, "%02x", md[i]);
+	etag[33] = '"';
+	etag[34] = '\0';
+	return ((ssize_t)len);
+}
+
+/* What name holds, and its tag; or NULL and "". */
+static ucl_object_t *
+pstore_load(const char *name, char etag[36])
+{
+	ucl_object_t	*o;
+
+	etag[0] = '\0';
+	if ((o = store_load(name)) == NULL)
+		return (NULL);
+	if (ucl_object_type(o) != UCL_OBJECT || pstore_tag(o, etag) == -1) {
+		ucl_object_unref(o);
+		etag[0] = '\0';
+		return (NULL);
+	}
+	return (o);
+}
+
+static int
+pstore_lock(void)
+{
+	char	path[MAXPATHLEN];
+	int	fd;
+
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, PSTORE_LOCK);
+	if ((fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600)) == -1)
+		return (-1);
+	(void)flock(fd, LOCK_EX);
+	/* And of the cluster's other nodes, when it is one. */
+	(void)cluster_lock(PSTORE_LOCK);
+	return (fd);
+}
+
+static void
+pstore_unlock(int fd)
+{
+
+	if (fd != -1) {
+		cluster_unlock(PSTORE_LOCK);
+		close(fd);
+	}
+}
+
+/* The body, a JSON object of PSTORE_MAX bytes at most, into *op: 0, else
+ * 413 or 400. */
+static int
+pstore_body(struct http_request *req, ucl_object_t **op)
+{
+	struct ucl_parser	*p;
+	char			*buf;
+	size_t			 len, i;
+	ssize_t			 r;
+	int			 status;
+
+	*op = NULL;
+	buf = xmalloc(PSTORE_MAX + 1);
+	for (len = 0; len < PSTORE_MAX + 1; len += (size_t)r)
+		if ((r = http_body_read(req, buf + len, PSTORE_MAX + 1 - len)) <=
+		    0)
+			break;
+	if (len > PSTORE_MAX) {
+		free(buf);
+		return (413);
+	}
+	/* An object as JSON writes one; what else libucl reads is not. */
+	for (i = 0; i < len && strchr(" \t\r\n", buf[i]) != NULL; i++)
+		;
+	status = 400;
+	if (i < len && buf[i] == '{') {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		if (ucl_parser_add_chunk(p, (unsigned char *)buf, len) &&
+		    (*op = ucl_parser_get_object(p)) != NULL) {
+			if (ucl_object_type(*op) == UCL_OBJECT)
+				status = 0;
+			else {
+				ucl_object_unref(*op);
+				*op = NULL;
+			}
+		}
+		ucl_parser_free(p);
+	}
+	free(buf);
+	return (status);
+}
+
+/*
+ * GET /api/plugins/<id>/store[/shared]: {"data": the object or null,
+ * "etag": its tag or null}, the tag as ETag too.  PUT: the object, in
+ * place of the one If-Match names (*: any one), or without If-Match
+ * where none is stored yet; {"etag"}.  The session user's own, or the
+ * one shared, which any console role reads and an operator or an owner
+ * writes.  Not an API token's; the plugin enabled and served, else not
+ * found.
+ */
+int
+api_cplug_store(struct http_request *req)
+{
+	ucl_object_t	*o, *cur, *top;
+	const char	*user, *v;
+	char		 id[ID_MAX + 1], name[MAXPATHLEN], etag[36], now[36];
+	struct cplug	*p;
+	ssize_t		 len;
+	size_t		 plen;
+	bool		 shared, ok;
+	int		 fd, status;
+
+	plen = strlen(req->path);
+	shared = plen > 7 && strcmp(req->path + plen - 7, "/shared") == 0;
+	if (!guard(req, req->method != HTTP_METHOD_GET))
+		return (WEB_OK);
+	if ((user = session_user(req)) == NULL)
+		return (reply_error(req, 403, "token", "a plugin's store is a "
+		    "console user's, not an API token's"));
+	if (!capture(req, 3, id, sizeof(id)) || !id_ok(id))
+		return (reply_error(req, 404, "not_found", "no such plugin"));
+	cplug_check();
+	state_check();
+	if ((p = plug_find(id)) == NULL || p->error != NULL || !enabled(id))
+		return (reply_error(req, 404, "not_found", "no plugin %s "
+		    "enabled", id));
+	if (!pstore_name(id, shared ? NULL : user, name, sizeof(name)))
+		return (reply_error(req, 400, "invalid", "a user's name"));
+	if (req->method == HTTP_METHOD_GET) {
+		top = ucl_object_typed_new(UCL_OBJECT);
+		if ((o = pstore_load(name, etag)) != NULL) {
+			http_response_header(req, "etag", etag);
+			put(top, "data", o);
+			put(top, "etag", ucl_object_fromstring(etag));
+		} else {
+			put(top, "data", ucl_object_typed_new(UCL_NULL));
+			put(top, "etag", ucl_object_typed_new(UCL_NULL));
+		}
+		http_response_header(req, "cache-control", "no-store");
+		return (reply_json(req, 200, top));
+	}
+	if (shared && user_console(user) != CROLE_OWNER &&
+	    user_console(user) != CROLE_OPERATOR)
+		return (reply_error(req, 403, "role", "a plugin's shared store "
+		    "is written by an operator or an owner of this console"));
+	if ((status = pstore_body(req, &o)) != 0)
+		return (reply_error(req, status, status == 413 ? "too_large" :
+		    "invalid", status == 413 ? "%d bytes at most" :
+		    "a JSON object", PSTORE_MAX));
+	if ((len = pstore_tag(o, etag)) == -1 || len > PSTORE_MAX) {
+		ucl_object_unref(o);
+		return (len == -1 ? reply_error(req, 500, "store", "out of "
+		    "memory") : reply_error(req, 413, "too_large", "%d bytes at "
+		    "most", PSTORE_MAX));
+	}
+	fd = pstore_lock();
+	cur = pstore_load(name, now);
+	if (http_request_header(req, "if-match", &v))
+		ok = cur != NULL && (strcmp(v, "*") == 0 || strcmp(v, now) == 0);
+	else
+		ok = cur == NULL;
+	if (cur != NULL)
+		ucl_object_unref(cur);
+	if (!ok) {
+		pstore_unlock(fd);
+		ucl_object_unref(o);
+		return (reply_error(req, 412, "changed", "the store is not what "
+		    "the tag given says: read it again"));
+	}
+	status = store_save(name, o);
+	pstore_unlock(fd);
+	ucl_object_unref(o);
+	if (status != 0)
+		return (reply_error(req, 500, "store", "%s could not be "
+		    "written", name));
+	http_response_header(req, "etag", etag);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	put(top, "etag", ucl_object_fromstring(etag));
+	return (reply_json(req, 200, top));
+}
+
+/* A user gone (users.c): their stores, of every plugin, with them. */
+void
+cplug_store_forget(const char *user)
+{
+	DIR		*d;
+	struct dirent	*e;
+	char		 u[PSTORE_USER], tail[PSTORE_USER + 16];
+	char		 path[MAXPATHLEN], name[MAXPATHLEN];
+	size_t		 n, t;
+	int		 fd;
+
+	if (!pstore_user(user, u, sizeof(u)))
+		return;
+	snprintf(tail, sizeof(tail), ".user.%s.json", u);
+	t = strlen(tail);
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, PSTORE_DIR);
+	if ((d = opendir(path)) == NULL)
+		return;
+	fd = pstore_lock();
+	while ((e = readdir(d)) != NULL) {
+		/* <id> has no dot: the first is the tail's. */
+		n = strlen(e->d_name);
+		if (e->d_type != DT_REG || n <= t || strcmp(e->d_name + n - t,
+		    tail) != 0 || strchr(e->d_name, '.') != e->d_name + n - t)
+			continue;
+		snprintf(name, sizeof(name), "%s/%s", PSTORE_DIR, e->d_name);
+		if (store_remove(name) != 0)
+			log_msg(LOG_ERR, "%s: not removed with user %s", name,
+			    user);
+	}
+	pstore_unlock(fd);
+	closedir(d);
 }

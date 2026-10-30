@@ -448,8 +448,8 @@ doc_name_ok(const char *n)
 	return (true);
 }
 
-/* One the cluster keeps: a JSON document, at the top, in runs/ or in
- * sessions/. */
+/* One the cluster keeps: a JSON document, at the top, in runs/, in
+ * sessions/ or in plugin-store/. */
 static bool
 replicated(const char *n)
 {
@@ -460,7 +460,8 @@ replicated(const char *n)
 	    0 && (strchr(n, '/') == NULL || (strncmp(n, "runs/", 5) == 0 &&
 	    strchr(n + 5, '/') == NULL) || (strncmp(n, SESSIONS_DIR "/",
 	    sizeof(SESSIONS_DIR)) == 0 && strchr(n + sizeof(SESSIONS_DIR),
-	    '/') == NULL)));
+	    '/') == NULL) || (strncmp(n, "plugin-store/", 13) == 0 &&
+	    strchr(n + 13, '/') == NULL)));
 }
 
 /* A document the worker reads again: what it keeps of it is stale. */
@@ -888,6 +889,7 @@ send_snapshot(struct peer *p, uint64_t *seqp)
 	snap_read_dir("", &v, &n, &cap);
 	snap_read_dir("runs", &v, &n, &cap);
 	snap_read_dir(SESSIONS_DIR, &v, &n, &cap);
+	snap_read_dir("plugin-store", &v, &n, &cap);
 	term = cl.c.term;
 	last_seq = cl.c.applied;
 	last_term = applied_term();
@@ -1197,7 +1199,7 @@ acl_snapshot_doit(cbl_req *req, const struct acl_snapshot_req *rq,
 	struct dirent	*e;
 	size_t		 i;
 	int		 n, k;
-	const char	*subs[] = { "", "runs", SESSIONS_DIR };
+	const char	*subs[] = { "", "runs", SESSIONS_DIR, "plugin-store" };
 
 	if (!peer_ok(req, rq->node, &n))
 		return (EACCES);

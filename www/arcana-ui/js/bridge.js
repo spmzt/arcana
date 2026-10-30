@@ -100,6 +100,84 @@ addToLibrary({
 			return (s && s.dataset && s.dataset.plugin ?
 			    s.dataset.plugin : arcPlug.cur);
 		},
+		/* The same, or the plugin whose file called: from a promise's
+		 * callback neither of the others is known. */
+		caller: function () {
+			var id = arcPlug.whose(), m;
+
+			if (id && arcPlug.plugins[id])
+				return (id);
+			m = /\/plugins\/([a-z0-9-]+)\//.exec(
+			    String(new Error().stack || ""));
+			return (m !== null && arcPlug.plugins[m[1]] ? m[1] : "");
+		},
+		/*
+		 * A plugin's store (cplug.c): get resolves to {data, etag},
+		 * data null when none is stored; put(obj, etag) to {etag},
+		 * the etag the one read (none: nothing stored yet), else
+		 * rejected with .status 412.
+		 */
+		store: function (shared, method, obj, etag) {
+			var id = arcPlug.caller(), o, url;
+
+			if (!id)
+				return (Promise.reject(new Error("Arcana.store: "
+				    + "from a plugin's own code only")));
+			url = "/api/plugins/" + encodeURIComponent(id) +
+			    "/store" + (shared ? "/shared" : "");
+			o = { method: method, credentials: "same-origin",
+			    cache: "no-store", headers: { "X-Arcana": "1",
+			    Accept: "application/json" } };
+			if (method === "PUT") {
+				if (obj === null || typeof obj !== "object" ||
+				    Array.isArray(obj))
+					return (Promise.reject(new Error(
+					    "Arcana.store.put: an object")));
+				o.headers["Content-Type"] = "application/json";
+				o.body = JSON.stringify(obj);
+				if (etag)
+					o.headers["If-Match"] = etag;
+			}
+			return (fetch(url, o).then(function (r) {
+				return (r.text().then(function (t) {
+					var j = null, e;
+
+					try {
+						j = t ? JSON.parse(t) : null;
+					} catch (x) {
+					}
+					if (r.ok && j !== null)
+						return (method === "PUT" ?
+						    { etag: j.etag } : {
+						    data: j.data,
+						    etag: j.etag });
+					e = new Error(j && j.error ?
+					    j.error.message || String(j.error) :
+					    "HTTP " + r.status);
+					e.status = r.status;
+					throw e;
+				}));
+			}));
+		},
+		/* Arcana.store: get and put, and shared's the same. */
+		stores: function () {
+			function of(shared) {
+				return ({
+					get: function () {
+						return (arcPlug.store(shared,
+						    "GET"));
+					},
+					put: function (obj, etag) {
+						return (arcPlug.store(shared,
+						    "PUT", obj, etag));
+					}
+				});
+			}
+			var own = of(false);
+
+			own.shared = Object.freeze(of(true));
+			return (Object.freeze(own));
+		},
 		/* An event to every plugin that listens; true when one of
 		 * them took it (gamepad-first). */
 		emit: function (name, data) {
@@ -370,6 +448,9 @@ addToLibrary({
 						}));
 					}));
 				},
+				/* What the plugin keeps: the user's own, and
+				 * one its users share.  Not for secrets. */
+				store: arcPlug.stores(),
 				navigate: function (hash) {
 					if (typeof hash === "string" &&
 					    hash[0] === "#")

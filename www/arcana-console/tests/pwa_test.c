@@ -7682,6 +7682,30 @@ static const char cplug_test_js[] =
     "window.tversion = Arcana.version;\n"
     "Arcana.api('GET', '/api/servers').then(function (o) {\n"
     "\twindow.tapi = o;\n"
+    "});\n"
+    /* Its store: none yet, a first write, one with no tag refused,
+     * one with the tag read; the shared one.  From promises' callbacks,
+     * where the page knows the plugin by its file. */
+    "window.tstore = [];\n"
+    "Arcana.store.get().then(function (g) {\n"
+    "\twindow.tstore.push(g.data === null && g.etag === null);\n"
+    "\treturn (Arcana.store.put({ n: 1 }));\n"
+    "}).then(function (p) {\n"
+    "\treturn (Arcana.store.put({ n: 2 }).catch(function (e) {\n"
+    "\t\twindow.tstore.push(e.status);\n"
+    "\t\treturn (Arcana.store.put({ n: 2 }, p.etag));\n"
+    "\t}));\n"
+    "}).then(function () {\n"
+    "\treturn (Arcana.store.get());\n"
+    "}).then(function (g) {\n"
+    "\twindow.tstore.push(g.data.n);\n"
+    "\treturn (Arcana.store.shared.put({ s: 'x' }));\n"
+    "}).then(function () {\n"
+    "\treturn (Arcana.store.shared.get());\n"
+    "}).then(function (g) {\n"
+    "\twindow.tstore.push(g.data.s);\n"
+    "}).catch(function (e) {\n"
+    "\twindow.tstore.push('error ' + e.status + ' ' + e.message);\n"
     "});\n";
 
 static void
@@ -7761,6 +7785,8 @@ part_cplug(void)
 	    "'link[data-plugin=test]').integrity.startsWith('sha384-')"));
 	wait_js("document.querySelector('button[data-act=plugin-open]"
 	    "[data-arg=\"test/main\"]')", 5);
+	wait_js("JSON.stringify(window.tstore) === '[true,412,2,\"x\"]'", 15);
+	ATF_CHECK(access("data/plugin-store/test.shared.json", F_OK) == 0);
 	shot("0c-cplug-settings");
 
 	/* Its screen from its menu entry, over the page; ctx.exit() back. */

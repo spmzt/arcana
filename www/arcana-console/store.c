@@ -191,4 +191,6 @@ store_sweep(void)
 	sweep_dir(path);
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, SESSIONS_DIR);
 	sweep_dir(path);
+	snprintf(path, sizeof(path), "%s/plugin-store", cfg.datadir);
+	sweep_dir(path);
 }

@@ -1492,6 +1492,98 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /api/plugins/{id}/store:
+    get:
+      tags: [console]
+      summary: A console plugin's store of the signed-in user
+      description: The user's own JSON object for the plugin, null while
+        none is stored, its tag as ETag too. To a user's session (not
+        an API token); the plugin enabled and with no error, else 404.
+        Not for secrets.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9-]{1,40}$" } }
+      responses:
+        "200":
+          description: What is stored, and its tag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PluginStore" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [console]
+      summary: Write a console plugin's store of the signed-in user
+      description: The object whole, 16 KB at most as compact JSON, in
+        place of the one If-Match names (* for any); without If-Match,
+        only while none is stored. Written under a lock, through the
+        cluster when there is one.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9-]{1,40}$" } }
+        - { name: If-Match, in: header, required: false, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Written; its new tag.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [etag]
+                properties:
+                  etag: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+  /api/plugins/{id}/store/shared:
+    get:
+      tags: [console]
+      summary: A console plugin's store its users share
+      description: As the user's own, one object for the plugin; any
+        console role reads it.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9-]{1,40}$" } }
+      responses:
+        "200":
+          description: What is stored, and its tag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PluginStore" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [console]
+      summary: Write a console plugin's shared store
+      description: As the user's own, by an operator or an owner of the
+        console.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9-]{1,40}$" } }
+        - { name: If-Match, in: header, required: false, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Written; its new tag.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [etag]
+                properties:
+                  etag: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
   /plugins/{id}/{file}:
     get:
       tags: [console]
@@ -4141,6 +4233,13 @@ components:
             properties:
               event: { type: string }
         destructive: { type: boolean }
+
+    PluginStore:
+      type: object
+      required: [data, etag]
+      properties:
+        data: { type: object, nullable: true, description: The object stored; null while none is. }
+        etag: { type: string, nullable: true, description: Its tag, for If-Match. }
 
     Run:
       type: object

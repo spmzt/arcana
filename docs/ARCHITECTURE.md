@@ -215,6 +215,8 @@ The page gives a plugin's scripts `window.Arcana`:
 | `navigate(hash)` | goes to an address of the page (`#/...`) |
 | `toast(text, bad)` | a toast, an error's when `bad` |
 | `fullscreen(on)` | the page over the whole screen, or not, where the browser lets it |
+| `store.get()`, `store.put(obj, etag)` | the signed-in user's own JSON object for the plugin (below): `get` resolves to `{data, etag}`, `data` `null` while none is stored; `put` to `{etag}` |
+| `store.shared.get()`, `store.shared.put(obj, etag)` | the same, one object the console's users share: any console role reads it, an operator or an owner writes it |
 | `on(event, fn)` | `route` (`{hash}`, each address), `theme` (`{theme}`), `servers` (`[{id, name, local}]`, when the hosts change, and at once with them as they are), `signed-out`, `gamepad-first` (`{id}`, a controller's first press on the console's pages; a handler that returns `true` takes it, and the page does nothing with that press) |
 
 `screens: {<name>: {title, enter(root, ctx), leave()}}` are the
@@ -226,6 +228,24 @@ page as it was); `leave` is called when another address is gone to.
 The rest of the address is the plugin's: `route` tells it when it
 changes.  `menu: [{label, screen}]` adds entries to the account menu
 that open a screen of the plugin's.
+
+`Arcana.store` is where a plugin keeps what it keeps of a user (their
+progress, their choices) or of all its users: not for secrets, which
+every script of the page, any plugin's, can read.  On the console it
+is `GET` and `PUT /api/plugins/<id>/store` and `.../store/shared`, to
+a signed-in user's session alone (not an API token), only while the
+plugin is enabled and has no error (404 else); each a JSON object of
+16 KB at most (400 for anything else, 413 beyond), kept in
+`plugin-store/` of the data directory as `<plugin>.user.<user>.json`
+(the user's `_`, `.` and `@` written `_5f`, `_2e`, `_40`) and
+`<plugin>.shared.json`, written whole under a lock, through the
+cluster when there is one.  Each is tagged by an ETag, the SHA-256 of
+its compact JSON: a `put` names the `etag` it read (`If-Match`), and
+one made without an `etag` is a first write, done only while nothing
+is stored yet; otherwise it is refused with 412 (the Promise's
+`Error` has `status`), and the plugin reads again and merges.  A
+user's stores go with the user; a plugin's stay while it is disabled,
+and are there again when it is enabled.
 
 ## Enrolment (host to console)
 

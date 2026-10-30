@@ -189,6 +189,8 @@ const struct route routes[] = {
 	    HTTP_METHOD_GET },
 	{ "^/api/plugins/[a-z0-9-]{1,40}$", api_cplug, NULL,
 	    HTTP_METHOD_POST },
+	{ "^/api/plugins/[a-z0-9-]{1,40}/store(/shared)?$", api_cplug_store,
+	    NULL, HTTP_METHOD_GET | HTTP_METHOD_PUT },
 	{ "^/plugins/[a-z0-9-]{1,40}/.+$", api_cplug_file, NULL,
 	    HTTP_METHOD_GET },
 	{ "/api/cluster", api_cluster, NULL,

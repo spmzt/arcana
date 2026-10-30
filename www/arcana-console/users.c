@@ -1130,7 +1130,7 @@ api_users(struct http_request *req)
 }
 
 /* PUT /api/users/<name>: as POST with the name; DELETE: gone, with
- * its keys, invitations and sessions. */
+ * its keys, invitations, sessions and console plugins' stores. */
 int
 api_user(struct http_request *req)
 {
@@ -1165,6 +1165,7 @@ api_user(struct http_request *req)
 		    "written"));
 	creds_forget_user(name);
 	sessions_end_user(name);
+	cplug_store_forget(name);
 	log_msg(LOG_NOTICE, "user %s removed by %s", name, session_who(req) !=
 	    NULL ? session_who(req) : "?");
 	return (reply_all(req));
