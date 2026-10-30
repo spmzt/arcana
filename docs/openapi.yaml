@@ -4128,7 +4128,7 @@ components:
           enum: [queued, running, done, cancelled, unconfirmed]
         ok: { type: boolean, nullable: true, description: With done. }
         error: { type: string, nullable: true }
-        peer: { type: string, description: Who queued it, the connection. }
+        peer: { type: string, description: "Who queued it: the connection." }
         user:
           type: string
           description: >-
@@ -4239,7 +4239,7 @@ components:
       required: [data, etag]
       properties:
         data: { type: object, nullable: true, description: The object stored; null while none is. }
-        etag: { type: string, nullable: true, description: Its tag, for If-Match. }
+        etag: { type: string, nullable: true, description: "Its tag, for If-Match." }
 
     Run:
       type: object
