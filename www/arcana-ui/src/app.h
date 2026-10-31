@@ -510,11 +510,14 @@ struct app {
 	char		 origin_error[400];	/* opened at the wrong address */
 	char		 console_origin[256];	/* web.conf's origin, as told */
 	bool		 auth_busy;
-	bool		 by_token;	/* signed in with an API token, or by LDAP: limited */
+	bool		 by_token;	/* signed in with an API token, by LDAP, or
+					 * by a password the console limits */
 	bool		 by_ldap;	/* ... by a directory's user */
 	bool		 by_password;	/* ... by a password of the console's */
 	bool		 ldap_on;	/* the console asks a directory */
 	bool		 password_on;	/* a user has a password of its own */
+	bool		 password_full;	/* its sessions have the user's roles */
+	bool		 no_keys;	/* set up by a password: no key yet */
 	char		 user[64];	/* the console user signed in, or "" */
 	char		 console_role[16];	/* owner, operator, member */
 	char		 tenant[64];	/* the user's fleet, or "" */
@@ -721,6 +724,7 @@ void		 login_token(const char *);
 void		 login_password(const char *, const char *);
 const char	*signed_in_how(void);
 void		 enrol(const char *, const char *);
+void		 setup_password(const char *, const char *, const char *);
 void		 add_key(const char *);
 void		 logout(void);
 void		 load_keys(void);

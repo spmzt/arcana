@@ -3170,9 +3170,9 @@ auth_screen(struct html *h)
 		    "Touch your key…" : "Register security key");
 	} else if (app.screen == SCREEN_ENROL) {
 		h_raw(h, "<form data-form=\"enrol\" class=\"enrol\">"
-		    "<p>No security key is registered yet. The console wrote a "
-		    "one-time setup token to <code>setup-token</code> in its "
-		    "data directory; paste it here, then touch your key.</p>"
+		    "<p>This console is not set up yet. It wrote a one-time "
+		    "setup token to <code>setup-token</code> in its data "
+		    "directory; paste it here, then touch your key.</p>"
 		    "<label>Setup token<input name=\"token\" required "
 		    "autocomplete=\"off\" spellcheck=\"false\" autofocus>"
 		    "</label><label>Key name<input name=\"name\" "
@@ -3180,17 +3180,39 @@ auth_screen(struct html *h)
 		h_fmt(h, "<button class=\"primary\"%s>%s</button></form>",
 		    app.auth_busy ? " disabled" : "", app.auth_busy ?
 		    "Touch your key…" : "Register security key");
+		/* No key reaches this browser (a remote desktop's): the
+		 * same token, and an owner with a password. */
+		h_fmt(h, "<details class=\"setup-password\"><summary>No security "
+		    "key here? Set up with a password</summary><form data-form="
+		    "\"setup-password\" class=\"enrol\"><label>Setup token<input "
+		    "name=\"token\" required autocomplete=\"off\" spellcheck=\""
+		    "false\"></label><label>User<input name=\"user\" "
+		    "autocomplete=\"username\" spellcheck=\"false\" maxlength="
+		    "\"64\" placeholder=\"admin\"></label><label>Password<input "
+		    "type=\"password\" name=\"password\" required minlength=\""
+		    "12\" autocomplete=\"new-password\"></label><label>Again"
+		    "<input type=\"password\" name=\"again\" required minlength="
+		    "\"12\" autocomplete=\"new-password\"></label><p>The user "
+		    "becomes an owner of the console (admin, the built-in one, "
+		    "when left empty); the password is 12 characters at least. A "
+		    "security key or passkey can be added later, under Keys.</p>"
+		    "<button class=\"primary\"%s>Set up with a password</button>"
+		    "</form></details>", app.auth_busy ? " disabled" : "");
 	} else {
-		h_fmt(h, "<div class=\"key%s\">", app.auth_busy ? " pulse" :
-		    "");
-		h_raw(h, icon_key);
-		h_fmt(h, "</div><button class=\"primary\" data-act=\"login\""
-		    "%s>%s</button>", app.auth_busy ? " disabled" : "",
-		    app.auth_busy ? "Touch your key…" : "Log in with your "
-		    "security key");
-		h_fmt(h, "<button class=\"ghost\" data-act=\"login-passkey\"%s "
-		    "title=\"A passkey on this device, or on a phone nearby\">"
-		    "Use a passkey</button>", app.auth_busy ? " disabled" : "");
+		/* Set up by a password, the console has no key yet. */
+		if (!app.no_keys) {
+			h_fmt(h, "<div class=\"key%s\">", app.auth_busy ?
+			    " pulse" : "");
+			h_raw(h, icon_key);
+			h_fmt(h, "</div><button class=\"primary\" data-act=\""
+			    "login\"%s>%s</button>", app.auth_busy ? " disabled" :
+			    "", app.auth_busy ? "Touch your key…" : "Log in with "
+			    "your security key");
+			h_fmt(h, "<button class=\"ghost\" data-act=\"login-"
+			    "passkey\"%s title=\"A passkey on this device, or on "
+			    "a phone nearby\">Use a passkey</button>",
+			    app.auth_busy ? " disabled" : "");
+		}
 		/* A user and password, where a user has one of the console's
 		 * own or the console asks a directory. */
 		if (app.ldap_on || app.password_on)
@@ -3200,15 +3222,19 @@ auth_screen(struct html *h)
 			    "false\" maxlength=\"64\"></label><label>Password"
 			    "<input type=\"password\" name=\"password\" required "
 			    "autocomplete=\"current-password\"></label><button "
-			    "class=\"ghost\"%s>Sign in with a password</button>"
-			    "<p class=\"dim\">%s Signed in so, the console's own "
-			    "settings, sign-in keys, users, tokens and CA stay with "
-			    "a security key.</p></form>", app.auth_busy ?
-			    " disabled" : "", app.ldap_on && app.password_on ?
+			    "class=\"%s\"%s>Sign in with a password</button>"
+			    "<p class=\"dim\">%s%s</p></form>", app.no_keys ?
+			    "primary" : "ghost", app.auth_busy ? " disabled" : "",
+			    app.ldap_on && app.password_on ?
 			    "The password the console keeps for you, or your "
 			    "directory's (LDAP)." : app.ldap_on ? "Your directory's "
 			    "(LDAP) user and password." : "The password the "
-			    "console keeps for you.");
+			    "console keeps for you.", app.password_full ?
+			    (app.ldap_on ? " Signed in by the directory's, the "
+			    "console's own settings, sign-in keys, users, tokens "
+			    "and CA stay with a security key." : "") : " Signed in "
+			    "so, the console's own settings, sign-in keys, users, "
+			    "tokens and CA stay with a security key.");
 		/* No key at hand: an API token that writes. */
 		h_fmt(h, "<details class=\"login-token\"><summary>Sign in with "
 		    "an API token</summary><form data-form=\"login-token\">"

@@ -123,9 +123,11 @@ a spare), and roles that say what each may do on the console and on
 which hosts (`users.json` in the data directory).  A user may belong to
 a tenant, a fleet of its own, and then sees that tenant's hosts alone.
 
-* **Enrolment.**  With no credential stored, the backend writes a random
-  one-time setup token to `<datadir>/setup-token` (mode 0600).  The first
-  registration needs it and makes the built-in owner; an invited user
+* **Enrolment.**  Until the console is set up (a key stored, or a user
+  with a password), the backend writes a random one-time setup token to
+  `<datadir>/setup-token` (mode 0600).  The first registration needs it
+  and makes the built-in owner, or, set up by a password instead, the
+  token, a user name and a password make that user an owner; an invited user
   registers with the invitation's token; adding a key needs a logged-in
   session.
 * **Ceremonies.**  32-byte single-use challenges, valid two minutes.  The
@@ -134,8 +136,11 @@ a tenant, a fleet of its own, and then sees that tenant's hosts alone.
   signature with libcrypto.  ES256, EdDSA and RS256.
 * **Passwords.**  A user may also sign in with a password of the
   console's own (bcrypt) or, when **Settings** name a directory, by LDAP
-  over TLS.  A session opened so cannot change sign-ins, tokens, users,
-  the CA or the settings; that takes a key.
+  over TLS.  A session opened by the console's own password has the
+  user's roles, unless `web.conf` says `password_full = false`; one
+  opened by the directory's, and the console's own then, cannot change
+  sign-ins, tokens, users, the CA, the settings or enrol hosts; that
+  takes a key.
 * **Sessions.**  32 random bytes in a cookie; only its SHA-256 is kept.
   Idle timeout 30 min, absolute 12 h.  One guard checks every protected
   route; state-changing requests also need the console's own `Origin`

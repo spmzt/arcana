@@ -28,6 +28,12 @@ datadir = "/var/db/arcana";
 
 cookie_secure = true;
 
+# A sign-in by a password of the console's own (the console's setup by
+# password among them) has its user's roles, as a security key's does.
+# false: such a session is limited as an API token's, and the console's
+# settings, sign-in, users, tokens, CA and host enrolment take a key.
+#password_full = false;
+
 # Certificates for arcana-agent over TCP.  Without this block the console
 # runs a CA of its own in datadir and enrols hosts with it (see
 # arcana-enrol(8)).  With it: the CA that issued the arcana-agent

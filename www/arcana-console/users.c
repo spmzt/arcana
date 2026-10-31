@@ -27,9 +27,11 @@
  *
  * A user the console keeps may also have a password of the console's
  * own, beside their keys: kept as crypt(3)'s bcrypt ("$2b$"), never
- * said back, set from a session opened with a key (auth.c), and a
- * session it opens is limited as a directory user's is.  A user the
- * directory keeps (source ldap) signs in with the directory's.
+ * said back, set from a session that may change the sign-in (auth.c),
+ * or at the console's setup by password; a session it opens has the
+ * user's roles, or, with password_full = false in web.conf, is limited
+ * as a directory user's is.  A user the directory keeps (source ldap)
+ * signs in with the directory's.
  */
 
 #include <sys/param.h>
@@ -860,6 +862,31 @@ users_any_password(void)
 	return (false);
 }
 
+/* Is pw a password that may be kept?  NULL, or what is wrong. */
+const char *
+user_password_check(const char *pw)
+{
+	size_t	i, n;
+
+	if (pw == NULL || pw[0] == '\0')
+		return ("a password, please");
+	n = strlen(pw);
+	if (n > PASSWORD_MAX)
+		return ("a password is " __XSTRING(PASSWORD_MAX)
+		    " bytes at most (bcrypt reads no more)");
+	for (i = 0; i < n; i++)
+		if ((unsigned char)pw[i] < 0x20 || pw[i] == 0x7f)
+			return ("a password has no control characters");
+	/* Characters, not bytes: a UTF-8 one counts once. */
+	for (i = n = 0; pw[i] != '\0'; i++)
+		if (((unsigned char)pw[i] & 0xc0) != 0x80)
+			n++;
+	if (n < PASSWORD_MIN)
+		return ("a password is " __XSTRING(PASSWORD_MIN)
+		    " characters at least");
+	return (NULL);
+}
+
 /*
  * The user's password set to pw, or taken away when pw is NULL or "".
  * NULL when kept, or what is wrong.
@@ -869,8 +896,8 @@ user_password_set(const char *name, const char *pw)
 {
 	const ucl_object_t	*old;
 	ucl_object_t		*u;
+	const char		*e;
 	char			 h[128];
-	size_t			 i, n;
 
 	if ((old = by_name("users", name)) == NULL)
 		return ("no such user");
@@ -880,20 +907,8 @@ user_password_set(const char *name, const char *pw)
 		    "directory's password");
 	h[0] = '\0';
 	if (pw != NULL && pw[0] != '\0') {
-		n = strlen(pw);
-		if (n > PASSWORD_MAX)
-			return ("a password is " __XSTRING(PASSWORD_MAX)
-			    " bytes at most (bcrypt reads no more)");
-		for (i = 0; i < n; i++)
-			if ((unsigned char)pw[i] < 0x20 || pw[i] == 0x7f)
-				return ("a password has no control characters");
-		/* Characters, not bytes: a UTF-8 one counts once. */
-		for (i = n = 0; pw[i] != '\0'; i++)
-			if (((unsigned char)pw[i] & 0xc0) != 0x80)
-				n++;
-		if (n < PASSWORD_MIN)
-			return ("a password is " __XSTRING(PASSWORD_MIN)
-			    " characters at least");
+		if ((e = user_password_check(pw)) != NULL)
+			return (e);
 		if (!pw_hash(pw, h, sizeof(h)))
 			return ("crypt(3) made no bcrypt hash");
 	}
@@ -909,6 +924,51 @@ user_password_set(const char *name, const char *pw)
 	if (store_save(USERS_FILE, udoc) != 0)
 		return ("the users could not be written");
 	return (NULL);
+}
+
+/*
+ * An owner of the console named name, made at its setup by password
+ * (auth.c) when it is not the built-in admin: NULL when there is one,
+ * or what is wrong.
+ */
+const char *
+user_owner_add(const char *name)
+{
+	ucl_object_t	*u, *roles;
+
+	if (!user_name_ok(name))
+		return ("a user name is 1 to 64 letters, digits and _ . @ -");
+	if (by_name("users", name) != NULL)
+		return (user_console(name) == CROLE_OWNER ? NULL : "that user "
+		    "is no owner of the console");
+	if (ucl_array_size(list_of("users")) >= USERS_MAX)
+		return ("too many users");
+	u = ucl_object_typed_new(UCL_OBJECT);
+	put(u, "name", ucl_object_fromstring(name));
+	roles = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(roles, ucl_object_fromstring("owner"));
+	put(u, "roles", roles);
+	put(u, "created", ucl_object_fromint(time(NULL)));
+	ucl_array_append(list_of("users"), u);
+	if (store_save(USERS_FILE, udoc) != 0) {
+		ucl_object_unref(ucl_array_delete(list_of("users"), u));
+		return ("the users could not be written");
+	}
+	return (NULL);
+}
+
+/* The owner user_owner_add() made, gone again: its password was not
+ * kept.  It has no keys, sessions or invitations yet. */
+void
+user_owner_undo(const char *name)
+{
+	const ucl_object_t	*u;
+
+	if ((u = by_name("users", name)) == NULL)
+		return;
+	ucl_object_unref(ucl_array_delete(list_of("users"), (ucl_object_t *)
+	    (uintptr_t)u));
+	(void)store_save(USERS_FILE, udoc);
 }
 
 /* Is body a role that may be kept?  NULL, or what is wrong with it. */

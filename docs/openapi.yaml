@@ -246,9 +246,12 @@ paths:
         the console binds as the entry found with the password, over
         TLS always (ldaps://, or StartTLS on ldap://; the certificate
         checked); with a group set, its members alone (member,
-        uniqueMember or memberUid).  The session is limited as a
-        token's - not the console's settings, sign-in, push, enrolment,
-        users, tokens or CA.  The status says by_password or by_ldap,
+        uniqueMember or memberUid).  A session opened by the console's
+        own password has the user's roles, unless web.conf says
+        password_full = false; one opened by the directory's, and the
+        console's own then, is limited as a token's - not the console's
+        settings, sign-in, push, enrolment, users, tokens or CA, and
+        by_token says so.  The status says by_password or by_ldap,
         and password and ldap whether either way is there.  An empty
         password to the directory is refused (400), a wrong one or an
         unknown user 401 without saying which; after five failures in a
@@ -273,14 +276,52 @@ paths:
           description: No user has a password and no directory is set up.
         "429":
           description: Too many failures this minute.
+  /api/auth/setup/password:
+    post:
+      tags: [auth]
+      summary: Set the console up by a password instead of a key
+      description: |
+        For a browser no security key reaches (a remote desktop's).
+        Only before the console is set up - no key registered and no
+        user with a password - and with the setup token the console
+        wrote to setup-token in its data directory, as the first key
+        needs.  The user, the built-in admin when not given, is made an
+        owner when there is none of that name; the password is kept as
+        POST /api/auth/password keeps one.  The console is then set up:
+        the token is gone, and the session opened is the password's.
+        After five failures in a minute, 429 for the rest of it.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [setup_token, password]
+              properties:
+                setup_token: { type: string }
+                user: { type: string, maxLength: 64 }
+                password: { type: string, maxLength: 72 }
+      responses:
+        "200":
+          description: Set up and signed in; the session cookie is set.
+        "400":
+          description: Not a user name, or not a password that may be kept.
+        "403":
+          description: Not the setup token.
+        "409":
+          description: The console is set up already.
+        "429":
+          description: Too many failures this minute.
   /api/auth/password:
     post:
       tags: [auth]
       summary: Set or take away a password of the console's own
       description: |
         For the session's own user when user is not given; another
-        user's is the owner's to set.  Only from a session opened with
-        a security key - not one opened by a password or a token.  A
+        user's is the owner's to set.  Not from a session opened by a
+        token or a directory's password, nor by the console's own when
+        web.conf says password_full = false.  A
         password is 12 characters at least and 72 bytes at most (what
         bcrypt reads), without control characters; empty or null takes
         it away.  A user the directory keeps (source ldap) has none.
@@ -4037,7 +4078,10 @@ components:
               authenticated: { type: boolean }
               setup_required:
                 type: boolean
-                description: No key is registered yet.
+                description: Not set up yet - no key registered, no user with a password.
+              keys:
+                type: boolean
+                description: A key is registered; false on a console set up by a password alone.
               rp_id: { type: string }
               origin:
                 type: string
@@ -4050,6 +4094,9 @@ components:
               password:
                 type: boolean
                 description: A user has a password of the console's own.
+              password_full:
+                type: boolean
+                description: A session opened by such a password has its user's roles (web.conf's password_full).
               by_token: { type: boolean, description: the session is limited as an API token's is }
               by_ldap: { type: boolean, description: opened by a directory's user }
               by_password: { type: boolean, description: opened by a password of the console's own }

@@ -47,6 +47,8 @@ const struct route routes[] = {
 	    HTTP_METHOD_POST },
 	{ "/api/auth/login/password", api_login_password, NULL,
 	    HTTP_METHOD_POST },
+	{ "/api/auth/setup/password", api_setup_password, NULL,
+	    HTTP_METHOD_POST },
 	{ "/api/auth/password", api_auth_password, NULL,
 	    HTTP_METHOD_POST },
 	{ "/api/auth/login/token", api_login_token, NULL,

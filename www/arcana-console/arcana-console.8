@@ -142,6 +142,14 @@ Default
 .It Va cookie_secure
 Whether the session cookie is marked Secure.
 Default true.
+.It Va password_full
+Whether a session opened by a password of the console's own has its
+user's roles, as one opened by a security key does.
+Default true.
+False limits it as an API token's session: the console's settings,
+sign-in, users, tokens, CA and host enrolment then take a key.
+A session opened by a directory's (LDAP) password is limited so either
+way.
 .It Va tls
 A block naming certificates for
 .Xr arcana-agent 8
@@ -314,7 +322,8 @@ In
 .Va arcana_console_env Ns = Ns Qq ARCANA_LWS_LOG=7 .
 .El
 .Sh FIRST LOGIN
-With no security key registered, the console writes a one-time token to
+Until a security key is registered or a user has a password, the
+console writes a one-time token to
 .Pa setup-token
 in
 .Va datadir
@@ -322,6 +331,14 @@ and says so in its log.
 The first registration in the browser needs it; later keys are added
 from a logged-in session.
 A key may be a hardware key or a passkey, such as a phone's.
+.Pp
+Where no key reaches the browser, a remote desktop's for one, the
+console may be set up by a password instead: the same token, a user
+name, and a password of 12 characters at least.
+The user becomes an owner (the built-in
+.Dq admin
+when none is named) and is signed in; a key may be added later.
+Once set up either way, the token is gone.
 .Sh FILES
 .Bl -tag -width Ds -compact
 .It Pa /usr/local/etc/arcana/web.conf

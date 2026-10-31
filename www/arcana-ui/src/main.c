@@ -863,6 +863,15 @@ submit_form(const char *form, const ucl_object_t *f)
 	} else if (strcmp(form, "enrol") == 0) {
 		enrol(jstr(f, "token") != NULL ? jstr(f, "token") : "",
 		    jstr(f, "name") != NULL ? jstr(f, "name") : "");
+	} else if (strcmp(form, "setup-password") == 0) {
+		if (jstr(f, "password") == NULL || jstr(f, "again") == NULL ||
+		    strcmp(jstr(f, "password"), jstr(f, "again")) != 0)
+			snprintf(app.auth_error, sizeof(app.auth_error),
+			    "The two passwords are not the same.");
+		else
+			setup_password(jstr(f, "token") != NULL ? jstr(f,
+			    "token") : "", jstr(f, "user") != NULL ? jstr(f,
+			    "user") : "", jstr(f, "password"));
 	} else if (strcmp(form, "add-server") == 0) {
 		add_server(jstr(f, "name") != NULL ? jstr(f, "name") : "",
 		    jstr(f, "uri") != NULL ? jstr(f, "uri") : "",

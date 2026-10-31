@@ -220,7 +220,12 @@ instead, mount `ca.pem`, `client.pem` and `client.key` into
 With no key registered, the console writes a one-time token to
 `/var/db/arcana/setup-token` and logs that it did. Open the console,
 paste the token, touch your security key: that registers it and logs you
-in, and the token is gone. Add a spare key from **Keys** afterwards. Opened
+in, and the token is gone. Add a spare key from **Keys** afterwards. Where
+no key reaches the browser (a remote desktop's), **Set up with a
+password** under the same form takes the token, a user name (`admin`
+when left empty) and a password of 12 characters at least: that user is
+made an owner and signed in, with full rights unless `web.conf` says
+`password_full = false`. Opened
 in the browser of a phone or tablet, the console offers to install
 itself as an app: with the browser's own prompt on Android, and with
 where to tap in Safari on iOS and in Firefox. **Not now** stops the

@@ -12,7 +12,10 @@
  * (getAuthenticatorData()), so nothing here decodes CBOR: libcrypto
  * parses the key and checks signatures.  With attestation "none" there is
  * no attestation statement to verify; the one-time setup token is what
- * makes the first registration trustworthy.
+ * makes the first registration trustworthy.  The console may also be set
+ * up by a password (api_setup_password): the setup token, an owner's
+ * name and their password, for a browser no key reaches.  It is set up
+ * once a key is registered or a user has a password (setup_done()).
  *
  * The server runs the console in one worker, so challenges and sessions
  * live in that process; restarting the console logs you out.
@@ -111,6 +114,8 @@ static void	 sessions_load(void);
 static void	 session_put(struct session *);
 static void	 session_end(struct session *);
 static void	 setup_token_init(void);
+static bool	 setup_done(void);
+static bool	 setup_token_ok(const char *);
 static void	 put(ucl_object_t *, const char *, ucl_object_t *);
 static int	 status_reply(struct http_request *, bool);
 
@@ -401,9 +406,28 @@ cred_find(const char *id)
 	return (NULL);
 }
 
+/* Set up: a key registered, or a user with a password of the console's. */
+static bool
+setup_done(void)
+{
+
+	return (ucl_array_size(cred_list()) > 0 || users_any_password());
+}
+
+/* Is token the setup token?  None once the console is set up. */
+static bool
+setup_token_ok(const char *token)
+{
+
+	return (token != NULL && setup_token[0] != '\0' && strlen(token) ==
+	    strlen(setup_token) && timingsafe_bcmp(token, setup_token,
+	    strlen(setup_token)) == 0);
+}
+
 /*
- * With no credential registered, the first registration needs a setup
- * token, written where only the console's user can read it.
+ * Until the console is set up, the first key, or the first password,
+ * needs a setup token, written where only the console's user can read
+ * it.
  */
 static void
 setup_token_init(void)
@@ -414,7 +438,7 @@ setup_token_init(void)
 	int	 fd, i;
 
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, SETUP_TOKEN);
-	if (ucl_array_size(cred_list()) > 0) {
+	if (setup_done()) {
 		setup_token[0] = '\0';
 		(void)unlink(path);
 		return;
@@ -447,8 +471,8 @@ setup_token_init(void)
 		(void)unlink(tmp);
 		return;
 	}
-	log_msg(LOG_NOTICE, "no security key registered yet: the setup "
-	    "token is in %s", path);
+	log_msg(LOG_NOTICE, "not set up yet (no security key, no password): "
+	    "the setup token is in %s", path);
 }
 
 /* A store of the cluster's written by another node: read again. */
@@ -650,11 +674,12 @@ session_by_token(struct http_request *req)
 {
 	struct session	*s;
 
-	/* One opened by a password, the directory's or the console's, is
-	 * limited as a token is: what changes the console's own sign-in,
-	 * tokens, users, CA and settings takes a key. */
+	/* One opened by the directory's password is limited as a token is:
+	 * what changes the console's own sign-in, tokens, users, CA and
+	 * settings takes a key; one by the console's own password too,
+	 * when web.conf says password_full = false. */
 	return ((s = session_of(req)) != NULL && (s->tok[0] != '\0' ||
-	    s->ldap || s->pw));
+	    s->ldap || (s->pw && !cfg.password_full)));
 }
 
 /* How the session was opened: by a key, a directory or a password. */
@@ -926,8 +951,11 @@ status_reply_as(struct http_request *req, bool authenticated, bool by_token,
 	 * or a user has a password of the console's own. */
 	put(o, "ldap", ucl_object_frombool(ldap_enabled()));
 	put(o, "password", ucl_object_frombool(users_any_password()));
-	put(o, "setup_required", ucl_object_frombool(
-	    ucl_array_size(cred_list()) == 0));
+	put(o, "password_full", ucl_object_frombool(cfg.password_full));
+	put(o, "setup_required", ucl_object_frombool(!setup_done()));
+	/* Whether there is a key to sign in with: a console set up by a
+	 * password alone has none yet. */
+	put(o, "keys", ucl_object_frombool(ucl_array_size(cred_list()) > 0));
 	put(o, "rp_id", ucl_object_fromstring(cfg.rp_id));
 	/* The browser checks both against its address before any key is
 	 * asked: the page says so when they do not match. */
@@ -979,12 +1007,9 @@ api_register_begin(struct http_request *req)
 			    "invitation of this console's, or one that ran out"));
 		}
 		reg_invited = true;
-	} else if (ucl_array_size(cred_list()) == 0) {
+	} else if (!setup_done()) {
 		token = body != NULL ? ucl_str(body, "setup_token") : NULL;
-		if (token == NULL || setup_token[0] == '\0' ||
-		    strlen(token) != strlen(setup_token) ||
-		    timingsafe_bcmp(token, setup_token,
-		    strlen(setup_token)) != 0) {
+		if (!setup_token_ok(token)) {
 			ucl_object_unref(body);
 			return (reply_error(req, 403, "setup_token",
 			    "the first key needs the setup token from %s/%s",
@@ -1087,8 +1112,7 @@ api_register_finish(struct http_request *req)
 	err = NULL;
 	/* An invited user's first key needs no session: the invitation,
 	 * taken at the start, was it; the challenge ties the two. */
-	if (ucl_array_size(cred_list()) > 0 && !reg_invited && !guard(req,
-	    true))
+	if (setup_done() && !reg_invited && !guard(req, true))
 		return (WEB_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "bad_request",
@@ -1192,8 +1216,10 @@ api_login_begin(struct http_request *req)
 	bool			 discoverable;
 
 	if (ucl_array_size(cred_list()) == 0)
-		return (reply_error(req, 409, "setup_required",
-		    "no security key registered yet"));
+		return (setup_done() ? reply_error(req, 404, "no_key", "no "
+		    "security key registered yet: sign in with a password") :
+		    reply_error(req, 409, "setup_required", "no security key "
+		    "registered yet"));
 	body = read_json(req);
 	discoverable = body != NULL && ucl_flag(body, "discoverable");
 	ucl_object_unref(body);
@@ -1413,16 +1439,86 @@ api_login_password(struct http_request *req)
 	session_put(s);
 	log_msg(LOG_NOTICE, "login by %s", who);
 	ucl_object_unref(body);
-	return (status_reply_as(req, true, true, own ? BY_PASSWORD : BY_LDAP));
+	return (status_reply_as(req, true, !own || !cfg.password_full, own ?
+	    BY_PASSWORD : BY_LDAP));
+}
+
+/*
+ * POST {"setup_token", "user", "password"}: the console set up by a
+ * password instead of a key, for a browser no key reaches (a remote
+ * desktop's).  The setup token, as for the first key; the user the
+ * built-in admin unless named, a new one made an owner; the password
+ * kept as any user's (users.c).  The console is then set up: the token
+ * is gone, and the session opened is the password's.
+ */
+int
+api_setup_password(struct http_request *req)
+{
+	struct session	*s;
+	ucl_object_t	*body;
+	const char	*token, *user, *password, *e;
+	char		 name[72], who[96];
+	bool		 made;
+
+	name[0] = '\0';
+	if (req->method != HTTP_METHOD_POST)
+		return (reply_error(req, 405, "method", "POST"));
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "bad_request", "{\"setup_token\", "
+		    "\"user\", \"password\"}"));
+	if (setup_done()) {
+		ucl_object_unref(body);
+		return (reply_error(req, 409, "setup_done", "this console is "
+		    "set up already: sign in"));
+	}
+	token = ucl_str(body, "setup_token");
+	user = ucl_str(body, "user") != NULL && ucl_str(body, "user")[0] !=
+	    '\0' ? ucl_str(body, "user") : ADMIN_USER;
+	password = ucl_str(body, "password");
+	e = NULL;
+	made = false;
+	if (signin_throttled())
+		e = "too many failed attempts: try again in a minute";
+	else if (!setup_token_ok(token)) {
+		signin_failed();
+		e = "not the setup token";
+	} else if ((e = user_password_check(password)) == NULL) {
+		snprintf(name, sizeof(name), "%s", user);
+		made = !user_exists(name);
+		if ((e = user_owner_add(name)) == NULL)
+			e = user_password_set(name, password);
+	}
+	if (password != NULL)
+		explicit_bzero((char *)(uintptr_t)password, strlen(password));
+	ucl_object_unref(body);
+	if (e != NULL) {
+		/* A user made for a password that was not kept goes. */
+		if (made)
+			user_owner_undo(name);
+		log_msg(LOG_NOTICE, "setup by password refused: %s", e);
+		return (reply_error(req, strstr(e, "too many") != NULL ? 429 :
+		    strstr(e, "setup token") != NULL ? 403 : strstr(e,
+		    "written") != NULL || strstr(e, "crypt") != NULL ? 500 :
+		    400, "setup", "%s%s", e, strstr(e, "setup token") != NULL ?
+		    ": it is in the console's data directory, setup-token" : ""));
+	}
+	setup_token_init();
+	snprintf(who, sizeof(who), "%s (password)", name);
+	s = session_start(req, who, "", name);
+	s->pw = true;
+	session_put(s);
+	log_msg(LOG_NOTICE, "console set up by password: owner %s", name);
+	return (status_reply_as(req, true, !cfg.password_full, BY_PASSWORD));
 }
 
 /*
  * POST {"user", "password"}: a password of the console's own set for
  * the user, or taken away when it is "" or null.  The user is the
- * session's own when not named; another's is the owner's to set.  Only
- * from a session opened with a key: guard() refuses one opened by a
- * password or a token (/api/auth is not theirs).  The user's sessions
- * opened by the password before end.
+ * session's own when not named; another's is the owner's to set.  Not
+ * from a session opened by a token or a directory's password: guard()
+ * refuses those (/api/auth is not theirs), and one opened by the
+ * console's own password when password_full = false.  The user's
+ * sessions opened by the password before end.
  */
 int
 api_auth_password(struct http_request *req)

@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.342.1"
+#define	ARCW_VERSION		"0.343.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -72,6 +72,8 @@ struct config {
 	char		*origin;	/* "https://console.example" */
 	char		*datadir;	/* credentials, servers, setup token */
 	bool		 cookie_secure;
+	bool		 password_full;	/* a password's session, the user's
+					 * roles; false: limited as a token's */
 	char		*tls_ca;	/* CA of the arcana-agent certificates */
 	char		*tls_ca_key;	/* its key, to enrol hosts; or NULL */
 	char		*tls_cert;	/* this console's client certificate */
@@ -200,6 +202,7 @@ bool		 signin_throttled(void);
 void		 signin_failed(void);
 int		 api_login_token(struct http_request *);
 int		 api_login_password(struct http_request *);
+int		 api_setup_password(struct http_request *);
 int		 api_auth_password(struct http_request *);
 
 /* prefixlists.c: the console's prefix lists, used on any host. */
@@ -290,6 +293,9 @@ int		 api_role(struct http_request *);
 /* A password of the console's own, beside the keys: bcrypt by crypt(3). */
 #define	PASSWORD_MIN	12		/* characters at least */
 #define	PASSWORD_MAX	72		/* bytes at most: bcrypt's own */
+const char	*user_password_check(const char *);
+const char	*user_owner_add(const char *);
+void		 user_owner_undo(const char *);
 bool		 user_has_password(const char *);
 bool		 user_password_ok(const char *, const char *);
 const char	*user_password_set(const char *, const char *);

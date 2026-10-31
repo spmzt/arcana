@@ -2783,9 +2783,13 @@ status_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	app.setup_required = jbool(o, "setup_required");
 	app.by_ldap = jbool(o, "by_ldap");
 	app.by_password = jbool(o, "by_password");
-	app.by_token = jbool(o, "by_token") || app.by_ldap || app.by_password;
+	/* Limited as the console says: a password's session is not when
+	 * web.conf's password_full is on. */
+	app.by_token = jbool(o, "by_token");
 	app.ldap_on = jbool(o, "ldap");
 	app.password_on = jbool(o, "password");
+	app.password_full = jbool(o, "password_full");
+	app.no_keys = ucl_object_lookup(o, "keys") != NULL && !jbool(o, "keys");
 	who_set(o);
 	origin_check(jstr(o, "origin"), jstr(o, "rp_id"));
 	if (jbool(o, "authenticated")) {
@@ -2815,8 +2819,10 @@ auth_done_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (status == 200 && jbool(o, "authenticated")) {
 		app.by_ldap = jbool(o, "by_ldap");
 		app.by_password = jbool(o, "by_password");
-		app.by_token = jbool(o, "by_token") || app.by_ldap ||
-		    app.by_password;
+		app.by_token = jbool(o, "by_token");
+		app.password_full = jbool(o, "password_full");
+		app.no_keys = ucl_object_lookup(o, "keys") != NULL &&
+		    !jbool(o, "keys");
 		who_set(o);
 		app.invite_token[0] = '\0';
 		app.screen = SCREEN_CONSOLE;
@@ -3018,6 +3024,32 @@ enrol(const char *token, const char *name)
 	free(body);
 }
 
+/* The console set up by a password instead of a key: the setup token,
+ * the owner's name ("" the built-in admin) and their password, twice. */
+void
+setup_password(const char *token, const char *user, const char *password)
+{
+	char	*qt, *qu, *qp, *body;
+
+	if (app.auth_busy)
+		return;
+	app.auth_busy = true;
+	app.auth_error[0] = '\0';
+	qt = json_quote(token);
+	qu = json_quote(user);
+	qp = json_quote(password);
+	if (asprintf(&body, "{\"setup_token\":%s,\"user\":%s,\"password\":"
+	    "%s}", qt, qu, qp) == -1)
+		abort();
+	explicit_bzero(qp, strlen(qp));
+	free(qt);
+	free(qu);
+	free(qp);
+	api("POST", "/api/auth/setup/password", body, auth_done_cb, NULL);
+	explicit_bzero(body, strlen(body));
+	free(body);
+}
+
 static void
 key_added_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -3058,6 +3090,9 @@ logout_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (status == 200) {
 		app.ldap_on = jbool(o, "ldap");
 		app.password_on = jbool(o, "password");
+		app.password_full = jbool(o, "password_full");
+		app.no_keys = ucl_object_lookup(o, "keys") != NULL &&
+		    !jbool(o, "keys");
 	}
 	app.by_token = app.by_ldap = app.by_password = false;
 }

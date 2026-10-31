@@ -1695,6 +1695,90 @@ ATF_TC_BODY(setup_token, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(setup_password, "The console set up by a password: the setup "
+    "token, an owner's name and password; then set up, no token, no "
+    "second setup; the session the user's roles, settings and keys among "
+    "them; no key to sign in with until one is added; signed in again by "
+    "the password")
+ATF_TC_BODY(setup_password, tc)
+{
+	struct resp	 r;
+	struct stat	 sb;
+	char		*tok, body[300];
+
+	start(tc, 0, NULL);
+	http("GET", "/api/auth/status", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "setup_required"));
+	ATF_CHECK_STREQ("false", jstr(&r, "keys"));
+	ATF_CHECK_STREQ("true", jstr(&r, "password_full"));
+	resp_free(&r);
+	tok = setup_token();
+	/* Not without the token; nor a short password, nor a bad name. */
+	http("POST", "/api/auth/setup/password", "{\"setup_token\":\"0000\","
+	    "\"user\":\"ops\",\"password\":\"correct horse battery\"}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"setup_token\":\"%s\",\"user\":"
+	    "\"ops\",\"password\":\"too short\"}", tok);
+	http("POST", "/api/auth/setup/password", body, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "12 characters") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"setup_token\":\"%s\",\"user\":"
+	    "\"no such name!\",\"password\":\"correct horse battery\"}", tok);
+	http("POST", "/api/auth/setup/password", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	ATF_CHECK(cookie[0] == '\0');
+	/* Set up: ops an owner, signed in, the session not limited. */
+	snprintf(body, sizeof(body), "{\"setup_token\":\"%s\",\"user\":"
+	    "\"ops\",\"password\":\"correct horse battery\"}", tok);
+	http("POST", "/api/auth/setup/password", body, &r);
+	ATF_CHECK_MSG(r.status == 200, "%s", r.body);
+	ATF_CHECK_STREQ("ops", jstr(&r, "user"));
+	ATF_CHECK_STREQ("owner", jstr(&r, "console"));
+	ATF_CHECK_STREQ("true", jstr(&r, "by_password"));
+	ATF_CHECK(jstr(&r, "by_token") == NULL);
+	ATF_CHECK_STREQ("false", jstr(&r, "setup_required"));
+	resp_free(&r);
+	ATF_CHECK(cookie[0] != '\0');
+	ATF_CHECK(stat("data/setup-token", &sb) == -1 && errno == ENOENT);
+	http("POST", "/api/auth/setup/password", body, &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	free(tok);
+	/* What a key's session may: the settings, the keys, a key added. */
+	http("GET", "/api/settings", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/auth/credentials", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/auth/register/begin", "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ops", jstr(&r, "publicKey.user.name"));
+	resp_free(&r);
+	/* Signed out: no key to sign in with, the password again. */
+	http("POST", "/api/auth/logout", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "keys"));
+	ATF_CHECK_STREQ("true", jstr(&r, "password"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	http("POST", "/api/auth/login/begin", "{}", &r);
+	EXPECT(&r, 404);
+	ATF_CHECK_STREQ("no_key", jstr(&r, "error.code"));
+	resp_free(&r);
+	http("POST", "/api/auth/login/password", "{\"user\":\"ops\","
+	    "\"password\":\"correct horse battery\"}", &r);
+	ATF_CHECK_MSG(r.status == 200, "%s", r.body);
+	ATF_CHECK(jstr(&r, "by_token") == NULL);
+	resp_free(&r);
+	http("GET", "/api/settings", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+}
+
 CONSOLE_TC(register_login, "Register an ES256 key, log out, log in")
 ATF_TC_BODY(register_login, tc)
 {
@@ -4557,9 +4641,10 @@ slapd_stop(void)
 
 CONSOLE_TC(password, "A password of the console's own: set from a key's "
     "session, said as set but never its hash, kept through an edit; a "
-    "sign-in with it limited as a token's; a wrong one, an unknown user, a "
-    "short one refused; another's the owner's alone to set; taken away, "
-    "the sessions it opened end; too many failures throttled")
+    "sign-in with it limited as a token's under password_full = false; a "
+    "wrong one, an unknown user, a short one refused; another's the "
+    "owner's alone to set; taken away, the sessions it opened end; too "
+    "many failures throttled")
 ATF_TC_BODY(password, tc)
 {
 	struct authn	a, b;
@@ -4567,6 +4652,9 @@ ATF_TC_BODY(password, tc)
 	char		keycookie[160], pwcookie[160], invite[80];
 	int		i, k;
 
+	/* The limits of a password's session, which web.conf asks for. */
+	snprintf(harness_webconf, sizeof(harness_webconf), "password_full = "
+	    "false;\n");
 	start(tc, 0, NULL);
 	enrol(&a);
 	snprintf(keycookie, sizeof(keycookie), "%s", cookie);
@@ -13157,6 +13245,7 @@ ATF_TP_ADD_TCS(tp)
 
 	ATF_TP_ADD_TC(tp, unauthenticated);
 	ATF_TP_ADD_TC(tp, setup_token);
+	ATF_TP_ADD_TC(tp, setup_password);
 	ATF_TP_ADD_TC(tp, register_login);
 	ATF_TP_ADD_TC(tp, login_refused);
 	ATF_TP_ADD_TC(tp, android);

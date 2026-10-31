@@ -43,7 +43,12 @@ get(const ucl_object_t *top, const char *path, const char *def)
  *	origin = "https://console.example";
  *	datadir = "/var/db/arcana";
  *	cookie_secure = true;
+ *	password_full = true;
  *	tls { ca = "..."; cert = "..."; key = "..."; }	# for arcana-agent
+ *
+ * password_full (true unless set false): a session opened by a password
+ * of the console's own has its user's roles, as one opened by a key;
+ * false limits it as an API token's (auth.c, tokens.c).
  *
  * Without tls, the console runs its own CA from datadir (pki.c).  With
  * it, tls.ca_key names the CA's key when the console is to enrol hosts.
@@ -91,6 +96,8 @@ config_load(const char *path)
 	cfg.datadir = get(top, "datadir", "/var/db/arcana");
 	o = ucl_object_lookup(top, "cookie_secure");
 	cfg.cookie_secure = o == NULL || ucl_object_toboolean(o);
+	o = ucl_object_lookup(top, "password_full");
+	cfg.password_full = o == NULL || ucl_object_toboolean(o);
 	cfg.tls_ca = get(top, "tls.ca", NULL);
 	cfg.tls_ca_key = get(top, "tls.ca_key", NULL);
 	cfg.tls_cert = get(top, "tls.cert", NULL);

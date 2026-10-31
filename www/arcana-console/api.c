@@ -161,12 +161,13 @@ guard(struct http_request *req, bool mutate)
 			return (false);
 		}
 	}
-	/* Opened with a write token: what the token may, no more. */
+	/* Opened with a write token, or by a password the console limits:
+	 * what a write token may, no more. */
 	if (session_by_token(req) && !(mutate ? token_writable(req->path) :
 	    token_readable(req->path))) {
 		reply_error(req, 403, "token", "a session opened with an API "
-		    "token may not %s this: sign in with a security key",
-		    mutate ? "change" : "read");
+		    "token or a password may not %s this: sign in with a "
+		    "security key", mutate ? "change" : "read");
 		return (false);
 	}
 	/* A console user: what their role on the console allows
@@ -406,8 +407,9 @@ arcw_init(void)
 	store_sweep();
 	/* The hosts' certificates, on the TLS listeners (notif.c). */
 	web_client_ca(cfg.tls_ca);
-	auth_init();
+	/* The users first: a password of one's sets the console up. */
 	users_init();
+	auth_init();
 	if (cluster_on())
 		(void)timer_add(cluster_tick, 500, NULL, 0);
 	servers_init();
