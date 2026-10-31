@@ -1445,6 +1445,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	 * its environment alone, not the console's. */
 	snprintf(fjf, sizeof(fjf), "%s/jails", cwd);
 	ATF_REQUIRE(setenv("FAKEJAIL", fjf, 1) == 0);
+	/* The host's network card the documents name, on any host. */
+	ATF_REQUIRE(setenv("FAKEIFS", FAKE_IFS, 1) == 0);
 	ATF_REQUIRE(setenv("LD_PRELOAD", fjl, 1) == 0);
 	for (int i = 0; i < 139 && argv[i] != NULL; i++) {
 		free(agent_argv[i]);
@@ -1456,6 +1458,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE(unsetenv("LD_PRELOAD") == 0);
 	ATF_REQUIRE(unsetenv("FAKEJAIL") == 0);
+	ATF_REQUIRE(unsetenv("FAKEIFS") == 0);
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);
 	fclose(fp);
@@ -1506,10 +1509,12 @@ agent_restart(void)
 	terminate("arcana-agent.pid");
 	(void)unlink("jgd.sock");
 	ATF_REQUIRE(setenv("FAKEJAIL", agent_fjf, 1) == 0);
+	ATF_REQUIRE(setenv("FAKEIFS", FAKE_IFS, 1) == 0);
 	ATF_REQUIRE(setenv("LD_PRELOAD", agent_fjl, 1) == 0);
 	pid = spawn_server(agent_argv, "arcana-agent.out");
 	ATF_REQUIRE(unsetenv("LD_PRELOAD") == 0);
 	ATF_REQUIRE(unsetenv("FAKEJAIL") == 0);
+	ATF_REQUIRE(unsetenv("FAKEIFS") == 0);
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);
 	fclose(fp);

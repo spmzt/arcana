@@ -30,6 +30,9 @@
 
 #define	ORIGIN		"http://localhost:8443"
 #define	RP_ID		"localhost"
+/* The host's network cards the tests' documents name, there for the
+ * agent on any host (libfakejail's if_nametoindex). */
+#define	FAKE_IFS	"vtnet0"
 
 struct resp {
 	int		 status;

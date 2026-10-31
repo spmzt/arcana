@@ -8571,8 +8571,11 @@ ATF_TC_BODY(enrol, tc)
 	EXPECT(&r, 403);
 	resp_free(&r);
 
-	/* The host joins. */
-	snprintf(url, sizeof(url), "%s", harness_origin);
+	/* The host joins, by the address the console listens on: localhost
+	 * may be ::1 first, and where that is dropped rather than refused,
+	 * fetch(3) waits out its connect before it tries 127.0.0.1. */
+	snprintf(url, sizeof(url), "http://127.0.0.1%s", strrchr(
+	    harness_origin, ':'));
 	i = 0;
 	argv[i++] = tool;
 	argv[i++] = (char *)(uintptr_t)"-d";

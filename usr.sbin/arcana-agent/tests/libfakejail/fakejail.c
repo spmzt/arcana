@@ -19,9 +19,17 @@
  *
  * Nothing of libjail is linked: the library is loaded into whatever the
  * agent runs too, and libjail's own symbols are looked for when called.
+ *
+ * And if_nametoindex(3): the interfaces FAKEIFS names, separated by
+ * spaces, are there when the host has none of the name, so that the
+ * tests' documents may name a host's network card (vtnet0) on a host
+ * whose cards are called otherwise.
  */
 
 #include <sys/param.h>
+#include <sys/socket.h>
+
+#include <net/if.h>
 
 #include <dlfcn.h>
 #include <errno.h>
@@ -210,4 +218,30 @@ jail_getv(int flags, ...)
 		strcpy(av[i + 1], s);
 	}
 	return ((int)strtol(f[1], NULL, 10));
+}
+
+/* The host's interface, or one FAKEIFS names: an index past the host's. */
+unsigned int
+if_nametoindex(const char *ifname)
+{
+	unsigned int	(*realf)(const char *);
+	const char	*list, *p;
+	unsigned int	 idx;
+	size_t		 n;
+
+	if ((realf = (unsigned int (*)(const char *))dlsym(RTLD_NEXT,
+	    "if_nametoindex")) != NULL && (idx = realf(ifname)) != 0)
+		return (idx);
+	if (ifname != NULL && (list = getenv("FAKEIFS")) != NULL) {
+		n = strlen(ifname);
+		for (p = list, idx = 0; *(p += strspn(p, " ")) != '\0';
+		    p += strcspn(p, " ")) {
+			idx++;
+			if (n > 0 && strncmp(p, ifname, n) == 0 && (p[n] == ' ' ||
+			    p[n] == '\0'))
+				return (10000 + idx);
+		}
+	}
+	errno = ENXIO;
+	return (0);
 }
