@@ -1152,6 +1152,21 @@ hosts_nacm_sync_later(const char *uri)
 	pthread_mutex_unlock(&pending_lock);
 }
 
+/* The server reached at from is reached at to now: so is what waits. */
+void
+hosts_nacm_sync_moved(const char *from, const char *to)
+{
+	int	i;
+
+	pthread_mutex_lock(&pending_lock);
+	for (i = 0; i < npending; i++)
+		if (strcmp(pending[i]->uri, from) == 0) {
+			free(pending[i]->uri);
+			pending[i]->uri = xstrdup(to);
+		}
+	pthread_mutex_unlock(&pending_lock);
+}
+
 /* Connected to uri's agent: its roles synchronized, when it waits for it. */
 static void
 pending_sync(const char *uri, cbl_conn *conn)

@@ -289,6 +289,8 @@ struct server {
 	char		 id[9];
 	char		 name[65];
 	char		 uri[256];
+	char		 peer[65];	/* the name its certificate is checked
+					 * for, "" the address's own */
 	bool		 local;
 	ucl_object_t	*list;		/* last good list reply */
 	double		 fetched;	/* when it arrived, ms */
@@ -732,6 +734,7 @@ void		 delete_key(const char *);
 void		 add_server(const char *, const char *, const char *);
 void		 enrol_host(const char *, const char *);
 void		 delete_server(const char *);
+void		 server_readdress(struct server *, const char *, const char *);
 
 /* view.c, graph.c */
 #define	VIEW_REGIONS		8

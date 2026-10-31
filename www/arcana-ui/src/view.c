@@ -571,6 +571,46 @@ hostbar(struct html *h, struct server *s)
 		h_txt(h, s->name);
 		h_raw(h, " is unreachable:</b> ");
 		h_txt(h, s->error);
+		/* Told a wrong address (at its enrolment, say): another, the
+		 * console's alone, the host asked nothing. */
+		if (!s->local) {
+			h_raw(h, "<details class=\"wfmore trmove\"><summary>Change "
+			    "the address the console reaches it at</summary><form "
+			    "class=\"toolbar\" data-form=\"server-uri\"><label>"
+			    "Reached at <input name=\"uri\" required spellcheck="
+			    "\"false\" autocomplete=\"off\" size=\"36\"");
+			h_attr(h, "value", s->uri);
+			h_raw(h, "></label><label>Its certificate names <input "
+			    "name=\"peer\" spellcheck=\"false\" autocomplete="
+			    "\"off\" size=\"24\" placeholder=\"the address's "
+			    "host\"");
+			/* The name checked now: kept, unless changed. */
+			{
+				char		 hb[256];
+				const char	*p = strstr(s->uri, "://"), *e;
+
+				hb[0] = '\0';
+				if (s->peer[0] == '\0' && p != NULL) {
+					p += 3;
+					e = *p == '[' ? strchr(++p, ']') :
+					    strrchr(p, ':');
+					if (e != NULL && e > p && (size_t)(e - p) <
+					    sizeof(hb))
+						snprintf(hb, sizeof(hb), "%.*s",
+						    (int)(e - p), p);
+				}
+				h_attr(h, "value", s->peer[0] != '\0' ? s->peer :
+				    hb);
+			}
+			h_raw(h, "></label><button class=\"ghost small\">Change"
+			    "</button></form><p class=\"dim\">The console's own "
+			    "record: the host is asked nothing, so it may be "
+			    "unreachable now. Its certificate still names the "
+			    "address it was enrolled at, which the console keeps "
+			    "checking unless you say another. The agent must listen "
+			    "at the new address (<code>arcana_agent_listen</code> on "
+			    "the host).</p></details>");
+		}
 		h_raw(h, "</div>");
 	}
 }

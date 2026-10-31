@@ -512,6 +512,82 @@ ATF_TC_BODY(nacm_sync, tc)
 }
 
 /*
+ * Where the console reaches a host, its own record alone: a server
+ * added at a wrong address is unreachable, and told the right one it is
+ * reached, the host asked nothing.  Moved, the name its certificate is
+ * checked for stays the old address's host unless one is given ("" the
+ * new address's own); no URI, or another server's, is refused.
+ */
+ATF_TC_WITHOUT_HEAD(server_readdress);
+ATF_TC_BODY(server_readdress, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 128], id[16];
+	char		 tid[16], path[256], jails[256];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "nowhere.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s", id);
+	snprintf(jails, sizeof(jails), "/api/servers/%s/jails", id);
+	http("GET", jails, NULL, &r);
+	ATF_CHECK_MSG(r.status != 200 || jstr(&r, "error") != NULL, "%d %s",
+	    r.status, r.body);
+	resp_free(&r);
+	/* The right address: reached, nothing asked of the host before. */
+	snprintf(body, sizeof(body), "{\"uri\":\"unix:%s/jgd.sock\","
+	    "\"peer_name\":\"\"}", cwd);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "jgd.sock") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", jails, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
+	resp_free(&r);
+	/* Over TCP: the old host's name still checked, or the one given. */
+	http("POST", "/api/servers", "{\"name\":\"far\",\"uri\":"
+	    "\"tcp://192.0.2.7:4310\"}", &r);
+	EXPECT(&r, 200);
+	snprintf(tid, sizeof(tid), "%s", jstr(&r, "servers.1.id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s", tid);
+	http("POST", path, "{\"uri\":\"tcp://192.0.2.8:4310\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("tcp://192.0.2.8:4310", jstr(&r, "servers.1.uri"));
+	ATF_CHECK_STREQ("192.0.2.7", jstr(&r, "servers.1.peer_name"));
+	resp_free(&r);
+	http("POST", path, "{\"uri\":\"tcp://192.0.2.9:4310\","
+	    "\"peer_name\":\"far.example\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("far.example", jstr(&r, "servers.1.peer_name"));
+	resp_free(&r);
+	http("POST", path, "{\"uri\":\"tcp://192.0.2.9:4310\","
+	    "\"peer_name\":\"\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "servers.1.peer_name") == NULL);
+	resp_free(&r);
+	/* No URI; another server's. */
+	http("POST", path, "{\"uri\":\"192.0.2.9\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"uri\":\"unix:%s/jgd.sock\"}", cwd);
+	http("POST", path, body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	ATF_CHECK_STREQ("tcp://192.0.2.9:4310", jstr(&r, "servers.1.uri"));
+	resp_free(&r);
+}
+
+/*
  * What the console does for no one (a workflow at its interval) it asks
  * as NACM's user "console", never as the agent's recovery session, even
  * over the local socket as the agent's own user: with "console" out of
@@ -13402,6 +13478,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf_tag_malformed_message);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_sync);
+	ATF_TP_ADD_TC(tp, server_readdress);
 	ATF_TP_ADD_TC(tp, nacm_console);
 	ATF_TP_ADD_TC(tp, job_user);
 	ATF_TP_ADD_TC(tp, services);

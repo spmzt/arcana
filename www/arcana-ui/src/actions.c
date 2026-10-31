@@ -1234,6 +1234,8 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		}
 		snprintf(s->name, sizeof(s->name), "%s", jstr(e, "name"));
 		snprintf(s->uri, sizeof(s->uri), "%s", jstr(e, "uri"));
+		snprintf(s->peer, sizeof(s->peer), "%s", jstr(e, "peer_name") !=
+		    NULL ? jstr(e, "peer_name") : "");
 		s->local = jbool(e, "local");
 		s->safe_wait = (int)jint(e, "safe_wait", 0);
 	}
@@ -3209,6 +3211,41 @@ enrol_host(const char *name, const char *host)
 	api("POST", "/api/enrol/tokens", body, enrol_token_cb, NULL);
 	free(qn);
 	free(qh);
+	free(body);
+}
+
+static void
+readdressed_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+
+	if (status != 200) {
+		toast(true, "Not changed: %s", err != NULL ? err : "no answer");
+		return;
+	}
+	toast(false, "The console reaches it at the new address");
+	servers_cb(status, o, err, arg);
+	/* Tried there at once: the host's page reads it again. */
+	refresh_servers();
+}
+
+/*
+ * Where the console reaches a host, the console's alone: the host is
+ * asked nothing, so one unreachable where it was can be told anew.
+ */
+void
+server_readdress(struct server *s, const char *uri, const char *peer)
+{
+	char	url[64], *qu, *qp, *body;
+
+	qu = json_quote(uri);
+	qp = json_quote(peer);
+	if (asprintf(&body, "{\"uri\":%s,\"peer_name\":%s}", qu, qp) == -1)
+		abort();
+	free(qu);
+	free(qp);
+	snprintf(url, sizeof(url), "/api/servers/%s", s->id);
+	api("POST", url, body, readdressed_cb, NULL);
 	free(body);
 }
 

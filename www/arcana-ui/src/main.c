@@ -860,6 +860,10 @@ submit_form(const char *form, const ucl_object_t *f)
 	} else if (strcmp(form, "login-password") == 0) {
 		login_password(jstr(f, "user") != NULL ? jstr(f, "user") : "",
 		    jstr(f, "password") != NULL ? jstr(f, "password") : "");
+	} else if (strcmp(form, "server-uri") == 0) {
+		if (cur_server() != NULL && jstr(f, "uri") != NULL)
+			server_readdress(cur_server(), jstr(f, "uri"),
+			    jstr(f, "peer") != NULL ? jstr(f, "peer") : "");
 	} else if (strcmp(form, "enrol") == 0) {
 		enrol(jstr(f, "token") != NULL ? jstr(f, "token") : "",
 		    jstr(f, "name") != NULL ? jstr(f, "name") : "");

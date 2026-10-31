@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.344.0"
+#define	ARCW_VERSION		"0.345.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -361,6 +361,7 @@ char		*workflow_submit(const char *, const char *, const char *,
 		    ucl_object_t *, int *, const char **, const char **);
 void		 hosts_forget(const char *);
 void		 hosts_nacm_sync_later(const char *);
+void		 hosts_nacm_sync_moved(const char *, const char *);
 const char	*hosts_shared(const char *, const char *, cbl_conn **);
 void		 hosts_shared_done(cbl_conn *, bool);
 char		*hosts_submit(const char *, const char *, const char *,

@@ -613,9 +613,18 @@ paths:
   /api/servers/{server}:
     post:
       tags: [servers]
-      summary: Set the host's rollback timer
+      summary: Set the host's rollback timer, its tenant, its address
       description: |
-        How long a change made in safe mode on the host waits to be
+        uri, the console's own record of where it reaches the host: the
+        host is asked nothing, so one unreachable at the old address can
+        be told another (the Transport tab's move is the agent's, and
+        needs it reachable). peer_name is the name its certificate is
+        checked for; left out when the address changes, the old
+        address's host stays that name (an enrolled host's certificate
+        names it), "" the new address's own. A URI that is none, or
+        another server's, is refused (400).
+
+        safe_wait: how long a change made in safe mode on the host waits to be
         confirmed before the agent undoes it: 10 to 3600 seconds, or 0
         for none of its own: then Settings' safe_wait, for every host,
         and without it the agent's own (arcana-agent -w, 60 s unless
@@ -632,6 +641,8 @@ paths:
               properties:
                 safe_wait: { type: integer, minimum: 0, maximum: 3600 }
                 tenant: { type: string, description: "the fleet it is in; \"\" for none" }
+                uri: { type: string, maxLength: 255, description: "tcp://host:port, sctp://host:port or unix:/path" }
+                peer_name: { type: string, maxLength: 64, description: "the name its certificate is checked for; \"\" the address's own" }
                 pkg_repos:
                   type: object
                   description: Which of pkg's repositories each action takes

@@ -329,8 +329,30 @@ servers_move(const char *id, const char *uri)
 	}
 	log_msg(LOG_NOTICE, "server %s moved: %s to %s", id, old, uri);
 	hosts_forget(old);
+	/* Enrolled and not reached yet: its roles wait at the new one. */
+	hosts_nacm_sync_moved(old, uri);
 	free(old);
 	return (0);
+}
+
+/* The host of a tcp:// or sctp:// URI, without brackets; "" another. */
+static void
+uri_host_of(const char *uri, char *buf, size_t len)
+{
+	const char	*p, *e;
+
+	buf[0] = '\0';
+	if ((p = strstr(uri, "://")) == NULL || strncmp(uri, "unix:", 5) == 0)
+		return;
+	p += 3;
+	if (*p == '[')
+		e = strchr(++p, ']');
+	else
+		e = strrchr(p, ':');
+	if (e == NULL || e == p || (size_t)(e - p) >= len)
+		return;
+	memcpy(buf, p, (size_t)(e - p));
+	buf[e - p] = '\0';
 }
 
 /*
@@ -584,7 +606,10 @@ api_servers(struct http_request *req)
 /*
  * DELETE /api/servers/<id>; POST {safe_wait}: its rollback timer, the
  * seconds a change made in safe mode there waits to be confirmed before
- * the agent undoes it, 0 for the agent's own (-w); {tenant}; {pkg_repos}.
+ * the agent undoes it, 0 for the agent's own (-w); {tenant}; {pkg_repos};
+ * {uri}: where the console reaches it from now on, the console's alone
+ * (the host asked nothing, so a host that cannot be reached at the old
+ * address can be at another; the Transport tab's move is the agent's).
  */
 int
 api_server(struct http_request *req)
@@ -610,6 +635,59 @@ api_server(struct http_request *req)
 		if ((body = read_json(req)) == NULL)
 			return (reply_error(req, 400, "bad_request",
 			    "expected a JSON object"));
+		/*
+		 * {uri, peer_name}: reached elsewhere, as the console alone
+		 * says.  Its certificate names the host it was enrolled as:
+		 * that name is still the one checked, unless peer_name says
+		 * another ("" the new address's own).
+		 */
+		if ((v = ucl_object_lookup(body, "uri")) != NULL) {
+			const char	*u = ucl_object_tostring(v);
+			const char	*pn = ucl_str(body, "peer_name");
+			char		*was_peer, oldhost[256];
+
+			if (u == NULL || (pn != NULL && pn[0] != '\0' &&
+			    (!valid_name(pn) || strchr(pn, ' ') != NULL))) {
+				ucl_object_unref(body);
+				return (reply_error(req, 400, "invalid", "a URI, "
+				    "and the name its certificate has"));
+			}
+			uri_host_of(servers[i].uri, oldhost, sizeof(oldhost));
+			was_peer = servers[i].peer_name;
+			pthread_mutex_lock(&table_lock);
+			if (pn != NULL)
+				servers[i].peer_name = pn[0] != '\0' ?
+				    xstrdup(pn) : NULL;
+			else if (was_peer == NULL && oldhost[0] != '\0' &&
+			    strcmp(u, servers[i].uri) != 0)
+				servers[i].peer_name = xstrdup(oldhost);
+			else
+				servers[i].peer_name = was_peer != NULL ?
+				    xstrdup(was_peer) : NULL;
+			pthread_mutex_unlock(&table_lock);
+			if (strcmp(u, servers[i].uri) == 0 ? save() == -1 :
+			    servers_move(id, u) == -1) {
+				pthread_mutex_lock(&table_lock);
+				free(servers[i].peer_name);
+				servers[i].peer_name = was_peer;
+				pthread_mutex_unlock(&table_lock);
+				ucl_object_unref(body);
+				return (reply_error(req, 400, "invalid", "not a URI "
+				    "an agent is reached by (tcp://host:port, "
+				    "sctp://host:port, unix:/path), or another "
+				    "server's"));
+			}
+			free(was_peer);
+			/* What it holds of the old: let go, made anew. */
+			hosts_forget(servers[i].uri);
+			if (ucl_object_lookup(body, "tenant") == NULL &&
+			    ucl_object_lookup(body, "safe_wait") == NULL &&
+			    ucl_object_lookup(body, "pkg_repos") == NULL) {
+				ucl_object_unref(body);
+				req->method = HTTP_METHOD_GET;
+				return (api_servers(req));
+			}
+		}
 		/* {tenant}: the fleet it is in, "" for none. */
 		if ((v = ucl_object_lookup(body, "tenant")) != NULL) {
 			const char	*t = ucl_object_tostring(v);
