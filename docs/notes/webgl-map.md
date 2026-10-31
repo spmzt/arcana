@@ -87,6 +87,9 @@ neither backend's.
 
 What it costs:
 
+(WebGPU is built only with `WITH_WEBGPU=yes`, the port's `WEBGPU`
+option; without it WebGL 2 is the only backend and none of this applies.)
+
 - Dawn's `emdawnwebgpu` package, v20260423.175430 (about 128 KB
   zipped, with emscripten 6.0.3), which emcc takes as a local port
   (`--use-port=<its emdawnwebgpu.port.py>`): `make depends` fetches

@@ -47,7 +47,7 @@ git clone --recurse-submodules https://github.com/spmzt/arcana.git
 cd arcana
 make check-deps                   # what the build needs, and what is missing
 make install-missing-packages     # as root: pkg install what is missing
-make depends                      # what no package has: Dawn's emdawnwebgpu
+make depends                      # WITH_WEBGPU=yes only: Dawn's emdawnwebgpu
 make                              # it checks the same first, and says
 make check                        # the test suite, with kyua(1)
 make install                      # PREFIX=/usr/local by default
@@ -68,10 +68,13 @@ What it needs:
   installed `devel/cblink`;
 - for the console as well: `devel/emscripten` for the page, and
   `net/libwebsockets` for its HTTP server (`config.mk.sample` says how
-  to use a copy elsewhere); and Dawn's emdawnwebgpu package, the map's
-  WebGPU, which no package has: `make depends` fetches it into
-  `build/emdawnwebgpu`, so the build itself fetches nothing (on a host
-  without the network, copy the zip there first and run it);
+  to use a copy elsewhere);
+- with `WITH_WEBGPU=yes` (the port's `WEBGPU` option), which draws the
+  network map's moving layer with WebGPU where the browser has it
+  rather than WebGL 2: Dawn's emdawnwebgpu package, which no package
+  has. `make depends` fetches it into `build/emdawnwebgpu`, so the build
+  itself fetches nothing (on a host without the network, copy the zip
+  there first and run it). Off by default;
 - the sources of libucl and libyaml, which the page compiles to
   WebAssembly (a built library cannot be): the system's in `/usr/src`,
   which pkgbase's `FreeBSD-src` installs (`make

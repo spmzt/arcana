@@ -54,11 +54,14 @@ RUN fetch -o libyaml.tar.gz \
         "${LIBYAML_SHA256}" ] && \
     tar -xzf libyaml.tar.gz --strip-components 1 && rm libyaml.tar.gz
 
-# The submodule cblink/ must be checked out in what is copied; make
-# depends fetches Dawn's emdawnwebgpu package.
+# The submodule cblink/ must be checked out in what is copied.
+# ARCANA_WEBGPU=yes builds the map's WebGPU too (WITH_WEBGPU), with
+# Dawn's emdawnwebgpu package, which make depends fetches.
+ARG ARCANA_WEBGPU=no
 COPY . /usr/src/arcana
 WORKDIR /usr/src/arcana
 RUN test -f cblink/Makefile || { echo "cblink/ is empty: git submodule update --init" >&2; exit 1; } && \
+    if [ "${ARCANA_WEBGPU}" = yes ]; then echo "WITH_WEBGPU=yes" >> config.mk; fi && \
     make depends && \
     if [ "${ARCANA_CODEQL}" = yes ]; then \
         sh tools/codeql/capture.sh; \

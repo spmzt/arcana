@@ -34,6 +34,8 @@
  * a colour) and hands them to a backend, WebGPU through webgpu.h when
  * the browser has it and gives a device, else WebGL 2 through GLES 3.
  * Either is rebuilt from the scene when its device or context is lost.
+ * WebGPU is built only with ARC_WEBGPU (WITH_WEBGPU=yes: Dawn's
+ * emdawnwebgpu); without it WebGL 2 is the only backend.
  */
 
 #include <math.h>
@@ -43,7 +45,9 @@
 
 #include <emscripten/html5.h>
 #include <GLES3/gl3.h>
+#ifdef ARC_WEBGPU
 #include <webgpu/webgpu.h>
+#endif
 
 #include "app.h"
 
@@ -379,6 +383,8 @@ wgl_close(void)
 
 static const struct backend webgl2 = { "webgl2", 1, wgl_open, wgl_draw,
     wgl_close };
+
+#ifdef ARC_WEBGPU
 
 /*
  * WebGPU.  One shader module, WGSL: a point and a segment are each a
@@ -750,6 +756,12 @@ gpu_close(void)
 
 static const struct backend webgpu = { "webgpu", 2, gpu_open, gpu_draw,
     gpu_close };
+#else
+/* No WebGPU built: never asked, as arc_gl_report says it. */
+static const struct {
+	int	state, losts;
+} gpu;
+#endif
 
 /* The colours the theme gives the links' kinds, read as it is now. */
 static void
@@ -1266,13 +1278,18 @@ open_backend(int state)
 	int	r;
 
 	if (gl.be == NULL)
+#ifdef ARC_WEBGPU
 		gl.be = (state & 8) != 0 ? &webgpu : &webgl2;
+#else
+		gl.be = &webgl2;
+#endif
 	for (;;) {
 		r = gl.be->open();
 		if (r == 0)
 			return (false);
 		if (r > 0)
 			break;
+#ifdef ARC_WEBGPU
 		if (gl.be == &webgpu) {
 			/* A canvas that had a WebGPU context takes no other:
 			 * WebGL 2 on a fresh one in its place. */
@@ -1281,6 +1298,7 @@ open_backend(int state)
 			gl.be = &webgl2;
 			continue;
 		}
+#endif
 		/* Not here: the SVG's own dashes, from the next draw on. */
 		gl.failed = true;
 		arc_gl_report(0, 0, 0, 0, 0, 0, gpu.state, gl.fails, gl.opens,

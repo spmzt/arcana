@@ -26,20 +26,17 @@ MAKE_ARGS=	LOCALBASE=${LOCALBASE} \
 MAKE_ENV=	WITHOUT_DEBUG_FILES=yes \
 		WITHOUT_TESTS=yes
 
-OPTIONS_DEFINE=		CONSOLE
+OPTIONS_DEFINE=		CONSOLE WEBGPU
 OPTIONS_DEFAULT=	CONSOLE
 OPTIONS_SUB=		yes
 
 CONSOLE_DESC=	Web console: its server and the PWA (else only the jail host's programs)
+WEBGPU_DESC=	Network map drawn with WebGPU where the browser has it (else WebGL 2)
+WEBGPU_IMPLIES=	CONSOLE
 # The console's HTTP server is on libwebsockets; the PWA compiles libucl
 # and libyaml, the releases base imports, to wasm: their sources, as
 # /usr/src has them, fetched here (a package build has no /usr/src).
 CONSOLE_BUILD_DEPENDS=	emcc:devel/emscripten
-# The map's WebGPU is emscripten's emdawnwebgpu port, its package taken
-# here so that the build fetches nothing.
-EMDAWN_V=		v20260423.175430
-CONSOLE_MASTER_SITES=	https://github.com/google/dawn/releases/download/${EMDAWN_V}/:dawn
-CONSOLE_DISTFILES=	emdawnwebgpu_pkg-${EMDAWN_V}.zip:dawn
 CONSOLE_LIB_DEPENDS=	libwebsockets.so:net/libwebsockets
 CONSOLE_USES=		ssl
 CONSOLE_GH_TUPLE=	vstakhov:libucl:0.9.4:libucl/libucl \
@@ -48,9 +45,15 @@ CONSOLE_GH_TUPLE=	vstakhov:libucl:0.9.4:libucl/libucl \
 CONSOLE_MAKE_ARGS=	LIBUCL_SRC=${WRKSRC_libucl} \
 			LIBYAML_SRC=${WRKSRC_libyaml} \
 			SSL_CFLAGS="-I${OPENSSLINC}" \
-			SSL_LDFLAGS="-L${OPENSSLLIB}" \
-			EMDAWN=${WRKDIR}/emdawnwebgpu_pkg/emdawnwebgpu.port.py
+			SSL_LDFLAGS="-L${OPENSSLLIB}"
 CONSOLE_MAKE_ENV_OFF=	WITHOUT_CONSOLE=yes
+# The map's WebGPU is emscripten's emdawnwebgpu port, its package taken
+# here so that the build fetches nothing.
+EMDAWN_V=		v20260423.175430
+WEBGPU_MASTER_SITES=	https://github.com/google/dawn/releases/download/${EMDAWN_V}/:dawn
+WEBGPU_DISTFILES=	emdawnwebgpu_pkg-${EMDAWN_V}.zip:dawn
+WEBGPU_MAKE_ARGS=	EMDAWN=${WRKDIR}/emdawnwebgpu_pkg/emdawnwebgpu.port.py
+WEBGPU_MAKE_ENV=	WITH_WEBGPU=yes
 
 SUB_FILES=	pkg-message
 

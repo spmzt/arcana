@@ -24,8 +24,11 @@ __objdir!=	mkdir -p ${ARC_OBJDIR} && echo ${ARC_OBJDIR}
 .include <bsd.opts.mk>
 
 # WITHOUT_CONSOLE builds only what a jail host runs (arcana-agent, jailconf,
-# arcanactl), with no need for libwebsockets or emcc.
+# arcanactl), with no need for libwebsockets or emcc.  WITH_WEBGPU draws
+# the network map's moving layer with WebGPU where the browser has it,
+# with Dawn's emdawnwebgpu ("make depends"); without it, WebGL 2 alone.
 __DEFAULT_YES_OPTIONS=	CONSOLE
+__DEFAULT_NO_OPTIONS=	WEBGPU
 .include <bsd.mkopt.mk>
 
 # Per-machine overrides (linker, where cblink lives); see config.mk.sample.
@@ -93,8 +96,8 @@ LWS_LIBS?=	-L${LOCALBASE}/lib -lwebsockets
 LIBUCL_SRC?=	/usr/src/contrib/libucl
 LIBYAML_SRC?=	/usr/src/contrib/libyaml
 
-# The map's WebGPU, emscripten's emdawnwebgpu port: Dawn's package, the
-# release emscripten pins, which "make depends" fetches into
+# The map's WebGPU (WITH_WEBGPU), emscripten's emdawnwebgpu port: Dawn's
+# package, the release emscripten pins, which "make depends" fetches into
 # ${EMDAWN_DIR} (or takes from the zip put there by hand), so that the
 # build itself fetches nothing.  EMDAWN names its port file;
 # EMDAWN=emdawnwebgpu has emcc fetch it instead, at build time.

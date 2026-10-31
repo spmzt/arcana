@@ -6,8 +6,8 @@
 #				is missing
 #	deps.sh install		pkg install the packages missing
 #
-# Told by the environment (the top Makefile sets it): CONSOLE and TESTS
-# (yes, no), LOCALBASE, LIBUCL_SRC, LIBYAML_SRC, EMDAWN, EMDAWN_DEFAULT,
+# Told by the environment (the top Makefile sets it): CONSOLE, WEBGPU
+# and TESTS (yes, no), LOCALBASE, LIBUCL_SRC, LIBYAML_SRC, EMDAWN, EMDAWN_DEFAULT,
 # EMDAWN_ZIP.  What is
 # installed is pkg(8)'s to say; a copy built by hand in a package's place
 # (a file it would install, a command) counts too.
@@ -17,6 +17,7 @@ set -u
 mode=${1:-check}
 LOCALBASE=${LOCALBASE:-/usr/local}
 CONSOLE=${CONSOLE:-yes}
+WEBGPU=${WEBGPU:-no}
 TESTS=${TESTS:-no}
 
 pkgs=""		# the packages missing, to install
@@ -97,7 +98,10 @@ if [ "$CONSOLE" = yes ]; then
 	    "its HTTP server (net/libwebsockets)" yes
 	src libucl "${LIBUCL_SRC:-}" src/ucl_parser.c
 	src libyaml "${LIBYAML_SRC:-}" src/parser.c
-	emdawn
+	if [ "$WEBGPU" = yes ]; then
+		echo "for the map's WebGPU (WITH_WEBGPU=yes):"
+		emdawn
+	fi
 fi
 if [ "$TESTS" = yes ]; then
 	echo "for make check (a test without its tool is skipped or fails):"

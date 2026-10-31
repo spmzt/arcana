@@ -8847,6 +8847,9 @@ ATF_TC_HEAD(pwa_mapgpu, tc)
 ATF_TC_BODY(pwa_mapgpu, tc)
 {
 
+#ifndef ARC_WEBGPU
+	atf_tc_skip("the page is built without WebGPU (WITH_WEBGPU)");
+#endif
 	browser_flags = ",\"--enable-unsafe-webgpu\",\"--enable-features=Vulkan\","
 	    "\"--use-angle=swiftshader\"";
 	prologue(tc, 2);

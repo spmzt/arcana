@@ -26,14 +26,10 @@ YAML_SRCS=	api.c dumper.c emitter.c loader.c parser.c reader.c scanner.c \
 # -Werror covers emcc's own warnings too: the emscripten package can
 # expect another LLVM major than the llvm-devel it depends on, and only
 # a clean cache (a port build, a container) runs that check.
-# WebGPU (glmap.c) is emscripten's emdawnwebgpu port: webgpu.h and the
-# JavaScript behind it, from the port file EMDAWN names (share/mk/arcana.mk:
-# what "make depends" unpacked; the port's is its distfile's).
 EMCFLAGS=	-O2 -std=gnu17 -Wall -Wextra -Wno-unused-parameter \
 		-Werror -Wno-version-check -I${LIBUCL_SRC}/include \
 		-I${LIBYAML_SRC}/include \
-		-I${.CURDIR}/vendor/qrcodegen \
-		--use-port=${EMDAWN}
+		-I${.CURDIR}/vendor/qrcodegen
 UCLFLAGS=	-O2 -w -I${LIBUCL_SRC}/include -I${LIBUCL_SRC}/src \
 		-I${LIBUCL_SRC}/uthash -I${LIBUCL_SRC}/klib
 EMLDFLAGS=	-sENVIRONMENT=web \
@@ -41,9 +37,16 @@ EMLDFLAGS=	-sENVIRONMENT=web \
 		-sALLOW_MEMORY_GROWTH=1 \
 		-sSTACK_SIZE=524288 \
 		-sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 \
-		--use-port=${EMDAWN} \
 		-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_arc_on_action,_arc_on_http,_arc_on_webauthn,_arc_on_net,_arc_on_visible \
 		--js-library ${.CURDIR}/js/bridge.js
+# WITH_WEBGPU: the map's WebGPU backend (glmap.c), emscripten's
+# emdawnwebgpu port, webgpu.h and the JavaScript behind it, from the
+# port file EMDAWN names (share/mk/arcana.mk: what "make depends"
+# unpacked; the port's is its distfile's).
+.if ${MK_WEBGPU} != "no"
+EMCFLAGS+=	-DARC_WEBGPU --use-port=${EMDAWN}
+EMLDFLAGS+=	--use-port=${EMDAWN}
+.endif
 
 FONTS=		jetbrains-mono-latin-400-normal.woff2 \
 		jetbrains-mono-latin-500-normal.woff2 \

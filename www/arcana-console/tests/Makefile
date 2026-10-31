@@ -20,6 +20,10 @@ LDADD.yaml_test+=	-lprivateyaml
 .PATH:			${.CURDIR}/.. ${.CURDIR}/../../arcana-ui/src
 
 CFLAGS+=	${UCL_CFLAGS} ${SSL_CFLAGS} -DTESTSRC='"${.CURDIR}"'
+# pwa_mapgpu: the page's WebGPU backend, built only WITH_WEBGPU.
+.if ${MK_WEBGPU} != "no"
+CFLAGS.pwa_test.c+=	-DARC_WEBGPU
+.endif
 LDADD+=		${UCL_LIBS} ${SSL_LDFLAGS} -lcrypto -lm
 
 # No mtree(8) hierarchy outside the tree: create the directory first.
