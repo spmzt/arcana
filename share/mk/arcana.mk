@@ -21,6 +21,12 @@ __objdir!=	mkdir -p ${ARC_OBJDIR} && echo ${ARC_OBJDIR}
 .endif
 .endif
 
+# Per-machine overrides (linker, where cblink lives) and the options make
+# config keeps; see config.mk.sample.  Read before the options are
+# decided, so that its WITH_ and WITHOUT_ lines count as the command
+# line's do.
+.sinclude "${ARC_TOP}/config.mk"
+
 .include <bsd.opts.mk>
 
 # WITHOUT_CONSOLE builds only what a jail host runs (arcana-agent, jailconf,
@@ -30,9 +36,6 @@ __objdir!=	mkdir -p ${ARC_OBJDIR} && echo ${ARC_OBJDIR}
 __DEFAULT_YES_OPTIONS=	CONSOLE
 __DEFAULT_NO_OPTIONS=	WEBGPU
 .include <bsd.mkopt.mk>
-
-# Per-machine overrides (linker, where cblink lives); see config.mk.sample.
-.sinclude "${ARC_TOP}/config.mk"
 
 PREFIX?=	/usr/local
 LOCALBASE?=	/usr/local
