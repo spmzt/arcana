@@ -144,7 +144,8 @@ a tenant, a fleet of its own, and then sees that tenant's hosts alone.
   read is kept to the roles that may change (a host's system files).
 * **Headers.**  Every reply, the page's and the API's: a
   Content-Security-Policy (only the console's own scripts, styles, images
-  and connections; WebAssembly; no framing), `X-Frame-Options: DENY`,
+  and connections; WebAssembly, by `'unsafe-eval'` for the browsers
+  that do not know `'wasm-unsafe-eval'`; no framing), `X-Frame-Options: DENY`,
   `Cross-Origin-Resource-Policy` and `Cross-Origin-Opener-Policy`
   `same-origin`, `X-Content-Type-Options: nosniff`, `Referrer-Policy:
   no-referrer`, a Permissions-Policy allowing passkeys, fullscreen and

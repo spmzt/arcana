@@ -1290,7 +1290,10 @@ done(struct lws *wsi, const char *why)
  * <script> of another origin), nor is one read as other than its type
  * says; no window of another site shares the page's; nothing of the
  * address is sent on; and of the browser's features only those the page
- * uses: passkeys, fullscreen and the clipboard.
+ * uses: passkeys, fullscreen and the clipboard.  The page's WebAssembly
+ * runs under 'unsafe-eval', not 'wasm-unsafe-eval', which browsers
+ * before Chrome 97, Firefox 102 and Safari 16 do not know and drop,
+ * refusing the wasm then.
  */
 static const struct {
 	const unsigned char	*name;
@@ -1298,7 +1301,7 @@ static const struct {
 } sec_headers[] = {
 	{ (const unsigned char *)"content-security-policy:",
 	  (const unsigned char *)"default-src 'self'; script-src 'self' "
-	  "'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src "
+	  "'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src "
 	  "'self' data:; font-src 'self'; connect-src 'self'; manifest-src "
 	  "'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; "
 	  "object-src 'none'; frame-ancestors 'none'" },
