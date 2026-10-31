@@ -28,6 +28,10 @@ static struct {
 	char		 invite_user[72];
 	char		 invite[120];	/* the token issued, shown once */
 	char		 pw_user[72];	/* whose password, "" one's own */
+	int		 sync_left;	/* roles to the hosts: replies awaited */
+	int		 sync_n[4];	/* changed, unchanged, no group admin,
+					 * failed */
+	char		 sync_err[160];	/* the last failure's words */
 } us;
 
 static void	password_send(const char *);
@@ -111,6 +115,31 @@ saved_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	app.modal = MODAL_NONE;
 	app.modal_error[0] = '\0';
 	users_cb(status, o, err, NULL);
+}
+
+/* A host's answer to the roles synchronized; the last says how it went. */
+static void
+synced_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	const char	*r;
+
+	(void)arg;
+	r = jstr(o, "data.result");
+	if (status != 200 || r == NULL) {
+		us.sync_n[3]++;
+		snprintf(us.sync_err, sizeof(us.sync_err), "%s", jstr(o,
+		    "error") != NULL ? jstr(o, "error") : err != NULL ? err :
+		    "no answer");
+	} else
+		us.sync_n[strcmp(r, "changed") == 0 ? 0 : strcmp(r,
+		    "unchanged") == 0 ? 1 : 2]++;
+	if (--us.sync_left > 0)
+		return;
+	toast(us.sync_n[3] > 0, "Roles synchronized: %d changed, %d already "
+	    "so, %d with rules of their own (no group admin), %d not "
+	    "reached%s%s", us.sync_n[0], us.sync_n[1], us.sync_n[2],
+	    us.sync_n[3], us.sync_n[3] > 0 ? ": " : "", us.sync_n[3] > 0 ?
+	    us.sync_err : "");
 }
 
 static void
@@ -325,8 +354,18 @@ set_roles(struct html *h)
 		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"6\">Asking the "
 		    "console…</td></tr>");
 	h_raw(h, "</tbody></table><div class=\"token-new\"><button type=\""
-	    "button\" class=\"small\" data-act=\"role-add\">Add a role</button>"
-	    "</div><p class=\"dim\">A role with a <b>directory group</b> is "
+	    "button\" class=\"small\" data-act=\"role-add\">Add a role</button>");
+	/* The console's owners to the hosts' access rules: an owner's. */
+	if (!app.by_token && strcmp(app.console_role, "owner") == 0)
+		h_fmt(h, " <button type=\"button\" class=\"small ghost\" "
+		    "data-act=\"roles-sync\"%s title=\"Each host's access rules "
+		    "(NACM, its Security tab): the console's owners in its group "
+		    "admin, its other users out of it; nothing else of the rules "
+		    "changes, and a host whose rules have no group admin is left "
+		    "as it is\">%s</button>", us.sync_left > 0 ? " disabled" : "",
+		    us.sync_left > 0 ? "Synchronizing…" : "Synchronize roles to "
+		    "the hosts");
+	h_raw(h, "</div><p class=\"dim\">A role with a <b>directory group</b> is "
 	    "given to the members of that LDAP group as they sign in by the "
 	    "directory: the console makes a user of their name, marked "
 	    "<i>directory</i>, with the roles of all their groups, brought up "
@@ -824,6 +863,23 @@ user_action(const char *act, const char *arg)
 	}
 	if (strcmp(act, "password-remove") == 0) {
 		password_send("");
+		return (true);
+	}
+	if (strcmp(act, "roles-sync") == 0) {
+		int	i;
+
+		if (us.sync_left > 0)
+			return (true);
+		memset(us.sync_n, 0, sizeof(us.sync_n));
+		us.sync_err[0] = '\0';
+		for (i = 0; i < app.nservers; i++) {
+			snprintf(url, sizeof(url), "/api/servers/%s/nacm-sync",
+			    app.servers[i].id);
+			us.sync_left++;
+			api("POST", url, "{}", synced_cb, NULL);
+		}
+		if (us.sync_left == 0)
+			toast(false, "No host to synchronize the roles to");
 		return (true);
 	}
 

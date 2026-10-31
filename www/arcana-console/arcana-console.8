@@ -339,6 +339,22 @@ The user becomes an owner (the built-in
 .Dq admin
 when none is named) and is signed in; a key may be added later.
 Once set up either way, the token is gone.
+.Sh THE HOSTS' ACCESS RULES
+Each host's agent holds every request the console makes for a user to
+the host's own access rules (NACM, RFC 8341): the console's roles say
+what its pages offer, those rules what the host does.
+By default a host trusts the console's built-in
+.Dq admin
+and the console itself, in its group admin.
+An owner of the console other than
+.Dq admin
+is put there only when an owner asks, under Settings, AAA, Roles,
+.Dq Synchronize roles to the hosts ,
+and once when a host enrols, at the first connection to its agent: the
+console's owners in the group, its other users out of it, names it does
+not know left there, and nothing else of the rules changed.
+Rules with no group admin, or that do not let the console read them,
+are left as they are.
 .Sh FILES
 .Bl -tag -width Ds -compact
 .It Pa /usr/local/etc/arcana/web.conf

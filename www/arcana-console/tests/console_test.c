@@ -390,6 +390,128 @@ ATF_TC_BODY(nacm_user, tc)
 }
 
 /*
+ * The console's roles synchronized to a host's access rules, by an
+ * owner, when asked and not before: bob, an owner, is anyone else to
+ * the host until then; synchronized, he is of its group admin and
+ * changes the host as himself; once more, nothing to do; an operator
+ * again, he may not ask, and the admin's synchronizing takes him out.
+ * Rules of the host's own with no group admin are left as they are.
+ */
+ATF_TC_WITHOUT_HEAD(nacm_sync);
+ATF_TC_BODY(nacm_sync, tc)
+{
+	static const char job[] = "{\"jobs\":[{\"kind\":\"monitor\","
+	    "\"verb\":\"set\",\"args\":[\"name=gre8\",\"interface=gre8\","
+	    "\"address=192.0.2.8\",\"interval=500\",\"eval=10000\"]}]}";
+	static const char rules[] = "{\"groups\":{\"group\":[{\"name\":"
+	    "\"ops\",\"user-name\":[\"admin\"%s]}]},\"rule-list\":[{\"name\":"
+	    "\"ops\",\"group\":[\"ops\"],\"rule\":[{\"name\":\"all\","
+	    "\"module-name\":\"*\",\"access-operations\":\"*\",\"action\":"
+	    "\"permit\"}]}]}";
+	struct authn	 a, b;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64], id[16];
+	char		 path[256], sync[256], invite[80], admin[160], bob[160];
+	char		 cmd[3 * MAXPATHLEN];
+	const char	*ctl;
+	FILE		*fp;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(admin, sizeof(admin), "%s", cookie);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", id);
+	snprintf(sync, sizeof(sync), "/api/servers/%s/nacm-sync", id);
+	http("PUT", "/api/roles/ops", "{\"console\":\"member\",\"hosts\":"
+	    "{\"*\":\"operator\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("PUT", "/api/users/bob", "{\"roles\":[\"owner\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/users/bob/invite", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	authn_new(&b, -8);
+	do_register(&b, invite, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(bob, sizeof(bob), "%s", cookie);
+	/* Not before it is asked for. */
+	http("POST", path, job, &r);
+	ATF_CHECK_MSG(strstr(r.body, "access denied") != NULL, "%d %s",
+	    r.status, r.body);
+	resp_free(&r);
+	/* Synchronized: bob of the host's group admin, and let. */
+	http("POST", sync, "{}", &r);
+	ATF_CHECK_MSG(r.status == 200, "%d %s", r.status, r.body);
+	ATF_CHECK_STREQ("changed", jstr(&r, "data.result"));
+	ATF_CHECK_MSG(strstr(r.body, "\"bob\"") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", path, job, &r);
+	ATF_CHECK_MSG(r.status == 200 && strstr(r.body, "access denied") ==
+	    NULL, "%d %s", r.status, r.body);
+	resp_free(&r);
+	http("POST", sync, "{}", &r);
+	ATF_CHECK_STREQ("unchanged", jstr(&r, "data.result"));
+	resp_free(&r);
+	/* An operator again: he may not ask; the admin's takes him out. */
+	snprintf(cookie, sizeof(cookie), "%s", admin);
+	http("PUT", "/api/users/bob", "{\"roles\":[\"ops\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(cookie, sizeof(cookie), "%s", bob);
+	http("POST", sync, "{}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	snprintf(cookie, sizeof(cookie), "%s", admin);
+	http("POST", sync, "{}", &r);
+	ATF_CHECK_STREQ("changed", jstr(&r, "data.result"));
+	ATF_CHECK_MSG(strstr(r.body, "\"bob\"") == NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(cookie, sizeof(cookie), "%s", bob);
+	http("POST", path, job, &r);
+	ATF_CHECK_MSG(strstr(r.body, "access denied") != NULL, "%d %s",
+	    r.status, r.body);
+	resp_free(&r);
+	/*
+	 * The host's own rules decide: rules that do not let the console
+	 * read them refuse it, and rules that do but have no group admin
+	 * are left as they are.
+	 */
+	ctl = locate(tc, "../../../usr.sbin/arcanactl/arcanactl", "arcanactl",
+	    "/usr/local/sbin/arcanactl");
+	snprintf(cookie, sizeof(cookie), "%s", admin);
+	for (int k = 0; k < 2; k++) {
+		ATF_REQUIRE((fp = fopen("rules.json", "w")) != NULL);
+		fprintf(fp, rules, k == 0 ? "" : ",\"console\"");
+		fprintf(fp, "\n");
+		fclose(fp);
+		snprintf(cmd, sizeof(cmd), "%s -c unix:%s/jgd.sock edit nacm "
+		    "@rules.json && %s -c unix:%s/jgd.sock commit", ctl, cwd,
+		    ctl, cwd);
+		ATF_REQUIRE_EQ_MSG(0, system(cmd), "%s", cmd);
+		http("POST", sync, "{}", &r);
+		if (k == 0)
+			ATF_CHECK_MSG(jstr(&r, "data.result") == NULL &&
+			    strstr(r.body, "do not let the console") != NULL,
+			    "%d %s", r.status, r.body);
+		else
+			ATF_CHECK_STREQ("no-admin-group", jstr(&r,
+			    "data.result"));
+		resp_free(&r);
+	}
+}
+
+/*
  * What the console does for no one (a workflow at its interval) it asks
  * as NACM's user "console", never as the agent's recovery session, even
  * over the local socket as the agent's own user: with "console" out of
@@ -13279,6 +13401,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf_tag_bad_element);
 	ATF_TP_ADD_TC(tp, restconf_tag_malformed_message);
 	ATF_TP_ADD_TC(tp, nacm_user);
+	ATF_TP_ADD_TC(tp, nacm_sync);
 	ATF_TP_ADD_TC(tp, nacm_console);
 	ATF_TP_ADD_TC(tp, job_user);
 	ATF_TP_ADD_TC(tp, services);

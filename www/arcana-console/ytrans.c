@@ -1314,6 +1314,146 @@ ycommit(cbl_conn *conn, const struct cbl_ynode *n, const void *d,
 	    err, errlen, tag, taglen));
 }
 
+/* Is s one of the n in v? */
+static bool
+named_in(const char *s, char *const *v, size_t n)
+{
+
+	for (size_t i = 0; i < n; i++)
+		if (strcmp(v[i], s) == 0)
+			return (true);
+	return (false);
+}
+
+/*
+ * The console's roles on a host's access rules (ietf-netconf-acm's
+ * nacm, what the host holds now, its default or rules written): in its
+ * group admin the console's owners, and none of its other users; names
+ * the console does not know, admin and console stay.  Nothing else of
+ * the rules is touched, and rules with no group admin are left as they
+ * are.  *out: {"result": "changed", "unchanged" or "no-admin-group",
+ * "admin": [the group's names]}.
+ */
+int
+ytrans_nacm_sync(cbl_conn *conn, char *const *owners, size_t nowners,
+    char *const *users, size_t nusers, ucl_object_t **out, char *err,
+    size_t errlen)
+{
+	const struct cbl_ymodule			*m;
+	const struct cbl_ynode				*n;
+	const struct ietf_netconf_acm_nacm_groups_group	*g;
+	struct ietf_netconf_acm_nacm_groups_group	*ng;
+	struct ietf_netconf_acm_nacm_groups		*ngs;
+	struct ietf_netconf_acm_nacm			*nn;
+	struct ietf_netconf_acm				 d;
+	const char					**v;
+	ucl_object_t					*names;
+	cbl_yarena					*a;
+	const char					*result;
+	char						 tag[64];
+	size_t						 i, k, nv;
+	bool						 changed;
+	int						 error;
+
+	*out = NULL;
+	err[0] = '\0';
+	if ((n = top_of("ietf-netconf-acm", "nacm", &m)) == NULL) {
+		snprintf(err, errlen, "ietf-netconf-acm: not in the tables");
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&d, 0, sizeof(d));
+	if ((error = yget_into(conn, n, -1, &d, a, err, errlen)) != 0)
+		goto done;
+	/* NACM leaves out what it does not let read. */
+	if (d.nacm == NULL) {
+		snprintf(err, errlen, "the host's access rules do not let the "
+		    "console read them: changed there alone");
+		error = ENOENT;
+		goto done;
+	}
+	g = NULL;
+	for (i = 0; d.nacm->groups != NULL && i < d.nacm->groups->group.n; i++)
+		if (strcmp(d.nacm->groups->group.v[i].name, "admin") == 0)
+			g = &d.nacm->groups->group.v[i];
+	names = ucl_object_typed_new(UCL_ARRAY);
+	if (g == NULL) {
+		result = "no-admin-group";
+		goto reply;
+	}
+	/* Who stays, then the owners not there yet. */
+	if ((v = cbl_yarena_alloc(a, (g->user_name.n + nowners + 1) *
+	    sizeof(*v))) == NULL) {
+		ucl_object_unref(names);
+		error = ENOMEM;
+		goto done;
+	}
+	nv = 0;
+	changed = false;
+	for (i = 0; i < g->user_name.n; i++) {
+		const char	*u = g->user_name.v[i];
+
+		if (strcmp(u, "admin") != 0 && strcmp(u, "console") != 0 &&
+		    named_in(u, users, nusers) && !named_in(u, owners, nowners)) {
+			changed = true;
+			continue;
+		}
+		v[nv++] = u;
+	}
+	for (i = 0; i < nowners; i++) {
+		for (k = 0; k < nv && strcmp(v[k], owners[i]) != 0; k++)
+			;
+		if (k == nv) {
+			v[nv++] = owners[i];
+			changed = true;
+		}
+	}
+	for (i = 0; i < nv; i++)
+		ucl_array_append(names, ucl_object_fromstring(v[i]));
+	if (!changed) {
+		result = "unchanged";
+		goto reply;
+	}
+	/* The rules as they are, but the group's names and the counters,
+	 * which are the host's to keep. */
+	if ((nn = cbl_yarena_alloc(a, sizeof(*nn))) == NULL ||
+	    (ngs = cbl_yarena_alloc(a, sizeof(*ngs))) == NULL ||
+	    (ng = cbl_yarena_alloc(a, d.nacm->groups->group.n *
+	    sizeof(*ng))) == NULL) {
+		ucl_object_unref(names);
+		error = ENOMEM;
+		goto done;
+	}
+	*nn = *d.nacm;
+	nn->has_denied_operations = nn->has_denied_data_writes =
+	    nn->has_denied_notifications = false;
+	for (i = 0; i < d.nacm->groups->group.n; i++) {
+		ng[i] = d.nacm->groups->group.v[i];
+		if (&d.nacm->groups->group.v[i] == g) {
+			ng[i].user_name.n = nv;
+			ng[i].user_name.v = v;
+		}
+	}
+	*ngs = *d.nacm->groups;
+	ngs->group.v = ng;
+	nn->groups = ngs;
+	d.nacm = nn;
+	if ((error = ycommit(conn, n, &d, NULL, 0, err, errlen, tag,
+	    sizeof(tag))) != 0) {
+		ucl_object_unref(names);
+		goto done;
+	}
+	result = "changed";
+reply:
+	*out = ucl_object_typed_new(UCL_OBJECT);
+	put(*out, "result", ucl_object_fromstring(result));
+	put(*out, "admin", names);
+done:
+	cbl_yarena_free(a);
+	return (error);
+}
+
 /*
  * arcana-services, as the Services page and the app have it: the
  * services, service-action and service-config operations' replies, a

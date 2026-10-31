@@ -1192,6 +1192,26 @@ paths:
           description: the CA as GET says it
         "409":
           description: what stands in the way
+  /api/servers/{server}/nacm-sync:
+    post:
+      tags: [servers]
+      summary: The console's roles synchronized to the host's access rules
+      description: In the host's NACM (RFC 8341) group admin, the
+        console's owners, and none of its other users; names the console
+        does not know, admin and console stay, and nothing else of the
+        rules changes. Rules with no group admin are left as they are,
+        and rules that do not let the console read them refuse it. Done
+        by the console as itself, for an owner of the console alone;
+        also once when a host enrols, at the first connection to its
+        agent. data is {result, admin}, result changed, unchanged or
+        no-admin-group, admin the group's names.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data, or error
+        "403":
+          description: Not an owner of the console.
   /api/servers/{server}/tls:
     get:
       tags: [servers]

@@ -657,6 +657,7 @@ api_enrol(struct http_request *req)
 	const char		*token, *pem, *err;
 	char			 why[300], uri[300], *s, *capem;
 	int			 status;
+	bool			 added;
 
 	csr = NULL;
 	ca = cert = NULL;
@@ -717,8 +718,12 @@ api_enrol(struct http_request *req)
 	    false);
 	ucl_object_insert_key(o, ucl_object_fromstring(t->name), "name", 0,
 	    false);
-	ucl_object_insert_key(o, ucl_object_frombool(servers_add(t->name, uri,
-	    NULL) == 0), "added", 0, false);
+	added = servers_add(t->name, uri, NULL) == 0;
+	ucl_object_insert_key(o, ucl_object_frombool(added), "added", 0,
+	    false);
+	/* Its access rules told the console's roles once its agent runs. */
+	if (added)
+		hosts_nacm_sync_later(uri);
 	log_msg(LOG_NOTICE, "enrolled %s (%s) as %s", t->host, t->name, uri);
 	memset(t, 0, sizeof(*t));
 	status = 200;

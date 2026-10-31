@@ -115,6 +115,7 @@ enum op {
 	OP_EVENTS,
 	OP_FW_TRACE,
 	OP_NOTIFY,
+	OP_NACM_SYNC,
 };
 
 /* Each operation by the name its trace gives it ("libcblink YANG
@@ -187,6 +188,7 @@ static const char *const op_names[] = {
 	[OP_EVENTS] = "events",
 	[OP_FW_TRACE] = "fw-trace",
 	[OP_NOTIFY] = "notify",
+	[OP_NACM_SYNC] = "nacm-sync",
 };
 
 struct call {
@@ -219,8 +221,11 @@ struct call {
 	bool			 installed;	/* packages: those installed */
 	uint8_t			 pkg_ip;	/* packages: pkg -4, -6, or 0 */
 	char			 pkg_repo[65];	/* pkg-upgrade: pkg -r, or "" */
-	char			**names;	/* pkg-upgrade: packages */
+	char			**names;	/* pkg-upgrade: packages;
+						 * nacm-sync: the owners */
 	size_t			 nnames;
+	char			**others;	/* nacm-sync: every user */
+	size_t			 nothers;
 	struct arc_job_spec	*specs;		/* job-submit: the batch */
 	size_t			 nspecs;
 	uint64_t		 jobid;		/* job, job-cancel */
@@ -1097,6 +1102,92 @@ hosts_connect(const char *uri, const char *peer, cbl_conn **connp,
 	return (hosts_dial(uri, peer, connp, tlsp));
 }
 
+/*
+ * A host just enrolled: the console's roles synchronized to its access
+ * rules on the first connection that reaches its agent (which
+ * arcana-enrol starts after the console answered it), as the console,
+ * with the names as they were at the enrolment; once.  Kept in memory:
+ * a console restarted before that leaves it to Settings, AAA, Roles.
+ */
+#define	PENDING_MAX	16
+
+struct nacm_pending {
+	char	*uri;
+	char	*owners[USERS_SYNC_MAX];
+	size_t	 nowners;
+	char	*users[USERS_SYNC_MAX];
+	size_t	 nusers;
+};
+
+static pthread_mutex_t		 pending_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct nacm_pending	*pending[PENDING_MAX];
+static int			 npending;
+
+static void
+pending_free(struct nacm_pending *p)
+{
+	size_t	i;
+
+	for (i = 0; i < p->nowners; i++)
+		free(p->owners[i]);
+	for (i = 0; i < p->nusers; i++)
+		free(p->users[i]);
+	free(p->uri);
+	free(p);
+}
+
+void
+hosts_nacm_sync_later(const char *uri)
+{
+	struct nacm_pending	*p;
+
+	p = xcalloc(1, sizeof(*p));
+	p->uri = xstrdup(uri);
+	p->nowners = users_names(p->owners, USERS_SYNC_MAX, true);
+	p->nusers = users_names(p->users, USERS_SYNC_MAX, false);
+	pthread_mutex_lock(&pending_lock);
+	if (npending == PENDING_MAX)
+		pending_free(pending[--npending]);
+	pending[npending++] = p;
+	pthread_mutex_unlock(&pending_lock);
+}
+
+/* Connected to uri's agent: its roles synchronized, when it waits for it. */
+static void
+pending_sync(const char *uri, cbl_conn *conn)
+{
+	struct nacm_pending	*p;
+	ucl_object_t		*out;
+	char			 err[256];
+	int			 i;
+
+	p = NULL;
+	pthread_mutex_lock(&pending_lock);
+	for (i = 0; i < npending; i++)
+		if (strcmp(pending[i]->uri, uri) == 0) {
+			p = pending[i];
+			pending[i] = pending[--npending];
+			break;
+		}
+	pthread_mutex_unlock(&pending_lock);
+	if (p == NULL)
+		return;
+	(void)cbl_thread_set_user(NULL);
+	out = NULL;
+	if (ytrans_nacm_sync(conn, p->owners, p->nowners, p->users, p->nusers,
+	    &out, err, sizeof(err)) == 0)
+		log_msg(LOG_NOTICE, "%s: the console's roles synchronized to its "
+		    "access rules: %s", uri, ucl_str(out, "result") != NULL ?
+		    ucl_str(out, "result") : "?");
+	else
+		log_msg(LOG_NOTICE, "%s: the console's roles not synchronized to "
+		    "its access rules: %s: synchronize them from Settings, AAA, "
+		    "Roles", uri, err);
+	ucl_object_unref(out);
+	(void)cbl_thread_set_user(acting[0] != '\0' ? acting : NULL);
+	pending_free(p);
+}
+
 /* A new connection to an agent. */
 static const char *
 hosts_dial(const char *uri, const char *peer, cbl_conn **connp,
@@ -1141,6 +1232,7 @@ hosts_dial(const char *uri, const char *peer, cbl_conn **connp,
 		cbl_tls_free(tls);
 		return (why);
 	}
+	pending_sync(uri, conn);
 	*connp = conn;
 	*tlsp = tls;
 	return (NULL);
@@ -2114,6 +2206,9 @@ connect:
 	}
 connected:
 	hosts_count(false);
+	/* Just enrolled: the console's roles, once its agent answers. */
+	if (!reused)
+		pending_sync(c->uri, conn);
 	/* A live read's connection hears the host's steps from now on. */
 	if (c->on_step != NULL && box == NULL) {
 		/* libc's: the pool frees it, from any thread.  Without
@@ -2755,6 +2850,23 @@ connected:
 		if (e != NULL)
 			put(top, "data", e);
 		break;
+	case OP_NACM_SYNC:
+		/*
+		 * The console's roles on the host's access rules (ytrans.c),
+		 * asked as the console, whom the host's default rules let:
+		 * the owner who asked may not be in them yet.
+		 */
+		ysteps_begin(conn, c, &ys);
+		(void)cbl_thread_set_user(NULL);
+		ok = ytrans_nacm_sync(conn, c->names, c->nnames, c->others,
+		    c->nothers, &e, ywhy, sizeof(ywhy)) == 0;
+		(void)cbl_thread_set_user(acting[0] != '\0' ? acting : NULL);
+		ysteps_end(conn, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		if (e != NULL)
+			put(top, "data", e);
+		break;
 	case OP_EVENTS:
 		/* arcana-events' read (ygula.c). */
 		ysteps_begin(conn, c, &ys);
@@ -3302,7 +3414,7 @@ call_new(struct http_request *req, enum op op)
 	    (op == OP_TLS && req->method ==
 	    HTTP_METHOD_POST) ||
 	    op == OP_AGENT_UPDATE || op == OP_AGENT_BUILD ||
-	    op == OP_CONSOLE_UPDATE ||
+	    op == OP_CONSOLE_UPDATE || op == OP_NACM_SYNC ||
 	    op == OP_CONFIG_APPLY || (op == OP_CONFIG_EXPORT &&
 	    req->method == HTTP_METHOD_POST) ||
 	    ((op == OP_SERVICE_CONFIG || op == OP_TRANSPORT || op ==
@@ -3459,6 +3571,11 @@ call_release(struct call *c)
 	free(c->names);
 	c->names = NULL;
 	c->nnames = 0;
+	for (i = 0; i < c->nothers; i++)
+		free(c->others[i]);
+	free(c->others);
+	c->others = NULL;
+	c->nothers = 0;
 	for (i = 0; i < c->nspecs; i++)
 		spec_free(&c->specs[i]);
 	free(c->specs);
@@ -5005,6 +5122,36 @@ api_tls(struct http_request *req)
 	if ((c = call_new(req, OP_TLS)) == NULL)
 		return (WEB_OK);
 	c->renew = true;
+	return (call_start(req, c));
+}
+
+/*
+ * POST /api/servers/<id>/nacm-sync: the console's roles synchronized to
+ * the host's access rules (NACM): its owners in the host's group admin,
+ * its other users out of it, nothing else of the rules touched.  The
+ * console's owners alone may ask: the console does it as itself.
+ */
+int
+api_nacm_sync(struct http_request *req)
+{
+	struct call	*c;
+	const char	*u;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if (req->method != HTTP_METHOD_POST)
+		return (reply_error(req, 405, "method", "POST"));
+	if (!guard(req, true))
+		return (WEB_OK);
+	if ((u = session_user(req)) == NULL || user_console(u) != CROLE_OWNER)
+		return (reply_error(req, 403, "role", "the console's roles are "
+		    "synchronized to the hosts by an owner of the console"));
+	if ((c = call_new(req, OP_NACM_SYNC)) == NULL)
+		return (WEB_OK);
+	c->names = xcalloc(USERS_SYNC_MAX, sizeof(*c->names));
+	c->nnames = users_names(c->names, USERS_SYNC_MAX, true);
+	c->others = xcalloc(USERS_SYNC_MAX, sizeof(*c->others));
+	c->nothers = users_names(c->others, USERS_SYNC_MAX, false);
 	return (call_start(req, c));
 }
 

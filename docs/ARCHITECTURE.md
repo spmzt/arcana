@@ -325,7 +325,10 @@ connection to each agent a page reads from, on a thread of its own
 SUBSCRIBE streams.  A topic is subscribed the first time a read of it
 is asked, for the user it is asked for, whose access rules (NACM, RFC
 8341) the agent holds the subscription to, and let go when no read
-asked for it for two minutes:
+asked for it for two minutes.  A host's rules are its own: the console
+puts its owners in the host's group admin only when an owner asks
+(Settings, AAA, Roles: synchronize, `POST /api/servers/<id>/nacm-sync`)
+and once when the host enrols, and touches nothing else of them:
 
 | Topic | Subscription | Answers |
 |-------|--------------|---------|

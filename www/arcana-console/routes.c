@@ -255,6 +255,8 @@ const struct route routes[] = {
 	    HTTP_METHOD_GET },
 	{ "^/api/servers/([0-9a-f]+)/certs$", api_certs, api_call_free,
 	    HTTP_METHOD_GET },
+	{ "^/api/servers/([0-9a-f]+)/nacm-sync$", api_nacm_sync,
+	    api_call_free, HTTP_METHOD_POST },
 	{ "^/api/servers/([0-9a-f]+)/kernel$", api_kernel, api_call_free,
 	    HTTP_METHOD_GET },
 	{ "/api/stream", api_stream, NULL,

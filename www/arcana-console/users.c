@@ -134,6 +134,27 @@ user_exists(const char *name)
 	return (by_name("users", name) != NULL);
 }
 
+/*
+ * The users' names in v, max of them, copies the caller frees: every
+ * one, or the owners of the console alone; how many.
+ */
+size_t
+users_names(char **v, size_t max, bool owners_only)
+{
+	const ucl_object_t	*u;
+	ucl_object_iter_t	 it;
+	size_t			 n;
+
+	n = 0;
+	it = NULL;
+	while (n < max && (u = ucl_object_iterate(list_of("users"), &it,
+	    true)) != NULL)
+		if (ucl_str(u, "name") != NULL && (!owners_only ||
+		    user_console(ucl_str(u, "name")) == CROLE_OWNER))
+			v[n++] = xstrdup(ucl_str(u, "name"));
+	return (n);
+}
+
 static enum crole
 crole_of(const char *s)
 {
