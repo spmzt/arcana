@@ -87,11 +87,13 @@ neither backend's.
 
 What it costs:
 
-- a build-time download: emscripten's `emdawnwebgpu` port is fetched
-  from Dawn's GitHub releases into emscripten's cache the first time
-  the UI is built (`--use-port=emdawnwebgpu`; about 128 KB zipped,
-  v20260423.175430 with emscripten 6.0.3).  A build without network
-  needs it in the cache already;
+- Dawn's `emdawnwebgpu` package, v20260423.175430 (about 128 KB
+  zipped, with emscripten 6.0.3), which emcc takes as a local port
+  (`--use-port=<its emdawnwebgpu.port.py>`): `make depends` fetches
+  the zip into `build/emdawnwebgpu` and unpacks it, or takes one copied
+  there, so that the build itself needs no network; the port fetches
+  the same zip as a distfile.
+  `EMDAWN=emdawnwebgpu` has emcc fetch it from Dawn's releases instead;
 - about 73 KB more JavaScript in `arcana.js` (227 KB to 300 KB) and a
   few KB of wasm;
 - the device comes asynchronously: the first frames wait for it;

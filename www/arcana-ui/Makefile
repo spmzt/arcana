@@ -27,10 +27,8 @@ YAML_SRCS=	api.c dumper.c emitter.c loader.c parser.c reader.c scanner.c \
 # expect another LLVM major than the llvm-devel it depends on, and only
 # a clean cache (a port build, a container) runs that check.
 # WebGPU (glmap.c) is emscripten's emdawnwebgpu port: webgpu.h and the
-# JavaScript behind it, fetched into emscripten's cache the first time.
-# A build without the network (a port's) names the package's own port
-# file instead: EMDAWN=<dir>/emdawnwebgpu_pkg/emdawnwebgpu.port.py.
-EMDAWN?=	emdawnwebgpu
+# JavaScript behind it, from the port file EMDAWN names (share/mk/arcana.mk:
+# what "make depends" unpacked; the port's is its distfile's).
 EMCFLAGS=	-O2 -std=gnu17 -Wall -Wextra -Wno-unused-parameter \
 		-Werror -Wno-version-check -I${LIBUCL_SRC}/include \
 		-I${LIBYAML_SRC}/include \

@@ -12,3 +12,8 @@
 # libwebsockets, if not installed in ${LOCALBASE} (net/libwebsockets):
 #LWS_CFLAGS=	-I/path/to/libwebsockets/include
 #LWS_LIBS=	-L/path/to/libwebsockets/lib -lwebsockets
+
+# Dawn's emdawnwebgpu package, the map's WebGPU, if not where "make
+# depends" puts it: its port file, from the zip of a Dawn release, or
+# emdawnwebgpu for emcc to fetch it at build time (that needs the network):
+#EMDAWN=	/path/to/emdawnwebgpu_pkg/emdawnwebgpu.port.py

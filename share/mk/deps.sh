@@ -7,7 +7,8 @@
 #	deps.sh install		pkg install the packages missing
 #
 # Told by the environment (the top Makefile sets it): CONSOLE and TESTS
-# (yes, no), LOCALBASE, LIBUCL_SRC, LIBYAML_SRC.  What is
+# (yes, no), LOCALBASE, LIBUCL_SRC, LIBYAML_SRC, EMDAWN, EMDAWN_DEFAULT,
+# EMDAWN_ZIP.  What is
 # installed is pkg(8)'s to say; a copy built by hand in a package's place
 # (a file it would install, a command) counts too.
 
@@ -60,6 +61,31 @@ src()
 	fi
 }
 
+# Dawn's emdawnwebgpu package, the map's WebGPU: a port file, the one
+# "make depends" unpacks or one EMDAWN names, or emcc's own remote port,
+# which fetches it.
+emdawn()
+{
+	case "${EMDAWN:-}" in
+	emdawnwebgpu)
+		say ok emdawnwebgpu "fetched by emcc: needs the network"
+		;;
+	*)
+		if [ -f "${EMDAWN:-}" ]; then
+			say ok emdawnwebgpu "${EMDAWN}"
+			return
+		fi
+		say missing emdawnwebgpu "the map's WebGPU (Dawn's package)"
+		if [ "${EMDAWN:-}" = "${EMDAWN_DEFAULT:-}" ]; then
+			other="$other\n  emdawnwebgpu: make depends fetches it (without the network, copy its zip to ${EMDAWN_ZIP:-} first)"
+		else
+			other="$other\n  EMDAWN names no port file: ${EMDAWN:-}"
+		fi
+		fatal=1
+		;;
+	esac
+}
+
 echo "Arcana's build needs, for the host's programs:"
 want libcbor "$LOCALBASE/include/cbor.h" "CBOR for libcblink (devel/libcbor)" yes
 want libyang3 "$LOCALBASE/include/libyang/libyang.h" \
@@ -71,6 +97,7 @@ if [ "$CONSOLE" = yes ]; then
 	    "its HTTP server (net/libwebsockets)" yes
 	src libucl "${LIBUCL_SRC:-}" src/ucl_parser.c
 	src libyaml "${LIBYAML_SRC:-}" src/parser.c
+	emdawn
 fi
 if [ "$TESTS" = yes ]; then
 	echo "for make check (a test without its tool is skipped or fails):"

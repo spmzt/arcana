@@ -93,6 +93,18 @@ LWS_LIBS?=	-L${LOCALBASE}/lib -lwebsockets
 LIBUCL_SRC?=	/usr/src/contrib/libucl
 LIBYAML_SRC?=	/usr/src/contrib/libyaml
 
+# The map's WebGPU, emscripten's emdawnwebgpu port: Dawn's package, the
+# release emscripten pins, which "make depends" fetches into
+# ${EMDAWN_DIR} (or takes from the zip put there by hand), so that the
+# build itself fetches nothing.  EMDAWN names its port file;
+# EMDAWN=emdawnwebgpu has emcc fetch it instead, at build time.
+EMDAWN_V=	v20260423.175430
+EMDAWN_SHA512=	42784f70b67197c614322f9fabb0f1dc64228a0de10e88f99941fa9d29bee9ad6683f4651d4eefd5a7a9fbd1f976eb522b190b683219ed1793e9b531c602ffa6
+EMDAWN_ZIP=	emdawnwebgpu_pkg-${EMDAWN_V}.zip
+EMDAWN_URL=	https://github.com/google/dawn/releases/download/${EMDAWN_V}/${EMDAWN_ZIP}
+EMDAWN_DIR?=	${ARC_TOP}/build/emdawnwebgpu
+EMDAWN?=	${EMDAWN_DIR}/emdawnwebgpu_pkg/emdawnwebgpu.port.py
+
 # OpenSSL's libcrypto, for WebAuthn signatures: base's unless these name
 # another one, which must be the one libwebsockets uses.
 SSL_CFLAGS?=

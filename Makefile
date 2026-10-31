@@ -8,7 +8,8 @@
 # checked out with git submodule update --init and built first, in its
 # own obj/; devel/libcbor is what it needs.  The console needs
 # net/libwebsockets and emcc(1); see config.mk.sample to point at copies
-# not installed in ${LOCALBASE}.  WITHOUT_CONSOLE=yes builds only the jail
+# not installed in ${LOCALBASE}.  Dawn's emdawnwebgpu package, the
+# map's WebGPU, is fetched by "make depends", not by the build.  WITHOUT_CONSOLE=yes builds only the jail
 # host's programs.  "make check" runs the tests in the build tree: those
 # that need root are skipped unless it runs as root, the browser test
 # unless Chromium and chromedriver are installed.
@@ -57,12 +58,32 @@ all_subdir_${_d}: _deps-build
 # pkg(8), as root (WITH_TEST_TOOLS=yes: the tests' too), the system's
 # sources being pkgbase's FreeBSD-src.
 _DEPS_ENV=	CONSOLE=${MK_CONSOLE} LOCALBASE=${LOCALBASE} \
-		LIBUCL_SRC=${LIBUCL_SRC} LIBYAML_SRC=${LIBYAML_SRC}
+		LIBUCL_SRC=${LIBUCL_SRC} LIBYAML_SRC=${LIBYAML_SRC} \
+		EMDAWN=${EMDAWN} \
+		EMDAWN_DEFAULT=${EMDAWN_DIR}/emdawnwebgpu_pkg/emdawnwebgpu.port.py \
+		EMDAWN_ZIP=${EMDAWN_DIR}/${EMDAWN_ZIP}
 check-deps: .PHONY
 	@env ${_DEPS_ENV} TESTS=yes sh ${.CURDIR}/share/mk/deps.sh check
 install-missing-packages: .PHONY
 	@env ${_DEPS_ENV} TESTS=${WITH_TEST_TOOLS:Dyes:Uno} \
 	    sh ${.CURDIR}/share/mk/deps.sh install
+# What no package has, fetched here and not by the build: Dawn's
+# emdawnwebgpu package.  A zip already in ${EMDAWN_DIR} (copied there
+# on a host without the network) is used as it is; either way it must
+# be the release emscripten pins, by its SHA-512.
+depends: .PHONY
+	@z=${EMDAWN_DIR}/${EMDAWN_ZIP}; mkdir -p ${EMDAWN_DIR} && \
+	if [ ! -f "$$z" ]; then \
+	    fetch -o "$$z.part" ${EMDAWN_URL} && mv "$$z.part" "$$z" || \
+	    { rm -f "$$z.part"; echo "depends: cannot fetch ${EMDAWN_URL};" \
+		"without the network, copy ${EMDAWN_ZIP} to ${EMDAWN_DIR}" >&2; \
+		exit 1; }; \
+	fi && \
+	if [ "$$(sha512 -q "$$z")" != ${EMDAWN_SHA512} ]; then \
+	    echo "depends: $$z is not ${EMDAWN_ZIP} (SHA-512)" >&2; exit 1; \
+	fi && \
+	rm -rf ${EMDAWN_DIR}/emdawnwebgpu_pkg && tar -xf "$$z" -C ${EMDAWN_DIR} && \
+	echo "emdawnwebgpu ${EMDAWN_V}: ${EMDAWN}"
 _deps-build: .PHONY
 	@env ${_DEPS_ENV} TESTS=no sh ${.CURDIR}/share/mk/deps.sh check > \
 	    ${.OBJDIR}/deps.out 2>&1 || { cat ${.OBJDIR}/deps.out; \

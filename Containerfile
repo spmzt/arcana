@@ -54,10 +54,12 @@ RUN fetch -o libyaml.tar.gz \
         "${LIBYAML_SHA256}" ] && \
     tar -xzf libyaml.tar.gz --strip-components 1 && rm libyaml.tar.gz
 
-# The submodule cblink/ must be checked out in what is copied.
+# The submodule cblink/ must be checked out in what is copied; make
+# depends fetches Dawn's emdawnwebgpu package.
 COPY . /usr/src/arcana
 WORKDIR /usr/src/arcana
 RUN test -f cblink/Makefile || { echo "cblink/ is empty: git submodule update --init" >&2; exit 1; } && \
+    make depends && \
     if [ "${ARCANA_CODEQL}" = yes ]; then \
         sh tools/codeql/capture.sh; \
     else \
