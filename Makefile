@@ -59,7 +59,7 @@ all_subdir_${_d}: _deps-build
 # sources being pkgbase's FreeBSD-src.
 _DEPS_ENV=	CONSOLE=${MK_CONSOLE} WEBGPU=${MK_WEBGPU} LOCALBASE=${LOCALBASE} \
 		LIBUCL_SRC=${LIBUCL_SRC} LIBYAML_SRC=${LIBYAML_SRC} \
-		EMDAWN=${EMDAWN} \
+		LWS_CFLAGS=${LWS_CFLAGS:Q} EMDAWN=${EMDAWN} \
 		EMDAWN_DEFAULT=${EMDAWN_DIR}/emdawnwebgpu_pkg/emdawnwebgpu.port.py \
 		EMDAWN_ZIP=${EMDAWN_DIR}/${EMDAWN_ZIP}
 # The build's options (CONSOLE, WEBGPU), as the ports' make config has

@@ -7,8 +7,8 @@
 #	deps.sh install		pkg install the packages missing
 #
 # Told by the environment (the top Makefile sets it): CONSOLE, WEBGPU
-# and TESTS (yes, no), LOCALBASE, LIBUCL_SRC, LIBYAML_SRC, EMDAWN, EMDAWN_DEFAULT,
-# EMDAWN_ZIP.  What is
+# and TESTS (yes, no), LOCALBASE, LIBUCL_SRC, LIBYAML_SRC, LWS_CFLAGS,
+# EMDAWN, EMDAWN_DEFAULT, EMDAWN_ZIP.  What is
 # installed is pkg(8)'s to say; a copy built by hand in a package's place
 # (a file it would install, a command) counts too.
 
@@ -87,6 +87,22 @@ emdawn()
 	esac
 }
 
+# libwebsockets: the package, or a copy config.mk names by LWS_CFLAGS
+# (its -I directories, where libwebsockets.h is).
+lws()
+{
+	for f in ${LWS_CFLAGS:-}; do
+		case "$f" in
+		-I?*)	if [ -f "${f#-I}/libwebsockets.h" ]; then
+				say ok libwebsockets "${f#-I}"
+				return
+			fi ;;
+		esac
+	done
+	want libwebsockets "$LOCALBASE/include/libwebsockets.h" \
+	    "its HTTP server (net/libwebsockets; or LWS_CFLAGS)" yes
+}
+
 echo "Arcana's build needs, for the host's programs:"
 want libcbor "$LOCALBASE/include/cbor.h" "CBOR for libcblink (devel/libcbor)" yes
 want libyang3 "$LOCALBASE/include/libyang/libyang.h" \
@@ -94,8 +110,7 @@ want libyang3 "$LOCALBASE/include/libyang/libyang.h" \
 if [ "$CONSOLE" = yes ]; then
 	echo "for the console (WITHOUT_CONSOLE=yes builds without it):"
 	want emscripten emcc "the page, C to WebAssembly (devel/emscripten)" yes
-	want libwebsockets "$LOCALBASE/include/libwebsockets.h" \
-	    "its HTTP server (net/libwebsockets)" yes
+	lws
 	src libucl "${LIBUCL_SRC:-}" src/ucl_parser.c
 	src libyaml "${LIBYAML_SRC:-}" src/parser.c
 	if [ "$WEBGPU" = yes ]; then
