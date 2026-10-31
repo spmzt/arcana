@@ -45,6 +45,7 @@ until 16.0 is released).
 ```sh
 git clone --recurse-submodules https://github.com/spmzt/arcana.git
 cd arcana
+make config                       # the options (CONSOLE, WEBGPU), kept in config.mk
 make check-deps                   # what the build needs, and what is missing
 make install-missing-packages     # as root: pkg install what is missing
 make depends                      # WITH_WEBGPU=yes only: Dawn's emdawnwebgpu

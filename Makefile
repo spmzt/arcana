@@ -62,6 +62,14 @@ _DEPS_ENV=	CONSOLE=${MK_CONSOLE} WEBGPU=${MK_WEBGPU} LOCALBASE=${LOCALBASE} \
 		EMDAWN=${EMDAWN} \
 		EMDAWN_DEFAULT=${EMDAWN_DIR}/emdawnwebgpu_pkg/emdawnwebgpu.port.py \
 		EMDAWN_ZIP=${EMDAWN_DIR}/${EMDAWN_ZIP}
+# The build's options (CONSOLE, WEBGPU), as the ports' make config has
+# them: config chooses them with bsddialog(1) and keeps them in
+# config.mk, showconfig says how they are set.
+_CONFIG_ENV=	ARC_TOP=${ARC_TOP} CONSOLE=${MK_CONSOLE} WEBGPU=${MK_WEBGPU}
+config: .PHONY
+	@env ${_CONFIG_ENV} sh ${.CURDIR}/share/mk/config.sh config
+showconfig: .PHONY
+	@env ${_CONFIG_ENV} sh ${.CURDIR}/share/mk/config.sh show
 check-deps: .PHONY
 	@env ${_DEPS_ENV} TESTS=yes sh ${.CURDIR}/share/mk/deps.sh check
 install-missing-packages: .PHONY

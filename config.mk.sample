@@ -14,7 +14,8 @@
 #LWS_LIBS=	-L/path/to/libwebsockets/lib -lwebsockets
 
 # The network map's WebGPU, off by default (WebGL 2 draws it then); it
-# needs Dawn's emdawnwebgpu package, which "make depends" fetches:
+# needs Dawn's emdawnwebgpu package, which "make depends" fetches.
+# "make config" sets this and WITHOUT_CONSOLE in a block of its own:
 #WITH_WEBGPU=	yes
 
 # Dawn's emdawnwebgpu package, with WITH_WEBGPU, if not where "make
