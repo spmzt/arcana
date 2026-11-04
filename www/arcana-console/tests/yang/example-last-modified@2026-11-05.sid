@@ -1,0 +1,35 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "example-last-modified",
+    "module-revision": "2026-11-05",
+    "description": "RFC 9595's experimental range, the console's translator test alone.",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-metadata",
+        "module-revision": "2016-08-05"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "99200",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "example-last-modified",
+        "sid": "99200"
+      },
+      {
+        "namespace": "annotation",
+        "identifier": "last-modified",
+        "sid": "99201"
+      }
+    ]
+  }
+}

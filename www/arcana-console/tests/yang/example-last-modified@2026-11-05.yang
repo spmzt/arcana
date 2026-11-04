@@ -1,0 +1,21 @@
+module example-last-modified {
+  yang-version 1.1;
+  namespace "urn:example:last-modified";
+  prefix lm;
+
+  import ietf-yang-metadata {
+    prefix md;
+  }
+  import ietf-yang-types {
+    prefix yang;
+  }
+
+  description
+    "RFC 7952 section 3's example annotation.";
+
+  revision 2026-11-05;
+
+  md:annotation last-modified {
+    type yang:date-and-time;
+  }
+}

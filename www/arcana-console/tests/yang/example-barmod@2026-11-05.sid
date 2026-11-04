@@ -1,0 +1,36 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "example-barmod",
+    "module-revision": "2026-11-05",
+    "description": "RFC 9595's experimental range, the console's translator test alone.",
+    "dependency-revision": [
+      {
+        "module-name": "example-foomod",
+        "module-revision": "2026-11-05"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "99100",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "example-barmod",
+        "sid": "99100"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "dog",
+        "sid": "99101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/example-barmod:bar",
+        "sid": "99102"
+      }
+    ]
+  }
+}

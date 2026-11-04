@@ -93,6 +93,16 @@ has or inherits it is told, from `jail -e`.  After writing,
 `arcana-agent` reads the file back with `jail -e` and restores the previous
 version if jail(8) disagrees with the edit.
 
+The console's northbound is RESTCONF (RFC 8040), each host's agent
+mounted below `arcana-fleet:fleet/host=<id>` (RFC 8528).  Between its
+JSON (RFC 7951) and the agents' YANG-CBOR stands one translator
+(`www/arcana-console/yxlate.c`), driven by a schema's SIDs as the peer
+numbers them (`ysid.c`: its `.sid` files resolved to the console's
+tables by identifier): names from the peer's files, types from the
+console's tables where they have the node, CBOR's or JSON's own kind
+where they do not; annotations, origin among them, as RFC 7952's `@`
+members.
+
 ## Library choices
 
 Base system first; packages only where they remove real work.

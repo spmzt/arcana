@@ -1713,12 +1713,29 @@ whose first part is served.
   a host's entry, its id and URI answered, the URI's GET its stream.
 - 4.1.10 C: `application/yang-data+cbor` pass-through; check: the
   PWA's decoder reads it.
-- 4.2.1 C: JSON → CBOR by schema (names → SIDs with module
-  qualification, numbers, strings, base64, empty, bits, enums,
-  identityref, instance-identifier strings, union by canonical form);
-  check: RFC 7951's examples both ways.
-- 4.2.2 C: CBOR → JSON including origin as `@` annotations; check:
-  RFC 7952's example shape.
+- 4.2.1 done (console ysid.c, yxlate.c): JSON → CBOR by a schema's
+  SIDs as a peer numbers them (`struct ysids`: its `.sid` files, from
+  GET-SID's YANG-CBOR or RFC 9595's JSON, each item resolved to the
+  console's node, identity or annotation of the same identifier, so a
+  peer that numbers otherwise is read right); names → SIDs with module
+  qualification (absolute, tag 47, below a mount point), the numbers by
+  type, 64-bit and decimal64 strings, base64, `[null]`, bits, enums,
+  identityref, instance-identifier strings (`[SID, keys...]`), a union
+  by its JSON kind and then the first member whose form reads the string
+  (patterns and lengths of its string members checked), tagged 4, 43 to
+  46.  A node the console's tables lack is named by the peer's file and
+  taken as JSON's kind says.  Check: yxlate_test's rfc7951, RFC 7951's
+  examples each way, cblink's decoder reading what this writes
+  (strictly) and its JSON of it the same; peer_sids, a peer numbering
+  500 on with a node of its own.  The decimal64 canonical form (RFC
+  7950 9.3.2) is written without zeros at its end; cblink's
+  `cbl_dtree_json()` keeps them.
+- 4.2.2 done (yxlate.c): CBOR → JSON by the same, annotations (tag
+  109) as RFC 7952 section 5.2 has them: a container's or an entry's
+  member `@`, a leaf's sibling `@name`, a leaf-list's `@name` array with
+  null for an entry without; origin is one of them.  Check: yxlate_test's
+  rfc7952, a tree of cblink's with each kind annotated, the same JSON as
+  `cbl_dtree_json()`.
 - 4.3.1 C (the rest): the remainder resolved against the host's cached
   library and SID tables rather than the console's own; check: a GET
   to two hosts of different revisions. `arcana-fleet` and the host

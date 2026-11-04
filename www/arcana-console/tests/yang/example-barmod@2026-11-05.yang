@@ -1,0 +1,25 @@
+module example-barmod {
+  yang-version 1.1;
+  namespace "http://example.com/example-barmod";
+  prefix barmod;
+
+  import example-foomod {
+    prefix foomod;
+  }
+
+  description
+    "RFC 7951 section 4's example augment, and an identity of another
+     module's base.";
+
+  revision 2026-11-05;
+
+  identity dog {
+    base foomod:animal;
+  }
+
+  augment "/foomod:top" {
+    leaf bar {
+      type boolean;
+    }
+  }
+}

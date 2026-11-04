@@ -1,0 +1,120 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "example-foomod",
+    "module-revision": "2026-11-05",
+    "description": "RFC 9595's experimental range, the console's translator test alone.",
+    "assignment-range": [
+      {
+        "entry-point": "99000",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "example-foomod",
+        "sid": "99000"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "animal",
+        "sid": "99001"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "cat",
+        "sid": "99002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top",
+        "sid": "99003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/bars",
+        "sid": "99004"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/big",
+        "sid": "99005"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/blob",
+        "sid": "99006"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/color",
+        "sid": "99007"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/flags",
+        "sid": "99008"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/foo",
+        "sid": "99009"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/item",
+        "sid": "99010"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/item/count",
+        "sid": "99011"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/item/name",
+        "sid": "99012"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/item/tag",
+        "sid": "99013"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/kind",
+        "sid": "99014"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/mixed",
+        "sid": "99015"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/on",
+        "sid": "99016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/price",
+        "sid": "99017"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/text",
+        "sid": "99018"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/ubig",
+        "sid": "99019"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/example-foomod:top/where",
+        "sid": "99020"
+      }
+    ]
+  }
+}

@@ -1,0 +1,99 @@
+module example-foomod {
+  yang-version 1.1;
+  namespace "http://example.com/example-foomod";
+  prefix foomod;
+
+  description
+    "RFC 7951 section 4's example module, with a node of each type its
+     section 6 shows, for the console's translator test (yxlate_test).";
+
+  revision 2026-11-05;
+
+  identity animal;
+
+  identity cat {
+    base animal;
+  }
+
+  container top {
+    leaf foo {
+      type uint8;
+    }
+    leaf-list bars {
+      type boolean;
+    }
+    list item {
+      key "name";
+      ordered-by user;
+      leaf name {
+        type string;
+      }
+      leaf count {
+        type int32;
+      }
+      leaf-list tag {
+        type string;
+      }
+    }
+    leaf big {
+      type int64;
+    }
+    leaf ubig {
+      type uint64;
+    }
+    leaf price {
+      type decimal64 {
+        fraction-digits 2;
+      }
+    }
+    leaf text {
+      type string;
+    }
+    leaf blob {
+      type binary;
+    }
+    leaf flags {
+      type bits {
+        bit read;
+        bit write;
+        bit execute {
+          position 9;
+        }
+      }
+    }
+    leaf color {
+      type enumeration {
+        enum red;
+        enum green {
+          value 5;
+        }
+      }
+    }
+    leaf kind {
+      type identityref {
+        base animal;
+      }
+    }
+    leaf on {
+      type empty;
+    }
+    leaf where {
+      type instance-identifier;
+    }
+    leaf mixed {
+      type union {
+        type int8;
+        type enumeration {
+          enum auto;
+        }
+        type string {
+          pattern '[a-z]+';
+        }
+        type int64;
+        type identityref {
+          base animal;
+        }
+      }
+    }
+  }
+}
