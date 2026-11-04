@@ -205,9 +205,11 @@ drift_read(cbl_conn *conn, ucl_object_t **out, char *err, size_t errlen)
 	int			 error;
 
 	*out = NULL;
-	/* The top-level nodes that are configuration: what running has. */
+	/* The top-level nodes that are configuration: what running has;
+	 * none of the console's own datastore. */
 	for (uint32_t i = 0; i < ymodel_schema.nmod; i++)
-		for (uint32_t k = 0; k < ymodel_schema.mod[i]->ntop; k++) {
+		for (uint32_t k = 0; !l3nm_module(ymodel_schema.mod[i]) &&
+		    k < ymodel_schema.mod[i]->ntop; k++) {
 			const struct cbl_ynode *t = ymodel_schema.mod[i]->top[k];
 
 			if ((t->kind == CBL_YN_CONTAINER || t->kind ==

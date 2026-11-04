@@ -1000,8 +1000,12 @@ parse_segs(struct rcreq *r, char *rest, bool encoded, const char **why)
 		if (!encoded && r->nseg == 0 && rest == NULL && mod != NULL &&
 		    (r->rpc = rpc_named(mod, name)) != NULL)
 			break;
+		/* The console's own modules at its own datastore alone, and
+		 * only they there. */
 		if ((sg->n = node_named(r->nseg == 0 ? NULL :
-		    r->seg[r->nseg - 1].n, mod, name)) == NULL) {
+		    r->seg[r->nseg - 1].n, mod, name)) == NULL ||
+		    (r->nseg == 0 && l3nm_module(sg->n->module) != r->own)) {
+			sg->n = NULL;
 			*why = r->nseg == 0 && mod == NULL ? "the first node "
 			    "of the path is named with its module" :
 			    "no such node";
@@ -1162,6 +1166,7 @@ parse_below(const struct rcreq *r, size_t n, const char *s, bool encoded,
 		return (NULL);
 	}
 	t->ds = r->ds;
+	t->own = r->own;
 	for (size_t i = 0; i < n; i++) {
 		t->seg[i].n = r->seg[i].n;
 		for (size_t k = 0; k < r->seg[i].nkey; k++)
@@ -1862,7 +1867,8 @@ body_node(struct rcreq *r, size_t n, const ucl_object_t *body,
 	    parent->kind != CBL_YN_LIST)
 		return (refuse(r, 400, NULL, why, "nothing is below a leaf"));
 	if ((*np = node_named(parent, colon != NULL ? mod : NULL, colon !=
-	    NULL ? colon + 1 : k)) == NULL)
+	    NULL ? colon + 1 : k)) == NULL || (parent == NULL &&
+	    l3nm_module((*np)->module) != r->own))
 		return (refuse(r, 400, "unknown-element", why, "%s: no such "
 		    "node%s", k, parent == NULL && colon == NULL ? " (a "
 		    "top-level node is named with its module)" : ""));
@@ -2034,7 +2040,8 @@ prepare_merge_all(struct rcreq *r, const char **why)
 		if (module_named(mod) == NULL)
 			return (refuse(r, 400, "unknown-namespace", why,
 			    "%s: no such module", mod));
-		if ((n = node_named(NULL, mod, colon + 1)) == NULL)
+		if ((n = node_named(NULL, mod, colon + 1)) == NULL ||
+		    l3nm_module(n->module) != r->own)
 			return (refuse(r, 400, "unknown-element", why,
 			    "%s: no such node", k));
 		if ((t = calloc(1, sizeof(*t))) == NULL)

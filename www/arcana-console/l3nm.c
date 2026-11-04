@@ -56,6 +56,14 @@ l3nm_path(const char *path)
 	    path[n] == '/'));
 }
 
+bool
+l3nm_module(const struct cbl_ymodule *m)
+{
+
+	return (strcmp(m->name, "ietf-l3vpn-ntw") == 0 || strcmp(m->name,
+	    "ietf-vpn-common") == 0 || strcmp(m->name, "arcana-l3nm") == 0);
+}
+
 static const struct cbl_ynode *
 l3nm_top(void)
 {

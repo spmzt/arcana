@@ -1743,6 +1743,45 @@ ATF_TC_BODY(l3nm, tc)
 	ATF_CHECK(strstr(r.body, "\"name\":\"ietf-l3vpn-ntw\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"name\":\"ietf-vpn-common\"") != NULL);
 	resp_free(&r);
+	/* A host's are as they were: its drift, its entry and what is
+	 * mounted there, none of the console's own modules. */
+	{
+		char	cwd[MAXPATHLEN], body[MAXPATHLEN + 64], id[16];
+		char	path[256];
+
+		ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+		snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":"
+		    "\"unix:%s/jgd.sock\"}", cwd);
+		http("POST", "/api/servers", body, &r);
+		EXPECT(&r, 200);
+		snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/api/servers/%s/drift", id);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:"
+		    "fleet/host=%s", id);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK(strstr(r.body, "l3vpn-ntw") == NULL &&
+		    strstr(r.body, "vpn-common") == NULL &&
+		    strstr(r.body, "arcana-l3nm") == NULL);
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:"
+		    "fleet/host=%s/ietf-yang-library:yang-library", id);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK(strstr(r.body, "l3vpn-ntw") == NULL &&
+		    strstr(r.body, "arcana-l3nm") == NULL);
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:"
+		    "fleet/host=%s/ietf-l3vpn-ntw:l3vpn-ntw", id);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 400);
+		resp_free(&r);
+	}
 	/* Taken away. */
 	http("DELETE", L3NM "/vpn-services/vpn-service=4G", NULL, &r);
 	EXPECT(&r, 204);
