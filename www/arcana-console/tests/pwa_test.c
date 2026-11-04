@@ -95,6 +95,8 @@ static const char	*shots;
 static const char	*browser_flags = "";
 
 static void	run(const char *);
+static int	busy_secs(int);
+static void	js_str(char *, size_t, const char *);
 static void	dock_closed(void);
 static void	queued_run(void);
 static void	moves_measure(void);
@@ -686,10 +688,11 @@ part_shell(void)
 	    "&& document.querySelector('form[data-form=settings-telegram] "
 	    "select[name=telegram_via]') && !document.body.innerHTML.includes("
 	    "'abc_DEF')", 10);
-	run("document.querySelector('button[data-act=telegram-test]')."
-	    "click()");
+	/* Disabled until the save's reply: settings.json is written
+	 * before the page has it. */
+	click_when("button[data-act=telegram-test]", busy_secs(10));
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('No message sent'))", 20);
+	    "t.textContent.includes('No message sent'))", busy_secs(20));
 	/*
 	 * What is typed in a field stays there when the page is drawn
 	 * again under it: the key's path typed first is still there when
@@ -876,12 +879,12 @@ part_shell(void)
 	    "const f = document.querySelector('form[data-form=login-token]'); "
 	    "f.token.value = sessionStorage.getItem('wtok'); "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('.shell')", 20);
+	wait_js("document.querySelector('.shell')", busy_secs(20));
 	go("/#/settings/aaa/keys");
 	wait_js("document.querySelector('.set-body .keys-token')?.textContent"
 	    ".includes('opened with an API token') && !document.querySelector("
 	    "'form[data-form=add-key]') && !document.querySelector("
-	    "'.set-body .notice.bad')", 20);
+	    "'.set-body .notice.bad')", busy_secs(20));
 	shot("0b3-keys-token");
 	/* Settings' other tabs: the token's limit said once, no refusal of
 	 * what was not asked for; Cluster says this console is not one. */
@@ -891,27 +894,28 @@ part_shell(void)
 	    "'not one of a cluster') && !document.querySelector("
 	    "'.set-body .notice.bad')", 20);
 	/* Signed in with the password: the page offers it now, and the
-	 * session is limited as the token's was. */
+	 * session has the user's roles (web.conf's password_full, on unless
+	 * set off): the keys listed, one's own password offered. */
 	run("document.querySelector('button[data-act=logout]').click()");
 	wait_js("document.querySelector('form[data-form=login-password]')", 10);
 	run("const f = document.querySelector('form[data-form=login-password]'"
 	    "); f.user.value = 'admin'; f.password.value = 'a long lab "
 	    "password'; f.requestSubmit();");
-	wait_js("document.querySelector('.shell')", 20);
+	wait_js("document.querySelector('.shell')", busy_secs(20));
 	go("/#/settings/aaa/keys");
-	wait_js("document.querySelector('.set-body .keys-token')?.textContent"
-	    ".includes('opened with a password') && !document.querySelector("
-	    "'form[data-form=add-key]')", 20);
+	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
+	    ".name') && !document.querySelector('.set-body .keys-token')",
+	    busy_secs(20));
 	run("document.querySelector('header .acct-btn').click()");
-	wait_js("document.querySelector('.acct-menu.open') && !document."
-	    "querySelector('.acct-menu.open button[data-act=password]')", 5);
+	wait_js("document.querySelector('.acct-menu.open button"
+	    "[data-act=password]')", 5);
 	run("document.querySelector('header .acct-btn').click()");
 	run("document.querySelector('button[data-act=logout]').click()");
 	click_when("button[data-act=login]", 10);
-	wait_js("document.querySelector('.shell')", 20);
+	wait_js("document.querySelector('.shell')", busy_secs(20));
 	go("/#/settings/aaa/keys");
 	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
-	    ".name')", 20);
+	    ".name')", busy_secs(20));
 	/*
 	 * The console's CA changed for another: made, rolled out (no host
 	 * over TLS here to give it to), finished; the new one alone is
@@ -1082,7 +1086,7 @@ part_hosts(void)
 	run("const f = document.querySelector('form[data-form=agent-update]'); "
 	    "f.restart.checked = false; f.requestSubmit();");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('in place'))", 20);
+	    "t.textContent.includes('in place'))", busy_secs(20));
 	ATF_CHECK(access("installed-agent", X_OK) == 0);
 
 	/*
@@ -1259,12 +1263,12 @@ part_hosts(void)
 	 * draws it. */
 	ATF_CHECK(js_true("!document.querySelector('.schema pre.cddl')"));
 	run("document.querySelector('.trace button[data-act=schema]').click()");
-	wait_js("[...document.querySelectorAll('.schema h4')].some(h => "
-	    "h.textContent.includes('YANG model'))", 10);
-	ATF_CHECK(js_true("(() => { const t = document.querySelector("
-	    "'.schema').textContent; return "
+	/* Its heading comes at once, the tree once yang.json is read. */
+	wait_js("(() => { const t = document.querySelector('.schema')."
+	    "textContent; return t.includes('YANG model') && "
 	    "t.includes('module: arcana-jobs') && t.includes('+---x read') "
-	    "&& t.includes('+---x submit') && t.includes('lanes?'); })()"));
+	    "&& t.includes('+---x submit') && t.includes('lanes?'); })()",
+	    busy_secs(10));
 	shot("3c-schema");
 	run("document.querySelector('.trace button[data-act=schema]').click()");
 	wait_js("!document.querySelector('.step-pane')", 5);
@@ -5215,10 +5219,11 @@ part_firewall(void)
 	    "if (!window.fwk || Date.now() - window.fwk > 3000) { window.fwk "
 	    "= Date.now(); document.querySelector('button[data-act=refresh]')"
 	    "?.click(); } return false; })()", 30);
-	run("document.querySelector('button[data-act=fw-load-rc]').click()");
+	/* Disabled while the kept rules' read is on its way. */
+	click_when("button[data-act=fw-load-rc]", busy_secs(10));
 	wait_js("document.querySelector('form[data-form=fw-text] textarea')"
 	    ".value === '# left out, the script\\'s own: fwcmd=\"/sbin/ipfw -q\""
-	    "\\nadd 200 allow ip from any to any via lo0\\n'", 10);
+	    "\\nadd 200 allow ip from any to any via lo0\\n'", busy_secs(10));
 	ATF_REQUIRE(system("sed -i '' -e '/^firewall_type=/d' -e "
 	    "'/^firewall_script=/d' rc.conf") == 0);
 	/*
@@ -5433,15 +5438,20 @@ part_firewall(void)
 	    "ipfw.rules && printf 'net.inet.ip.fw.dyn_keep_states=0\\n"
 	    "net.inet.ip.fw.tables_sets=0\\n' > fw.sysctl && touch "
 	    "tables-busy") == 0);
+	/* A read on its way is not asked again, and may have begun before
+	 * the files changed: the refresh asked once none is. */
+	wait_js("!document.querySelector('.fwbar .fresh.reading')",
+	    busy_secs(10));
 	run("document.querySelector('.fwbar button[data-act=refresh]')"
 	    ".click()");
 	usleep(300000);
-	wait_js("!document.querySelector('.fwbar .fresh.reading')", 10);
+	wait_js("!document.querySelector('.fwbar .fresh.reading')",
+	    busy_secs(10));
 	run("document.querySelector('button[data-act=fw-apply]').click()");
 	wait_js("document.querySelector('.fw-ask') && document.querySelector("
 	    "'.fw-ask').textContent.includes('net.inet.ip.fw.dyn_keep_states "
 	    "is 0') && document.querySelector('.fw-ask').textContent.includes("
-	    "'net.inet.ip.fw.tables_sets is 0')", 10);
+	    "'net.inet.ip.fw.tables_sets is 0')", busy_secs(10));
 	ATF_CHECK(js_true("!document.querySelector('.modal') && document."
 	    "querySelector('.fw-ask').textContent.includes('connections they "
 	    "let through') && document.querySelector('.fw-ask').textContent."
@@ -6138,7 +6148,7 @@ part_flows(void)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 23",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 24",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");
@@ -7902,9 +7912,6 @@ static const char croute_js[] =
 	"&& !document.getElementById('plug-root') && !!document."	\
 	"querySelector('button.tab.on[data-act=set-tab][data-arg=' + "	\
 	"h.slice(11) + ']'))(location.hash)"
-
-static int	busy_secs(int);
-static void	js_str(char *, size_t, const char *);
 
 static void
 part_route(int round)

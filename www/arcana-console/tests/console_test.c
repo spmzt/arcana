@@ -916,6 +916,7 @@ ATF_TC_BODY(restconf_ra, tc)
 	char		 path[400], conf[MAXPATHLEN + 32];
 	FILE		*fp;
 	size_t		 n;
+	int		 ss;
 
 	start(tc, 0, NULL);
 	enrol(&a);
@@ -931,6 +932,13 @@ ATF_TC_BODY(restconf_ra, tc)
 	EXPECT(&r, 200);
 	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
 	resp_free(&r);
+	/* A dynamic subscription as the candidate is made, gone before its
+	 * commit: no change of running's, which has the configured alone. */
+	snprintf(conf, sizeof(conf), "GET /restconf/streams/%s/json HTTP/1.1"
+	    "\r\nHost: localhost:8443\r\nCookie: %s\r\n\r\n", id, cookie);
+	ss = console_socket();
+	ATF_REQUIRE(write(ss, conf, strlen(conf)) == (ssize_t)strlen(conf));
+	usleep(1500000);
 	snprintf(path, sizeof(path), "/restconf/ds/ietf-datastores:candidate/"
 	    "arcana-fleet:fleet/host=%s/ietf-interfaces:interfaces/"
 	    "interface=lo0/ietf-ip:ipv6/ietf-ipv6-unicast-routing:"
@@ -944,6 +952,8 @@ ATF_TC_BODY(restconf_ra, tc)
 	ATF_CHECK_MSG(strstr(r.body, "\"arcana-ra:router-preference\":\"high\"")
 	    != NULL, "%s", r.body);
 	resp_free(&r);
+	close(ss);
+	usleep(1500000);
 	/* The commit stops at the warning: rc_conf_files does not name
 	 * Arcana's file; accepted, it goes on. */
 	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/"

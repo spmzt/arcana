@@ -953,10 +953,20 @@ ietf_subscribed_notifications_subscriptions_get(cbl_req *req,
 	ysubs		*ss;
 	int		 error;
 
-	(void)req;
 	memset(&ys, 0, sizeof(ys));
 	ys.a = a;
 	ys.cfg = kept_decode(a);
+	/*
+	 * Running's (and so a candidate's copy): the configured alone, as
+	 * kept.  The dynamic ones come and go with the sessions that made
+	 * them and have no receiver instance: in a candidate copied a while
+	 * before its commit, one gone or made meanwhile was a change, and
+	 * the commit was refused for it.
+	 */
+	if (cbl_req_ydatastore(req) != CBL_YDS_OPERATIONAL) {
+		data->subscriptions = (ysubs *)(uintptr_t)ys.cfg;
+		return (0);
+	}
 	if (subs_ctx != NULL && (error = cbl_ysub_each(subs_ctx, ysub_one,
 	    &ys)) != 0)
 		return (error);

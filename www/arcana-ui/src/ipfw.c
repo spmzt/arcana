@@ -92,6 +92,7 @@ static struct {
 	char		 sid[9];
 	ucl_object_t	*data;
 	bool		 loading;
+	bool		 reread;	/* asked again while one was on its way */
 	char		 error[300];
 	double		 fetched;
 	int		 sect;		/* a part; or one of the views below */
@@ -302,6 +303,7 @@ fw_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	struct server	*s;
 	char		*sid;
+	bool		 reread;
 
 	sid = arg;
 	if (strcmp(sid, fw.sid) != 0) {
@@ -310,10 +312,19 @@ fw_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	free(sid);
 	fw.loading = false;
+	/* Asked again meanwhile (a job done, a refresh): this read may
+	 * have begun before what changed, so another. */
+	reread = fw.reread;
+	fw.reread = false;
+	s = cur_server();
+	if (s != NULL && strcmp(s->id, fw.sid) != 0)
+		s = NULL;
 	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
 		snprintf(fw.error, sizeof(fw.error), "%s", status == 200 &&
 		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
 		    err : "no answer");
+		if (reread && s != NULL)
+			refresh_firewall(s, true);
 		return;
 	}
 	fw.error[0] = '\0';
@@ -336,9 +347,12 @@ fw_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	fw.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
 	fw.fetched = arc_now();
 	hits_add();
+	if (reread && s != NULL) {
+		refresh_firewall(s, true);
+		return;
+	}
 	/* Apply's sysctls set: a read asked after that says if they are. */
-	if (fw.then_apply && fw.setting == 0 && (s = cur_server()) != NULL &&
-	    strcmp(s->id, fw.sid) == 0) {
+	if (fw.then_apply && fw.setting == 0 && s != NULL) {
 		if (fw.asked_at < fw.set_at)
 			refresh_firewall(s, true);
 		else
@@ -428,9 +442,17 @@ refresh_firewall(struct server *s, bool again)
 {
 	char	url[400];
 
-	/* One for this host on its way is waited for, not another's. */
-	if (!app.online || (fw.loading && strcmp(fw.sid, s->id) == 0))
+	/*
+	 * One for this host on its way is waited for, not another's; asked
+	 * for again, another is asked once it is answered.
+	 */
+	if (!app.online)
 		return;
+	if (fw.loading && strcmp(fw.sid, s->id) == 0) {
+		if (again)
+			fw.reread = true;
+		return;
+	}
 	if (strcmp(fw.sid, s->id) != 0) {
 		fw.jail[0] = '\0';
 		fw.nprev = 0;
