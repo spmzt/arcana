@@ -3,7 +3,7 @@
 .\"
 .\" Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
 .\"
-.Dd October 2, 2026
+.Dd November 4, 2026
 .Dt ARCANA-AGENT 8
 .Os
 .Sh NAME
@@ -434,6 +434,13 @@ as
 .Xr arcanactl 8
 .Cm transport retry
 does.
+On an SCTP association an event stream subscription (the NETCONF
+stream: arcana-steer's
+.Ic steer-changed ,
+arcana-events' events, a tunnel's probes among them) is sent on an
+SCTP stream of its own, ahead of what else the association carries: a
+large read or dump on the same connection does not hold it up.
+Over TCP the events wait behind what was sent before them.
 The listeners, the connections open and each SCTP association's paths
 are that container's state; its
 .Ic listen

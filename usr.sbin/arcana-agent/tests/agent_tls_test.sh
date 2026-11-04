@@ -511,10 +511,56 @@ configured_cleanup()
 	true
 }
 
+atf_test_case control_lane cleanup
+control_lane_head()
+{
+	atf_set "descr" "steer-changed on the control lane (PLAN-SDN-YANG" \
+	    "3.5.2): over SCTP, while GET-SID dumps fill the association and" \
+	    "are read slowly, a pin set and cleared five times is told in" \
+	    "order, each within 200 ms"
+	atf_set "require.progs" "openssl"
+}
+control_lane_body()
+{
+	has_sctp || atf_skip "the kernel has no SCTP"
+	printf '#!/bin/sh\nexit 0\n' > fake-ipfw
+	chmod +x fake-ipfw
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -1 $(pwd)/history.conf"
+	start_daemon
+	C="$JGC -c tcp://127.0.0.1:$PORT -A ca.pem -C client.pem -K client.key"
+	atf_check -o empty $C sdwan rules \
+	    '{"set":30,"tables":[{"name":"swl_p_4","valtype":"ipv4"}],"rules":["12 fwd tablearg ip4 from any to table(swl_p_4)"]}'
+	atf_check -o empty $C sdwan steer \
+	    '{"entries":[{"table":"swl_p_4","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"},{"id":"t2","via":"100.64.0.3"}]}]}'
+	PIN='/arcana-steer:steering/pin=swl_p_4,10.20.0.0%2F24'
+	cat > pins.sh <<EOS
+#!/bin/sh
+for i in 1 2 3 4 5; do
+	$C set "$PIN/candidate" t2 >/dev/null || exit 1
+	$C set -x "$PIN" >/dev/null || exit 1
+done
+EOS
+	chmod +x pins.sh
+	atf_check -o save:lane.out "$(atf_get_srcdir)/ylane" \
+	    "sctp://127.0.0.1:$PORT" ca.pem client.pem client.key 30 ./pins.sh
+	cat lane.out
+	# Ten, in the order they were made, none late.
+	atf_check -o inline:"$(for i in 1 2 3 4 5; do
+	    printf 'to=t2 reason=override\nto=t1 reason=preference\n'; done)\n" \
+	    sh -c "grep '^steer-changed' lane.out | sed -E 's/^steer-changed //; s/ ms=.*//'"
+	atf_check -o match:'^bulk [0-9.]+ MiB, [1-9][0-9]* dumps' cat lane.out
+	atf_check sh -c "awk '/^max/ { exit !(\$2 < 200) }' lane.out"
+}
+control_lane_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case tls_files
 	atf_add_test_case mtls
 	atf_add_test_case renew
 	atf_add_test_case configured
+	atf_add_test_case control_lane
 }

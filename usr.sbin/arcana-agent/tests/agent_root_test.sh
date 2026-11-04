@@ -671,6 +671,81 @@ sdwan_probe_cleanup()
 	true
 }
 
+atf_test_case sdwan_control cleanup
+sdwan_control_head()
+{
+	atf_set "descr" "the control lane (PLAN-SDN-YANG 3.5.2), for real:" \
+	    "over SCTP, while GET-SID dumps fill the association and are" \
+	    "read slowly, a tunnel's probes going down and the steering's" \
+	    "failover from it are told in that order, each within 200 ms"
+	atf_set "require.user" "root"
+	atf_set "require.progs" "openssl"
+	atf_set "is.exclusive" "true"
+}
+sdwan_control_body()
+{
+	local c n
+
+	has_sctp || atf_skip "the kernel has no SCTP"
+	if setfib 2 route -n get 192.0.2.77 >/dev/null 2>&1; then
+		atf_skip "fib 2 has a route to 192.0.2.77"
+	fi
+	# The agent's certificate and the console's, from a CA of the case.
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+	    -nodes -keyout ca.key -out ca.pem -days 2 -subj /CN=ca \
+	    -addext basicConstraints=critical,CA:TRUE \
+	    -addext keyUsage=critical,keyCertSign >/dev/null 2>&1 ||
+	    atf_fail "openssl: cannot make the CA"
+	for c in server/IP:127.0.0.1/serverAuth,clientAuth \
+	    client/DNS:console/clientAuth; do
+		n=${c%%/*}
+		openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+		    -keyout $n.key -out $n.csr -subj /CN=$n >/dev/null 2>&1
+		printf 'subjectAltName=%s\nextendedKeyUsage=%s\n' \
+		    "$(echo $c | cut -d/ -f2)" "${c##*/}" > $n.ext
+		openssl x509 -req -in $n.csr -CA ca.pem -CAkey ca.key \
+		    -CAcreateserial -days 2 -extfile $n.ext -out $n.pem \
+		    >/dev/null 2>&1 || atf_fail "openssl: cannot sign $n"
+	done
+	printf '#!/bin/sh\necho "ipfw $*" >> %s/ipfw.log\nexit 0\n' "$(pwd)" > fake-ipfw
+	chmod +x fake-ipfw
+	PORT=$(jot -r 1 20000 59999)
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -l tcp://127.0.0.1:$PORT -A ca.pem -C server.pem -K server.key"
+	start_daemon
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '[{"id":"lo","address":"127.0.0.1","interval":50,"eval":300,"down":2,"up":2,"timeout":200}]'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[{"name":"swc_p_4","valtype":"ipv4"}],"rules":["12 fwd tablearg ip4 from any to table(swc_p_4)"]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"swc_p_4","prefix":"10.20.0.0/24","candidates":[{"id":"void","via":"100.64.0.9"},{"id":"lo","via":"100.64.0.1"}]}]}'
+	sleep 1
+	cat > void.sh <<EOS
+#!/bin/sh
+exec "$JGC" -c "$SOCK" sdwan probes '[{"id":"lo","address":"127.0.0.1","interval":50,"eval":300,"down":2,"up":2,"timeout":200},{"id":"void","address":"192.0.2.77","fib":2,"interval":50,"eval":300,"down":2,"timeout":100}]'
+EOS
+	chmod +x void.sh
+	atf_check -o save:lane.out "$(atf_get_srcdir)/ylane" \
+	    "sctp://127.0.0.1:$PORT" ca.pem client.pem client.key 30 ./void.sh
+	cat lane.out
+	atf_check -o match:'atomic add 10.20.0.0/24 100.64.0.1' cat ipfw.log
+	# The probes' word first, the failover it set off after.
+	atf_check -o inline:'tunnel id=void state=down\nsteer-changed to=lo reason=failover\n' \
+	    sh -c "grep -E '^(tunnel id=void|steer-changed)' lane.out | sed -E 's/ ms=.*//'"
+	atf_check -o match:'^bulk [0-9.]+ MiB, [1-9][0-9]* dumps' cat lane.out
+	atf_check sh -c "awk '/^max/ { exit !(\$2 < 200) }' lane.out"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '[]'
+}
+sdwan_control_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	# Its rule and tables, by their names, as sdwan_probe's.
+	ipfw -S show 12 2>/dev/null | grep -q 'table(swc_p_4)' && \
+	    ipfw -q delete 12
+	ipfw -q table swc_p_4 destroy 2>/dev/null
+	ipfw -q table swc_p_4_alt destroy 2>/dev/null
+	true
+}
+
 atf_test_case sdwan_jail_edge cleanup
 sdwan_jail_edge_head()
 {
@@ -3424,6 +3499,7 @@ atf_init_test_cases()
 	atf_add_test_case path_check
 	atf_add_test_case crash_event
 	atf_add_test_case sdwan_probe
+	atf_add_test_case sdwan_control
 	atf_add_test_case sdwan_jail_edge
 	atf_add_test_case sdwan_links
 	atf_add_test_case bird_live

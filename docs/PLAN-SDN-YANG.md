@@ -1510,9 +1510,35 @@ whose first part is served.
   changed), `yang_sdwan` (both through YANG-CBOR and back),
   console_test `sdwan_apply` (the read's reason, `live`, a pin, a bad
   one refused with the agent's words, cleared).
-- 3.5.2 G, A: the control stream: a push stream of its own for steer
-  and probe notifications, its own SCTP stream; check: order kept
-  under a bulk dump.
+- 3.5.2 G, A (done, cblink 0.2.20, agent 0.242.0): the control
+  stream: a push stream of its own for steer and probe notifications,
+  its own SCTP stream; check: order kept under a bulk dump.  Done:
+  cblink's control lane (TRANSPORTS.md 3.4): a group flagged
+  `CBL_MCF_CONTROL` or a stream opened or accepted with
+  `CBL_SF_CONTROL` has what it sends queued ahead of every frame not
+  yet begun and, over SCTP, sent on SCTP stream 1 (cblink streams move
+  to 2 + n mod (os - 2)); the YANG family accepts every event stream
+  subscription so.  Measured first: a SUBSCRIBE stream already had an
+  SCTP stream of its own, but shared the sender's queue, which a dump
+  read slower than it is made fills; group `notify` shares SCTP stream
+  0 with the dumps.  So the steer-changed and arcana-events (the
+  probes' sdwan-tunnel) notifications the console's events
+  subscription takes (watch.c) are on the lane with no change to the
+  agent's code or the console; the NETCONF stream is that push stream
+  of its own.  Group `notify` (arcanactl's `notifications`) stays on
+  SCTP stream 0, in order with the replies it may follow
+  (`cbl_ynotify_conn()`).  Over TCP and AF_UNIX nothing changes: one
+  byte stream, head-of-line blocking stays.  Checked: cblink
+  `lane_test` (a dump read at 64 MB/s through a 256 KiB socket buffer:
+  group notifications 203 ms late on SCTP stream 0, 4 ms on the lane;
+  a control stream's data 75 ms before, 5 ms after; TCP 106 ms, in
+  order), `sctp_raw_test` (the lane on SCTP stream 1);
+  agent_tls_test `control_lane` (DTLS over SCTP, 32 GET-SID dumps in
+  flight read a part a millisecond: a pin set and cleared five times,
+  ten steer-changed in order, 339-400 ms late before, 13-56 ms after)
+  and agent_root_test `sdwan_control` (a probe going down, then the
+  failover: in that order, 780-790 ms late before, 50-53 ms after);
+  what is left is the receiver's socket buffer at the rate it reads.
 - 3.6.1 C (the rest): `arcanactl set <path>` (an `EDIT`) with libxo
   output; the old verbs removed with the interim module; check: the
   arcanactl tests rewritten.  `set` done (2026-10-29): `set [-nx] [-d

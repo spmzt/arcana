@@ -138,6 +138,10 @@ LDADD.notifrecv+=	-lssl -lcrypto
 PROGS+=		ystreamc
 SRCS.ystreamc=	ystreamc.c ystream.c ymodel_schema.c
 LDADD.ystreamc+=	${CBLINK_LIBS}
+# ylane: notifications timed while dumps fill the association.
+PROGS+=		ylane
+SRCS.ylane=	ylane.c ymodel_schema.c
+LDADD.ylane+=	${CBLINK_LIBS}
 # zupdate: arcana-agent's update with what a sender lies about (an
 # inflate bomb).
 PROGS+=		zupdate
