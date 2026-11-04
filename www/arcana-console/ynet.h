@@ -44,6 +44,17 @@ int	ynet_address(cbl_conn *conn, const char *jail, const char *address,
  * (tag the one to accept where refused), "migrated" what a host's first
  * commit moved its boot from.
  */
+/*
+ * A threat feed's ipfw table on the host, by arcana-firewall's
+ * feed-load (with dry_run, what would change): *outp {"count", "added",
+ * "removed", "set", "left_out"}; feed-drop gives one up, *destroyed
+ * false when a rule names it and it was emptied.
+ */
+int	ynet_feed_load(cbl_conn *conn, const char *table, const char *feed,
+	    const char *entries, bool dry_run, ucl_object_t **outp, char *err,
+	    size_t errlen);
+int	ynet_feed_drop(cbl_conn *conn, const char *table, bool *destroyed,
+	    char *err, size_t errlen);
 int	ynet_rules(cbl_conn *conn, const char *jail, bool from_rc,
 	    const char *text, const char *sha256, bool check,
 	    const char *const *acc, size_t nacc, ucl_object_t *top, char *err,

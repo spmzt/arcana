@@ -31,6 +31,9 @@
 
 #include <sys/param.h>
 #include <sys/linker.h>
+#include <sys/socket.h>
+
+#include <netinet/in.h>
 
 #include <ctype.h>
 #include <dirent.h>
@@ -1623,6 +1626,107 @@ arcana_firewall_firewall_from_rc_action(cbl_req *req,
 		return (said(req, e));
 	out->text = text;
 	out->rc_file = from;
+	return (0);
+}
+
+/*
+ * A threat feed's prefixes made an ipfw table whole (feeds.c), the
+ * host's; an entry covering the address the request came from left out.
+ */
+int
+arcana_firewall_firewall_feed_load_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_firewall_firewall_feed_load_input *in,
+    struct arcana_firewall_firewall_feed_load_output *out, cbl_yarena *a)
+{
+	struct sockaddr_storage	 ss;
+	struct feed_req		 rq;
+	struct feed_rsp		 rs;
+	const cbl_peer		*peer;
+	struct work		*w;
+	const char		*e;
+	socklen_t		 sl;
+	int			 root, rc;
+
+	if (target != NULL && keys_of(target, 1, a) != NULL)
+		return (said(req, "a vnet jail's firewall is not fed: the "
+		    "host's alone"));
+	if (in->name == NULL || !feed_name_ok(in->name))
+		return (said(req, "a feed's table is named by letters, digits, "
+		    "_ . and -, 48 at most"));
+	memset(&rq, 0, sizeof(rq));
+	rq.name = in->name;
+	rq.feed = in->feed;
+	rq.entries = in->entries;
+	rq.dry_run = in->has_dry_run && in->dry_run;
+	sl = sizeof(ss);
+	if ((peer = cbl_req_peer(req)) != NULL && cbl_peer_addr(peer, &ss,
+	    &sl) == 0) {
+		if (ss.ss_family == AF_INET) {
+			rq.peer_af = AF_INET;
+			memcpy(rq.peer, &((struct sockaddr_in *)(void *)&ss)->
+			    sin_addr, 4);
+		} else if (ss.ss_family == AF_INET6) {
+			rq.peer_af = AF_INET6;
+			memcpy(rq.peer, &((struct sockaddr_in6 *)(void *)&ss)->
+			    sin6_addr, 16);
+		}
+	}
+	if ((w = ywork_told(req, a, wfmt(ywork(a), "feed %s", in->name),
+	    &root)) == NULL)
+		return (ENOMEM);
+	if (!change_begin(wfmt(w, "feed %s", in->name))) {
+		step_end(w, root, false, NULL);
+		return (said(req, "not done: arcana-agent is stopping"));
+	}
+	e = NULL;
+	rc = feed_load(w, &rq, &rs, &e);
+	change_end();
+	step_end(w, root, rc == 0, NULL);
+	if (rc != 0)
+		return (said(req, e));
+	out->has_count = out->has_added = out->has_removed = out->has_set =
+	    out->has_left_out = true;
+	out->count = rs.count;
+	out->added = rs.added;
+	out->removed = rs.removed;
+	out->set = rs.set;
+	out->left_out = rs.left_out;
+	return (0);
+}
+
+/* A feed's table given up: destroyed, or emptied while a rule names it. */
+int
+arcana_firewall_firewall_feed_drop_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_firewall_firewall_feed_drop_input *in,
+    struct arcana_firewall_firewall_feed_drop_output *out, cbl_yarena *a)
+{
+	struct work	*w;
+	const char	*e;
+	bool		 gone;
+	int		 root, rc;
+
+	if (target != NULL && keys_of(target, 1, a) != NULL)
+		return (said(req, "a vnet jail's firewall is not fed: the "
+		    "host's alone"));
+	if (in->name == NULL || !feed_name_ok(in->name))
+		return (said(req, "not a feed's table"));
+	if ((w = ywork_told(req, a, wfmt(ywork(a), "feed %s dropped",
+	    in->name), &root)) == NULL)
+		return (ENOMEM);
+	if (!change_begin(wfmt(w, "feed %s dropped", in->name))) {
+		step_end(w, root, false, NULL);
+		return (said(req, "not done: arcana-agent is stopping"));
+	}
+	e = NULL;
+	rc = feed_drop(w, in->name, &gone, &e);
+	change_end();
+	step_end(w, root, rc == 0, NULL);
+	if (rc != 0)
+		return (said(req, e));
+	out->has_destroyed = true;
+	out->destroyed = gone;
 	return (0);
 }
 

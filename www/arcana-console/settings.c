@@ -61,6 +61,7 @@ static const char	*v_attr(const char *);
 static const char	*v_tgtoken(const char *);
 static const char	*v_chats(const char *);
 static const char	*v_sender(const char *);
+static const char	*v_prefixes(const char *);
 
 static struct setting {
 	const char	*key;
@@ -169,6 +170,14 @@ static struct setting {
 	{ "telegram_san", K_TEXT, "Security Admin Notifications to Telegram",
 	    "Chats the SANs go to, a space between them; empty for none.",
 	    v_chats, NULL, NULL },
+	{ "feeds_allow_private", K_TEXT, "Threat feeds from private addresses",
+	    "A threat feed is fetched only from an address of the internet: "
+	    "one that resolves to loopback, private (RFC 1918, ULA), shared "
+	    "(100.64/10), link-local (169.254/16, a cloud's metadata), "
+	    "multicast or reserved space is refused, at each redirect too. "
+	    "The prefixes here are let through all the same, a space between "
+	    "them (a mirror of one's own on the LAN: 192.0.2.10/32); empty, "
+	    "the default, for none.", v_prefixes, NULL, NULL },
 	{ "ldap_url", K_TEXT, "LDAP directory",
 	    "ldaps://ldap.example.org or ldap://ldap.example.org (StartTLS is "
 	    "then required); empty for no sign-in by LDAP. The server's "
@@ -309,6 +318,40 @@ v_tgtoken(const char *s)
 	    "UVWXYZ0123456789_-") != strlen(s + n + 1))
 		return ("digits, a colon and letters, digits, _ and -, as "
 		    "BotFather gives it");
+	return (NULL);
+}
+
+/* Prefixes, a space between them, 16 at most: a.b.c.d/n or x::/n. */
+static const char *
+v_prefixes(const char *s)
+{
+	char		 buf[64], *slash, *end;
+	unsigned char	 a[16];
+	const char	*e;
+	size_t		 n, k;
+	long		 l;
+
+	for (n = 0; *s != '\0'; s = e, n++) {
+		s += strspn(s, " ,");
+		if (*s == '\0')
+			break;
+		e = s + strcspn(s, " ,");
+		k = (size_t)(e - s);
+		if (n == 16)
+			return ("16 prefixes at most");
+		if (k >= sizeof(buf))
+			return ("a prefix is a.b.c.d/n or x::/n");
+		memcpy(buf, s, k);
+		buf[k] = '\0';
+		if ((slash = strchr(buf, '/')) == NULL)
+			return ("a prefix is a.b.c.d/n or x::/n");
+		*slash++ = '\0';
+		l = strtol(slash, &end, 10);
+		if (*slash == '\0' || *end != '\0' || l < 0 ||
+		    (inet_pton(AF_INET, buf, a) == 1 ? l > 32 :
+		    inet_pton(AF_INET6, buf, a) == 1 ? l > 128 : true))
+			return ("a prefix is a.b.c.d/n or x::/n");
+	}
 	return (NULL);
 }
 

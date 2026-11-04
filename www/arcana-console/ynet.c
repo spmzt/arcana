@@ -350,7 +350,8 @@ fw_json(const ucl_object_t *f)
 	    "pkts", "octets", "bytes", "ttl", "ttl", "kind", "kind", "flow",
 	    "flow", NULL };
 	static const char *const tables[] = { "name", "name", "set", "set",
-	    "type", "type", "entry", "entries", "count", "count", NULL };
+	    "type", "type", "entry", "entries", "count", "count", "feed",
+	    "feed", "updated", "updated", NULL };
 	static const char *const tunables[] = { "name", "name", "value",
 	    "value", "want", "want", "needed", "needed", "why", "why", NULL };
 	static const char *const pipes[] = { "number", "num", "bandwidth",
@@ -714,6 +715,65 @@ fw_call(cbl_conn *conn, const char *act, const void *in, void *out,
 		return (ENOENT);
 	}
 	return (yq_call(conn, n, NULL, an, in, out, a, err, errlen));
+}
+
+int
+ynet_feed_load(cbl_conn *conn, const char *table, const char *feed,
+    const char *entries, bool dry_run, ucl_object_t **outp, char *err,
+    size_t errlen)
+{
+	struct arcana_firewall_firewall_feed_load_input		 in;
+	struct arcana_firewall_firewall_feed_load_output	 out;
+	cbl_yarena						*a;
+	ucl_object_t						*o;
+	int							 error;
+
+	*outp = NULL;
+	err[0] = '\0';
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.name = table;
+	in.feed = feed;
+	in.entries = entries;
+	in.has_dry_run = true;
+	in.dry_run = dry_run;
+	if ((error = fw_call(conn, "feed-load", &in, &out, a, err, errlen)) ==
+	    0) {
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put(o, "count", ucl_object_fromint(out.count));
+		put(o, "added", ucl_object_fromint(out.added));
+		put(o, "removed", ucl_object_fromint(out.removed));
+		put(o, "set", ucl_object_fromint(out.set));
+		put(o, "left_out", ucl_object_fromint(out.left_out));
+		*outp = o;
+	}
+	cbl_yarena_free(a);
+	return (error);
+}
+
+int
+ynet_feed_drop(cbl_conn *conn, const char *table, bool *destroyed, char *err,
+    size_t errlen)
+{
+	struct arcana_firewall_firewall_feed_drop_input		 in;
+	struct arcana_firewall_firewall_feed_drop_output	 out;
+	cbl_yarena						*a;
+	int							 error;
+
+	*destroyed = false;
+	err[0] = '\0';
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.name = table;
+	if ((error = fw_call(conn, "feed-drop", &in, &out, a, err, errlen)) ==
+	    0)
+		*destroyed = out.destroyed;
+	cbl_yarena_free(a);
+	return (error);
 }
 
 int

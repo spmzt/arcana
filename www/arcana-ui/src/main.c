@@ -534,6 +534,7 @@ tick(void *arg)
 			topo_probe_tick(now);
 			relay_tick(now);
 			firewall_tick(now);
+			feeds_tick(now);
 			procs_tick(now);
 			logs_tick(now);
 			usage_tick(now);
@@ -855,6 +856,7 @@ submit_form(const char *form, const ucl_object_t *f)
 	} else if (strcmp(form, "login-token") == 0) {
 		login_token(jstr(f, "token") != NULL ? jstr(f, "token") : "");
 	} else if (iflabel_form(form, f) || pfxlists_form(form, f) ||
+	    feeds_form(form, f) ||
 	    user_form(form, f)) {
 		;
 	} else if (strcmp(form, "login-password") == 0) {
@@ -1125,6 +1127,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    secpage_action(act, arg, value) || naspage_action(act, arg, value) ||
 	    builder_action(act, arg, value) ||
 	    iflabel_action(act, arg) || pfxlists_action(act, arg, value) ||
+	    feeds_action(act, arg, value) ||
 	    user_action(act, arg) ||
 	    routing_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||

@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.242.0"
+#define	ARCANA_AGENT_VERSION	"0.243.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -1166,6 +1166,31 @@ char		*ipfw_title(const struct arc_job_spec *);
 int		 do_ipfw_job(struct work *, const struct arc_job_spec *, bool *,
 		    const char **);
 const char	*ipfw_settle(struct work *, bool);
+/*
+ * The threat feeds' tables (invidia/feeds.c): a feed's prefixes made an
+ * ipfw table whole, kept in a file beside the kept rules; given up;
+ * marked in a read; made again in set 1 before Apply's swap and at the
+ * start.
+ */
+struct feed_req {
+	const char	*name;		/* the table */
+	const char	*feed;
+	const char	*entries;	/* a line each */
+	bool		 dry_run;
+	int		 peer_af;	/* the requester's address, left out */
+	uint8_t		 peer[16];
+};
+struct feed_rsp {
+	uint32_t	 count, added, removed, left_out;
+	uint8_t		 set;
+};
+bool		 feed_name_ok(const char *);
+int		 feed_load(struct work *, const struct feed_req *,
+		    struct feed_rsp *, const char **);
+int		 feed_drop(struct work *, const char *, bool *, const char **);
+void		 feeds_mark(struct work *, struct ucl_object_s *);
+int		 feeds_fill_set1(struct work *);
+void		 feeds_start(void);
 const char	*ipfw_unadd(struct work *, const struct arc_job_spec *);
 int		 transport_watch(cbl_ctx *);
 void		 transport_add(const char *, cbl_listener *);

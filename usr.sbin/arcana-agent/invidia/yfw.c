@@ -353,6 +353,8 @@ yfw_from_json(const char *json, cbl_yarena *a, yfw *out)
 		}
 		t[n].entry.n = ne;
 		t[n].entry.v = en;
+		t[n].feed = yj_str(a, e, "feed");
+		YJ_NUM(e, "updated", &t[n], updated);
 		n++;
 	}
 	st->table.n = n;

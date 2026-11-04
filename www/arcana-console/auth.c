@@ -901,6 +901,8 @@ session_start(struct http_request *req, const char *who, const char *tok,
 	s->ldap = s->pw = false;
 	snprintf(s->user, sizeof(s->user), "%s", user != NULL ? user : "");
 	snprintf(last_user, sizeof(last_user), "%s", s->user);
+	/* Where from: no threat feed is to cut it off. */
+	feeds_signin(req, s->user);
 	snprintf(cookie, sizeof(cookie), "%s=%s; Path=/; HttpOnly; "
 	    "SameSite=Strict; Max-Age=%d%s", SESSION_COOKIE, token,
 	    cfg.session_max, cfg.cookie_secure ? "; Secure" : "");

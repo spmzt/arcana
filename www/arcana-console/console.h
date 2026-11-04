@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.349.1"
+#define	ARCW_VERSION		"0.350.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -209,6 +209,12 @@ int		 api_auth_password(struct http_request *);
 int		 api_prefix_lists(struct http_request *);
 int		 api_prefix_list(struct http_request *);
 ucl_object_t	*prefix_list_get(const char *);
+
+/* feeds.c: threat feeds, fetched by the console, ipfw tables on hosts. */
+int		 api_feeds(struct http_request *);
+int		 api_feed(struct http_request *);
+void		 feeds_init(void);
+void		 feeds_signin(struct http_request *, const char *);
 
 /* labels.c: the console's own tags on hosts' interfaces. */
 int		 api_labels(struct http_request *);

@@ -93,6 +93,9 @@ const char	*resp_header(const struct resp *, const char *, char *, size_t);
 /* A network made up for the troubleshooter: routers r1, r2, r3 as
  * jails 11, 12, 13 by the stand-ins; r2's routes back and ruleset given. */
 void		 ts_net(const char *, const char *, const char *);
+/* The threat feeds' fixtures (tests/feeds) served over HTTP on
+ * 127.0.0.1 with Last-Modified, ETag and If-Modified-Since: its port. */
+int		 feeds_server(const atf_tc_t *);
 const char	*jstr(const struct resp *, const char *);
 const ucl_object_t *jail_named(const struct resp *, const char *);
 const char	*jail_str(const struct resp *, const char *, const char *);

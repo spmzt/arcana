@@ -2489,6 +2489,116 @@ paths:
       responses:
         "200":
           description: Gone; every list left.
+  /api/feeds:
+    get:
+      tags: [servers]
+      summary: The threat feeds
+      description: >-
+        Lists of scanners', spammers' and abusers' prefixes the console
+        fetches from the internet (TLS verified for the URL's name,
+        If-Modified-Since, 16 MB and 250 000 entries at most; only from
+        an address of the internet, the one resolved and checked
+        connected to, at each redirect too, 3 at most and never from
+        https to http; Settings' feeds_allow_private lets prefixes
+        through) and keeps on the hosts chosen as
+        ipfw(8) tables of type addr: presets (each with its url, format,
+        interval, what it lists and its terms), and feeds, each with its
+        last fetch (fetched_at, count, dropped_count, covered, error,
+        failures, alarm) and delivered, per host {table, count, added,
+        removed, set, at, error}. Operators and owners only.
+      responses:
+        "200":
+          description: "{presets, feeds, floor, max_entries}"
+  /api/feeds/{id}:
+    get:
+      tags: [servers]
+      summary: A threat feed whole
+      description: >-
+        As in the list, with dropped (each entry with its reason: not a
+        prefix, the whole address space, covering a protected address,
+        or private space the feed does not list on purpose; which
+        protected address and whose, the console's, a host's or a user's
+        last sign-in, in detail to the console's owners alone, a host's
+        to whom may read that host), its events (each update whose
+        entries changed), the last preview and its first entries.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The feed.
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [servers]
+      summary: Keep a threat feed
+      description: >-
+        {"preset"} or {"url"}, with "name", "format" (plain,
+        spamhaus-json, dshield), "interval" (hours, 1 to 720), "table"
+        (feed_<id> by default), "bogons" (it lists private space on
+        purpose), "enabled" and "hosts" (servers the user may change).
+        Enabled, it is fetched at once; disabled, its tables are given
+        up. The id is lower-case letters, digits and -, 24 at most. A
+        url that resolves to loopback, private, shared, link-local or
+        reserved space is refused (400). Every change of a feed (PUT,
+        DELETE, fetch, preview) needs the right to change each host it is
+        on and each it was sent to (403 naming the host otherwise).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Kept, as {feed}.
+        "400": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [servers]
+      summary: Take a threat feed away
+      description: >-
+        Its tables are given up on the hosts it was sent to (only those
+        it made; a rule naming one stays and matches nothing).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Gone.
+  /api/feeds/{id}/fetch:
+    post:
+      tags: [servers]
+      summary: Fetch a threat feed now
+      description: >-
+        Asked of the console's feed worker: fetched if it changed since
+        the last time, sent to the hosts that lack it. GET the feed for
+        what came of it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "202":
+          description: Asked.
+  /api/feeds/{id}/preview:
+    post:
+      tags: [servers]
+      summary: Preview a threat feed
+      description: >-
+        Fetched whole and parsed, each host asked what its table would
+        become (feed-load's dry run); nothing kept but the preview,
+        which GET gives.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "202":
+          description: Asked.
   /api/labels:
     get:
       tags: [servers]

@@ -126,6 +126,7 @@ static struct {
 	int		 k_secs;
 	ucl_object_t	*k_data;
 	char		 typed[400];	/* the rule being typed, for its words */
+	char		 offer[128];	/* a rule offered for the add form */
 	bool		 k_loading;
 	char		 k_error[300];
 	ucl_object_t	*log;		/* the lines of the security log */
@@ -1106,11 +1107,32 @@ view_tables(struct html *h)
 		h_txt(h, jstr(t, "name"));
 		h_raw(h, "</span><span class=\"chip dim\">");
 		h_txt(h, jstr(t, "type"));
-		h_fmt(h, "</span><span class=\"chip\">%lld entries</span>"
-		    "<button class=\"ghost small danger\" data-act=\""
-		    "fw-table-destroy\"", (long long)jint(t, "count", 0));
-		h_attr(h, "data-arg", jstr(t, "name"));
-		h_raw(h, ">Destroy</button></h4>");
+		h_fmt(h, "</span><span class=\"chip\">%lld entries</span>",
+		    (long long)jint(t, "count", 0));
+		if (jstr(t, "feed") != NULL) {
+			/* A threat feed's: the console keeps it, whole. */
+			char	age[48];
+
+			fmt_age(age, sizeof(age), (double)jint(t, "updated", 0) *
+			    1000);
+			h_raw(h, "<span class=\"chip info\" title=\"Filled by the "
+			    "console's threat feed, replaced whole at each update; "
+			    "the Network section's Threat feeds tab keeps it\">feed ");
+			h_txt(h, jstr(t, "feed"));
+			h_raw(h, ", ");
+			h_txt(h, age);
+			h_raw(h, "</span><button class=\"ghost small\" data-act=\""
+			    "fw-feed-rule\" title=\"A rule that drops what comes "
+			    "from it, in the add form of Silent drop: kept or not "
+			    "as any rule\"");
+			h_attr(h, "data-arg", jstr(t, "name"));
+			h_raw(h, ">Offer a rule</button></h4>");
+		} else {
+			h_raw(h, "<button class=\"ghost small danger\" data-act=\""
+			    "fw-table-destroy\"");
+			h_attr(h, "data-arg", jstr(t, "name"));
+			h_raw(h, ">Destroy</button></h4>");
+		}
 		if (box_shut(key)) {
 			h_raw(h, "</section>");
 			continue;
@@ -3832,13 +3854,13 @@ view_firewall(struct html *h, struct server *s)
 	    "num\" inputmode=\"numeric\" size=\"6\" value=\"%d\" title=\"The "
 	    "rule's number: %d to %d here\"><input name=\"rule\" spellcheck=\""
 	    "false\" autocomplete=\"off\" list=\"fw-words\" data-input=\""
-	    "fw-rule\" placeholder=\"allow tcp from any to me 443 in\"><label class=\"toggle\" title=\"Added to what the "
+	    "fw-rule\" placeholder=\"allow tcp from any to me 443 in\" value=\"%s\"><label class=\"toggle\" title=\"Added to what the "
 	    "kernel has, at once\"><input type=\"checkbox\" name=\"live\"%s>"
 	    "<span>now</span></label><label class=\"toggle\" title=\"Written "
 	    "into the kept rules, which the host loads when it starts and "
 	    "Apply loads\"><input type=\"checkbox\" name=\"persist\" checked>"
-	    "<span>keep</span></label>", next, sc->lo, sc->hi, loaded ?
-	    " checked" : "");
+	    "<span>keep</span></label>", next, sc->lo, sc->hi, fw.offer,
+	    loaded ? " checked" : "");
 	/* A console prefix list beside the rule: kept as a table, the
 	 * list's name after pl_, which the rule names as table(pl_name). */
 	pfxlist_select(h, "A prefix list as a table", "pfx", "Made as table "
@@ -4197,7 +4219,26 @@ firewall_action(const char *act, const char *arg, const char *value)
 		}
 		return (true);
 	}
+	/* A feed's table: its rule offered in Silent drop's add form. */
+	if (strcmp(act, "fw-feed-rule") == 0) {
+		for (i = 0; i < nitems(sects) && sects[i].lo != 9100; i++)
+			;
+		/* A feed's name alone, as it goes into the form unquoted. */
+		if (i == nitems(sects) || arg == NULL || arg[0] == '\0' ||
+		    strspn(arg, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"
+		    "VWXYZ0123456789_.-") != strlen(arg))
+			return (true);
+		snprintf(fw.offer, sizeof(fw.offer), "deny ip from table(%.60s) "
+		    "to any in", arg);
+		fw.sect = (int)i;
+		fw.edit = 0;
+		fw.move = 0;
+		toast(false, "The rule is in Silent drop's add form: keep it, "
+		    "or not");
+		return (true);
+	}
 	if (strcmp(act, "fw-sect") == 0) {
+		fw.offer[0] = '\0';
 		fw.sect = atoi(arg);
 		fw.edit = 0;
 		app.rail_open = false;

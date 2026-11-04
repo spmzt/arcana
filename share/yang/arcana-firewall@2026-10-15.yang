@@ -430,6 +430,20 @@ module arcana-firewall {
               "Its value, what tablearg stands for.";
           }
         }
+        leaf feed {
+          type string;
+          description
+            "The threat feed that fills it, when the console's feed
+             made it (feed-load): Arcana replaces it whole at each
+             update and leaves every other table alone.";
+        }
+        leaf updated {
+          type uint64;
+          units "seconds";
+          description
+            "When the feed last filled it, in seconds since the
+             epoch.";
+        }
       }
       leaf-list nat {
         type string;
@@ -790,6 +804,104 @@ module arcana-firewall {
           type string;
           description
             "The kept file's SHA-256, for a change made from this.";
+        }
+      }
+    }
+    action feed-load {
+      description
+        "A threat feed's prefixes made the whole of an ipfw table of
+         the host's (not a vnet jail's): kept in a file of the agent's
+         beside the kept rules, filled into a scratch table of the
+         same set and swapped in (ipfw table T swap S), so that a
+         lookup sees the old entries or the new ones and never half
+         of either.  The table is created of type addr when there is
+         none; one there is that no feed made is the host's own and
+         refused.  In the set of the first rule that names it when
+         net.inet.ip.fw.tables_sets=1, else 0.  Filled again when the
+         agent starts and by Apply, which makes the tables anew.";
+      input {
+        leaf name {
+          type string {
+            length "1..48";
+            pattern '[A-Za-z0-9_.-]*';
+          }
+          mandatory true;
+          description
+            "The table.";
+        }
+        leaf feed {
+          type string {
+            length "1..64";
+          }
+          mandatory true;
+          description
+            "The feed's name, kept with the table.";
+        }
+        leaf entries {
+          type string;
+          mandatory true;
+          description
+            "The prefixes and addresses, IPv4 and IPv6, one a line,
+             each with no host bits; 250 000 at most.";
+        }
+        leaf dry-run {
+          type boolean;
+          default "false";
+          description
+            "What would change is said and nothing is done.";
+        }
+      }
+      output {
+        leaf count {
+          type uint32;
+          description
+            "The table's entries after.";
+        }
+        leaf added {
+          type uint32;
+          description
+            "Entries the table had not.";
+        }
+        leaf removed {
+          type uint32;
+          description
+            "Entries it had that went.";
+        }
+        leaf set {
+          type uint8;
+          description
+            "The set it is in.";
+        }
+        leaf left-out {
+          type uint32;
+          description
+            "Entries left out as they cover the address the request
+             came from: a feed never cuts the console off.";
+        }
+      }
+    }
+    action feed-drop {
+      description
+        "A feed's table given up: its file removed and the table
+         destroyed, or emptied when a rule names it still (ipfw
+         refuses to destroy it then).  Only a table a feed made.";
+      input {
+        leaf name {
+          type string {
+            length "1..48";
+            pattern '[A-Za-z0-9_.-]*';
+          }
+          mandatory true;
+          description
+            "The table.";
+        }
+      }
+      output {
+        leaf destroyed {
+          type boolean;
+          description
+            "The table is gone; false, a rule names it and it was
+             emptied.";
         }
       }
     }

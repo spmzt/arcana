@@ -1489,6 +1489,17 @@ table.net th.sortable:hover { color: var(--fg-2); }
 table.net th.asc::after { content: " ▲"; color: var(--cyan); }
 table.net th.desc::after { content: " ▼"; color: var(--cyan); }
 table.net tbody tr:hover { background: rgba(var(--accent-rgb), .05); }
+/* Threat feeds: what a source lists, its terms and why an entry was
+ * dropped are prose, wrapped; a source's URL breaks where it must. */
+table.net.feed-presets td, table.net.feed-dropped td,
+table.net.feeds td:first-child { white-space: normal; }
+table.net.feed-presets small, table.net.feeds small {
+	display: block;
+	overflow-wrap: anywhere;
+}
+section.feed-detail h4 { display: flex; gap: .5rem; align-items: center; }
+section.feed-detail h4 button:first-of-type { margin-left: auto; }
+ul.feed-events { margin: .2rem 0 .6rem; padding-left: 1.2rem; }
 /* A nexthop group: its next hops one under the other, each with a
  * bar of its share. */
 table.nhgroups td { vertical-align: top; }

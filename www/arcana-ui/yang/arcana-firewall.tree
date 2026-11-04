@@ -39,13 +39,15 @@ module: arcana-firewall
      |  |  +--ro kind?      string
      |  |  +--ro flow?      string
      |  +--ro table* [name]
-     |  |  +--ro name     string
-     |  |  +--ro set?     uint8
-     |  |  +--ro type?    string
-     |  |  +--ro count?   uint32
+     |  |  +--ro name       string
+     |  |  +--ro set?       uint8
+     |  |  +--ro type?      string
+     |  |  +--ro count?     uint32
      |  |  +--ro entry* [key]
-     |  |     +--ro key      string
-     |  |     +--ro value?   string
+     |  |  |  +--ro key      string
+     |  |  |  +--ro value?   string
+     |  |  +--ro feed?      string
+     |  |  +--ro updated?   uint64
      |  +--ro nat*             string
      |  +--ro tunable* [name]
      |  |  +--ro name      string
@@ -119,6 +121,23 @@ module: arcana-firewall
      |     +--ro text?      string
      |     +--ro rc-file?   string
      |     +--ro sha256?    string
+     +---x feed-load
+     |  +---w input
+     |  |  +---w name       string
+     |  |  +---w feed       string
+     |  |  +---w entries    string
+     |  |  +---w dry-run?   boolean
+     |  +--ro output
+     |     +--ro count?      uint32
+     |     +--ro added?      uint32
+     |     +--ro removed?    uint32
+     |     +--ro set?        uint8
+     |     +--ro left-out?   uint32
+     +---x feed-drop
+     |  +---w input
+     |  |  +---w name    string
+     |  +--ro output
+     |     +--ro destroyed?   boolean
      +---x trace
         +---w input
         |  +---w address    inet:ip-address-no-zone

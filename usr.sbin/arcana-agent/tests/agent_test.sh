@@ -10521,6 +10521,147 @@ firewall_apply_cleanup()
 	stop_daemon
 }
 
+atf_test_case firewall_feeds cleanup
+firewall_feeds_head()
+{
+	atf_set "descr" "threat feeds: a feed's prefixes made an ipfw table whole by a scratch table swapped in, kept in a file; a dry run changes nothing; the host's own table never replaced nor dropped; Apply makes the feed's table again in set 1 before its swap; the start fills it again"
+}
+firewall_feeds_body()
+{
+	# ipfw(8)'s tables a file each, t/<set>.<name>, an entry a line;
+	# with tables_sets=0 every table is set 0's.
+	mkdir t
+	cat > fake-ipfw <<EOS
+#!/bin/sh
+d=$(pwd)
+echo "ipfw \$*" >> \$d/ipfw.log
+[ "\$1" = -q ] && shift
+s=0
+if [ "\$1" = set ] && [ "\$2" != swap ] && [ "\$2" != disable ] &&
+    [ "\$2" != 1 -o "\$3" = table ]; then
+	s=\$2; hs=1; shift 2
+fi
+case "\$*" in
+*.arcana-load) cat "\$1" > \$d/loaded.rules ;;
+*.load)
+	while read -r a b c d2 rest; do
+		if [ "\$a" = set ]; then ls=\$b; n=\$d2; v=\$(echo "\$rest" | cut -d' ' -f1); r=\$(echo "\$rest" | cut -d' ' -f2-)
+		else ls=0; n=\$b; v=\$c; r="\$d2 \$rest"; fi
+		case "\$v" in
+		create) : > \$d/t/\$ls.\$n ;;
+		add) set -- \$r
+			while [ \$# -ge 2 ]; do echo "\$1" >> \$d/t/\$ls.\$n; shift 2; done ;;
+		esac
+	done < "\$1" ;;
+"table all info")
+	for f in \$d/t/\${hs:+\$s.}*; do
+		[ -f "\$f" ] || continue
+		b=\${f##*/}
+		printf -- '--- table(%s), set(%s) ---\n kindex: 1, type: addr\n items: %d, size: 0\n' \
+		    "\${b#*.}" "\${b%%.*}" "\$(wc -l < \$f)"
+	done ;;
+"table "*" list") [ -f \$d/t/\$s.\$2 ] && sed 's/\$/ 0/' \$d/t/\$s.\$2 ;;
+"table "*" create type addr") : > \$d/t/\$s.\$2 ;;
+"table "*" destroy")
+	[ -f \$d/t/\$s.\$2 ] || { echo "ipfw: failed to destroy table \$2: No such process" >&2; exit 71; }
+	rm \$d/t/\$s.\$2 ;;
+"table "*" flush") : > \$d/t/\$s.\$2 ;;
+"table "*" swap "*)
+	mv \$d/t/\$s.\$2 \$d/t/x; mv \$d/t/\$s.\$4 \$d/t/\$s.\$2; mv \$d/t/x \$d/t/\$s.\$4 ;;
+"set swap 0 1")
+	for f in \$d/t/0.* \$d/t/1.*; do [ -f "\$f" ] && b=\${f##*/} && mv \$f \$d/t/s\$b; done
+	for f in \$d/t/s0.*; do [ -f "\$f" ] && b=\${f##*/s0.} && mv \$f \$d/t/1.\$b; done
+	for f in \$d/t/s1.*; do [ -f "\$f" ] && b=\${f##*/s1.} && mv \$f \$d/t/0.\$b; done ;;
+"-S list"|"-S show") [ -f \$d/live.rules ] && cat \$d/live.rules ;;
+esac
+exit 0
+EOS
+	chmod +x fake-ipfw
+	fw_sysctl 1 0
+	mkdir fw
+	printf '10.9.0.0/16\n' > t/0.own
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules -Q $(pwd)/fake-sysctl"
+	start_daemon
+
+	printf '# a feed\n192.0.2.0/24\n2001:db8::/32\n198.51.100.7\n192.0.2.9/24 ; again\n\n' > list
+	# The host's own table, with entries: not a feed's, never replaced.
+	atf_check -s exit:1 -e match:"table own is the host's own, not a feed's" \
+	    "$JGC" -c "$SOCK" action firewall feed-load name=own feed=x \
+	    entries="$(cat list)"
+	atf_check -o inline:'10.9.0.0/16\n' cat t/0.own
+	# Not a prefix: refused whole.
+	atf_check -s exit:1 -e match:'999.1.1.1: not an IPv4 or IPv6' \
+	    "$JGC" -c "$SOCK" action firewall feed-load name=feed_drop \
+	    feed=spamhaus-drop entries="$(printf '192.0.2.0/24\n999.1.1.1\n')"
+	# A dry run: what would change, nothing done.
+	atf_check -o match:'"added":3' -o match:'"count":3' \
+	    -o match:'"removed":0' "$JGC" -c "$SOCK" action firewall \
+	    feed-load name=feed_drop feed=spamhaus-drop entries="$(cat list)" \
+	    dry-run=true
+	atf_check test ! -e fw/feeds/feed_drop
+	atf_check test ! -e t/0.feed_drop
+	# Loaded: a scratch table filled by one run of a file, swapped in.
+	: > ipfw.log
+	atf_check -o match:'"count":3' "$JGC" -c "$SOCK" action firewall \
+	    feed-load name=feed_drop feed=spamhaus-drop entries="$(cat list)"
+	atf_check -o inline:'192.0.2.0/24\n198.51.100.7/32\n2001:db8::/32\n' \
+	    sort t/0.feed_drop
+	atf_check test ! -e t/0.feed_drop_load
+	atf_check -o match:'^ipfw -q .*/fw/feeds/.feed_drop.load$' \
+	    -o match:'^ipfw -q table feed_drop swap feed_drop_load$' \
+	    -o not-match:'table feed_drop add' cat ipfw.log
+	atf_check -o match:'^# arcana feed spamhaus-drop$' \
+	    -o match:'^198.51.100.7/32$' cat fw/feeds/feed_drop
+	atf_check -o match:'"name":"feed_drop","type":"addr","feed":"spamhaus-drop"' \
+	    -o match:'"count":3' "$JGC" -c "$SOCK" net ipfw
+	# Updated: what came and went counted.
+	atf_check -o match:'"added":1' -o match:'"removed":1' \
+	    -o match:'"count":3' "$JGC" -c "$SOCK" action firewall \
+	    feed-load name=feed_drop feed=spamhaus-drop \
+	    entries="$(printf '192.0.2.0/24\n2001:db8::/32\n203.0.113.0/24\n')"
+	atf_check -o inline:'192.0.2.0/24\n2001:db8::/32\n203.0.113.0/24\n' \
+	    sort t/0.feed_drop
+	# Dropping a table no feed made: refused, left as it is.
+	atf_check -s exit:1 -e match:'table own is no feed.s' \
+	    "$JGC" -c "$SOCK" action firewall feed-drop name=own
+	atf_check -o inline:'10.9.0.0/16\n' cat t/0.own
+
+	# Apply with tables_sets=1 swaps the tables with the sets: the
+	# feed's is made in set 1 from its file before the swap.
+	fw_sysctl 1 1
+	printf 'add 00100 deny ip from table(feed_drop) to any in\nadd 00999 allow ip from any to any\n' > fw/ipfw.rules
+	: > ipfw.log
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw apply
+	atf_check -o match:'^ipfw -q set 1 table feed_drop swap feed_drop_load$' \
+	    cat ipfw.log
+	atf_check -o inline:'1\n' sh -c "grep -n 'set 1 table feed_drop swap' ipfw.log | cut -d: -f1 | \
+	    { read a; b=\$(grep -n 'set swap 0 1' ipfw.log | head -1 | cut -d: -f1); [ \$a -lt \$b ] && echo 1; }"
+	atf_check -o inline:'192.0.2.0/24\n2001:db8::/32\n203.0.113.0/24\n' \
+	    sort t/0.feed_drop
+
+	# A reboot empties the tables: the start fills them again.
+	stop_daemon
+	fw_sysctl 1 0
+	rm t/*.feed_drop
+	start_daemon
+	for i in $(seq 1 100); do
+		[ -s t/0.feed_drop ] && break
+		sleep 0.1
+	done
+	atf_check -o inline:'192.0.2.0/24\n2001:db8::/32\n203.0.113.0/24\n' \
+	    sort t/0.feed_drop
+
+	# Dropped: the table and its file gone.
+	atf_check -o match:'"destroyed":true' "$JGC" -c "$SOCK" action \
+	    firewall feed-drop name=feed_drop
+	atf_check test ! -e t/0.feed_drop
+	atf_check test ! -e fw/feeds/feed_drop
+}
+firewall_feeds_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case firewall_migrate cleanup
 firewall_migrate_head()
 {
@@ -13782,6 +13923,7 @@ atf_init_test_cases()
 	atf_add_test_case fw_trace
 	atf_add_test_case firewall
 	atf_add_test_case firewall_apply
+	atf_add_test_case firewall_feeds
 	atf_add_test_case firewall_migrate
 	atf_add_test_case observe
 	atf_add_test_case storage

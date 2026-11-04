@@ -482,13 +482,15 @@ module: arcana-network
      |           |  +--ro kind?      string
      |           |  +--ro flow?      string
      |           +--ro table* [name]
-     |           |  +--ro name     string
-     |           |  +--ro set?     uint8
-     |           |  +--ro type?    string
-     |           |  +--ro count?   uint32
+     |           |  +--ro name       string
+     |           |  +--ro set?       uint8
+     |           |  +--ro type?      string
+     |           |  +--ro count?     uint32
      |           |  +--ro entry* [key]
-     |           |     +--ro key      string
-     |           |     +--ro value?   string
+     |           |  |  +--ro key      string
+     |           |  |  +--ro value?   string
+     |           |  +--ro feed?      string
+     |           |  +--ro updated?   uint64
      |           +--ro nat*             string
      |           +--ro tunable* [name]
      |           |  +--ro name      string

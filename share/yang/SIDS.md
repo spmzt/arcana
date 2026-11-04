@@ -107,7 +107,7 @@ on the wire.
 | 69 800 | 100 | `ieee802-dot1q-rstp-bridge@2025-02-04`, IEEE 802.1Q | `share/yang/ieee802-dot1q-rstp-bridge@2025-02-04.sid` (58 used) |
 | 69 900 | 100 | `arcana-log` | `share/yang/arcana-log@2026-10-14.sid` (35 used) |
 | 70 000 | 200 | `ietf-syslog@2025-04-30`, RFC 9742 (no IETF range) | `share/yang/ietf-syslog@2025-04-30.sid` (109 used) |
-| 70 200 | 300 | `arcana-firewall` | `share/yang/arcana-firewall@2026-10-15.sid` (223 used; its rest at 84 700) |
+| 70 200 | 300 | `arcana-firewall` | `share/yang/arcana-firewall@2026-10-15.sid` (223 used; its rest at 84 700 and 88 000) |
 | 70 500 | 200 | `arcana-troubleshoot` | `share/yang/arcana-troubleshoot@2026-10-15.sid` (157 used) |
 | 70 700 | 100 | `arcana-history` | `share/yang/arcana-history@2026-10-15.sid` (100 used; its rest at 80 000) |
 | 70 800 | 400 | `arcana-events` | `share/yang/arcana-events@2026-10-15.sid` (400 used; its rest at 80 100) |
@@ -154,7 +154,7 @@ on the wire.
 | 83 000 | 100 | `arcana-host`, its third range: the agent's features and safe-wait, what hello said | `share/yang/arcana-host@2026-10-15.sid` (2 used) |
 | 83 100 | 100 | `arcana-agent`, its third range: update's program-size, build's compress and program-size, a fetch's refusal, console-update's commit | `share/yang/arcana-agent@2026-10-15.sid` (8 used) |
 | 83 200 | 100 | `arcana-jobs`, its second range: the steps notification, a request's trace told to its peer as it runs | `share/yang/arcana-jobs@2026-10-14.sid` (13 used) |
-| 84 000 | 700 | `arcana-network`: the network tables' read actions (routes, nexthops, nexthop groups, connections, sockets, interfaces, bridges, geneve, neighbours, multicast, kept routes, IPsec, a jail's firewall, the route lookup), the network-part structure, a jail's address action | `share/yang/arcana-network@2026-10-29.sid` (639 used) |
+| 84 000 | 700 | `arcana-network`: the network tables' read actions (routes, nexthops, nexthop groups, connections, sockets, interfaces, bridges, geneve, neighbours, multicast, kept routes, IPsec, a jail's firewall, the route lookup), the network-part structure, a jail's address action | `share/yang/arcana-network@2026-10-29.sid` (641 used) |
 | 84 700 | 100 | `arcana-firewall`, its second range (listed first in its file, so that new items go there): a kept rule's norm, the pipes' lines, the vnet jails' kept rules, the check and from-rc actions, the state's tunables, modules and a table's set | `share/yang/arcana-firewall@2026-10-15.sid` (60 used) |
 | 85 000 | 100 | `arcana-sshd`, its second range: the read action, the user CAs' keys and text, sshd_config's path, a certificate's serial | `share/yang/arcana-sshd@2026-10-15.sid` (54 used) |
 | 85 100 | 100 | `arcana-probe`, its third range: the read action's monitors | `share/yang/arcana-probe@2026-10-15.sid` (1 used) |
@@ -171,6 +171,7 @@ on the wire.
 | 87 200 | 100 | `ietf-key-chain@2017-06-15`, RFC 8177 (no IETF range; imported by `ietf-l3vpn-ntw`, its identities used) | `share/yang/ietf-key-chain@2017-06-15.sid` (56 used) |
 | 87 300 | 100 | `ietf-tcp@2024-10-10`, RFC 9648 (no IETF range; its identities derive from `ietf-key-chain`'s) | `share/yang/ietf-tcp@2024-10-10.sid` (44 used) |
 | 87 400 | 600 | `arcana-l3nm`, the SD-WAN's augments of L3NM, the console's | `share/yang/arcana-l3nm@2026-11-05.sid` (347 used) |
+| 88 000 | 100 | `arcana-firewall`, its third range (listed first in its file, so that new items go there): the threat feeds' tables, the feed-load and feed-drop actions | `share/yang/arcana-firewall@2026-10-15.sid` (38 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

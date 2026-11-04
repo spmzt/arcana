@@ -1,0 +1,9 @@
+# A list of one's own, for the safety rules
+nonsense
+0.0.0.0/0
+192.0.2.0/24
+203.0.113.0/24 ; a sign-in's
+198.51.100.0/24
+8.8.8.0/24
+8.8.8.8
+2001:4860::/32

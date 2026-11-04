@@ -892,7 +892,11 @@ stage(struct html *h)
 		    "the fleet\">BFD</button><button class=\"tab%s\" data-act=\""
 		    "netsect-tab\" data-arg=\"lists\" title=\"Prefix lists kept by the "
 		    "console, for ipfw tables, BIRD sets and SD-WAN zones on any "
-		    "host\">Prefix lists</button></nav>",
+		    "host\">Prefix lists</button><button class=\"tab%s\" "
+		    "data-act=\"netsect-tab\" data-arg=\"feeds\" title=\"Lists "
+		    "of scanners', spammers' and abusers' addresses from the "
+		    "internet, kept on the hosts as ipfw tables\">Threat feeds"
+		    "</button></nav>",
 		    app.netsect == NETSECT_MAP ? " on" : "", app.netsect ==
 		    NETSECT_OVERLAY ? " on" : "", app.netsect == NETSECT_LEAKS ?
 		    " on" : "", app.netsect ==
@@ -900,7 +904,7 @@ stage(struct html *h)
 		    " on" : "", app.netsect == NETSECT_BGP ? " on" : "",
 		    app.netsect == NETSECT_OSPF ? " on" : "", app.netsect ==
 		    NETSECT_BFD ? " on" : "", app.netsect == NETSECT_PREFIXES ?
-		    " on" : "");
+		    " on" : "", app.netsect == NETSECT_FEEDS ? " on" : "");
 		if (app.netsect == NETSECT_OVERLAY)
 			view_overlay(h);
 		else if (app.netsect == NETSECT_LEAKS)
@@ -911,6 +915,8 @@ stage(struct html *h)
 			view_traceroute(h);
 		else if (app.netsect == NETSECT_PREFIXES)
 			view_pfxlists(h);
+		else if (app.netsect == NETSECT_FEEDS)
+			view_feeds(h);
 		else if (app.netsect >= NETSECT_BGP) {
 			h_raw(h, "<div class=\"rtview\">");
 			view_routing(h);

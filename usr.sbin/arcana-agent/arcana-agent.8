@@ -730,6 +730,12 @@ Default:
 .Pa /sbin/ipfw
 and
 .Pa /usr/local/etc/arcana/ipfw.rules .
+The threat feeds' tables, which arcana-firewall's feed-load fills whole
+(a scratch table swapped in), are kept in
+.Pa feeds/
+beside it, a file a table; only a table with a file there is ever
+replaced or given up, and each is filled again at the start and by
+Apply.
 .It Fl Q Ar sysctl , Fl O Ar sysctl.conf
 The
 .Xr sysctl 8
@@ -1350,6 +1356,8 @@ More flags, added to those the variables above give.
 .Bl -tag -width Ds -compact
 .It Pa /var/run/arcana-agent.sock
 .It Pa /var/run/arcana-agent.pid
+.It Pa /usr/local/etc/arcana/feeds/
+The threat feeds' tables, a file each.
 .El
 .Sh EXAMPLES
 Serve the console host over TLS and local tools over the default

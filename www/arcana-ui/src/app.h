@@ -979,7 +979,8 @@ void		 nhop_modal(struct html *);
 bool		 nhop_action(const char *, const char *, const char *);
 void		 ecmp_head(struct html *);
 enum { NETSECT_MAP, NETSECT_GROUPS, NETSECT_TRACE, NETSECT_BGP, NETSECT_OSPF,
-    NETSECT_BFD, NETSECT_PREFIXES, NETSECT_OVERLAY, NETSECT_LEAKS };
+    NETSECT_BFD, NETSECT_PREFIXES, NETSECT_OVERLAY, NETSECT_LEAKS,
+    NETSECT_FEEDS };
 void		 view_traceroute(struct html *);
 bool		 mtr_action(const char *, const char *, const char *);
 void		 mtr_tick(double);
@@ -1230,6 +1231,13 @@ void		 pfxlist_select(struct html *, const char *, const char *,
 void		 view_pfxlists(struct html *);
 bool		 pfxlists_form(const char *, const ucl_object_t *);
 bool		 pfxlists_action(const char *, const char *, const char *);
+
+/* feeds.c: threat feeds, the console's, as ipfw tables on hosts. */
+void		 feeds_load(void);
+void		 feeds_tick(double);
+void		 view_feeds(struct html *);
+bool		 feeds_form(const char *, const ucl_object_t *);
+bool		 feeds_action(const char *, const char *, const char *);
 
 /* iflabels.c: the console's own labels on interfaces. */
 void		 labels_load(void);

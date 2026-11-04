@@ -14379,8 +14379,372 @@ ATF_TC_BODY(watch_nacm, tc)
 	resp_free(&r);
 }
 
+/* GET /api/feeds/<id> until what is told: a key that is there. */
+static void
+feed_wait(const char *id, const char *key, const char *want,
+    struct resp *r)
+{
+	char	path[96];
+	int	i;
+
+	snprintf(path, sizeof(path), "/api/feeds/%s", id);
+	for (i = 0; i < 300; i++) {
+		http("GET", path, NULL, r);
+		if (r->status == 200 && jstr(r, key) != NULL && (want == NULL ||
+		    strcmp(jstr(r, key), want) == 0))
+			return;
+		resp_free(r);
+		usleep(100000);
+	}
+	http("GET", path, NULL, r);
+	atf_tc_fail("feed %s: no %s%s%s: %s", id, key, want != NULL ? " = " :
+	    "", want != NULL ? want : "", r->body);
+}
+
+/* The feed's dropped entries: is entry there with a reason that has why? */
+static bool
+feed_dropped(const struct resp *r, const char *entry, const char *why)
+{
+	char	k[32];
+	int	i;
+
+	for (i = 0; i < 50; i++) {
+		snprintf(k, sizeof(k), "dropped.%d.entry", i);
+		if (jstr(r, k) == NULL)
+			return (false);
+		if (strcmp(jstr(r, k), entry) != 0)
+			continue;
+		snprintf(k, sizeof(k), "dropped.%d.reason", i);
+		if (strstr(jstr(r, k), why) != NULL)
+			return (true);
+		snprintf(k, sizeof(k), "dropped.%d.detail", i);
+		return (jstr(r, k) != NULL && strstr(jstr(r, k), why) != NULL);
+	}
+	return (false);
+}
+
+CONSOLE_TC_LONG(feeds, "Threat feeds: the presets' formats parsed from "
+    "fixtures, fetched by the console with If-Modified-Since, the "
+    "console's, a host's and a sign-in's addresses dropped, private space "
+    "kept only where the feed lists it on purpose; delivered as an ipfw "
+    "table swapped in; a preview; an alarm after three failures; a feed "
+    "disabled gives up its table alone; members may not")
+ATF_TC_BODY(feeds, tc)
+{
+	struct authn	a, b, c;
+	struct resp	r;
+	char		cwd[1024], body[1024], sa[16], k[96], invite[80];
+	char		invite2[80];
+	int		port, i;
+
+	port = feeds_server(tc);
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	/* A host the console reaches at 192.0.2.77, and a user who last
+	 * signed in from 203.0.113.9: no feed is to cut either off. */
+	http("POST", "/api/servers", "{\"name\":\"far\",\"uri\":\"tcp://"
+	    "192.0.2.77:4310\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	put("data/signins.json", "{\"alice\":{\"addr\":\"203.0.113.9\","
+	    "\"at\":1}}");
+
+	/* A feed comes from the internet: what resolves to loopback,
+	 * private space or a cloud's metadata is refused, unless Settings
+	 * let its prefix through; the stand-in's 127.0.0.1 so. */
+	{
+		static const char *const priv[] = { "127.0.0.1", "10.0.0.1",
+		    "169.254.169.254", "[::1]" };
+
+		for (i = 0; i < 4; i++) {
+			snprintf(body, sizeof(body), "{\"url\":\"http://%s:%d/"
+			    "drop_v4.json\"}", priv[i], port);
+			http("PUT", "/api/feeds/x", body, &r);
+			ATF_CHECK_MSG(r.status == 400 && strstr(r.body,
+			    "is a private or reserved address") != NULL, "%s: %s",
+			    priv[i], r.body);
+			resp_free(&r);
+		}
+	}
+	http("POST", "/api/settings", "{\"set\":{\"feeds_allow_private\":"
+	    "\"127.0.0.1/32\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+
+	/* The presets, off, each with its source and its terms. */
+	http("GET", "/api/feeds", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("spamhaus-drop-v4", jstr(&r, "presets.0.id"));
+	ATF_CHECK_STREQ("https://www.spamhaus.org/drop/terms/", jstr(&r,
+	    "presets.0.terms_url"));
+	ATF_CHECK_STREQ("true", jstr(&r, "presets.2.bogons"));
+	ATF_CHECK(jstr(&r, "feeds.0.id") == NULL);
+	resp_free(&r);
+	/* What is no feed: refused. */
+	http("PUT", "/api/feeds/x", "{\"url\":\"ftp://example.org/x\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PUT", "/api/feeds/x", "{\"url\":\"https://example.org/x\","
+	    "\"interval\":0}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PUT", "/api/feeds/x", "{\"url\":\"https://example.org/x\","
+	    "\"table\":\"bad table\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/* Spamhaus DROP, its JSON lines: fetched, kept, sent to host a as
+	 * a table filled by a scratch one and swapped in. */
+	snprintf(body, sizeof(body), "{\"preset\":\"spamhaus-drop-v4\","
+	    "\"url\":\"http://127.0.0.1:%d/drop_v4.json\",\"enabled\":true,"
+	    "\"hosts\":[\"%s\"]}", port, sa);
+	http("PUT", "/api/feeds/spamhaus-drop-v4", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("feed_spamhaus_drop_v4", jstr(&r, "feed.table"));
+	ATF_CHECK_STREQ("12", jstr(&r, "feed.interval"));
+	resp_free(&r);
+	snprintf(k, sizeof(k), "delivered.%s.at", sa);
+	feed_wait("spamhaus-drop-v4", k, NULL, &r);
+	ATF_CHECK_STREQ("4", jstr(&r, "count"));
+	ATF_CHECK_STREQ("1.10.16.0/20", jstr(&r, "sample.0"));
+	snprintf(k, sizeof(k), "delivered.%s.count", sa);
+	ATF_CHECK_STREQ("4", jstr(&r, k));
+	ATF_CHECK_STREQ("4", jstr(&r, "events.0.count"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'table feed_spamhaus_drop_v4 swap "
+	    "feed_spamhaus_drop_v4_load' ipfw.log") == 0);
+	ATF_CHECK(system("grep -q 'table feed_spamhaus_drop_v4_load add "
+	    "1.10.16.0/20 0 1.19.0.0/16 0' ipfw.log") == 0);
+	ATF_CHECK(system("grep -q '^# arcana feed spamhaus-drop-v4$' "
+	    "feeds/feed_spamhaus_drop_v4") == 0);
+	/* Fetched again: If-Modified-Since, a 304, nothing sent again. */
+	ATF_REQUIRE(system(": > ipfw.log") == 0);
+	http("POST", "/api/feeds/spamhaus-drop-v4/fetch", NULL, &r);
+	EXPECT(&r, 202);
+	resp_free(&r);
+	for (i = 0; i < 300 && system("grep -q 'drop_v4.json 304' "
+	    "feedsrv.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q 'drop_v4.json 304' feedsrv.log") == 0);
+	usleep(500000);
+	ATF_CHECK(system("grep -q 'swap' ipfw.log") != 0);
+
+	/* FireHOL level 1 lists the bogons on purpose: kept, but for what
+	 * covers the console's own 127.0.0.1. */
+	snprintf(body, sizeof(body), "{\"preset\":\"firehol-level1\",\"url\":"
+	    "\"http://127.0.0.1:%d/firehol_level1.netset\",\"enabled\":true,"
+	    "\"hosts\":[\"%s\"]}", port, sa);
+	http("PUT", "/api/feeds/firehol-level1", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	feed_wait("firehol-level1", "fetched_at", NULL, &r);
+	ATF_CHECK_MSG(feed_dropped(&r, "127.0.0.0/8", "covers 127.0.0.1, the "
+	    "console's"), "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"198.18.0.0/15\"") != NULL, "%s",
+	    r.body);
+	ATF_CHECK_STREQ("13", jstr(&r, "count"));
+	resp_free(&r);
+
+	/* A list of one's own, of every kind of entry: what is no prefix,
+	 * the whole space, a host's and a sign-in's address, private space
+	 * it does not list on purpose; one within another left out. */
+	snprintf(body, sizeof(body), "{\"name\":\"Local\",\"url\":\"http://"
+	    "127.0.0.1:%d/local.txt\",\"format\":\"plain\",\"interval\":1,"
+	    "\"enabled\":true,\"hosts\":[\"%s\"]}", port, sa);
+	http("PUT", "/api/feeds/local", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("feed_local", jstr(&r, "feed.table"));
+	resp_free(&r);
+	feed_wait("local", "fetched_at", NULL, &r);
+	ATF_CHECK_STREQ("2", jstr(&r, "count"));
+	ATF_CHECK_STREQ("1", jstr(&r, "covered"));
+	ATF_CHECK_STREQ("5", jstr(&r, "dropped_count"));
+	ATF_CHECK_MSG(feed_dropped(&r, "192.0.2.0/24", "covers a protected "
+	    "address"), "%s", r.body);
+	ATF_CHECK_MSG(feed_dropped(&r, "192.0.2.0/24", "covers 192.0.2.77, "
+	    "host far's"), "%s", r.body);
+	ATF_CHECK_MSG(feed_dropped(&r, "203.0.113.0/24", "alice's last "
+	    "sign-in"), "%s", r.body);
+	ATF_CHECK_MSG(feed_dropped(&r, "198.51.100.0/24", "private or "
+	    "reserved"), "%s", r.body);
+	ATF_CHECK_MSG(feed_dropped(&r, "0.0.0.0/0", "the whole address space"),
+	    "%s", r.body);
+	ATF_CHECK_MSG(feed_dropped(&r, "line 2", "not an address"), "%s",
+	    r.body);
+	ATF_CHECK_MSG(strstr(r.body, "nonsense") == NULL, "%s", r.body);
+	ATF_CHECK_STREQ("8.8.8.0/24", jstr(&r, "sample.0"));
+	ATF_CHECK_STREQ("2001:4860::/32", jstr(&r, "sample.1"));
+	resp_free(&r);
+	/* The preview: each host's dry run; nothing changes. */
+	ATF_REQUIRE(system(": > ipfw.log") == 0);
+	http("POST", "/api/feeds/local/preview", NULL, &r);
+	EXPECT(&r, 202);
+	resp_free(&r);
+	snprintf(k, sizeof(k), "preview.hosts.%s.count", sa);
+	feed_wait("local", k, "2", &r);
+	snprintf(k, sizeof(k), "preview.hosts.%s.added", sa);
+	ATF_CHECK_STREQ("0", jstr(&r, k));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'swap' ipfw.log") != 0);
+
+	/* A source gone: an alarm after three failures in a row, the
+	 * hosts' table as it was; back, the alarm cleared. */
+	snprintf(body, sizeof(body), "{\"preset\":\"spamhaus-drop-v4\","
+	    "\"url\":\"http://127.0.0.1:%d/missing\",\"enabled\":true,"
+	    "\"hosts\":[\"%s\"]}", port, sa);
+	http("PUT", "/api/feeds/spamhaus-drop-v4", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	feed_wait("spamhaus-drop-v4", "failures", "1", &r);
+	resp_free(&r);
+	for (i = 2; i <= 3; i++) {
+		http("POST", "/api/feeds/spamhaus-drop-v4/fetch", NULL, &r);
+		resp_free(&r);
+		snprintf(k, sizeof(k), "%d", i);
+		feed_wait("spamhaus-drop-v4", "failures", k, &r);
+		resp_free(&r);
+	}
+	feed_wait("spamhaus-drop-v4", "alarm.since", NULL, &r);
+	ATF_CHECK_STREQ("4", jstr(&r, "count"));
+	resp_free(&r);
+	ATF_CHECK(access("feeds/feed_spamhaus_drop_v4", F_OK) == 0);
+	snprintf(body, sizeof(body), "{\"preset\":\"spamhaus-drop-v4\","
+	    "\"url\":\"http://127.0.0.1:%d/drop_v4.json\",\"enabled\":true,"
+	    "\"hosts\":[\"%s\"]}", port, sa);
+	http("PUT", "/api/feeds/spamhaus-drop-v4", body, &r);
+	resp_free(&r);
+	feed_wait("spamhaus-drop-v4", "failures", "0", &r);
+	ATF_CHECK(jstr(&r, "alarm.since") == NULL);
+	resp_free(&r);
+
+	/* Disabled: its own table given up, the others' left. */
+	snprintf(body, sizeof(body), "{\"name\":\"Local\",\"url\":\"http://"
+	    "127.0.0.1:%d/local.txt\",\"enabled\":false,\"hosts\":[\"%s\"]}",
+	    port, sa);
+	http("PUT", "/api/feeds/local", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 300 && access("feeds/feed_local", F_OK) == 0; i++)
+		usleep(100000);
+	ATF_CHECK(access("feeds/feed_local", F_OK) != 0);
+	ATF_CHECK(access("feeds/feed_spamhaus_drop_v4", F_OK) == 0);
+	ATF_CHECK(access("feeds/feed_firehol_level1", F_OK) == 0);
+	/* Removed: the same. */
+	http("DELETE", "/api/feeds/firehol-level1", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 300 && access("feeds/feed_firehol_level1", F_OK) ==
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK(access("feeds/feed_firehol_level1", F_OK) != 0);
+	ATF_CHECK(access("feeds/feed_spamhaus_drop_v4", F_OK) == 0);
+
+	/* Redirected: followed on the stand-in; to a cloud's metadata,
+	 * refused though the stand-in itself is let through. */
+	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
+	    "redirect\",\"format\":\"spamhaus-json\",\"enabled\":true,"
+	    "\"hosts\":[]}", port);
+	http("PUT", "/api/feeds/hop", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	feed_wait("hop", "count", "4", &r);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
+	    "redirect-private\",\"enabled\":true,\"hosts\":[]}", port);
+	http("PUT", "/api/feeds/meta", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	feed_wait("meta", "failures", "1", &r);
+	ATF_CHECK_MSG(strstr(r.body, "169.254.169.254 is a private or "
+	    "reserved address") != NULL, "%s", r.body);
+	resp_free(&r);
+
+	/* An operator who only views host a may not take away the feed
+	 * that is on it, nor change it: refused, its table left.  A
+	 * member reads none and changes none. */
+	snprintf(body, sizeof(body), "{\"console\":\"operator\",\"hosts\":"
+	    "{\"%s\":\"viewer\"}}", sa);
+	http("PUT", "/api/roles/a-viewer-op", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("PUT", "/api/users/carol", "{\"roles\":[\"a-viewer-op\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/users/carol/invite", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(invite2, sizeof(invite2), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	http("PUT", "/api/users/bob", "{\"roles\":[\"viewer\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/users/bob/invite", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	authn_new(&c, -7);
+	do_register(&c, invite2, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("operator", jstr(&r, "console"));
+	resp_free(&r);
+	http("DELETE", "/api/feeds/spamhaus-drop-v4", NULL, &r);
+	ATF_CHECK_MSG(r.status == 403 && strstr(r.body, "host a is not one") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"preset\":\"spamhaus-drop-v4\","
+	    "\"url\":\"http://127.0.0.1:%d/drop_v4.json\",\"enabled\":false,"
+	    "\"hosts\":[]}", port);
+	http("PUT", "/api/feeds/spamhaus-drop-v4", body, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
+	    "drop_v4.json\",\"enabled\":true,\"hosts\":[\"%s\"]}", port, sa);
+	http("PUT", "/api/feeds/carols", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	usleep(3000000);
+	ATF_CHECK(access("feeds/feed_spamhaus_drop_v4", F_OK) == 0);
+	http("GET", "/api/feeds/spamhaus-drop-v4", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "enabled"));
+	resp_free(&r);
+	/* What a feed dropped read by one who is no owner: the reason,
+	 * not whose address it is, of a host it may not read nor of a
+	 * sign-in. */
+	http("GET", "/api/feeds/local", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(feed_dropped(&r, "192.0.2.0/24", "covers a protected "
+	    "address") && feed_dropped(&r, "203.0.113.0/24", "covers a "
+	    "protected address"), "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "192.0.2.77") == NULL && strstr(r.body,
+	    "203.0.113.9") == NULL && strstr(r.body, "alice") == NULL &&
+	    strstr(r.body, "far") == NULL && strstr(r.body, "127.0.0.1,") ==
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	cookie[0] = '\0';
+	authn_new(&b, -8);
+	do_register(&b, invite, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("member", jstr(&r, "console"));
+	resp_free(&r);
+	http("GET", "/api/feeds", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("PUT", "/api/feeds/x", "{\"url\":\"https://example.org/x\"}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
+	ATF_TP_ADD_TC(tp, feeds);
 	ATF_TP_ADD_TC(tp, watch_nacm);
 	ATF_TP_ADD_TC(tp, cluster);
 	ATF_TP_ADD_TC(tp, notif_receiver);

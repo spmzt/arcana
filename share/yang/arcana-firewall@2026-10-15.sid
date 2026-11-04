@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-firewall",
     "module-revision": "2026-10-15",
-    "sid-file-version": 4,
+    "sid-file-version": 5,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -19,6 +19,10 @@
       }
     ],
     "assignment-range": [
+      {
+        "entry-point": "88000",
+        "size": "100"
+      },
       {
         "entry-point": "84700",
         "size": "100"
@@ -1443,6 +1447,196 @@
         "namespace": "data",
         "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/tunable/why",
         "sid": "84759"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-drop",
+        "sid": "88000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-drop/input",
+        "sid": "88001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-drop/input/name",
+        "sid": "88002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-drop/output",
+        "sid": "88003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-drop/output/destroyed",
+        "sid": "88004"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load",
+        "sid": "88005"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load/input",
+        "sid": "88006"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load/input/dry-run",
+        "sid": "88007"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load/input/entries",
+        "sid": "88008"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load/input/feed",
+        "sid": "88009"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load/input/name",
+        "sid": "88010"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load/output",
+        "sid": "88011"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load/output/added",
+        "sid": "88012"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load/output/count",
+        "sid": "88013"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load/output/removed",
+        "sid": "88014"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load/output/set",
+        "sid": "88015"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/table/feed",
+        "sid": "88016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/table/updated",
+        "sid": "88017"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-drop",
+        "sid": "88018"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-drop/input",
+        "sid": "88019"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-drop/input/name",
+        "sid": "88020"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-drop/output",
+        "sid": "88021"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-drop/output/destroyed",
+        "sid": "88022"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load",
+        "sid": "88023"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load/input",
+        "sid": "88024"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load/input/dry-run",
+        "sid": "88025"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load/input/entries",
+        "sid": "88026"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load/input/feed",
+        "sid": "88027"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load/input/name",
+        "sid": "88028"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load/output",
+        "sid": "88029"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load/output/added",
+        "sid": "88030"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load/output/count",
+        "sid": "88031"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load/output/removed",
+        "sid": "88032"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load/output/set",
+        "sid": "88033"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/table/feed",
+        "sid": "88034"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/table/updated",
+        "sid": "88035"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/feed-load/output/left-out",
+        "sid": "88036"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/feed-load/output/left-out",
+        "sid": "88037"
       }
     ]
   }

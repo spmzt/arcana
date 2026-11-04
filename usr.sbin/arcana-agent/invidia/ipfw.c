@@ -888,7 +888,10 @@ do_ipfw(struct work *w, struct net_rsp *rsp)
 				t += 7;
 				t[strcspn(t, ", ")] = '\0';
 				put(o, "type", t);
-			}
+			} else if (o != NULL && (t = strstr(line, " items: ")) !=
+			    NULL)
+				ucl_object_insert_key(o, ucl_object_fromint(
+				    strtol(t + 8, NULL, 10)), "items", 0, false);
 		}
 		/* What each holds: a key a line, and its value. */
 		it = NULL;
@@ -932,10 +935,18 @@ do_ipfw(struct work *w, struct net_rsp *rsp)
 				}
 			}
 			ucl_object_insert_key(o, ents, "entries", 0, false);
+			/* What info counted, when the list was cut short. */
+			if (ucl_object_toint(ucl_object_lookup(o, "items")) >
+			    cnt)
+				cnt = (int)ucl_object_toint(ucl_object_lookup(o,
+				    "items"));
+			(void)ucl_object_delete_key(o, "items");
 			ucl_object_insert_key(o, ucl_object_fromint(cnt),
 			    "count", 0, false);
 		}
 		argv[2] = (char *)(uintptr_t)"all";
+		/* The threat feeds' tables, each with its feed. */
+		feeds_mark(w, arr);
 	}
 	ucl_object_insert_key(top, arr, "tables", 0, false);
 	arr = ucl_object_typed_new(UCL_ARRAY);
@@ -3029,6 +3040,8 @@ apply(struct work *w, bool hold, const char **errp)
 		return (-1);
 	}
 	(void)unlink(tmp);
+	/* The feeds' tables, which the swap takes away with set 0. */
+	(void)feeds_fill_set1(w);
 	if (ipfw(w, errp, true, "set", "swap", "0", "1", NULL) != 0)
 		return (-1);
 	/* The old rules gone, the objects they used went to set 1. */

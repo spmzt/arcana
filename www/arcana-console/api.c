@@ -416,6 +416,7 @@ arcw_init(void)
 	transfers_init();
 	workflows_init();
 	sdwan_init();
+	feeds_init();
 	mail_init();
 	cluster_started();
 	return (WEB_OK);

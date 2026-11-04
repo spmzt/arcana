@@ -159,6 +159,11 @@ const struct route routes[] = {
 	    HTTP_METHOD_PUT | HTTP_METHOD_DELETE },
 	{ "/api/prefix-lists", api_prefix_lists, NULL,
 	    HTTP_METHOD_GET },
+	{ "/api/feeds", api_feeds, NULL,
+	    HTTP_METHOD_GET },
+	{ "^/api/feeds/[a-z0-9-]{1,24}(/fetch|/preview)?$", api_feed, NULL,
+	    HTTP_METHOD_GET | HTTP_METHOD_PUT | HTTP_METHOD_DELETE |
+	    HTTP_METHOD_POST },
 	{ "^/api/prefix-lists/[A-Za-z0-9_-]{1,32}$", api_prefix_list, NULL,
 	    HTTP_METHOD_PUT | HTTP_METHOD_DELETE },
 	{ "^/api/notif/[0-9a-f]{1,16}/capabilities$", api_notif_capabilities,

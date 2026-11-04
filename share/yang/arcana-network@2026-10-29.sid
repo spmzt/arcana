@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-network",
     "module-revision": "2026-10-29",
-    "sid-file-version": 4,
+    "sid-file-version": 5,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -3223,6 +3223,16 @@
         "namespace": "data",
         "identifier": "/arcana-network:network/ipfw/output/firewall/state/tunable/why",
         "sid": "84638"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-network:network/ipfw/output/firewall/state/table/feed",
+        "sid": "84639"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-network:network/ipfw/output/firewall/state/table/updated",
+        "sid": "84640"
       }
     ]
   }

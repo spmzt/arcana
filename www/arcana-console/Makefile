@@ -5,7 +5,7 @@ PROG=		arcana-console
 SRCS=		web.c keymgr.c routes.c api.c auth.c config.c hosts.c pki.c push.c servers.c settings.c security.c troubleshoot.c \
 		stream.c follow.c watch.c tokens.c transfers.c workflows.c sdwan.c \
 		sdwan_edge.c \
-		store.c update.c webpush.c audit.c sen.c mail.c templates.c ldap.c labels.c notif.c prefixlists.c users.c \
+		store.c update.c webpush.c audit.c sen.c mail.c templates.c ldap.c labels.c notif.c prefixlists.c feeds.c users.c \
 		craft.c nodes.c ytrans.c yjsonin.c restconf.c rcstream.c idsfiles.c drift.c \
 		l3nm.c l3nm_mef.c \
 		cplug.c

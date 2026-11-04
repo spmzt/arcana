@@ -8190,6 +8190,111 @@ ATF_TC_CLEANUP(pwa_ra, tc)
 	browser_stop();
 }
 
+ATF_TC_WITH_CLEANUP(pwa_feeds);
+ATF_TC_HEAD(pwa_feeds, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Threat feeds: a preset used on the Network section's tab, its source and terms shown, fetched and sent to the host, its tables sorted and filtered; its ipfw table on the host's Firewall page with a rule offered in Silent drop's add form, kept or not as any");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_feeds, tc)
+{
+	char	script[512];
+	int	port;
+
+	port = feeds_server(tc);
+	prologue(tc, 1);
+	/* The stand-in source is on loopback: let through by Settings. */
+	run("window.unset = false; fetch('/api/settings', { method: 'POST', "
+	    "headers: { 'Content-Type': 'application/json', 'X-Arcana': '1' }, "
+	    "body: JSON.stringify({ set: { feeds_allow_private: "
+	    "'127.0.0.1/32' } }) }).then(r => { window.unset = r.ok; });");
+	wait_js("window.unset", 10);
+	run("document.querySelector('li[data-act=select-network]').click()");
+	click_when(".netsect button.tab[data-arg=feeds]", 20);
+	wait_js("document.querySelector('table.feed-presets button[data-act="
+	    "fd-preset][data-arg=spamhaus-drop-v4]')", 20);
+	/* The facility named; the presets each with its source and terms. */
+	ATF_CHECK(js_true("document.querySelector('.rt-note').textContent"
+	    ".includes('ipfw(8) tables')"));
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.feed-presets "
+	    "tbody tr')].length === 7 && document.querySelector('table."
+	    "feed-presets a[href=\"https://www.spamhaus.org/drop/terms/\"]')"));
+	ATF_CHECK(js_true("document.querySelector('table.feeds tr.empty-row')"));
+	shot("7q-feeds-presets");
+	/* Sorted by a column, filtered by what is typed. */
+	run("document.querySelector('table.feed-presets th.sortable').click()");
+	wait_js("document.querySelector('table.feed-presets th.sortable.asc')",
+	    10);
+	run("const i = document.querySelector('input[data-input=fd-filter]'); "
+	    "i.value = 'Botnet'; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("document.querySelectorAll('table.feed-presets tbody tr')."
+	    "length === 1", 10);
+	run("const i = document.querySelector('input[data-input=fd-filter]'); "
+	    "i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true "
+	    "}));");
+	wait_js("document.querySelectorAll('table.feed-presets tbody tr')."
+	    "length === 7", 10);
+	/* Used: its form, the source the fixture's, the host chosen. */
+	run("document.querySelector('button[data-act=fd-preset][data-arg="
+	    "spamhaus-drop-v4]').click()");
+	wait_js("document.querySelector('form[data-form=feed]')", 10);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=feed]')."
+	    "textContent.includes('Terms:')"));
+	snprintf(script, sizeof(script), "const f = document.querySelector("
+	    "'form[data-form=feed]'); f.url.value = 'http://127.0.0.1:%d/"
+	    "drop_v4.json'; f.querySelector('input[name^=host_]').checked = "
+	    "true; f.requestSubmit();", port);
+	run(script);
+	wait_js("[...document.querySelectorAll('table.feeds tbody tr')].some("
+	    "r => r.textContent.includes('Spamhaus DROP (IPv4)') && r."
+	    "querySelector('.chip').textContent === 'ok')", 60);
+	run("document.querySelector('table.feeds tr[data-act=fd-open]')"
+	    ".click()");
+	wait_js("[...document.querySelectorAll('section.feed-detail table."
+	    "net tbody tr')].some(r => r.textContent.includes('lab') && r."
+	    "textContent.includes('feed_spamhaus_drop_v4'))", 30);
+	ATF_CHECK(js_true("document.querySelector('section.feed-detail')."
+	    "textContent.includes('1.10.16.0/20')"));
+	shot("7q-feeds-detail");
+	ATF_CHECK(access("feeds/feed_spamhaus_drop_v4", F_OK) == 0);
+
+	/* The host's Firewall page: the feed's table, marked, and its rule
+	 * offered where the incoming drops are. */
+	ATF_REQUIRE(system("printf -- '--- table(feed_spamhaus_drop_v4), "
+	    "set(0) ---\\n kindex: 2, type: addr\\n items: 4, size: 0\\n' > "
+	    "tables.extra") == 0);
+	host_open("lab");
+	click_when("button.tab[data-arg=firewall]", 10);
+	wait_js("document.querySelector('.fwrail li[data-act=fw-sect]"
+	    "[data-arg=\"-4\"]')", 20);
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-4\"]').click()");
+	wait_js("[...document.querySelectorAll('section.fwtable h4')].some(h => "
+	    "h.textContent.includes('feed_spamhaus_drop_v4') && h.textContent."
+	    "includes('feed spamhaus-drop-v4') && h.querySelector('button["
+	    "data-act=fw-feed-rule]') && !h.querySelector('button[data-act="
+	    "fw-table-destroy]'))", 20);
+	shot("7q-feeds-firewall-table");
+	run("document.querySelector('button[data-act=fw-feed-rule]').click()");
+	wait_js("document.querySelector('form[data-form=fw-add] input[name="
+	    "rule]') && document.querySelector('form[data-form=fw-add] input["
+	    "name=rule]').value === 'deny ip from table(feed_spamhaus_drop_v4) "
+	    "to any in'", 20);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=fw-add] "
+	    "input[name=num]').value.startsWith('91')"));
+	shot("7q-feeds-offered-rule");
+	/* Nothing was added by itself: the rule is the admin's to keep. */
+	ATF_CHECK(system("grep -q 'table(feed_spamhaus_drop_v4)' ipfw.log "
+	    "ipfw.rules") != 0);
+}
+ATF_TC_CLEANUP(pwa_feeds, tc)
+{
+
+	browser_stop();
+}
+
 ATF_TC_WITH_CLEANUP(pwa_nettab);
 ATF_TC_HEAD(pwa_nettab, tc)
 {
@@ -9928,6 +10033,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_hosts);
 	ATF_TP_ADD_TC(tp, pwa_nacm);
 	ATF_TP_ADD_TC(tp, pwa_ra);
+	ATF_TP_ADD_TC(tp, pwa_feeds);
 	ATF_TP_ADD_TC(tp, pwa_nettab);
 	ATF_TP_ADD_TC(tp, pwa_plugins);
 	ATF_TP_ADD_TC(tp, pwa_map);

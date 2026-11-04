@@ -806,6 +806,7 @@ main(int argc, char *argv[])
 	faults_start();
 	record_start();
 	sdwan_start();
+	feeds_start();
 	sdwan_bird_start();
 	sdwan_dhcp_start();
 	sdwan_dns_start();

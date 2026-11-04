@@ -567,7 +567,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "09100 deny udp from any 5678 to any 5678 in\\n65535 deny ip from "
 	    "any to any\\n' ;;\n"
 	    "'table all info') printf -- '--- table(T46), set(0) ---\\n "
-	    "kindex: 1, type: addr\\n' ;;\n"
+	    "kindex: 1, type: addr\\n'; [ -f tables.extra ] && cat "
+	    "tables.extra ;;\n"
 	    "'table T46 list') printf -- '--- table(T46), set(0) ---\\n"
 	    "10.0.0.0/8 0\\n192.0.2.0/24 0\\n' ;;\n"
 	    /* dummynet, as a FreeBSD 16 lab printed it. */
@@ -2282,4 +2283,99 @@ ts_net(const char *cwd, const char *r2routes, const char *r2fw)
 	    "00300 allow icmp from any to any\n"
 	    "65535 deny ip from any to any\n", fp);
 	fclose(fp);
+}
+
+/*
+ * A stand-in for the feeds' sources: the fixtures in tests/feeds served
+ * over HTTP/1.0 on 127.0.0.1, each with a Last-Modified and an ETag, a
+ * 304 to an If-Modified-Since of that time; /redirect a 302 to
+ * /drop_v4.json, /redirect-private one to 169.254.169.254; each
+ * request (but a redirect) a line of
+ * feedsrv.log, "GET /path code".  Its port; it ends with the case.
+ */
+#define	FEEDS_LM	"Wed, 04 Nov 2026 12:00:00 GMT"
+int
+feeds_server(const atf_tc_t *tc)
+{
+	struct sockaddr_in	 sin;
+	socklen_t		 sl;
+	char			 req[2048], path[MAXPATHLEN], head[512];
+	char			*p, *body;
+	const char		*dir;
+	FILE			*fp, *log;
+	size_t			 n, len;
+	int			 s, c, code;
+
+	dir = locate(tc, "feeds", "feeds", NULL);
+	ATF_REQUIRE(dir != NULL);
+	ATF_REQUIRE((s = socket(AF_INET, SOCK_STREAM, 0)) != -1);
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_len = sizeof(sin);
+	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	ATF_REQUIRE(bind(s, (struct sockaddr *)&sin, sizeof(sin)) == 0);
+	ATF_REQUIRE(listen(s, 8) == 0);
+	sl = sizeof(sin);
+	ATF_REQUIRE(getsockname(s, (struct sockaddr *)&sin, &sl) == 0);
+	if (fork() != 0) {
+		close(s);
+		return (ntohs(sin.sin_port));
+	}
+	alarm(240);
+	for (;;) {
+		if ((c = accept(s, NULL, NULL)) == -1)
+			continue;
+		len = 0;
+		while (len < sizeof(req) - 1 && (n = (size_t)read(c, req + len,
+		    sizeof(req) - 1 - len)) > 0 && n != (size_t)-1) {
+			len += n;
+			req[len] = '\0';
+			if (strstr(req, "\r\n\r\n") != NULL)
+				break;
+		}
+		req[len] = '\0';
+		p = req + 4;
+		p[strcspn(p, " ")] = '\0';
+		snprintf(path, sizeof(path), "%s%s", dir, p);
+		body = NULL;
+		len = 0;
+		if (strstr(p, "..") == NULL && (fp = fopen(path, "r")) != NULL) {
+			body = malloc(1 << 20);
+			len = fread(body, 1, 1 << 20, fp);
+			fclose(fp);
+		}
+		/* Redirected: on the same host, or to a cloud's metadata. */
+		if (strcmp(p, "/redirect") == 0 || strcmp(p,
+		    "/redirect-private") == 0) {
+			n = (size_t)snprintf(head, sizeof(head), "HTTP/1.0 302 "
+			    "Found\r\nLocation: %s\r\nContent-Length: 0\r\n\r\n",
+			    p[9] == '\0' ? "/drop_v4.json" :
+			    "http://169.254.169.254/latest/meta-data/");
+			(void)write(c, head, n);
+			close(c);
+			free(body);
+			continue;
+		}
+		if (body == NULL)
+			code = 404;
+		else if (strstr(p + strlen(p) + 1, "If-Modified-Since: " FEEDS_LM)
+		    != NULL)
+			code = 304;
+		else
+			code = 200;
+		n = (size_t)snprintf(head, sizeof(head), "HTTP/1.0 %d %s\r\n"
+		    "Last-Modified: " FEEDS_LM "\r\nETag: \"fixture-%zu\"\r\n"
+		    "Content-Length: %zu\r\n\r\n", code, code == 200 ? "OK" :
+		    code == 304 ? "Not Modified" : "Not Found", len, code == 200 ?
+		    len : 0);
+		(void)write(c, head, n);
+		if (code == 200)
+			(void)write(c, body, len);
+		free(body);
+		close(c);
+		if ((log = fopen("feedsrv.log", "a")) != NULL) {
+			fprintf(log, "GET %s %d\n", p, code);
+			fclose(log);
+		}
+	}
 }
