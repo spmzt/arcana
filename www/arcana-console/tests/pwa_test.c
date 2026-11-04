@@ -7859,6 +7859,154 @@ part_cplug(void)
 	    "|| document.querySelector('button[data-act=plugin-open]')"));
 }
 
+/*
+ * The page's address and its route events under load: a plugin that
+ * keeps every route it is told; navigate() twice in a task, back(),
+ * back() and navigate() in one task, a tab pressed, each with the page
+ * busy in a loop, with a timer that keeps it busier still.  Once quiet,
+ * the last route told is the address, and the page shows what the
+ * address names.
+ */
+static const char croute_js[] =
+    "window.troutes = [];\n"
+    "Arcana.registerPlugin({\n"
+    "\tid: 'route',\n"
+    "\tscreens: {\n"
+    "\t\tmain: {\n"
+    "\t\t\ttitle: 'Route screen',\n"
+    "\t\t\tenter: function (root) {\n"
+    "\t\t\t\tvar h = document.createElement('h1');\n"
+    "\t\t\t\th.textContent = 'Route screen';\n"
+    "\t\t\t\troot.append(h);\n"
+    "\t\t\t}\n"
+    "\t\t},\n"
+    /* One that sends the page elsewhere as it is drawn. */
+    "\t\tjump: {\n"
+    "\t\t\tenter: function () {\n"
+    "\t\t\t\tArcana.navigate('#/settings/notify');\n"
+    "\t\t\t}\n"
+    "\t\t}\n"
+    "\t},\n"
+    "\ton: {\n"
+    "\t\troute: function (r) {\n"
+    "\t\t\twindow.troutes.push(r.hash);\n"
+    "\t\t\twindow.tlast = Date.now();\n"
+    "\t\t}\n"
+    "\t}\n"
+    "});\n";
+
+/* What the page shows names the address: a Settings tab or the screen. */
+#define	ROUTE_SHOWN							\
+	"(h => h === '#/p/route/main' ? !!document.querySelector("	\
+	"'#plug-root[data-screen=main]') : h.startsWith('#/settings/') " \
+	"&& !document.getElementById('plug-root') && !!document."	\
+	"querySelector('button.tab.on[data-act=set-tab][data-arg=' + "	\
+	"h.slice(11) + ']'))(location.hash)"
+
+static int	busy_secs(int);
+static void	js_str(char *, size_t, const char *);
+
+static void
+part_route(int round)
+{
+	char	script[4096], got[1024];
+
+	snprintf(script, sizeof(script),
+	    "var seed = %d, n = 0, at = ['#/settings/look', "
+	    "'#/settings/notify', '#/settings/plugins', '#/p/route/main', "
+	    "'#/settings/news'];\n"
+	    "function rnd(k) { seed = (seed * 1103515245 + 12345) %% 2147483648;"
+	    " return (seed %% k); }\n"
+	    "function spin(ms) { var t = Date.now(); while (Date.now() - t < ms)"
+	    " ; }\n"
+	    "function to() { return (at[rnd(at.length)]); }\n"
+	    /* Never back past the page's own entries: a deep history. */
+	    "function nav(h) { if (location.hash !== h) depth++;"
+	    " Arcana.navigate(h); }\n"
+	    "function back() { if (depth > 1) { depth--; history.back(); } }\n"
+	    "var depth = 0;\n"
+	    "for (var i = 0; i < 40; i++) nav(at[i %% 2]);\n"
+	    "window.tdone = false; window.tlast = Date.now(); window.tbad = [];\n"
+	    "var hog = setInterval(function () { spin(30); }, 35);\n"
+	    "function step() {\n"
+	    "\tvar b;\n"
+	    /* Between tasks, the last told is the address. */
+	    "\tif (window.troutes.length > 0 && window.troutes["
+	    "window.troutes.length - 1] !== location.hash)\n"
+	    "\t\twindow.tbad.push(location.hash + ' told ' +"
+	    " window.troutes.slice(-3).join(' '));\n"
+	    "\tif (n++ === 60) { clearInterval(hog); window.tdone = true;"
+	    " return; }\n"
+	    "\tswitch (rnd(8)) {\n"
+	    "\tcase 0: nav(to()); break;\n"
+	    "\tcase 1: nav(to()); spin(rnd(20)); nav(to()); break;\n"
+	    "\tcase 2: back(); break;\n"
+	    "\tcase 3: back(); spin(rnd(20)); nav(to()); break;\n"
+	    "\tcase 4: b = document.querySelector('button.tab[data-act=set-tab]"
+	    "[data-arg=' + ['look', 'notify', 'news'][rnd(3)] + ']');"
+	    " if (b && !document.getElementById('plug-root')) { depth++;"
+	    " b.click(); } break;\n"
+	    "\tcase 5: nav(to()); back(); break;\n"
+	    /* A tab pressed and an address in the same task. */
+	    "\tcase 6: b = document.querySelector('button.tab[data-act=set-tab]"
+	    "[data-arg=' + ['look', 'notify', 'news'][rnd(3)] + ']');"
+	    " if (b && !document.getElementById('plug-root')) { depth++;"
+	    " b.click(); } nav(to()); break;\n"
+	    "\tcase 7: nav('#/p/route/jump'); break;\n"
+	    "\t}\n"
+	    "\tspin(rnd(40));\n"
+	    "\tsetTimeout(step, rnd(3) === 0 ? 0 : rnd(60));\n"
+	    "}\n"
+	    "step();\n", 12345 + round * 7919);
+	run(script);
+	wait_js("window.tdone && Date.now() - window.tlast > 2000",
+	    busy_secs(60));
+	js_str(got, sizeof(got), "location.hash + ' told ' + window.troutes."
+	    "slice(-6).join(' ')");
+	ATF_CHECK_MSG(js_true("window.troutes[window.troutes.length - 1] === "
+	    "location.hash"), "round %d: the last route is not the address: "
+	    "%s", round, got);
+	ATF_CHECK_MSG(js_true(ROUTE_SHOWN), "round %d: the page does not show "
+	    "the address: %s", round, got);
+	/* An address told once as it changes, not again. */
+	ATF_CHECK_MSG(js_true("window.troutes.every((h, i, a) => i === 0 || "
+	    "a[i - 1] !== h)"), "round %d: an address told twice in a row: %s",
+	    round, got);
+	js_str(got, sizeof(got), "window.tbad.slice(0, 4).join(' | ')");
+	ATF_CHECK_MSG(got[0] == '\0', "round %d: between tasks, the address "
+	    "not the last told: %s", round, got);
+	run("window.troutes.length = 0;");
+}
+
+ATF_TC_WITH_CLEANUP(pwa_route);
+ATF_TC_HEAD(pwa_route, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The page's address under load: rapid navigate() and back() between renders, a plugin told every address once it is where it stays");
+	atf_tc_set_md_var(tc, "timeout", "300");
+}
+ATF_TC_BODY(pwa_route, tc)
+{
+	char	dir[MAXPATHLEN];
+
+	ATF_REQUIRE(getcwd(dir, sizeof(dir)) != NULL);
+	ATF_REQUIRE(mkdir("plugins", 0755) == 0);
+	cplug_put("route", "Route", croute_js, NULL);
+	snprintf(harness_webconf, sizeof(harness_webconf), "plugins_dir = "
+	    "\"%s/plugins\";\n", dir);
+	prologue(tc, 0);
+	run("location.hash = '#/settings/plugins'");
+	click_when("tr[data-plugin=route] button[data-act=plugin-enable]", 10);
+	wait_js("Array.isArray(window.troutes)", 15);
+	for (int i = 0; i < 6; i++)
+		part_route(i);
+}
+ATF_TC_CLEANUP(pwa_route, tc)
+{
+
+	browser_stop();
+}
+
 ATF_TC_WITH_CLEANUP(pwa_cplug);
 ATF_TC_HEAD(pwa_cplug, tc)
 {
@@ -9767,6 +9915,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_shell);
 	ATF_TP_ADD_TC(tp, pwa_pad);
 	ATF_TP_ADD_TC(tp, pwa_cplug);
+	ATF_TP_ADD_TC(tp, pwa_route);
 	ATF_TP_ADD_TC(tp, pwa_routes);
 	ATF_TP_ADD_TC(tp, pwa_hosts);
 	ATF_TP_ADD_TC(tp, pwa_nacm);

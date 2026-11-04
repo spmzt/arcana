@@ -223,7 +223,7 @@ The page gives a plugin's scripts `window.Arcana`:
 | `fullscreen(on)` | the page over the whole screen, or not, where the browser lets it |
 | `store.get()`, `store.put(obj, etag)` | the signed-in user's own JSON object for the plugin (below): `get` resolves to `{data, etag}`, `data` `null` while none is stored; `put` to `{etag}` |
 | `store.shared.get()`, `store.shared.put(obj, etag)` | the same, one object the console's users share: any console role reads it, an operator or an owner writes it |
-| `on(event, fn)` | `route` (`{hash}`, each address), `theme` (`{theme}`), `servers` (`[{id, name, local}]`, when the hosts change, and at once with them as they are), `signed-out`, `gamepad-first` (`{id}`, a controller's first press on the console's pages; a handler that returns `true` takes it, and the page does nothing with that press) |
+| `on(event, fn)` | `route` (`{hash}`, the address once it changed, after what the page does then: the last told is the address, the same one never twice in a row), `theme` (`{theme}`), `servers` (`[{id, name, local}]`, when the hosts change, and at once with them as they are), `signed-out`, `gamepad-first` (`{id}`, a controller's first press on the console's pages; a handler that returns `true` takes it, and the page does nothing with that press) |
 
 `screens: {<name>: {title, enter(root, ctx), leave()}}` are the
 plugin's screens, at `#/p/<plugin>/<name>[/<rest>]`: shown, the page's

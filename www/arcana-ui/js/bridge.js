@@ -60,6 +60,8 @@ addToLibrary({
 		shown: null,	/* { id, name, rest, root, scr } */
 		cur: "",	/* the plugin whose code runs now */
 		servers: null,	/* the hosts as last told */
+		routed: null,	/* the address last told, or none yet */
+		routing: false,	/* a telling of it is due */
 		user: { name: "", role: "" },
 		version: "",
 		events: ["route", "theme", "servers", "signed-out",
@@ -69,6 +71,28 @@ addToLibrary({
 			Promise.resolve().then(function () {
 				Module._arc_on_action(arcStr(a), arcStr(b),
 				    arcStr(c));
+			});
+		},
+		/*
+		 * The address changed, or may have: told once what the page
+		 * does now is done, as it is then, and not when it is the one
+		 * told last.  Every change calls it after it is made, so the
+		 * last told is the address, whatever order the changes of a
+		 * task came in (a tab pressed and navigate() in one, a screen
+		 * that navigates as it is entered).
+		 */
+		route: function () {
+			if (arcPlug.routing)
+				return;
+			arcPlug.routing = true;
+			Promise.resolve().then(function () {
+				var h = location.hash;
+
+				arcPlug.routing = false;
+				if (h === arcPlug.routed)
+					return;
+				arcPlug.routed = h;
+				arcPlug.emit("route", { hash: h });
 			});
 		},
 		fail: function (id, e) {
@@ -701,12 +725,12 @@ addToLibrary({
 		});
 		/* Back, forward, or an address typed: go where it says. */
 		window.addEventListener("popstate", function () {
-			var h = location.hash;
-
-			Module._arc_on_loc(arcStr(h));
-			/* Said again otherwise: told by arc_loc_set. */
-			if (location.hash === h)
-				arcPlug.emit("route", { hash: h });
+			Module._arc_on_loc(arcStr(location.hash));
+			arcPlug.route();
+		});
+		/* A change of the address popstate did not tell. */
+		window.addEventListener("hashchange", function () {
+			arcPlug.route();
 		});
 		document.addEventListener("submit", function (e) {
 			var f = e.target, o = {}, i, el;
@@ -2608,9 +2632,7 @@ addToLibrary({
 				history.replaceState(null, "", h);
 		} catch (e) {
 		}
-		Promise.resolve().then(function () {
-			arcPlug.emit("route", { hash: h });
-		});
+		arcPlug.route();
 	},
 
 	arc_title__deps: ["$UTF8ToString"],
