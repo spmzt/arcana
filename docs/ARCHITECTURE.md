@@ -101,7 +101,9 @@ numbers them (`ysid.c`: its `.sid` files resolved to the console's
 tables by identifier): names from the peer's files, types from the
 console's tables where they have the node, CBOR's or JSON's own kind
 where they do not; annotations, origin among them, as RFC 7952's `@`
-members.
+members.  A client that asks for `application/yang-data+cbor` gets the
+agent's YANG-CBOR as it came (`id=sid`); the page reads it by the
+host's `.sid` files (`www/arcana-ui/src/ycbor.c`).
 
 ## Library choices
 

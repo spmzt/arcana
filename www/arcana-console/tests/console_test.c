@@ -29,6 +29,7 @@
 #include <openssl/x509.h>
 
 #include <atf-c.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -43,6 +44,10 @@
 #include <unistd.h>
 
 #include "harness.h"
+
+/* The page's YANG-CBOR reader (www/arcana-ui/src/ycbor.c). */
+ucl_object_t	*ycbor_json(const void *, size_t, const ucl_object_t *,
+		    char *, size_t);
 
 /* Does the kernel have SCTP: compiled in, or the module loaded. */
 static bool
@@ -1086,6 +1091,186 @@ in_order(const char *s, const char *a, const char *b, const char *c)
 
 	return ((pa = strstr(s, a)) != NULL && (pb = strstr(s, b)) != NULL &&
 	    (pc = strstr(s, c)) != NULL && pa < pb && pb < pc);
+}
+
+/*
+ * One request with a body of len bytes and headers extra (each ending in
+ * CRLF), the session's: its status, its content-type in ctype, its body
+ * malloc'd in *out (*outlen bytes), as they came.
+ */
+static int
+http_bin(const char *method, const char *path, const char *extra,
+    const void *body, size_t blen, char *ctype, size_t ctlen, uint8_t **out,
+    size_t *outlen)
+{
+	char	*req, *buf, *b, *c;
+	size_t	 len = 0, cap = 65536, need = 0;
+	ssize_t	 n;
+	int	 s, status = 0;
+
+	ATF_REQUIRE(asprintf(&req, "%s %s HTTP/1.1\r\nHost: localhost:8443\r\n"
+	    "Connection: close\r\n%s%s%s%s%s%s%s%sContent-Length: %zu\r\n\r\n",
+	    method, path, send_xjg ? "X-Arcana: 1\r\n" : "",
+	    origin_hdr != NULL ? "Origin: " : "",
+	    origin_hdr != NULL ? origin_hdr : "",
+	    origin_hdr != NULL ? "\r\n" : "",
+	    cookie[0] != '\0' ? "Cookie: " : "", cookie,
+	    cookie[0] != '\0' ? "\r\n" : "", extra, blen) != -1);
+	s = console_socket();
+	ATF_REQUIRE(write(s, req, strlen(req)) == (ssize_t)strlen(req));
+	if (blen > 0)
+		ATF_REQUIRE(write(s, body, blen) == (ssize_t)blen);
+	free(req);
+	ATF_REQUIRE((buf = malloc(cap + 1)) != NULL);
+	for (;;) {
+		if (len == cap)
+			ATF_REQUIRE((buf = realloc(buf, (cap *= 2) + 1)) != NULL);
+		if ((n = read(s, buf + len, cap - len)) <= 0)
+			break;
+		len += (size_t)n;
+		buf[len] = '\0';
+		if (need == 0 && (b = strstr(buf, "\r\n\r\n")) != NULL &&
+		    (c = strcasestr(buf, "content-length:")) != NULL && c < b)
+			need = (size_t)(b + 4 - buf) + strtoul(c + 15, NULL,
+			    10);
+		if (need != 0 && len >= need)
+			break;
+	}
+	close(s);
+	buf[len] = '\0';
+	ATF_REQUIRE(sscanf(buf, "HTTP/1.1 %d", &status) == 1);
+	ATF_REQUIRE((b = strstr(buf, "\r\n\r\n")) != NULL);
+	ctype[0] = '\0';
+	if ((c = strcasestr(buf, "\r\ncontent-type: ")) != NULL && c < b)
+		snprintf(ctype, ctlen, "%.*s", (int)strcspn(c + 16, "\r"),
+		    c + 16);
+	*outlen = len - (size_t)(b + 4 - buf);
+	ATF_REQUIRE((*out = malloc(*outlen + 1)) != NULL);
+	memcpy(*out, b + 4, *outlen);
+	(*out)[*outlen] = '\0';
+	free(buf);
+	return (status);
+}
+
+/* Every .sid file of share/yang, the agent's own: an array of them. */
+static ucl_object_t *
+sid_files(void)
+{
+	struct ucl_parser	*p;
+	struct dirent		*d;
+	ucl_object_t		*arr;
+	DIR			*dir;
+	char			 path[MAXPATHLEN];
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	ATF_REQUIRE((dir = opendir(TESTSRC "/../../../share/yang")) != NULL);
+	while ((d = readdir(dir)) != NULL) {
+		if (strlen(d->d_name) < 5 || strcmp(d->d_name +
+		    strlen(d->d_name) - 4, ".sid") != 0)
+			continue;
+		snprintf(path, sizeof(path), "%s/../../../share/yang/%s",
+		    TESTSRC, d->d_name);
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+		ATF_REQUIRE_MSG(ucl_parser_add_file(p, path), "%s", path);
+		ucl_array_append(arr, ucl_parser_get_object(p));
+		ucl_parser_free(p);
+	}
+	closedir(dir);
+	return (arr);
+}
+
+/*
+ * application/yang-data+cbor (PLAN-SDN-YANG 4.1.10): a host's YANG-CBOR
+ * passed through, as the agent has it, its keys SIDs; the page's decoder
+ * (www/arcana-ui/src/ycbor.c) reads it by the agent's .sid files to what
+ * the JSON says; a PUT's body of it; what the console makes of JSON
+ * refused with it.
+ */
+CONSOLE_TC(restconf_cbor, "application/yang-data+cbor: a host's YANG-CBOR "
+    "passed through and read by the page's decoder; a PUT of it")
+ATF_TC_BODY(restconf_cbor, tc)
+{
+	static const char cbor[] = "Accept: application/yang-data+cbor\r\n";
+	/* {group: [{name: "gc", user-name: ["uc"]}]}, 1259 its SID. */
+	static const uint8_t group[] = { 0xa1, 0x19, 0x04, 0xeb, 0x81, 0xa2,
+	    0x01, 0x62, 'g', 'c', 0x02, 0x81, 0x62, 'u', 'c' };
+	struct resp	 r;
+	ucl_object_t	*sids, *o;
+	const ucl_object_t *a, *b;
+	uint8_t		*out;
+	size_t		 len;
+	char		 data[256], cand[256], path[512], ctype[128], why[160];
+	int		 st;
+
+	rc_lab(tc, data, cand, sizeof(cand));
+	sids = sid_files();
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces", data);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	st = http_bin("GET", path, cbor, NULL, 0, ctype, sizeof(ctype), &out,
+	    &len);
+	ATF_REQUIRE_MSG(st == 200, "%d %s", st, out);
+	ATF_CHECK_MSG(strncmp(ctype, "application/yang-data+cbor", 26) == 0,
+	    "%s", ctype);
+	o = ycbor_json(out, len, sids, why, sizeof(why));
+	ATF_REQUIRE_MSG(o != NULL, "%s", why);
+	/* Each interface the JSON has, named the same. */
+	a = ucl_object_lookup_path(r.json, "ietf-interfaces:interfaces.interface");
+	b = ucl_object_lookup_path(o, "ietf-interfaces:interfaces.interface");
+	ATF_REQUIRE(a != NULL && b != NULL);
+	ATF_CHECK_EQ(ucl_array_size(a), ucl_array_size(b));
+	for (unsigned i = 0; i < ucl_array_size(a); i++)
+		ATF_CHECK_STREQ(ucl_object_tostring(ucl_object_lookup(
+		    ucl_array_find_index(a, i), "name")), ucl_object_tostring(
+		    ucl_object_lookup(ucl_array_find_index(b, i), "name")));
+	ucl_object_unref(o);
+	free(out);
+	resp_free(&r);
+	/* The host's entry: each top-level node the agent has. */
+	st = http_bin("GET", data, cbor, NULL, 0, ctype, sizeof(ctype), &out,
+	    &len);
+	ATF_REQUIRE_MSG(st == 200, "%d %s", st, out);
+	o = ycbor_json(out, len, sids, why, sizeof(why));
+	ATF_REQUIRE_MSG(o != NULL, "%s", why);
+	ATF_CHECK(ucl_object_lookup(o, "ietf-interfaces:interfaces") != NULL);
+	ATF_CHECK(ucl_object_lookup(o, "ietf-yang-library:yang-library") !=
+	    NULL);
+	ucl_object_unref(o);
+	free(out);
+	/* What the console makes of JSON is not asked of YANG-CBOR. */
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces?depth=2",
+	    data);
+	st = http_bin("GET", path, cbor, NULL, 0, ctype, sizeof(ctype), &out,
+	    &len);
+	ATF_CHECK_MSG(st == 400, "%d %s", st, out);
+	free(out);
+	st = http_bin("GET", data, "Accept: application/yang-data+cbor; "
+	    "id=name\r\n", NULL, 0, ctype, sizeof(ctype), &out, &len);
+	ATF_CHECK_MSG(st == 406, "%d %s", st, out);
+	free(out);
+	/* JSON first in Accept: JSON. */
+	st = http_bin("GET", data, "Accept: application/yang-data+json, "
+	    "application/yang-data+cbor\r\n", NULL, 0, ctype, sizeof(ctype),
+	    &out, &len);
+	ATF_CHECK_MSG(st == 200 && strstr(ctype, "json") != NULL, "%d %s", st,
+	    ctype);
+	free(out);
+	/* A PUT of YANG-CBOR: the group made, as JSON reads it back. */
+	snprintf(path, sizeof(path), "%s" NACM "/groups/group=gc", cand);
+	st = http_bin("PUT", path, "Content-Type: application/yang-data+cbor"
+	    "\r\n", group, sizeof(group), ctype, sizeof(ctype), &out, &len);
+	ATF_CHECK_MSG(st == 201, "%d %s", st, out);
+	free(out);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("uc", jstr(&r, "ietf-netconf-acm:group.0.user-name.0"));
+	resp_free(&r);
+	st = http_bin("PUT", path, "Content-Type: application/yang-data+cbor"
+	    "\r\n", "\xa1\x19\x04", 3, ctype, sizeof(ctype), &out, &len);
+	ATF_CHECK_MSG(st == 400 && strstr((char *)out, "malformed-message") !=
+	    NULL, "%d %s", st, out);
+	free(out);
+	ucl_object_unref(sids);
 }
 
 /*
@@ -14770,6 +14955,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf_write);
 	ATF_TP_ADD_TC(tp, restconf_ra);
 	ATF_TP_ADD_TC(tp, restconf_mount);
+	ATF_TP_ADD_TC(tp, restconf_cbor);
 	ATF_TP_ADD_TC(tp, restconf_edit);
 	ATF_TP_ADD_TC(tp, restconf_yang_patch);
 	ATF_TP_ADD_TC(tp, restconf_etag);

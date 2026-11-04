@@ -1711,8 +1711,21 @@ whose first part is served.
   its id, `Last-Event-ID` the agent's replay from it.
 - 4.1.9 done (console rcstream.c): `establish-subscription` POSTed under
   a host's entry, its id and URI answered, the URI's GET its stream.
-- 4.1.10 C: `application/yang-data+cbor` pass-through; check: the
-  PWA's decoder reads it.
+- 4.1.10 done (console restconf.c, hosts.c; page ycbor.c): a GET
+  under a host's entry whose Accept names `application/yang-data+cbor`
+  before JSON is answered with the agent's YANG-CBOR as it came,
+  `id=sid` (RFC 9254's media type): `{SID: value}` of the top-level node
+  the path names (what its XPath selects, with what is above it), or of
+  each the agent has.  content, depth, fields, report-all and trim are
+  JSON's and refused with it (400); `id=name` is 406; errors stay
+  ietf-restconf's JSON.  A change's body may be YANG-CBOR, made JSON
+  by the translator (4.2) before it is checked.  The page's reader
+  (`www/arcana-ui/src/ycbor.c`) names it by the host's `.sid` files
+  and takes values as CBOR's kind says, annotations as `@` members.
+  Check: console_test's restconf_cbor, the interfaces read both ways
+  and the reader's names the JSON's, the host's entry, the refusals, a
+  NACM group PUT as YANG-CBOR.  Open: the page fetching it (4.8.1)
+  and where it gets the host's `.sid` files.
 - 4.2.1 done (console ysid.c, yxlate.c): JSON → CBOR by a schema's
   SIDs as a peer numbers them (`struct ysids`: its `.sid` files, from
   GET-SID's YANG-CBOR or RFC 9595's JSON, each item resolved to the

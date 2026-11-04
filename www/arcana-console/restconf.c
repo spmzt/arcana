@@ -66,7 +66,9 @@
 #include "console.h"
 #include "restconf.h"
 #include "ymodel.h"
+#include "ysid.h"
 #include "ytrans.h"
+#include "yxlate.h"
 
 #define	FLEET		"/restconf/data/arcana-fleet:fleet"
 #define	YLIB_VERSION	"2019-01-04"
@@ -135,6 +137,9 @@ struct rcreq {
 	char		*location;	/* a POST's: what it made */
 	const char	*tag;		/* refused: the error-tag; NULL, status's */
 	char		*errjson;	/* refused with a body of its own */
+	bool		 cbor;		/* a GET's reply as YANG-CBOR */
+	uint8_t		*out;		/* that reply, outlen bytes */
+	size_t		 outlen;
 	char		 why[256];
 };
 
@@ -958,6 +963,7 @@ restconf_free(struct rcreq *r)
 	free(r->patch_id);
 	free(r->location);
 	free(r->errjson);
+	free(r->out);
 	free(r);
 }
 
@@ -3123,6 +3129,160 @@ change_run(cbl_conn *conn, struct rcreq *r, const char *uri, char **json,
 	ucl_object_unref(top);
 }
 
+/* The console's own numbering of its tables, made once. */
+static pthread_once_t	 own_once = PTHREAD_ONCE_INIT;
+static struct ysids	*own_sids;
+
+static void
+own_make(void)
+{
+	struct ysids	*s;
+	char		 why[160];
+
+	why[0] = '\0';
+	if ((s = ysids_new(&ymodel_schema)) == NULL ||
+	    ysids_tables(s) != 0 || ysids_done(s, why, sizeof(why)) != 0) {
+		log_msg(LOG_ERR, "the console's SIDs: %s", why[0] != '\0' ?
+		    why : "out of memory");
+		ysids_free(s);
+		return;
+	}
+	own_sids = s;
+}
+
+const struct ysids *
+restconf_own_sids(void)
+{
+
+	(void)pthread_once(&own_once, own_make);
+	return (own_sids);
+}
+
+/*
+ * The media type of a host's reply: RFC 7951's JSON, or where Accept
+ * names application/yang-data+cbor before it, the agent's YANG-CBOR
+ * passed through (RFC 9254's media type, its keys SIDs: id=sid).  What
+ * the console makes of the JSON (content, depth, fields, report-all and
+ * trim) is refused with it; with-origin is the agent's.
+ */
+int
+restconf_media(struct rcreq *r, const char *accept, const char **why)
+{
+	const char	*c, *j, *e, *id;
+
+	r->cbor = false;
+	if (accept == NULL || (c = strcasestr(accept,
+	    "application/yang-data+cbor")) == NULL)
+		return (0);
+	j = strcasestr(accept, "application/yang-data+json");
+	if (j == NULL)
+		j = strcasestr(accept, "application/json");
+	if (j != NULL && j < c)
+		return (0);
+	e = c + strcspn(c, ",");
+	if ((id = strcasestr(c, "id=")) != NULL && id < e &&
+	    strncasecmp(id, "id=sid", 6) != 0)
+		return (refuse(r, 406, NULL, why, "YANG-CBOR is the agent's, "
+		    "its keys SIDs: id=sid"));
+	if (r->method != HTTP_METHOD_GET)
+		return (0);
+	if (r->depth != 0 || r->fields != NULL || r->content != CONTENT_ALL ||
+	    r->defaults != WD_EXPLICIT)
+		return (refuse(r, 400, "invalid-value", why, "YANG-CBOR is "
+		    "passed through as the agent has it: content, depth, "
+		    "fields and with-defaults are JSON's"));
+	r->cbor = true;
+	return (0);
+}
+
+bool
+restconf_body(const struct rcreq *r, const void **p, size_t *len)
+{
+
+	if (r == NULL || !r->cbor || r->out == NULL)
+		return (false);
+	*p = r->out;
+	*len = r->outlen;
+	return (true);
+}
+
+/*
+ * A GET of r as YANG-CBOR: the agent's reply passed through, {SID:
+ * value} of the top-level node r names (what the path's XPath selects
+ * of it, with what is above), or of each the agent has (those of s).
+ */
+static void
+cbor_run(cbl_conn *conn, struct rcreq *r, const struct ysids *s, char **json,
+    int *status)
+{
+	struct cbl_ybuf	 b = { NULL, 0, 0 };
+	const char	*tag;
+	cbl_msg		*rep;
+	const void	*v;
+	uint64_t	 sid, errsid, *sids = NULL;
+	size_t		 len, n = 0, cnt = 0, cap;
+	char		 err[256], path[512];
+	int		 error;
+
+	sid = r->nseg > 0 ? r->seg[0].n->sid : 0;
+	if ((error = ytrans_get_msg(conn, r->nseg > 0 ? &sid : NULL,
+	    r->nseg > 0 ? 1 : 0, r->xpath, r->ds, r->origin, &rep, err,
+	    sizeof(err), &errsid)) != 0) {
+		*status = refusal(error, &tag);
+		*json = errors_of(*status, tag, node_path(errsid, path,
+		    sizeof(path)), err);
+		return;
+	}
+	/* The SIDs there: the target's, or every top-level node's. */
+	if (r->nseg > 0) {
+		sids = &sid;
+		n = 1;
+	} else if ((sids = calloc(ysids_count(s) + 1, sizeof(*sids))) != NULL)
+		n = ysids_tops(s, sids, ysids_count(s));
+	for (size_t i = 0; i < n; i++)
+		cnt += cbl_msg_sid_raw(rep, sids[i], &v, &len) == 0;
+	if (r->nseg > 0 && cnt == 0) {
+		*status = 404;
+		*json = restconf_errors(404, "no such resource");
+		goto done;
+	}
+	error = sids == NULL ? ENOMEM : yx_put_head(&b, 5, cnt);
+	for (size_t i = 0; error == 0 && i < n; i++) {
+		if (cbl_msg_sid_raw(rep, sids[i], &v, &len) != 0)
+			continue;
+		if ((error = yx_put_head(&b, 0, sids[i])) != 0)
+			break;
+		/* The value as it came. */
+		if (b.len + len > b.cap) {
+			uint8_t *np;
+
+			cap = MAX(b.cap * 2, b.len + len);
+			if ((np = realloc(b.p, cap)) == NULL) {
+				error = ENOMEM;
+				break;
+			}
+			b.p = np;
+			b.cap = cap;
+		}
+		memcpy(b.p + b.len, v, len);
+		b.len += len;
+	}
+	if (error != 0) {
+		cbl_ybuf_free(&b);
+		*status = 500;
+		*json = restconf_errors(500, "out of memory");
+		goto done;
+	}
+	r->out = b.p;
+	r->outlen = b.len;
+	*status = 200;
+	*json = strdup("");
+done:
+	if (r->nseg == 0)
+		free(sids);
+	cbl_msg_free(rep);
+}
+
 /*
  * A host's part of the datastore, read from its agent over conn: its
  * entry (id, name and what is mounted under it) or the node r names.
@@ -3143,6 +3303,10 @@ restconf_run(cbl_conn *conn, struct rcreq *r, const char *id,
 
 	if (r->method != HTTP_METHOD_GET) {
 		change_run(conn, r, uri, json, status);
+		return;
+	}
+	if (r->cbor) {
+		cbor_run(conn, r, restconf_own_sids(), json, status);
 		return;
 	}
 	*status = 200;

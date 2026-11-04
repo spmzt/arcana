@@ -43,6 +43,11 @@ int	ytrans_get_ds(cbl_conn *conn, const uint64_t *sids, size_t ns,
 int	ytrans_get_origin(cbl_conn *conn, const uint64_t *sids, size_t ns,
 	    const char *xpath, int ds, bool origin, ucl_object_t **out,
 	    char *err, size_t errlen, uint64_t *errsid);
+/* The reply itself, *out the caller's (cbl_msg_free()): its body the
+ * agent's YANG-CBOR, {SID: value} of each top-level node it has. */
+int	ytrans_get_msg(cbl_conn *conn, const uint64_t *sids, size_t ns,
+	    const char *xpath, int ds, bool origin, cbl_msg **out, char *err,
+	    size_t errlen, uint64_t *errsid);
 /* The top-level nodes tops (ntop of them, 32 at most) of datastore ds as
  * a tree of the console's schema, *tp the caller's: those not there are
  * not in it. */

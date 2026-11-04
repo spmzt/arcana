@@ -93,6 +93,8 @@ const struct ysid_mod *ysids_mod_at(const struct ysids *s, size_t i);
 const char	*ysids_content_id(const struct ysids *s);
 size_t		 ysids_count(const struct ysids *s);
 const struct cbl_yschema *ysids_types(const struct ysids *s);
+/* The SIDs of its top-level data nodes, max at most, by SID: how many. */
+size_t		 ysids_tops(const struct ysids *s, uint64_t *out, size_t max);
 
 /*
  * The schema-node path of the console's node n (RFC 9595's identifier:

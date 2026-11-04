@@ -8,7 +8,8 @@ ATF_TESTS_C=	console_test \
 		yaml_test \
 		yxlate_test
 
-SRCS.console_test=	console_test.c harness.c
+# The page's YANG-CBOR reader, for the pass-through's case.
+SRCS.console_test=	console_test.c harness.c ycbor.c
 SRCS.pwa_test=		pwa_test.c harness.c
 SRCS.webpush_test=	webpush_test.c webpush.c
 SRCS.raft_test=		raft_test.c craft.c

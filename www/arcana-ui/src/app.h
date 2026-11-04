@@ -118,6 +118,9 @@ void		 h_reset(struct html *);
 
 /* json.c: libucl helpers. */
 ucl_object_t	*json_parse(const char *);
+/* A host's YANG-CBOR passed through, named by its .sid files (ycbor.c). */
+ucl_object_t	*ycbor_json(const void *, size_t, const ucl_object_t *,
+		    char *, size_t);
 const ucl_object_t *jget(const ucl_object_t *, const char *);
 const char	*jstr(const ucl_object_t *, const char *);
 int64_t		 jint(const ucl_object_t *, const char *, int64_t);

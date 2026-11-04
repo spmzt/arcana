@@ -46,6 +46,7 @@
 #include "ysdwan.h"
 #include "ytshoot.h"
 #include "yreads.h"
+#include "yxlate.h"
 #include "zprog.h"
 
 enum op {
@@ -4045,6 +4046,43 @@ setup_ydata(struct call *c, const struct rq *q)
 }
 
 /*
+ * A body of YANG-CBOR (RFC 9254's application/yang-data+cbor), keys the
+ * SIDs of s: its RFC 7951 JSON.  NULL: none, or not YANG-CBOR of s.
+ */
+#define	CBOR_BODY_MAX	(8 * 1024 * 1024)
+
+static ucl_object_t *
+read_cbor(struct http_request *req, const struct ysids *s)
+{
+	struct cbl_ybuf		 b = { NULL, 0, 0 };
+	struct ucl_parser	*p;
+	ucl_object_t		*o = NULL;
+	uint8_t			*buf;
+	size_t			 len;
+	ssize_t			 r;
+	char			 why[160];
+
+	if (s == NULL || (buf = malloc(CBOR_BODY_MAX)) == NULL)
+		return (NULL);
+	for (len = 0; len < CBOR_BODY_MAX; len += (size_t)r)
+		if ((r = http_body_read(req, buf + len, CBOR_BODY_MAX -
+		    len)) <= 0)
+			break;
+	if (len > 0 && len < CBOR_BODY_MAX && yx_json(s, buf, len, &b, why,
+	    sizeof(why)) == 0) {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		if (ucl_parser_add_chunk(p, b.p, b.len))
+			o = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+	}
+	explicit_bzero(buf, len);
+	free(buf);
+	cbl_ybuf_free(&b);
+	return (o);
+}
+
+/*
  * A host's entry below /restconf/data or a datastore's root
  * (restconf.c): GET reads; POST, PUT, PATCH and DELETE change the
  * candidate; a POST of ietf-netconf's commit, cancel-commit or
@@ -4057,26 +4095,34 @@ api_restconf_host(struct http_request *req)
 {
 	struct call	*c;
 	ucl_object_t	*body = NULL;
-	const char	*why = NULL, *ctype = NULL;
+	const char	*why = NULL, *ctype = NULL, *accept = NULL;
+	bool		 cbor;
 	int		 st;
 
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_RESTCONF)) == NULL)
 		return (WEB_OK);
+	(void)http_request_header(req, "content-type", &ctype);
+	(void)http_request_header(req, "accept", &accept);
 	if (req->method != HTTP_METHOD_GET && req->method !=
 	    HTTP_METHOD_DELETE) {
-		body = read_json(req);
-		/* A body there that is not JSON (RFC 8040 section 7). */
+		cbor = ctype != NULL && strncasecmp(ctype,
+		    "application/yang-data+cbor", 26) == 0;
+		body = cbor ? read_cbor(req, restconf_own_sids()) :
+		    read_json(req);
+		/* A body there that is not JSON (RFC 8040 section 7), or
+		 * not YANG-CBOR of the host's modules. */
 		if (body == NULL && req->http_body != NULL &&
 		    req->http_body->length > 0) {
 			call_release(c);
 			free(c);
 			return (restconf_error_tag(req, 400,
-			    "malformed-message", "the body is not JSON"));
+			    "malformed-message", cbor ? "the body is not "
+			    "YANG-CBOR of the host's modules" : "the body is "
+			    "not JSON"));
 		}
 	}
-	(void)http_request_header(req, "content-type", &ctype);
 	if ((c->rc = restconf_parse(req->path, req->query_string, &why)) ==
 	    NULL) {
 		ucl_object_unref(body);
@@ -4085,7 +4131,7 @@ api_restconf_host(struct http_request *req)
 		return (restconf_error(req, 400, why));
 	}
 	if ((st = restconf_prepare(c->rc, req->method, ctype, body,
-	    &why)) == 0)
+	    &why)) == 0 && (st = restconf_media(c->rc, accept, &why)) == 0)
 		st = restconf_precondition(req, c->rc, c->uri);
 	if (st != 0) {
 		(void)restconf_refuse(req, c->rc, c->uri, st, why);
@@ -4109,7 +4155,19 @@ restconf_finish(struct http_request *req, struct call *c)
 	struct ucl_parser	*p;
 	ucl_object_t		*top;
 	const char		*msg;
+	const void		*body;
+	size_t			 len;
 
+	/* YANG-CBOR, as the agent had it. */
+	if (c->rc_json != NULL && restconf_body(c->rc, &body, &len)) {
+		http_response_header(req, "content-type",
+		    "application/yang-data+cbor; id=sid");
+		http_response_header(req, "cache-control", "no-store");
+		http_response_header(req, "x-content-type-options", "nosniff");
+		restconf_headers(req, c->rc, c->uri, c->rc_status);
+		http_response(req, c->rc_status, body, len);
+		return (WEB_OK);
+	}
 	if (c->rc_json != NULL) {
 		http_response_header(req, "content-type",
 		    "application/yang-data+json");

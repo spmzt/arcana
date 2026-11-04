@@ -788,3 +788,24 @@ ysids_types(const struct ysids *s)
 
 	return (s != NULL ? s->types : NULL);
 }
+
+size_t
+ysids_tops(const struct ysids *s, uint64_t *out, size_t max)
+{
+	const struct cbl_ynode	*n;
+	size_t			 k = 0;
+
+	for (size_t i = 0; s != NULL && s->done && i < s->nitem && k < max;
+	    i++) {
+		if (s->item[i].ns != YSID_NS_DATA || !s->item[i].top)
+			continue;
+		/* Data alone where the tables say what it is. */
+		if ((n = s->item[i].what) != NULL && n->kind != CBL_YN_CONTAINER &&
+		    n->kind != CBL_YN_LIST && n->kind != CBL_YN_LEAF &&
+		    n->kind != CBL_YN_LEAFLIST && n->kind != CBL_YN_ANYDATA &&
+		    n->kind != CBL_YN_ANYXML)
+			continue;
+		out[k++] = s->item[i].sid;
+	}
+	return (k);
+}

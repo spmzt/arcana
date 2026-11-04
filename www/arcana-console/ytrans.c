@@ -407,22 +407,12 @@ ytrans_get_ds(cbl_conn *conn, const uint64_t *sids, size_t ns,
 }
 
 int
-ytrans_get_origin(cbl_conn *conn, const uint64_t *sids, size_t ns,
-    const char *xpath, int ds, bool origin, ucl_object_t **out, char *err,
+ytrans_get_msg(cbl_conn *conn, const uint64_t *sids, size_t ns,
+    const char *xpath, int ds, bool origin, cbl_msg **out, char *err,
     size_t errlen, uint64_t *errsid)
 {
-	const struct cbl_ymodule	*m;
-	const struct cbl_ynode		*n;
-	struct cbl_ybuf			 b = { NULL, 0, 0 };
-	struct ucl_parser		*p;
-	cbl_msg				*req, *rep = NULL;
-	cbl_yarena			*a;
-	cbl_dtree			*t;
-	char				*json;
-	uint32_t			 i, k;
-	void				*data;
-	bool				 first = true;
-	int				 error;
+	cbl_msg	*req, *rep = NULL;
+	int	 error;
 
 	*out = NULL;
 	err[0] = '\0';
@@ -446,6 +436,32 @@ ytrans_get_origin(cbl_conn *conn, const uint64_t *sids, size_t ns,
 		cbl_msg_free(rep);
 		return (error);
 	}
+	*out = rep;
+	return (0);
+}
+
+int
+ytrans_get_origin(cbl_conn *conn, const uint64_t *sids, size_t ns,
+    const char *xpath, int ds, bool origin, ucl_object_t **out, char *err,
+    size_t errlen, uint64_t *errsid)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n;
+	struct cbl_ybuf			 b = { NULL, 0, 0 };
+	struct ucl_parser		*p;
+	cbl_msg				*rep = NULL;
+	cbl_yarena			*a;
+	cbl_dtree			*t;
+	char				*json;
+	uint32_t			 i, k;
+	void				*data;
+	bool				 first = true;
+	int				 error;
+
+	*out = NULL;
+	if ((error = ytrans_get_msg(conn, sids, ns, xpath, ds, origin, &rep,
+	    err, errlen, errsid)) != 0)
+		return (error);
 	/* Annotated: as an instance tree, which has them. */
 	if (origin) {
 		if ((t = cbl_dtree_new(&ymodel_schema)) == NULL)
