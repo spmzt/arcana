@@ -5738,11 +5738,11 @@ part_firewall(void)
 	    "'input', { bubbles: true }));");
 	wait_js("document.querySelector('input[data-input=tp-val][data-arg="
 	    "hostname]')?.value === 'lab2'", 10);
-	click_when("button[data-act=tp-check]:not([disabled])", 10);
+	click_when("button[data-act=tp-check]:not([disabled])", busy_secs(10));
 	wait_js("document.querySelector('section.template .hcreport')?."
 	    "textContent.includes('what it would do') && [...document."
 	    "querySelectorAll('section.template pre.diff')].some(p => p."
-	    "textContent.includes('+hostname=\"lab2\"'))", 20);
+	    "textContent.includes('+hostname=\"lab2\"'))", busy_secs(20));
 	ATF_CHECK(system("grep -q 'hostname=\"lab\"' root/etc/rc.conf") == 0);
 	/* The list, and the template forgotten. */
 	click_when("button[data-act=tp-close]", 5);
