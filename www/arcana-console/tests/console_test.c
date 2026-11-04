@@ -9793,6 +9793,88 @@ swap_in(const char *s, const char *from, const char *to, char *out,
 	return (true);
 }
 
+/* sdwan_good with its edges @A and @B named. */
+static void
+sdwan_good_at(const char *a, const char *b, char *doc, size_t len)
+{
+	char	t[8192];
+
+	snprintf(doc, len, "%s", sdwan_good);
+	while (swap_in(doc, "@A", a, t, sizeof(t)))
+		snprintf(doc, len, "%s", t);
+	while (swap_in(doc, "@B", b, t, sizeof(t)))
+		snprintf(doc, len, "%s", t);
+}
+
+/*
+ * The document a view of the L3NM kept (PLAN-SDN-YANG 4.5.3): the L3NM
+ * form of the example exported as the example; a console's document of
+ * before imported at its start, its version kept, the file kept aside.
+ * (Every document kept by the tests comes back the same: http().)
+ */
+CONSOLE_TC(l3nm_mef, "the SD-WAN document a view of the L3NM: l3nm_good "
+    "exported is sdwan_good; sdwan.json imported once at start")
+ATF_TC_BODY(l3nm_mef, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	FILE		*fp;
+	char		 doc[8192], where[512];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("PUT", L3NM, l3nm_good, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("GET", "/api/sdwan", NULL, &r);
+	EXPECT(&r, 200);
+	sdwan_good_at("a", "b", doc, sizeof(doc));
+	ATF_CHECK_MSG(sdwan_round_trip(doc, r.json, where, sizeof(where)),
+	    "l3nm_good is not sdwan_good: %s: %s", where, r.body);
+	ATF_CHECK_STREQ("acme", jstr(&r, "swvcs.0.id"));
+	ATF_CHECK_STREQ("64600:1", jstr(&r, "swvcs.0.domains.service.rd"));
+	resp_free(&r);
+	/* A change by RESTCONF is a version of the document too. */
+	http("GET", "/api/sdwan", NULL, &r);
+	ATF_CHECK_STREQ("1", jstr(&r, "version"));
+	resp_free(&r);
+	http("DELETE", L3NM, NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/sdwan", NULL, &r);
+	ATF_CHECK_STREQ("2", jstr(&r, "version"));
+	ATF_CHECK(jstr(&r, "swvcs") == NULL);
+	resp_free(&r);
+
+	/* A console of before: its sdwan.json, version 7. */
+	console_stop();
+	sdwan_good_at("a", "b", doc, sizeof(doc));
+	ATF_REQUIRE(strncmp(doc, "{\"version\":0,", 13) == 0);
+	ATF_REQUIRE((fp = fopen("data/sdwan.json", "w")) != NULL);
+	fprintf(fp, "{\"version\":7,%s", doc + 13);
+	fclose(fp);
+	console_start();
+	http("GET", "/api/sdwan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(access("data/sdwan.json", F_OK) == -1);
+	ATF_CHECK(access("data/sdwan-mef.json", F_OK) == 0);
+	ATF_CHECK_STREQ("7", jstr(&r, "version"));
+	ATF_CHECK_MSG(sdwan_round_trip(doc, r.json, where, sizeof(where)),
+	    "sdwan.json not imported the same: %s: %s", where, r.body);
+	resp_free(&r);
+	http("GET", L3NM "/vpn-services/vpn-service=acme/vpn-nodes/"
+	    "vpn-node=a/vpn-network-accesses/vpn-network-access=hq/"
+	    "interface-id", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("vtnet2", jstr(&r, "ietf-l3vpn-ntw:interface-id"));
+	resp_free(&r);
+	/* Once: started again, nothing more of it. */
+	restart_console();
+	http("GET", "/api/sdwan", NULL, &r);
+	ATF_CHECK_STREQ("7", jstr(&r, "version"));
+	resp_free(&r);
+}
+
 CONSOLE_TC(sdwan, "SD-WAN services are checked as MEF 70.2 says, and kept")
 ATF_TC_BODY(sdwan, tc)
 {
@@ -11901,8 +11983,10 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "80,https\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"12 allow ip4 from any to 10.1.0.0/24,"
 	    "10.1.8.0/22 in recv lo0\"") != NULL);
-	ATF_CHECK(strstr(r.body, "[\"10.1.8.0/22\",\"0\"],[\"2001:db8:1::/64\","
-	    "\"0\"]") != NULL);
+	/* (The end points by edge, as the L3NM keeps them: road, at a,
+	 * before branch.) */
+	ATF_CHECK(strstr(r.body, "[\"10.1.8.0/22\",\"0\"],[\"10.30.0.0/24\","
+	    "\"0\"],[\"2001:db8:1::/64\",\"0\"]") != NULL);
 	/* Its bandwidth: the shared limiter a pipe of its limit, the flow
 	 * a queue in it, weighted by its commit and importance (high),
 	 * on the way out by the tunnels. */
@@ -12325,8 +12409,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\nAddress = 10.30.0.3/24\n") != NULL && strstr(jstr(&r, "config"),
 	    "\n[Peer]\nPublicKey = ") != NULL && strstr(jstr(&r, "config"),
 	    "\nEndpoint = 192.0.2.1:51820\n") != NULL && strstr(jstr(&r,
-	    "config"), "AllowedIPs = 10.1.0.0/24, 10.1.8.0/22, 2001:db8:1::/64, "
-	    "10.30.0.0/24\n") != NULL, "%s", r.body);
+	    "config"), "AllowedIPs = 10.1.0.0/24, 10.1.8.0/22, 10.30.0.0/24, "
+	    "2001:db8:1::/64\n") != NULL, "%s", r.body);
 	ATF_CHECK_STREQ("true", jstr(&r, "applied"));
 	ATF_CHECK(strlen(jstr(&r, "public_key")) == 44);
 	resp_free(&r);
@@ -14335,6 +14419,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf_tag_malformed_message);
 	ATF_TP_ADD_TC(tp, l3nm);
 	ATF_TP_ADD_TC(tp, l3nm_sdwan);
+	ATF_TP_ADD_TC(tp, l3nm_mef);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_sync);
 	ATF_TP_ADD_TC(tp, server_readdress);

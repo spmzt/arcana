@@ -9,7 +9,9 @@
  * Service Attributes and Service Framework), and the checks of each
  * against what the standard requires; [Rn] is its requirement n.
  *
- * One document, sdwan.json, holds all of it:
+ * One document holds all of it, a view of the services the console
+ * stores as L3NM (l3nm.c): imported into it when kept, exported from it
+ * when read (l3nm_mef.c):
  *
  *	ucs		the underlays (Underlay Connectivity Services, §12):
  *			id, type public or private, billing, and the tunnels
@@ -50,12 +52,8 @@
 
 #include "console.h"
 
-#define	SDWAN_FILE	"sdwan.json"
 #define	LIST_MAX	256	/* of each list in it */
 #define	FIB_MAX		65535
-
-static ucl_object_t *sd_load(void);
-static pthread_mutex_t	sd_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* Where a check is, and why it failed. */
 struct ck {
@@ -3831,46 +3829,25 @@ mdr_hashes(struct ck *c, const ucl_object_t *doc)
 
 /* ---- The API --------------------------------------------------------- */
 
-static ucl_object_t	*sd_load(void);
-
 /* The document as kept, for another part; to be unref'd. */
 ucl_object_t *
 sdwan_load(void)
 {
-	ucl_object_t	*doc;
 
-	pthread_mutex_lock(&sd_lock);
-	doc = sd_load();
-	pthread_mutex_unlock(&sd_lock);
-	return (doc);
+	return (l3nm_sdwan());
 }
 
 /*
  * A document changed by the console itself (an identity issued or
- * revoked): checked, its version the kept one's plus one, kept.
+ * revoked): checked, kept, the version the kept one's plus one.
  */
 int
 sdwan_store(ucl_object_t *doc, char *why, size_t len)
 {
-	ucl_object_t	*kept;
-	int64_t		 have;
 
 	if (!sdwan_valid(doc, why, len))
 		return (-1);
-	pthread_mutex_lock(&sd_lock);
-	kept = sd_load();
-	have = ucl_object_toint(ucl_object_lookup(kept, "version"));
-	ucl_object_unref(kept);
-	(void)ucl_object_delete_key(doc, "version");
-	ucl_object_insert_key(doc, ucl_object_fromint(have + 1), "version", 0,
-	    false);
-	if (store_save(SDWAN_FILE, doc) != 0) {
-		pthread_mutex_unlock(&sd_lock);
-		snprintf(why, len, "the document could not be kept");
-		return (-1);
-	}
-	pthread_mutex_unlock(&sd_lock);
-	return (0);
+	return (l3nm_sdwan_put(doc, -1, why, len) == 0 ? 0 : -1);
 }
 
 /*
@@ -3938,39 +3915,21 @@ sdwan_valid(const ucl_object_t *doc, char *why, size_t len)
 	return (false);
 }
 
-static ucl_object_t *
-sd_load(void)
-{
-	ucl_object_t	*doc;
-
-	if ((doc = store_load(SDWAN_FILE)) == NULL) {
-		doc = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(doc, ucl_object_fromint(0), "version", 0,
-		    false);
-	}
-	return (doc);
-}
-
 int
 api_sdwan(struct http_request *req)
 {
-	ucl_object_t	*body, *doc, *o;
+	ucl_object_t	*body, *doc, *kept, *o;
 	struct ck	 c;
-	char		 peer[80];
-	int64_t		 have, sent;
-	bool		 keep;
+	char		 peer[80], why[400];
+	int		 st;
 
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
 			return (WEB_OK);
-		pthread_mutex_lock(&sd_lock);
-		doc = sd_load();
-		pthread_mutex_unlock(&sd_lock);
-		return (reply_json(req, 200, doc));
+		return (reply_json(req, 200, l3nm_sdwan()));
 	}
 	if (!guard(req, true))
 		return (WEB_OK);
-	keep = strcmp(req->path, "/api/sdwan") == 0;
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "the SD-WAN document, "
 		    "as JSON"));
@@ -3978,47 +3937,34 @@ api_sdwan(struct http_request *req)
 		ucl_object_unref(body);
 		return (reply_error(req, 400, "invalid", "%s", c.why));
 	}
-	if (!keep) {
+	if (strcmp(req->path, "/api/sdwan") != 0) {
 		ucl_object_unref(body);
 		o = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(o, ucl_object_frombool(true), "ok", 0,
 		    false);
 		return (reply_json(req, 200, o));
 	}
-	pthread_mutex_lock(&sd_lock);
-	doc = sd_load();
-	have = ucl_object_toint(ucl_object_lookup(doc, "version"));
-	sent = ucl_object_toint(ucl_object_lookup(body, "version"));
-	if (sent != have) {
-		pthread_mutex_unlock(&sd_lock);
+	/* Kept as L3NM, if made from the version kept (l3nm.c). */
+	doc = l3nm_sdwan();
+	if ((st = l3nm_sdwan_put(body, ucl_object_toint(ucl_object_lookup(
+	    body, "version")), why, sizeof(why))) != 0) {
 		ucl_object_unref(doc);
 		ucl_object_unref(body);
-		return (reply_error(req, 409, "stale", "it was changed since: "
-		    "version %jd, not %jd", (intmax_t)have, (intmax_t)sent));
+		return (reply_error(req, st, st == 409 ? "stale" : st == 400 ?
+		    "invalid" : "store", "%s", why));
 	}
-	(void)ucl_object_delete_key(body, "version");
-	(void)ucl_object_delete_key(body, "changed");
-	ucl_object_insert_key(body, ucl_object_fromint(have + 1), "version", 0,
-	    false);
-	ucl_object_insert_key(body, ucl_object_fromint(time(NULL)), "changed",
-	    0, false);
-	if (store_save(SDWAN_FILE, body) != 0) {
-		pthread_mutex_unlock(&sd_lock);
-		ucl_object_unref(doc);
-		ucl_object_unref(body);
-		return (reply_error(req, 500, "store", "it could not be "
-		    "written"));
-	}
-	pthread_mutex_unlock(&sd_lock);
+	kept = l3nm_sdwan();
 	/* The Policies changed, by the System Administrator alone (MEF
 	 * 118.1 [R41]): the PAP's change, audited. */
 	audit_add("policies-changed", "Administer", "the services' document",
 	    "the whole document kept, checked first as MEF 70.2 says",
-	    "the console (the Policy Administration Point)", session_who(req), "version %jd kept", (intmax_t)(have
-	    + 1));
+	    "the console (the Policy Administration Point)", session_who(req),
+	    "version %jd kept", (intmax_t)ucl_object_toint(ucl_object_lookup(
+	    kept, "version")));
 	/* Each function policy whose values changed: a SAN (MEF 138 R31). */
-	san_changes(doc, body, web_peer(req, peer, sizeof(peer)),
+	san_changes(doc, kept, web_peer(req, peer, sizeof(peer)),
 	    session_who(req));
 	ucl_object_unref(doc);
-	return (reply_json(req, 200, body));
+	ucl_object_unref(body);
+	return (reply_json(req, 200, kept));
 }

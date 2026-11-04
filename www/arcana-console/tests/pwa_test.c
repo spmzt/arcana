@@ -6217,13 +6217,14 @@ part_flows(void)
 	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
 	    "includes('Edges')", 20);
 	/*
-	 * What a form does not know of its object stays as it was: a key
+	 * What a form does not know of its object stays as it was: a value
 	 * put into the document by hand survives the form's save (the
-	 * page is opened again first, to read the document as it is).
+	 * page is opened again first, to read the document as it is).  A
+	 * key of no model is not kept: the document is the L3NM's.
 	 */
 	run("fetch('/api/sdwan').then(r => r.json()).then(d => { d.ucs[0]."
-	    "tunnel.mtu = 'auto'; d.ucs[0].note = 'kept'; return fetch("
-	    "'/api/sdwan', { method: 'PUT', headers: { 'content-type': "
+	    "tunnel.mtu = 'auto'; d.ucs[0].billing = 'usage-based'; "
+	    "return fetch('/api/sdwan', { method: 'PUT', headers: { 'content-type': "
 	    "'application/json', 'X-Arcana': '1' }, body: JSON.stringify(d) }); }).then(r => { "
 	    "window.mtuput = r.status; });");
 	wait_js("window.mtuput === 200", 10);
@@ -6240,7 +6241,7 @@ part_flows(void)
 	wait_js("!document.querySelector('form[data-form=sd-ucs]')", 10);
 	run("window.mtukept = null; fetch('/api/sdwan').then(r => r.json())."
 	    "then(d => { window.mtukept = d.ucs[0].tunnel.mtu === 'auto' && "
-	    "d.ucs[0].note === 'kept'; });");
+	    "d.ucs[0].billing === 'usage-based'; });");
 	wait_js("window.mtukept === true", 20);
 	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
 	    "click()");
@@ -6277,7 +6278,7 @@ part_flows(void)
 	ATF_CHECK(js_true("!document.querySelector('select[data-input="
 	    "sd-swvc]')"));
 	shot("9-sdwan-guide-service");
-	ATF_CHECK(system("grep -q '\"trial\"' data/sdwan.json") == 0);
+	ATF_CHECK(system("grep -q '\"trial\"' data/l3nm.json") == 0);
 	run("document.querySelector('button[data-act=sd-tab][data-arg="
 	    "document]').click()");
 	wait_js("document.querySelector('form[data-form=sd-doc] textarea')", 10);
@@ -6462,8 +6463,8 @@ part_flows(void)
 	    "document.querySelectorAll('section.sdwan .pmap')].some(p => p."
 	    "textContent.includes('guests') && p.textContent.includes('web') "
 	    "&& p.textContent.includes('cheap'))", 20);
-	ATF_CHECK(system("grep -q guests data/sdwan.json && grep -q https "
-	    "data/sdwan.json && grep -q internet-breakout data/sdwan.json") ==
+	ATF_CHECK(system("grep -q guests data/l3nm.json && grep -q https "
+	    "data/l3nm.json && grep -q internet-breakout data/l3nm.json") ==
 	    0);
 	/* The end point form, with the edge's interfaces. */
 	run("[...document.querySelectorAll('button[data-act=sd-ep-edit]')]"
@@ -6482,8 +6483,8 @@ part_flows(void)
 	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
 	    ".some(r => r.textContent.includes('hq') && r.textContent."
 	    "includes('DHCP'))", 20);
-	ATF_CHECK(system("grep -q dhcp data/sdwan.json && grep -q 10.10.0.0/28 "
-	    "data/sdwan.json && grep -q '\"2h\"' data/sdwan.json") == 0);
+	ATF_CHECK(system("grep -q dhcp data/l3nm.json && grep -q 10.10.0.0/28 "
+	    "data/l3nm.json && grep -q '\"2h\"' data/l3nm.json") == 0);
 	/*
 	 * What was JSON alone, by forms too: a rate limiter, a topology of
 	 * a root and a leaf; and a document read from a file into the box,
@@ -6508,8 +6509,8 @@ part_flows(void)
 	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
 	    ".some(r => r.textContent.includes('hub') && r.textContent."
 	    "includes('rooted-multipoint'))", 20);
-	ATF_CHECK(system("grep -q '\"rate_limiters\"' data/sdwan.json && "
-	    "grep -q rooted-multipoint data/sdwan.json") == 0);
+	ATF_CHECK(system("grep -q '\"rate-limiter\"' data/l3nm.json && "
+	    "grep -q rooted-multipoint data/l3nm.json") == 0);
 	run("document.querySelector('button[data-act=sd-tab][data-arg="
 	    "document]').click()");
 	wait_js("document.querySelector('input[data-file=sd-import]')", 10);

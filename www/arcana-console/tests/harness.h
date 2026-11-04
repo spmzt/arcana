@@ -76,6 +76,8 @@ void		 console_start(void);
 void		 http_abandon(const char *);
 int		 tcp_socket(int);
 void		 http(const char *, const char *, const char *, struct resp *);
+bool		 sdwan_round_trip(const char *, const ucl_object_t *, char *,
+		    size_t);
 int		 ws_open(const char *);
 int		 console_socket(void);
 void		 ws_send(int, const char *);

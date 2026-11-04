@@ -1677,11 +1677,236 @@ tcp_socket(int port)
 	return (s);
 }
 
-/* One request to the console; the session cookie is kept. */
+/*
+ * The SD-WAN document as its L3NM gives it back (l3nm_mef.c): o with
+ * what does not come back the same made one way, NULL for absent.  Null,
+ * empty lists and objects, multihop false absent; any null true; a UNI's
+ * or an underlay's BGP and OSPF, an encryption and southbound a list; an
+ * OSPF area of none the backbone; the end points by edge, the routes
+ * IPv4 first.
+ */
+static ucl_object_t *
+sdwan_norm(const ucl_object_t *o, const char *key, int depth)
+{
+	static const char *const lists[] = { "bgp", "ospf", "encryption",
+	    "southbound", NULL };
+	const ucl_object_t	*v, *e, *x;
+	ucl_object_iter_t	 it, it2;
+	ucl_object_t		*n, *c, *a, *one;
+	const char		*k;
+	size_t			 i;
+	int			 pass;
+
+	switch (ucl_object_type(o)) {
+	case UCL_NULL:
+		return (key != NULL && strcmp(key, "any") == 0 ?
+		    ucl_object_frombool(true) : NULL);
+	case UCL_OBJECT:
+		n = ucl_object_typed_new(UCL_OBJECT);
+		it = NULL;
+		while ((v = ucl_object_iterate(o, &it, true)) != NULL) {
+			k = ucl_object_key(v);
+			if (depth == 0 && (strcmp(k, "version") == 0 ||
+			    strcmp(k, "changed") == 0))
+				continue;
+			if (strcmp(k, "multihop") == 0 && ucl_object_type(v) ==
+			    UCL_BOOLEAN && !ucl_object_toboolean(v))
+				continue;
+			one = NULL;
+			for (i = 0; lists[i] != NULL; i++)
+				if (strcmp(k, lists[i]) == 0 &&
+				    ucl_object_type(v) != UCL_ARRAY &&
+				    ucl_object_type(v) != UCL_NULL) {
+					one = ucl_object_typed_new(UCL_ARRAY);
+					ucl_array_append(one,
+					    ucl_object_copy(v));
+					v = one;
+				}
+			if ((c = sdwan_norm(v, k, depth + 1)) != NULL)
+				ucl_object_insert_key(n, c, k, 0, true);
+			ucl_object_unref(one);
+		}
+		if (key != NULL && strcmp(key, "ospf") == 0 &&
+		    ucl_object_lookup(n, "area") == NULL)
+			ucl_object_insert_key(n, ucl_object_fromint(0), "area",
+			    0, false);
+		if (n->len == 0) {
+			ucl_object_unref(n);
+			return (NULL);
+		}
+		return (n);
+	case UCL_ARRAY:
+		a = ucl_object_typed_new(UCL_ARRAY);
+		it = NULL;
+		while ((v = ucl_object_iterate(o, &it, true)) != NULL)
+			if ((c = sdwan_norm(v, key, depth + 1)) != NULL)
+				ucl_array_append(a, c);
+		if (ucl_array_size(a) == 0) {
+			ucl_object_unref(a);
+			return (NULL);
+		}
+		if (key != NULL && (strcmp(key, "end_points") == 0 ||
+		    strcmp(key, "routes") == 0)) {
+			n = ucl_object_typed_new(UCL_ARRAY);
+			it = NULL;
+			while ((v = ucl_object_iterate(a, &it, true)) != NULL) {
+				if (strcmp(key, "routes") == 0) {
+					k = ucl_object_tostring_forced(
+					    ucl_object_lookup(v, "prefix"));
+					pass = k != NULL && strchr(k, ':') !=
+					    NULL;
+					if (pass)
+						continue;
+					ucl_array_append(n, ucl_object_copy(v));
+					continue;
+				}
+				if ((x = ucl_object_lookup(v, "edge")) == NULL) {
+					ucl_array_append(n, ucl_object_copy(v));
+					continue;
+				}
+				/* The first of its edge: all of its edge. */
+				it2 = NULL;
+				while ((e = ucl_object_iterate(a, &it2,
+				    true)) != NULL && e != v)
+					if (ucl_object_lookup(e, "edge") !=
+					    NULL && strcmp(ucl_object_tostring(
+					    ucl_object_lookup(e, "edge")),
+					    ucl_object_tostring(x)) == 0)
+						break;
+				if (e != v)
+					continue;
+				it2 = NULL;
+				while ((e = ucl_object_iterate(a, &it2,
+				    true)) != NULL)
+					if (ucl_object_lookup(e, "edge") !=
+					    NULL && strcmp(ucl_object_tostring(
+					    ucl_object_lookup(e, "edge")),
+					    ucl_object_tostring(x)) == 0)
+						ucl_array_append(n,
+						    ucl_object_copy(e));
+			}
+			if (strcmp(key, "routes") == 0) {
+				it = NULL;
+				while ((v = ucl_object_iterate(a, &it, true)) !=
+				    NULL) {
+					k = ucl_object_tostring_forced(
+					    ucl_object_lookup(v, "prefix"));
+					if (k != NULL && strchr(k, ':') != NULL)
+						ucl_array_append(n,
+						    ucl_object_copy(v));
+				}
+			}
+			ucl_object_unref(a);
+			a = n;
+		}
+		return (a);
+	default:
+		return (ucl_object_copy(o));
+	}
+}
+
+/* a and b the same JSON, numbers by value; where, the first difference. */
+static bool
+sdwan_same(const ucl_object_t *a, const ucl_object_t *b, char *where,
+    size_t len)
+{
+	const ucl_object_t	*x;
+	ucl_object_iter_t	 it;
+	size_t			 i, n;
+	char			 sub[256], *ea, *eb;
+	const char		*sa, *sb;
+	double			 da, db;
+
+	if (a == NULL || b == NULL)
+		return (a == b);
+	if (ucl_object_type(a) == UCL_OBJECT && ucl_object_type(b) ==
+	    UCL_OBJECT) {
+		it = NULL;
+		while ((x = ucl_object_iterate(b, &it, true)) != NULL)
+			if (ucl_object_lookup(a, ucl_object_key(x)) == NULL) {
+				snprintf(where, len, "%s.%s: not sent", where,
+				    ucl_object_key(x));
+				return (false);
+			}
+		it = NULL;
+		while ((x = ucl_object_iterate(a, &it, true)) != NULL) {
+			snprintf(sub, sizeof(sub), "%s.%s", where,
+			    ucl_object_key(x));
+			if (!sdwan_same(x, ucl_object_lookup(b,
+			    ucl_object_key(x)), sub, sizeof(sub))) {
+				snprintf(where, len, "%s", sub);
+				return (false);
+			}
+		}
+		return (true);
+	}
+	if (ucl_object_type(a) == UCL_ARRAY && ucl_object_type(b) ==
+	    UCL_ARRAY) {
+		if ((n = ucl_array_size(a)) != ucl_array_size(b)) {
+			snprintf(where, len, "%s: %zu items, not %u", where, n,
+			    ucl_array_size(b));
+			return (false);
+		}
+		for (i = 0; i < n; i++) {
+			snprintf(sub, sizeof(sub), "%s.%zu", where, i);
+			if (!sdwan_same(ucl_array_find_index(a, i),
+			    ucl_array_find_index(b, i), sub, sizeof(sub))) {
+				snprintf(where, len, "%s", sub);
+				return (false);
+			}
+		}
+		return (true);
+	}
+	sa = ucl_object_tostring_forced(a);
+	sb = ucl_object_tostring_forced(b);
+	if (ucl_object_type(a) == ucl_object_type(b) && strcmp(sa, sb) == 0)
+		return (true);
+	if ((ucl_object_type(a) == UCL_INT || ucl_object_type(a) ==
+	    UCL_FLOAT) && (ucl_object_type(b) == UCL_INT ||
+	    ucl_object_type(b) == UCL_FLOAT)) {
+		da = strtod(sa, &ea);
+		db = strtod(sb, &eb);
+		if (da == db)
+			return (true);
+	}
+	snprintf(where, len, "%s: %s, not %s", where, sa, sb);
+	return (false);
+}
+
+/* The document sent and the one kept (the reply): the same but for what
+ * L3NM does not keep (PLAN-SDN-YANG 4.5.3). */
+bool
+sdwan_round_trip(const char *sent, const ucl_object_t *kept, char *where,
+    size_t len)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o, *a, *b;
+	bool			 same;
+
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+	if (!ucl_parser_add_string(p, sent, 0)) {
+		ucl_parser_free(p);
+		snprintf(where, len, "not JSON");
+		return (false);
+	}
+	o = ucl_parser_get_object(p);
+	ucl_parser_free(p);
+	a = sdwan_norm(o, NULL, 0);
+	b = sdwan_norm(kept, NULL, 0);
+	snprintf(where, len, "doc");
+	same = sdwan_same(a, b, where, len);
+	ucl_object_unref(o);
+	ucl_object_unref(a);
+	ucl_object_unref(b);
+	return (same);
+}
+
+/* One request to the console; the session cookie is kept.  An SD-WAN
+ * document kept comes back as it went (sdwan_round_trip()). */
 void
 http(const char *method, const char *path, const char *body, struct resp *r)
 {
-	char	hdrs[1024];
+	char	hdrs[1024], where[512];
 
 	snprintf(hdrs, sizeof(hdrs), "%s%s%s%s%s%s%s",
 	    send_xjg ? "X-Arcana: 1\r\n" : "",
@@ -1692,6 +1917,10 @@ http(const char *method, const char *path, const char *body, struct resp *r)
 	    cookie[0] != '\0' ? "\r\n" : "");
 	http_on(console_socket(), "localhost:8443", hdrs, method, path, body,
 	    r);
+	if (strcmp(method, "PUT") == 0 && strcmp(path, "/api/sdwan") == 0 &&
+	    r->status == 200 && body != NULL)
+		ATF_CHECK_MSG(sdwan_round_trip(body, r->json, where,
+		    sizeof(where)), "the document as L3NM, back: %s", where);
 }
 
 /*

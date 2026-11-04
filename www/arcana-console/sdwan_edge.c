@@ -9764,6 +9764,8 @@ sdwan_init(void)
 	char		path[MAXPATHLEN];
 	int		fd;
 
+	/* A document kept before the L3NM was: imported, once. */
+	l3nm_sdwan_migrate();
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, MGR_LOCK);
 	if ((fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600)) == -1)
 		return;

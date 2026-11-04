@@ -1781,9 +1781,29 @@ whose first part is served.
   absent alike for BGP multihop and the UNI's routing, a document's
   version and changed (the datastore's entity-tag instead), and the
   order of a UNI's static routes across the two families.
-- 4.5.3 C: the MEF 70.2 importer (document → L3NM + augments) and
-  exporter; check: the example document imports and exports to the
-  same bytes.
+- 4.5.3 done (console l3nm_mef.c, l3nm.c): the MEF 70.2 importer
+  (document → L3NM + augments) and exporter, by 4.5.2's mapping; one
+  source of truth, the L3NM: `/api/sdwan`'s GET the L3NM kept,
+  exported; its PUT (and the console's own changes, identities) the
+  document checked as MEF 70.2 says, imported into the L3NM kept and
+  run as RESTCONF's PUT of it, checked as one (a refusal the PUT's
+  400); a vpn-service without arcana-l3nm's sdwan is no SWVC, kept by
+  the import, left out by the export.  The document's version is the
+  datastore's change count, kept beside the L3NM in l3nm.json with the
+  time of the change, one more at each change by either way (a page's
+  document stale after a RESTCONF change too).  Migration: a console's
+  sdwan.json imported once at start, its version kept, kept as
+  sdwan-mef.json (in a cluster, which takes no write while it starts,
+  at the first use; not again where the L3NM has an SD-WAN).  Check
+  (console_test): every document a test keeps through `/api/sdwan`
+  comes back the same but for the equivalences (the harness's http(),
+  so every sdwan case), l3nm_good exports to sdwan_good, a sdwan.json
+  imported (l3nm_mef).  Not lossless beyond 4.5.2's list: a member of
+  no model (the document held any before; not now), an empty
+  list or object and none alike, a flow's `any` null as true, an OSPF
+  area of none the backbone, a PDNS encryption or southbound of one
+  either way, a prefix in inet_ntop(3)'s form, and the order of a
+  service's end points across its edges (by edge, then as they were).
 - 4.5.4 C: the planner reading L3NM: profiles and node overrides
   resolved, the allocation ledger (FIBs, addresses, RDs, VNIs, table
   names) persisted; check: the plan of the example equals the MEF
