@@ -1635,6 +1635,66 @@ static const char l3nm_fig34[] =
     L3NM_ACCESS("1/1/1.1", "1", "SYNC") ","
     L3NM_ACCESS("1/1/1.2", "2", "DATA") "]}}";
 
+/* A module of the console's own datastore, which no host has. */
+static bool
+own_name(const char *m, size_t n)
+{
+	static const char *const own[] = { "ietf-l3vpn-ntw",
+	    "ietf-vpn-common", "arcana-l3nm" };
+
+	for (size_t i = 0; i < nitems(own); i++)
+		if (strlen(own[i]) == n && strncmp(m, own[i], n) == 0)
+			return (true);
+	return (false);
+}
+
+/* A host entry's member (RFC 7951's module:node) of the console's own
+ * modules, into where; NULL: none. */
+static const char *
+own_top(const ucl_object_t *top, char *where, size_t len)
+{
+	const ucl_object_t	*h, *m;
+	ucl_object_iter_t	 it = NULL;
+	const char		*k, *c;
+
+	h = ucl_array_find_index(ucl_object_lookup(top, "arcana-fleet:host"),
+	    0);
+	while ((m = ucl_object_iterate(h, &it, true)) != NULL) {
+		k = ucl_object_key(m);
+		if ((c = strchr(k, ':')) != NULL && own_name(k, (size_t)(c -
+		    k))) {
+			snprintf(where, len, "%s", k);
+			return (where);
+		}
+	}
+	return (NULL);
+}
+
+/* A module of a yang-library's module sets, implemented or imported,
+ * of the console's own, into where; NULL: none. */
+static const char *
+own_module(const ucl_object_t *top, char *where, size_t len)
+{
+	static const char *const lists[] = { "module", "import-only-module" };
+	const ucl_object_t	*set, *m;
+	ucl_object_iter_t	 it = NULL, mit;
+	const char		*n;
+
+	while ((set = ucl_object_iterate(ucl_object_lookup_path(top,
+	    "ietf-yang-library:yang-library.module-set"), &it, true)) != NULL)
+		for (size_t i = 0; i < nitems(lists); i++) {
+			mit = NULL;
+			while ((m = ucl_object_iterate(ucl_object_lookup(set,
+			    lists[i]), &mit, true)) != NULL)
+				if ((n = ucl_object_tostring(ucl_object_lookup(m,
+				    "name"))) != NULL && own_name(n, strlen(n))) {
+					snprintf(where, len, "%s", n);
+					return (where);
+				}
+		}
+	return (NULL);
+}
+
 CONSOLE_TC(l3nm, "the services as L3NM, the console's own datastore: RFC "
     "9182 Appendix A.1 made by its three POSTs, read back, changed, "
     "checked and kept")
@@ -1747,7 +1807,7 @@ ATF_TC_BODY(l3nm, tc)
 	 * mounted there, none of the console's own modules. */
 	{
 		char	cwd[MAXPATHLEN], body[MAXPATHLEN + 64], id[16];
-		char	path[256];
+		char	path[256], where[128];
 
 		ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 		snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":"
@@ -1765,16 +1825,19 @@ ATF_TC_BODY(l3nm, tc)
 		    "fleet/host=%s", id);
 		http("GET", path, NULL, &r);
 		EXPECT(&r, 200);
-		ATF_CHECK(strstr(r.body, "l3vpn-ntw") == NULL &&
-		    strstr(r.body, "vpn-common") == NULL &&
-		    strstr(r.body, "arcana-l3nm") == NULL);
+		/* By key: the host's processes' arguments are free text
+		 * (arcana-processes), a test's anywhere on the VM. */
+		ATF_CHECK(jstr(&r, "arcana-fleet:host.0.id") != NULL);
+		ATF_CHECK_MSG(own_top(r.json, where, sizeof(where)) == NULL,
+		    "the host's data has %s", where);
 		resp_free(&r);
 		snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:"
 		    "fleet/host=%s/ietf-yang-library:yang-library", id);
 		http("GET", path, NULL, &r);
 		EXPECT(&r, 200);
-		ATF_CHECK(strstr(r.body, "l3vpn-ntw") == NULL &&
-		    strstr(r.body, "arcana-l3nm") == NULL);
+		ATF_CHECK(strstr(r.body, "\"ietf-interfaces\"") != NULL);
+		ATF_CHECK_MSG(own_module(r.json, where, sizeof(where)) == NULL,
+		    "the host's library names %s", where);
 		resp_free(&r);
 		snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:"
 		    "fleet/host=%s/ietf-l3vpn-ntw:l3vpn-ntw", id);
