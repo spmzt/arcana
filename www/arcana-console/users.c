@@ -335,7 +335,9 @@ user_path_ok(enum crole r, const char *path, bool mutate)
 				    "/api/ca", "/api/users", "/api/roles",
 				    "/api/groups",
 				    "/api/enrol", "/api/update", "/api/push/send" };
-	static const char	*operator_up[] = { "/api/sdwan", "/api/workflows",
+	static const char	*operator_up[] = { "/api/sdwan",
+				    "/restconf/data/ietf-l3vpn-ntw:l3vpn-ntw",
+				    "/api/workflows",
 				    "/api/runs", "/api/templates",
 				    "/api/transfers", "/api/troubleshoot",
 				    "/api/wg" };

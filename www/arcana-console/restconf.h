@@ -62,6 +62,21 @@ void		 restconf_headers(struct http_request *req,
 void		 restconf_events(const char *uri, const char *json);
 /* A reply of RFC 8040's media type, of top (consumed). */
 int		 restconf_reply(struct http_request *req, ucl_object_t *top);
+/*
+ * The console's own datastore (l3nm.c): restconf_parse_own(), a path
+ * below /restconf/data and the query as a request of it;
+ * restconf_run_own(), it run on tree t (its strings in a), *changed when
+ * t, edited and valid, is to be kept; restconf_own_changed(), kept, its
+ * entity-tag (of uri) changed.
+ */
+struct cbl_dtree;
+struct cbl_yarena;
+struct rcreq	*restconf_parse_own(const char *path, const char *query,
+		    const char **why);
+void		 restconf_run_own(struct rcreq *r, struct cbl_dtree *t,
+		    struct cbl_yarena *a, bool *changed, char **json,
+		    int *status);
+void		 restconf_own_changed(const char *uri);
 /* establish-subscription POSTed under host sid's entry (rcstream.c). */
 int		 restconf_establish(struct http_request *req, const char *sid);
 

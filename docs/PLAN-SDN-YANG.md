@@ -1744,8 +1744,17 @@ whose first part is served.
   `application/yang-data+cbor` where the app prefers CBOR. Briefed
   from this plan when 4.1 lands; check: the app against the lab's
   console.
-- 4.5.1 C: `ietf-vpn-common` and `ietf-l3vpn-ntw` stored as the
-  service; check: RFC 9182's Appendix A example accepted.
+- 4.5.1 done (console l3nm.c): `ietf-vpn-common` and `ietf-l3vpn-ntw`
+  stored as the service, a datastore of the console's own (l3nm.json,
+  saved through the cluster), served at
+  `/restconf/data/ietf-l3vpn-ntw:l3vpn-ntw` by restconf.c's methods
+  (GET, POST, PUT, PATCH, YANG Patch, DELETE, entity-tags), each change
+  checked as RFC 7950 says (types, mandatory, keys, leafrefs, when,
+  must); operators and owners alone, as `/api/sdwan`.  Appendix A.1's
+  three POSTs accepted but for three errors of its figures against the
+  modules (a type 0 RD/RT with a 4-byte AS, IPv4's `static-addresses`
+  case as a node, `direct` for `direct-routing`).  Open: a key with
+  "/" in a path (the server decodes it first), the library's features.
 - 4.5.2 C: the Arcana augmentations of L3NM: application flows, the
   policy map, performance criteria, breakout, security policies,
   tunnel virtual connections, probes, steering criteria, routing

@@ -1587,6 +1587,171 @@ ATF_TC_BODY(restconf_tag_malformed_message, tc)
 	    400, "malformed-message");
 }
 
+#define	L3NM	"/restconf/data/ietf-l3vpn-ntw:l3vpn-ntw"
+
+/*
+ * RFC 9182 Appendix A.1, Figures 32 to 34, as published, but for three
+ * errors of the figures against the module: Figure 32's route
+ * distinguisher and target, "0:65550:1", which ietf-routing-types'
+ * patterns refuse (a type 0's AS is 2 bytes), are "2:65550:1" here, the
+ * type of a 4-byte AS (RFC 4364 section 4.2); Figure 34's IPv4
+ * "static-addresses" is a case of a choice, no node, its members the
+ * ipv4 container's own (as the figure has IPv6's); and its routing
+ * protocol "ietf-vpn-common:direct", an identity RFC 9181 names
+ * direct-routing.
+ */
+static const char l3nm_fig32[] =
+    "{\"ietf-l3vpn-ntw:vpn-services\":{\"vpn-service\":[{\"vpn-id\":\"4G\","
+    "\"vpn-description\":\"VPN to deploy 4G services\",\"customer-name\":"
+    "\"mycustomer\",\"vpn-service-topology\":\"custom\","
+    "\"vpn-instance-profiles\":{\"vpn-instance-profile\":[{\"profile-id\":"
+    "\"simple-profile\",\"local-as\":65550,\"rd\":\"2:65550:1\","
+    "\"address-family\":[{\"address-family\":\"ietf-vpn-common:dual-stack\","
+    "\"vpn-targets\":{\"vpn-target\":[{\"id\":1,\"route-targets\":"
+    "[{\"route-target\":\"2:65550:1\"}],\"route-target-type\":\"both\"}]}}]}]}}"
+    "]}}";
+static const char l3nm_fig33[] =
+    "{\"ietf-l3vpn-ntw:vpn-nodes\":{\"vpn-node\":[{\"vpn-node-id\":\"44\","
+    "\"ne-id\":\"198.51.100.1\",\"active-vpn-instance-profiles\":"
+    "{\"vpn-instance-profile\":[{\"profile-id\":\"simple-profile\"}]}}]}}";
+#define	L3NM_ACCESS(id, vlan, what)					\
+    "{\"id\":\"" id "\",\"interface-id\":\"1/1/1\",\"description\":"	\
+    "\"Interface " what " to eNODE-B\",\"vpn-network-access-type\":"	\
+    "\"ietf-vpn-common:point-to-point\",\"vpn-instance-profile\":"	\
+    "\"simple-profile\",\"status\":{\"admin-status\":{\"status\":"	\
+    "\"ietf-vpn-common:admin-up\"}},\"connection\":{\"encapsulation\":"	\
+    "{\"type\":\"ietf-vpn-common:dot1q\",\"dot1q\":{\"cvlan-id\":" vlan	\
+    "}}},\"ip-connection\":{\"ipv4\":{\"local-address\":\"192.0.2.1\","	\
+    "\"prefix-length\":30,\"address-allocation-type\":\"static-address\","	\
+    "\"primary-address\":\"1\",\"address\":"				\
+    "[{\"address-id\":\"1\",\"customer-address\":\"192.0.2.2\"}]},"	\
+    "\"ipv6\":{\"local-address\":\"2001:db8::1\",\"prefix-length\":64,"	\
+    "\"address-allocation-type\":\"static-address\",\"primary-address\":"	\
+    "\"1\",\"address\":[{\"address-id\":\"1\",\"customer-address\":"	\
+    "\"2001:db8::2\"}]}},\"routing-protocols\":{\"routing-protocol\":"	\
+    "[{\"id\":\"1\",\"type\":\"ietf-vpn-common:direct-routing\"}]}}"
+static const char l3nm_fig34[] =
+    "{\"ietf-l3vpn-ntw:vpn-network-accesses\":{\"vpn-network-access\":["
+    L3NM_ACCESS("1/1/1.1", "1", "SYNC") ","
+    L3NM_ACCESS("1/1/1.2", "2", "DATA") "]}}";
+
+CONSOLE_TC(l3nm, "the services as L3NM, the console's own datastore: RFC "
+    "9182 Appendix A.1 made by its three POSTs, read back, changed, "
+    "checked and kept")
+ATF_TC_BODY(l3nm, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 etag[64];
+
+	start(tc, 0, NULL);
+	http("GET", L3NM, NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	enrol(&a);
+	/* Nothing kept yet. */
+	http("GET", L3NM "/vpn-services", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	/* Figure 32 as published: its route target refused, the node at
+	 * fault said. */
+	{
+		char	pub[sizeof(l3nm_fig32)], *p;
+
+		memcpy(pub, l3nm_fig32, sizeof(pub));
+		while ((p = strstr(pub, "2:65550:1")) != NULL)
+			*p = '0';
+		http("POST", L3NM, pub, &r);
+		EXPECT(&r, 400);
+		ATF_CHECK(strstr(r.body, "route-targets/route-target\"") !=
+		    NULL || strstr(r.body, "/rd\"") != NULL);
+		resp_free(&r);
+	}
+	/* Figure 32: the service, below a container not yet there. */
+	http("POST", L3NM, l3nm_fig32, &r);
+	EXPECT(&r, 201);
+	ATF_CHECK_MSG(resp_header(&r, "location", etag, sizeof(etag)) !=
+	    NULL, "%s", r.head);
+	resp_free(&r);
+	http("POST", L3NM "/vpn-services/vpn-service=4G", l3nm_fig33, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("POST", L3NM "/vpn-services/vpn-service=4G/vpn-nodes/vpn-node=44",
+	    l3nm_fig34, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	/* Read back, whole and a node. */
+	http("GET", L3NM, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("4G", jstr(&r, "ietf-l3vpn-ntw:l3vpn-ntw.vpn-services."
+	    "vpn-service.0.vpn-id"));
+	ATF_CHECK_STREQ("ietf-vpn-common:custom", jstr(&r, "ietf-l3vpn-ntw:"
+	    "l3vpn-ntw.vpn-services.vpn-service.0.vpn-service-topology"));
+	ATF_CHECK_STREQ("2:65550:1", jstr(&r, "ietf-l3vpn-ntw:l3vpn-ntw."
+	    "vpn-services.vpn-service.0.vpn-instance-profiles."
+	    "vpn-instance-profile.0.rd"));
+	ATF_CHECK_MSG(resp_header(&r, "etag", etag, sizeof(etag)) != NULL,
+	    "%s", r.head);
+	resp_free(&r);
+	/* (A key with "/" in it is not named in a path the server has
+	 * decoded: the accesses read and changed by their container.) */
+	http("GET", L3NM "/vpn-services/vpn-service=4G/vpn-nodes/vpn-node=44/"
+	    "vpn-network-accesses", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("2", jstr(&r, "ietf-l3vpn-ntw:vpn-network-accesses."
+	    "vpn-network-access.1.connection.encapsulation.dot1q.cvlan-id"));
+	resp_free(&r);
+	/* Changed: merged; a value not of its type refused; a leafref to
+	 * no profile of the node refused, nothing kept of either. */
+	http("PATCH", L3NM "/vpn-services/vpn-service=4G", "{\"ietf-l3vpn-ntw:"
+	    "vpn-service\":[{\"vpn-id\":\"4G\",\"vpn-name\":\"mobile\"}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("PATCH", L3NM "/vpn-services/vpn-service=4G/vpn-nodes/"
+	    "vpn-node=44/vpn-network-accesses", "{\"ietf-l3vpn-ntw:"
+	    "vpn-network-accesses\":{\"vpn-network-access\":[{\"id\":"
+	    "\"1/1/1.1\",\"connection\":{\"encapsulation\":{\"dot1q\":"
+	    "{\"cvlan-id\":5000}}}}]}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PATCH", L3NM "/vpn-services/vpn-service=4G/vpn-nodes/"
+	    "vpn-node=44/vpn-network-accesses", "{\"ietf-l3vpn-ntw:"
+	    "vpn-network-accesses\":{\"vpn-network-access\":[{\"id\":"
+	    "\"1/1/1.1\",\"vpn-instance-profile\":\"nosuch\"}]}}", &r);
+	ATF_CHECK_MSG(r.status == 400 || r.status == 409, "%d %s", r.status,
+	    r.body);
+	ATF_CHECK(strstr(r.body, "error-tag") != NULL);
+	resp_free(&r);
+	/* Kept: across a restart, in /restconf/data, the library naming
+	 * its modules. */
+	restart_console();
+	http("GET", L3NM "/vpn-services/vpn-service=4G/vpn-name", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("mobile", jstr(&r, "ietf-l3vpn-ntw:vpn-name"));
+	resp_free(&r);
+	http("GET", L3NM "/vpn-services/vpn-service=4G/vpn-nodes/vpn-node=44/"
+	    "vpn-network-accesses", NULL, &r);
+	ATF_CHECK_STREQ("simple-profile", jstr(&r, "ietf-l3vpn-ntw:"
+	    "vpn-network-accesses.vpn-network-access.0.vpn-instance-profile"));
+	ATF_CHECK_STREQ("1", jstr(&r, "ietf-l3vpn-ntw:vpn-network-accesses."
+	    "vpn-network-access.0.connection.encapsulation.dot1q.cvlan-id"));
+	resp_free(&r);
+	http("GET", "/restconf/data", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("4G", jstr(&r, "ietf-l3vpn-ntw:l3vpn-ntw.vpn-services."
+	    "vpn-service.0.vpn-id"));
+	ATF_CHECK(strstr(r.body, "\"name\":\"ietf-l3vpn-ntw\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"name\":\"ietf-vpn-common\"") != NULL);
+	resp_free(&r);
+	/* Taken away. */
+	http("DELETE", L3NM "/vpn-services/vpn-service=4G", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", L3NM "/vpn-services/vpn-service=4G", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+}
+
 ATF_TC_BODY(restconf, tc)
 {
 	struct authn	 a;
@@ -13710,6 +13875,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf_tag_unknown_namespace);
 	ATF_TP_ADD_TC(tp, restconf_tag_bad_element);
 	ATF_TP_ADD_TC(tp, restconf_tag_malformed_message);
+	ATF_TP_ADD_TC(tp, l3nm);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_sync);
 	ATF_TP_ADD_TC(tp, server_readdress);

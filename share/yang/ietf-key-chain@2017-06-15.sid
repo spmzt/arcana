@@ -1,0 +1,306 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-key-chain",
+    "module-revision": "2017-06-15",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-netconf-acm",
+        "module-revision": "2018-02-14"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "87200",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-key-chain",
+        "sid": "87200"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "aes-cmac-prf-128",
+        "sid": "87201"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "cleartext",
+        "sid": "87202"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "crypto-algorithm",
+        "sid": "87203"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "hmac-sha-1",
+        "sid": "87204"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "hmac-sha-1-12",
+        "sid": "87205"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "hmac-sha-256",
+        "sid": "87206"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "hmac-sha-384",
+        "sid": "87207"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "hmac-sha-512",
+        "sid": "87208"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "md5",
+        "sid": "87209"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "replay-protection-only",
+        "sid": "87210"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "sha-1",
+        "sid": "87211"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "accept-tolerance",
+        "sid": "87212"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "aes-cmac-prf-128",
+        "sid": "87213"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "aes-key-wrap",
+        "sid": "87214"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "cleartext",
+        "sid": "87215"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "crypto-hmac-sha-1-12",
+        "sid": "87216"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "hex-key-string",
+        "sid": "87217"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "independent-send-accept-lifetime",
+        "sid": "87218"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "replay-protection-only",
+        "sid": "87219"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains",
+        "sid": "87220"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/aes-key-wrap",
+        "sid": "87221"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/aes-key-wrap/enable",
+        "sid": "87222"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain",
+        "sid": "87223"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/accept-tolerance",
+        "sid": "87224"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/accept-tolerance/duration",
+        "sid": "87225"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/description",
+        "sid": "87226"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key",
+        "sid": "87227"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/accept-lifetime-active",
+        "sid": "87228"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/crypto-algorithm",
+        "sid": "87229"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/key-id",
+        "sid": "87230"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/key-string",
+        "sid": "87231"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/key-string/hexadecimal-string",
+        "sid": "87232"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/key-string/keystring",
+        "sid": "87233"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime",
+        "sid": "87234"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/accept-lifetime",
+        "sid": "87235"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/accept-lifetime/always",
+        "sid": "87236"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/accept-lifetime/duration",
+        "sid": "87237"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/accept-lifetime/end-date-time",
+        "sid": "87238"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/accept-lifetime/no-end-time",
+        "sid": "87239"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/accept-lifetime/start-date-time",
+        "sid": "87240"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-accept-lifetime",
+        "sid": "87241"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-accept-lifetime/always",
+        "sid": "87242"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-accept-lifetime/duration",
+        "sid": "87243"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-accept-lifetime/end-date-time",
+        "sid": "87244"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-accept-lifetime/no-end-time",
+        "sid": "87245"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-accept-lifetime/start-date-time",
+        "sid": "87246"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-lifetime",
+        "sid": "87247"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-lifetime/always",
+        "sid": "87248"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-lifetime/duration",
+        "sid": "87249"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-lifetime/end-date-time",
+        "sid": "87250"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-lifetime/no-end-time",
+        "sid": "87251"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/lifetime/send-lifetime/start-date-time",
+        "sid": "87252"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/key/send-lifetime-active",
+        "sid": "87253"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/last-modified-timestamp",
+        "sid": "87254"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-key-chain:key-chains/key-chain/name",
+        "sid": "87255"
+      }
+    ]
+  }
+}

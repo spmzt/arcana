@@ -166,6 +166,10 @@ on the wire.
 | 85 800 | 160 | `arcana-speeder` | `share/yang/arcana-speeder@2026-10-29.sid` (156 used) |
 | 85 960 | 40 | `arcana-stream`, the structures of Arcana's own stream family | `share/yang/arcana-stream@2026-10-29.sid` (9 used) |
 | 86 000 | 100 | `arcana-steer`, the CAL: the steering's choices, why, its pins and steer-changed | `share/yang/arcana-steer@2026-11-04.sid` (65 used) |
+| 86 100 | 300 | `ietf-vpn-common@2022-02-11`, RFC 9181 (no IETF range), the console's | `share/yang/ietf-vpn-common@2022-02-11.sid` (199 used) |
+| 86 400 | 800 | `ietf-l3vpn-ntw@2022-02-14`, RFC 9182 (no IETF range): the services as the console stores them | `share/yang/ietf-l3vpn-ntw@2022-02-14.sid` (622 used) |
+| 87 200 | 100 | `ietf-key-chain@2017-06-15`, RFC 8177 (no IETF range; imported by `ietf-l3vpn-ntw`, its identities used) | `share/yang/ietf-key-chain@2017-06-15.sid` (56 used) |
+| 87 300 | 100 | `ietf-tcp@2024-10-10`, RFC 9648 (no IETF range; its identities derive from `ietf-key-chain`'s) | `share/yang/ietf-tcp@2024-10-10.sid` (44 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

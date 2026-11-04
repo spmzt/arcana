@@ -98,6 +98,17 @@ ARC_YFEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-subscribed-notif-receivers: -F ietf-https-notif-transport: \
 		-F arcana-notif: -F arcana-ra:
 
+# The console's own datastore (ARC_YANG_CONSOLE=yes): the services
+# stored as L3NM (RFC 9181, RFC 9182), which no agent serves.
+.if ${ARC_YANG_CONSOLE:Uno} == "yes"
+ARC_YMODS+=	ietf-vpn-common@2022-02-11 ietf-l3vpn-ntw@2022-02-14
+ARC_YIMPORTS+=	ietf-key-chain@2017-06-15 ietf-tcp@2024-10-10
+ARC_YFEATS+=	-F ietf-vpn-common:* -F ietf-l3vpn-ntw:*
+.endif
+# cblink-gen takes 64 -F at most, and a module named with no feature is
+# as one not named: those left out, each spec one word, quoted.
+_arc_yfeats=	${ARC_YFEATS:[*]:S/-F /-F/g:[@]:N*\:}
+
 .if ${ARC_YANG_SERVER:Uno} == "yes"
 _arc_yparts=	h,schema,server
 # The modules imported only, name@revision by commas: ietf-yang-library's
@@ -116,7 +127,7 @@ ymodel.h: ${ARC_YMODS:@m@${ARC_YANG_DIR}/${m}.yang ${ARC_YANG_DIR}/${m}.sid@} \
     ${ARC_YIMPORTS:@m@${ARC_YANG_DIR}/${m}.sid@} ${CBLINK_GEN} \
     ${.PARSEDIR}/arcana.yang.mk
 	cd ${ARC_YANG_DIR} && ${CBLINK_GEN} -m ${_arc_yparts} -b ymodel \
-	    -o ${.OBJDIR} ${ARC_YFEATS} \
+	    -o ${.OBJDIR} ${_arc_yfeats:@f@'${f}'@} \
 	    ${ARC_YMODS:@m@-s ${m}.sid@} ${ARC_YIMPORTS:@m@-s ${m}.sid@} \
 	    -p ${CBLINK_YANG_DIR} ${ARC_YMODS:S/$/.yang/} > /dev/null
 

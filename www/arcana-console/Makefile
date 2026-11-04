@@ -7,6 +7,7 @@ SRCS=		web.c keymgr.c routes.c api.c auth.c config.c hosts.c pki.c push.c server
 		sdwan_edge.c \
 		store.c update.c webpush.c audit.c sen.c mail.c templates.c ldap.c labels.c notif.c prefixlists.c users.c \
 		craft.c nodes.c ytrans.c yjsonin.c restconf.c rcstream.c idsfiles.c drift.c \
+		l3nm.c \
 		cplug.c
 # A program compressed for agent-update, and one agent-build sent so:
 # the agent's.
@@ -22,7 +23,9 @@ MAN=		arcana-console.8
 ARC_CLUSTER=	yes
 .include "${.CURDIR}/../../share/mk/arcana.wire.mk"
 # The standard models, asked of the agents by cblink's YANG family: the
-# Network tab's interfaces (ytrans.c), RESTCONF's reads (restconf.c).
+# Network tab's interfaces (ytrans.c), RESTCONF's reads (restconf.c);
+# the console's own datastore, the services as L3NM (l3nm.c).
+ARC_YANG_CONSOLE=	yes
 .include "${.CURDIR}/../../share/mk/arcana.yang.mk"
 
 CFLAGS+=	-I${.CURDIR}/../../usr.sbin/arcana-agent/ira

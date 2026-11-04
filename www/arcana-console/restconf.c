@@ -19,6 +19,9 @@
  *	/restconf/data/arcana-fleet:fleet/host=<id>[/<api-path>]
  *					a host's entry, or a node of its
  *					agent's data by RFC 8040's api-path
+ *	/restconf/data/ietf-l3vpn-ntw:l3vpn-ntw[/<api-path>]
+ *					the services as L3NM (RFC 9182),
+ *					the console's own (l3nm.c)
  *
  * A host's path is made an XPath filter of the agent's GET, the node
  * then taken from the RFC 7951 JSON that comes back.  Of the query
@@ -113,6 +116,7 @@ struct rcreq {
 	struct fsel	*fields;
 	/* Of the datastores (RFC 8527) and the changes: */
 	int		 ds;		/* CBL_YDS_*; -1, /restconf/data */
+	bool		 own;		/* of the console's own datastore */
 	int		 method;	/* HTTP_METHOD_* */
 	ucl_object_t	*body;		/* a change's, an rpc's input */
 	const struct cbl_ynode *rpc;	/* POSTed: ietf-netconf's */
@@ -504,24 +508,42 @@ library_object(void)
 		    "urn:ietf:params:xml:ns:yang:ietf-yang-library" },
 		{ "ietf-yang-schema-mount", "2019-01-14",
 		    "urn:ietf:params:xml:ns:yang:ietf-yang-schema-mount" },
+		{ "ietf-vpn-common", "2022-02-11",
+		    "urn:ietf:params:xml:ns:yang:ietf-vpn-common" },
+		{ "ietf-l3vpn-ntw", "2022-02-14",
+		    "urn:ietf:params:xml:ns:yang:ietf-l3vpn-ntw" },
 	};
-	ucl_object_t	*lib, *set, *sets, *arr, *m, *sch, *ds;
+	/* What they import alone, for its identities and types. */
+	static const char *const imps[][3] = {
+		{ "ietf-key-chain", "2017-06-15",
+		    "urn:ietf:params:xml:ns:yang:ietf-key-chain" },
+		{ "ietf-packet-fields", "2019-03-04",
+		    "urn:ietf:params:xml:ns:yang:ietf-packet-fields" },
+		{ "ietf-routing-types", "2017-12-04",
+		    "urn:ietf:params:xml:ns:yang:ietf-routing-types" },
+	};
+	ucl_object_t	*lib, *set, *sets, *arr, *imp, *m, *sch, *ds;
 
 	arr = ucl_object_typed_new(UCL_ARRAY);
-	for (size_t i = 0; i < nitems(mods); i++) {
+	imp = ucl_object_typed_new(UCL_ARRAY);
+	for (size_t i = 0; i < nitems(mods) + nitems(imps); i++) {
+		const char *const *e = i < nitems(mods) ? mods[i] :
+		    imps[i - nitems(mods)];
+
 		m = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(m, ucl_object_fromstring(mods[i][0]),
-		    "name", 0, false);
-		ucl_object_insert_key(m, ucl_object_fromstring(mods[i][1]),
+		ucl_object_insert_key(m, ucl_object_fromstring(e[0]), "name",
+		    0, false);
+		ucl_object_insert_key(m, ucl_object_fromstring(e[1]),
 		    "revision", 0, false);
-		ucl_object_insert_key(m, ucl_object_fromstring(mods[i][2]),
+		ucl_object_insert_key(m, ucl_object_fromstring(e[2]),
 		    "namespace", 0, false);
-		ucl_array_append(arr, m);
+		ucl_array_append(i < nitems(mods) ? arr : imp, m);
 	}
 	set = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(set, ucl_object_fromstring("console"), "name",
 	    0, false);
 	ucl_object_insert_key(set, arr, "module", 0, false);
+	ucl_object_insert_key(set, imp, "import-only-module", 0, false);
 	sets = ucl_object_typed_new(UCL_ARRAY);
 	ucl_array_append(sets, set);
 	lib = ucl_object_typed_new(UCL_OBJECT);
@@ -543,7 +565,7 @@ library_object(void)
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	ucl_array_append(arr, ds);
 	ucl_object_insert_key(lib, arr, "datastore", 0, false);
-	ucl_object_insert_key(lib, ucl_object_fromstring("2026-10-27"),
+	ucl_object_insert_key(lib, ucl_object_fromstring("2026-11-05"),
 	    "content-id", 0, false);
 	return (lib);
 }
@@ -632,6 +654,8 @@ api_restconf_data(struct http_request *req)
 	}
 	if (restconf_host(req->path, sid, sizeof(sid)))
 		return (api_restconf_host(req));
+	if (l3nm_path(req->path))
+		return (api_l3nm(req));
 	if (req->method != HTTP_METHOD_GET)
 		return (restconf_error(req, 405, "the console's own data is "
 		    "read alone; a host's changes are below its entry"));
@@ -650,6 +674,7 @@ api_restconf_data(struct http_request *req)
 		    "ietf-yang-library:yang-library", 0, false);
 		ucl_object_insert_key(top, mounts_object(),
 		    "ietf-yang-schema-mount:schema-mounts", 0, false);
+		l3nm_into(req, top);
 	} else if (strcmp(p, "/arcana-fleet:fleet") == 0)
 		ucl_object_insert_key(top, fleet_object(req),
 		    "arcana-fleet:fleet", 0, false);
@@ -1157,10 +1182,11 @@ bad:
 
 /*
  * The api-path below a host's entry (section 3.5.3), and the query, as
- * a request of the agent; NULL and *why when it is none.
+ * a request of the agent; with own, below /restconf/data, a request of
+ * the console's own datastore.  NULL and *why when it is none.
  */
-struct rcreq *
-restconf_parse(const char *path, const char *query, const char **why)
+static struct rcreq *
+parse(const char *path, const char *query, bool own, const char **why)
 {
 	struct rcreq	*r;
 	const char	*e;
@@ -1268,7 +1294,7 @@ restconf_parse(const char *path, const char *query, const char **why)
 	qcopy = NULL;
 	/* The path below the host's entry, a segment a node. */
 	if ((rest = (char *)(uintptr_t)below_root(path, &r->ds)) == NULL ||
-	    strncmp(rest, HOST_SEG, sizeof(HOST_SEG) - 1) != 0) {
+	    (!own && strncmp(rest, HOST_SEG, sizeof(HOST_SEG) - 1) != 0)) {
 		*why = "no host's entry";
 		goto bad;
 	}
@@ -1276,7 +1302,12 @@ restconf_parse(const char *path, const char *query, const char **why)
 		*why = "with-origin is the operational datastore's";
 		goto bad;
 	}
-	e = strchrnul(rest + sizeof(HOST_SEG) - 1, '/');
+	if (own && r->ds != -1) {
+		*why = "the console's own data is below /restconf/data";
+		goto bad;
+	}
+	r->own = own;
+	e = own ? rest : strchrnul(rest + sizeof(HOST_SEG) - 1, '/');
 	if ((r->base = strndup(path, (size_t)(e - path))) == NULL) {
 		*why = "out of memory";
 		goto bad;
@@ -1292,6 +1323,10 @@ restconf_parse(const char *path, const char *query, const char **why)
 		goto bad;
 	}
 	free(copy);
+	if (own && r->rpc != NULL) {
+		*why = "the console's own datastore has no rpc";
+		goto bad;
+	}
 	if (r->nseg > 0 && (r->xpath = path_of(r, r->nseg, why)) == NULL)
 		goto bad;
 	return (r);
@@ -1299,6 +1334,20 @@ bad:
 	free(qcopy);
 	restconf_free(r);
 	return (NULL);
+}
+
+struct rcreq *
+restconf_parse(const char *path, const char *query, const char **why)
+{
+
+	return (parse(path, query, false, why));
+}
+
+struct rcreq *
+restconf_parse_own(const char *path, const char *query, const char **why)
+{
+
+	return (parse(path, query, true, why));
 }
 
 /* A JSON value's text, as a key is written in the path. */
@@ -2184,12 +2233,12 @@ restconf_prepare(struct rcreq *r, int method, const char *ctype,
 		}
 		return (0);
 	}
-	if (method == HTTP_METHOD_POST && r->ds == -1)
+	if (method == HTTP_METHOD_POST && r->ds == -1 && !r->own)
 		return (refuse(r, 405, NULL, why, "of what is POSTed under a "
 		    "host's entry, establish-subscription and ietf-netconf's "
 		    "commit, cancel-commit and discard-changes; a node is "
 		    "made under /restconf/ds/ietf-datastores:candidate"));
-	if (r->ds != CBL_YDS_CANDIDATE)
+	if (!r->own && r->ds != CBL_YDS_CANDIDATE)
 		return (refuse(r, 405, NULL, why, "running changes by a "
 		    "confirmed commit of the candidate: the node changed "
 		    "under /restconf/ds/ietf-datastores:candidate, then "
@@ -2211,8 +2260,8 @@ restconf_prepare(struct rcreq *r, int method, const char *ctype,
 		return (prepare_create(r, why));
 	case HTTP_METHOD_PUT:
 		if (r->nseg == 0)
-			return (refuse(r, 501, NULL, why, "a host's datastore "
-			    "is replaced a node at a time"));
+			return (refuse(r, 501, NULL, why, "a datastore is "
+			    "replaced a node at a time"));
 		return (prepare_put(r, CBL_DOP_REPLACE, why));
 	case HTTP_METHOD_PATCH:
 		if (ctype != NULL && strncasecmp(ctype,
@@ -2865,6 +2914,104 @@ refused(const struct rcreq *r, int error, const char *err, uint64_t errsid,
 }
 
 /*
+ * Whether r's first nbase nodes, not in w, are there all the same: what
+ * is not there of them non-presence containers, which exist as their
+ * parent does (RFC 7950 section 7.5.1).
+ */
+static bool
+implied(const cbl_dtree *w, const struct rcreq *r, cbl_yarena *a)
+{
+	cbl_dnode	*x;
+	char		 err[64];
+	size_t		 k;
+
+	for (k = r->nbase; k > 0; k--)
+		if (locate(w, r, k, a, &x, err, sizeof(err)) == 0 && x != NULL)
+			break;
+	for (; k < r->nbase; k++)
+		if (r->seg[k].n->kind != CBL_YN_CONTAINER ||
+		    (r->seg[k].n->flags & CBL_YNF_PRESENCE) != 0)
+			return (false);
+	return (true);
+}
+
+/*
+ * The edits of r made in w, the top-level nodes they go through, after
+ * the target's checks (there, but what a PUT or POST makes; If-Match: *
+ * and If-None-Match: *).  0, or -1 with the reply's body and status.
+ */
+static int
+edits_made(struct rcreq *r, cbl_dtree *w, cbl_yarena *a, char **json,
+    int *status)
+{
+	const char	*tag;
+	cbl_dnode	*x;
+	size_t		 i;
+	char		 err[512], *path;
+	int		 error;
+
+	/* The request's target there (but what a PUT or POST makes), and as
+	 * If-Match: * and If-None-Match: * say. */
+	x = NULL;
+	if (r->nseg > 0 && (error = locate(w, r, r->nseg, a, &x, err,
+	    sizeof(err))) != 0) {
+		*status = 400;
+		*json = errors_of(400, "invalid-value", NULL, err);
+		return (-1);
+	}
+	if (r->nbase > 0 && r->method != HTTP_METHOD_PUT &&
+	    r->method != HTTP_METHOD_DELETE) {
+		cbl_dnode *b;
+
+		if (locate(w, r, r->nbase, a, &b, err, sizeof(err)) != 0 ||
+		    (b == NULL && !implied(w, r, a))) {
+			*status = 404;
+			*json = r->patch ? patch_status(r, NULL, 404,
+			    "invalid-value", NULL, NULL, "no such resource") :
+			    restconf_errors(404, "no such resource");
+			return (-1);
+		}
+	}
+	if ((r->cond == 1 && r->nseg > 0 && x == NULL) || (r->cond == -1 &&
+	    (r->nseg == 0 || x != NULL))) {
+		*status = 412;
+		*json = errors_of(412, "operation-failed", NULL, r->cond == 1 ?
+		    "If-Match: *, and it is not there" : "If-None-Match: *, "
+		    "and it is there");
+		return (-1);
+	}
+	r->created = x == NULL;
+	for (i = 0; i < r->nedit; i++) {
+		if ((error = edit_apply(w, &r->edit[i], a, &tag, err,
+		    sizeof(err))) == 0)
+			continue;
+		*status = status_of(tag);
+		path = path_of(r->edit[i].t, r->edit[i].t->nseg, &(const char *){
+		    NULL });
+		*json = r->patch ? patch_status(r, r->edit[i].id, *status, tag,
+		    path, NULL, err) : errors_of(*status, tag, path, err);
+		free(path);
+		return (-1);
+	}
+	return (0);
+}
+
+/* The reply of r's edits made: a YANG Patch's status, or the method's. */
+static void
+edits_done(struct rcreq *r, char **json, int *status)
+{
+
+	if (r->patch) {
+		*status = 200;
+		*json = patch_status(r, NULL, 200, NULL, NULL, NULL, NULL);
+	} else {
+		*status = r->method == HTTP_METHOD_POST || (r->method ==
+		    HTTP_METHOD_PUT && r->created) ? 201 : 204;
+		*json = strdup("");
+	}
+}
+
+/*
  * The edits of r over conn: the candidate's top-level nodes they go
  * through read, each edit made of them in order, then all sent back in
  * one EDIT.  A POST's 201, a PUT's 201 or 204, a plain PATCH's and a
@@ -2876,12 +3023,10 @@ edits_run(cbl_conn *conn, struct rcreq *r, const char *uri, char **json,
 {
 	const struct cbl_ynode	*tops[32];
 	cbl_dtree		*w = NULL;
-	cbl_dnode		*x;
 	cbl_yarena		*a;
-	const char		*tag;
 	uint64_t		 errsid = 0;
 	size_t			 ntop = 0, i, k;
-	char			 err[512], apptag[80], *path;
+	char			 err[512], apptag[80];
 	int			 error;
 
 	/* The top-level nodes: of the target, of each edit. */
@@ -2905,49 +3050,8 @@ edits_run(cbl_conn *conn, struct rcreq *r, const char *uri, char **json,
 		*json = refused(r, error, err, errsid, NULL, status);
 		goto done;
 	}
-	/* The request's target there (but what a PUT or POST makes), and as
-	 * If-Match: * and If-None-Match: * say. */
-	x = NULL;
-	if (r->nseg > 0 && (error = locate(w, r, r->nseg, a, &x, err,
-	    sizeof(err))) != 0) {
-		*status = 400;
-		*json = errors_of(400, "invalid-value", NULL, err);
+	if (edits_made(r, w, a, json, status) != 0)
 		goto done;
-	}
-	if (r->nbase > 0 && r->method != HTTP_METHOD_PUT &&
-	    r->method != HTTP_METHOD_DELETE) {
-		cbl_dnode *b;
-
-		if (locate(w, r, r->nbase, a, &b, err, sizeof(err)) != 0 ||
-		    b == NULL) {
-			*status = 404;
-			*json = r->patch ? patch_status(r, NULL, 404,
-			    "invalid-value", NULL, NULL, "no such resource") :
-			    restconf_errors(404, "no such resource");
-			goto done;
-		}
-	}
-	if ((r->cond == 1 && r->nseg > 0 && x == NULL) || (r->cond == -1 &&
-	    (r->nseg == 0 || x != NULL))) {
-		*status = 412;
-		*json = errors_of(412, "operation-failed", NULL, r->cond == 1 ?
-		    "If-Match: *, and it is not there" : "If-None-Match: *, "
-		    "and it is there");
-		goto done;
-	}
-	r->created = x == NULL;
-	for (i = 0; i < r->nedit; i++) {
-		if ((error = edit_apply(w, &r->edit[i], a, &tag, err,
-		    sizeof(err))) == 0)
-			continue;
-		*status = status_of(tag);
-		path = path_of(r->edit[i].t, r->edit[i].t->nseg, &(const char *){
-		    NULL });
-		*json = r->patch ? patch_status(r, r->edit[i].id, *status, tag,
-		    path, NULL, err) : errors_of(*status, tag, path, err);
-		free(path);
-		goto done;
-	}
 	if (ntop > 0 && (error = yjson_edit_tree(conn, w, tops, ntop,
 	    CBL_YDS_CANDIDATE, (const char *const *)r->accept, r->naccept,
 	    err, sizeof(err), &errsid, apptag, sizeof(apptag))) != 0) {
@@ -2955,14 +3059,7 @@ edits_run(cbl_conn *conn, struct rcreq *r, const char *uri, char **json,
 		goto done;
 	}
 	tags_changed(uri, DS_CANDIDATE, time(NULL), -1);
-	if (r->patch) {
-		*status = 200;
-		*json = patch_status(r, NULL, 200, NULL, NULL, NULL, NULL);
-	} else {
-		*status = r->method == HTTP_METHOD_POST || (r->method ==
-		    HTTP_METHOD_PUT && r->created) ? 201 : 204;
-		*json = strdup("");
-	}
+	edits_done(r, json, status);
 done:
 	cbl_dtree_free(w);
 	cbl_yarena_free(a);
@@ -3108,4 +3205,129 @@ restconf_run(cbl_conn *conn, struct rcreq *r, const char *id,
 		*status = 500;
 		*json = restconf_errors(500, "out of memory");
 	}
+}
+
+/*
+ * The top-level nodes of tree t valid as RFC 7950 has them: each value
+ * of its type, mandatory nodes, counts, keys and unique (cblink's static
+ * validator, on its struct), the targets of leafrefs, when and must.  0,
+ * or -1 with the reply's body and status.
+ */
+static int
+own_valid(const struct rcreq *r, const cbl_dtree *t, cbl_yarena *a,
+    char **json, int *status)
+{
+	struct cbl_yverr	 verr;
+	struct cbl_dederr	 derr;
+	const struct cbl_ynode	*n;
+	const cbl_dnode		*c;
+	const char		*tag = NULL, *apptag = NULL, *at = NULL;
+	uint8_t			*p;
+	size_t			 len;
+	void			*data;
+	char			 path[512], why[160];
+	int			 error = 0;
+
+	memset(&verr, 0, sizeof(verr));
+	memset(&derr, 0, sizeof(derr));
+	why[0] = '\0';
+	for (c = cbl_dnode_first(cbl_dtree_root(t)); error == 0 && c != NULL;
+	    c = cbl_dnode_next(c)) {
+		n = cbl_dnode_schema(c);
+		if ((error = yjson_top_cbor(t, n, &p, &len)) != 0) {
+			snprintf(why, sizeof(why), "%s: %s", n->name,
+			    strerror(error));
+			break;
+		}
+		if ((data = cbl_yarena_alloc(a, n->module->size)) == NULL)
+			error = ENOMEM;
+		else if ((error = cbl_ydecode_member(n, p, len, data, a,
+		    CBL_YD_STRICT, why, sizeof(why))) == 0 &&
+		    (error = cbl_yvalidate_member(n, data, CBL_YV_EDIT,
+		    &verr)) != 0) {
+			tag = verr.tag;
+			apptag = verr.apptag;
+			snprintf(why, sizeof(why), "%s", verr.msg);
+			if (verr.node != NULL)
+				at = node_path(verr.node->sid, path,
+				    sizeof(path));
+		}
+		free(p);
+	}
+	if (error == 0 && ((error = cbl_dtree_check_refs(t, &derr)) != 0 ||
+	    (error = cbl_dtree_check_conds(t, &derr)) != 0)) {
+		tag = derr.tag;
+		apptag = derr.apptag;
+		snprintf(why, sizeof(why), "%s", derr.msg);
+		if (derr.node != NULL)
+			at = node_path(cbl_dnode_schema(derr.node)->sid, path,
+			    sizeof(path));
+	}
+	if (error == 0)
+		return (0);
+	if (tag == NULL)
+		tag = error == ENOMEM ? "resource-denied" : "invalid-value";
+	*status = status_of(tag);
+	*json = r->patch ? patch_status(r, NULL, *status, tag, at, apptag,
+	    why) : errors_of_app(*status, tag, at, apptag, why);
+	return (-1);
+}
+
+/*
+ * A request of the console's own datastore (restconf_parse_own()) run
+ * on tree t, the stored data, its strings in a: a read's node, or the
+ * edits made in t and the result checked (*changed: t is to be kept).
+ */
+void
+restconf_run_own(struct rcreq *r, cbl_dtree *t, cbl_yarena *a,
+    bool *changed, char **json, int *status)
+{
+	struct cbl_ybuf		 b = { NULL, 0, 0 };
+	struct ucl_parser	*p;
+	ucl_object_t		*doc = NULL, *top;
+
+	*changed = false;
+	if (r->method != HTTP_METHOD_GET) {
+		if (edits_made(r, t, a, json, status) != 0 ||
+		    own_valid(r, t, a, json, status) != 0)
+			return;
+		*changed = true;
+		edits_done(r, json, status);
+		return;
+	}
+	*status = 200;
+	if (cbl_dtree_json(t, &b) == 0) {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		if (ucl_parser_add_chunk(p, b.p != NULL ? b.p :
+		    (const unsigned char *)"{}", b.p != NULL ? b.len : 2))
+			doc = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+	}
+	cbl_ybuf_free(&b);
+	if (doc == NULL) {
+		*status = 500;
+		*json = restconf_errors(500, "the datastore could not be read");
+		return;
+	}
+	top = r->nseg > 0 ? select_node(r, doc, status) : NULL;
+	ucl_object_unref(doc);
+	if (top == NULL) {
+		*json = restconf_errors(*status, "no such resource");
+		return;
+	}
+	*json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	if (*json == NULL) {
+		*status = 500;
+		*json = restconf_errors(500, "out of memory");
+	}
+}
+
+/* The console's own datastore (uri, its entity-tags') changed: kept. */
+void
+restconf_own_changed(const char *uri)
+{
+
+	tags_changed(uri, DS_RUNNING, time(NULL), -1);
 }

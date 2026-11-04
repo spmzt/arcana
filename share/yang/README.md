@@ -94,8 +94,8 @@ origin.
 | `ietf-ipv6-router-advertisements@2018-03-13.yang` | submodule | RFC 8349 |
 | `ietf-ipv6-unicast-routing@2018-03-13.yang` | module | RFC 8349 |
 | `ietf-isis@2022-10-19.yang` | module | RFC 9130 |
-| `ietf-key-chain@2017-06-15.yang` | module | RFC 8177 |
-| `ietf-l3vpn-ntw@2022-02-14.yang` | module | RFC 9182 |
+| `ietf-key-chain@2017-06-15.yang` | module | RFC 8177; `ietf-l3vpn-ntw`'s import, its crypto-algorithm identities numbered |
+| `ietf-l3vpn-ntw@2022-02-14.yang` | module | RFC 9182 (YangModels/yang standard/ietf/RFC, the same bytes); the console's stored service (L3NM), served in its own datastore |
 | `ietf-lime-time-types@2019-04-16.yang` | module | IANA, RFC 8532 |
 | `ietf-logical-network-element@2019-01-25.yang` | module | RFC 8530 |
 | `ietf-netconf-acm@2018-02-14.yang` | module | RFC 8341 |
@@ -121,14 +121,14 @@ origin.
 | `ietf-subscribed-notif-receivers@2026-06-30.yang` | module | draft-ietf-netconf-https-notif (YangModels/yang, experimental); receiver instances for configured subscriptions |
 | `ietf-subscribed-notifications@2019-09-09.yang` | module | RFC 8639 |
 | `ietf-tcp-common@2024-10-10.yang` | module | RFC 9643 |
-| `ietf-tcp@2024-10-10.yang` | module | RFC 9648 |
+| `ietf-tcp@2024-10-10.yang` | module | RFC 9648; its identities derive from `ietf-key-chain`'s, numbered with them |
 | `ietf-te-topology@2020-08-06.yang` | module | IANA, RFC 8795 |
 | `ietf-te-types@2020-06-10.yang` | module | IANA, RFC 8776 |
 | `ietf-tls-client@2024-10-10.yang` | module | RFC 9645; `ietf-syslog`'s TLS transport |
 | `ietf-tls-common@2024-10-10.yang` | module | RFC 9645 |
 | `ietf-truststore@2024-10-10.yang` | module | RFC 9641 |
 | `ietf-vn@2025-03-27.yang` | module | IANA, RFC 9731 |
-| `ietf-vpn-common@2022-02-11.yang` | module | RFC 9181 |
+| `ietf-vpn-common@2022-02-11.yang` | module | RFC 9181 (YangModels/yang standard/ietf/RFC, the same bytes); `ietf-l3vpn-ntw`'s import, implemented with it by the console |
 | `ietf-yang-library@2019-01-04.yang` | module | RFC 8525 |
 | `ietf-yang-patch@2017-02-22.yang` | module | RFC 8072 |
 | `ietf-yang-push@2019-09-09.yang` | module | RFC 8641 |
