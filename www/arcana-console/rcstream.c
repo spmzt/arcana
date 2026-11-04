@@ -25,8 +25,14 @@
  * user may read, on one thread and one reply, each record its
  * notification nested in its host's entry of arcana-fleet (RFC 8528's
  * mount point; RFC 7950 section 7.16.2's notification in a list).  A
- * host whose stream ends is said in an error event naming it; the
- * reply ends with the last of them.
+ * host whose stream ends is said in an error event naming it, and
+ * subscribed again, a second on, then twice as long each time up to a
+ * minute (as watch.c does), at its address then, with the replay from
+ * its last record's event time: what came meanwhile is not lost, and
+ * the records of that very time it had are not told again (each
+ * stream keeps those, by a hash).  Heard again, it is said in an info
+ * event naming it.  A host removed is said in an error event and not
+ * asked again; the reply ends with the last of them.
  *
  * A subscription of one's own (RFC 8650, RESTCONF's transport of RFC
  * 8639 and RFC 8641): establish-subscription POSTed under a host's
@@ -65,6 +71,8 @@
 #define	RCS_KEEP_S	15		/* a comment line, so often */
 #define	SUBS_MAX	64		/* established, not yet taken */
 #define	SUB_WAIT_S	60		/* how long one waits to be taken */
+#define	RCH_BACKOFF_S	60		/* subscribe again at most so far apart */
+#define	RCH_SEEN	64		/* records of one event time remembered */
 
 /* An establish-subscription's input, as the POST said it. */
 struct rcsub {
@@ -93,6 +101,13 @@ struct rch {
 	cbl_stream		*s;
 	bool			 closed;	/* its stream ended */
 	char			 why[200];	/* why */
+	bool			 gone;		/* removed: not asked again */
+	bool			 lost;		/* said lost, not yet back */
+	unsigned		 backoff;	/* s */
+	uint64_t		 retry;		/* ms, subscribe again then */
+	char			 last[40];	/* its last record's event time */
+	uint64_t		 seen[RCH_SEEN];	/* the records of that time */
+	size_t			 nseen;
 };
 
 struct rcs {
@@ -158,10 +173,74 @@ out:
 	return (json);
 }
 
+static uint64_t
+mono_ms(void)
+{
+	struct timespec	ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ((uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000);
+}
+
+/* FNV-1a of a record. */
+static uint64_t
+rec_hash(const char *p)
+{
+	uint64_t	h = 0xcbf29ce484222325ULL;
+
+	for (; *p != '\0'; p++)
+		h = (h ^ (unsigned char)*p) * 0x100000001b3ULL;
+	return (h);
+}
+
+/*
+ * Whether h told json of event time when already: a replay from its
+ * last record's second has those of that second again, their event
+ * time the second alone (the agent keeps no finer), so a record is
+ * known by what follows its event time.  Remembered if not.
+ */
+static bool
+rch_seen(struct rch *h, const char *when, const char *json)
+{
+	const char	*p;
+	char		 sec[sizeof(h->last)];
+	uint64_t	 k;
+
+	/* RFC 3339's to the second, UTC: 2026-01-02T03:04:05Z. */
+	if (strlen(when) < 19 || (p = strstr(json, "\"eventTime\":\"")) ==
+	    NULL || (p = strchr(p + 13, '"')) == NULL)
+		return (false);
+	snprintf(sec, sizeof(sec), "%.19sZ", when);
+	k = rec_hash(p);
+	if (strcmp(sec, h->last) == 0) {
+		for (size_t i = 0; i < h->nseen; i++)
+			if (h->seen[i] == k)
+				return (true);
+	} else {
+		strlcpy(h->last, sec, sizeof(h->last));
+		h->nseen = 0;
+	}
+	if (h->nseen < RCH_SEEN)
+		h->seen[h->nseen++] = k;
+	return (false);
+}
+
+/* An event of the fleet's reply, about host h. */
+static void
+rch_say(struct rch *h, const char *event, const char *data)
+{
+	struct rcs	*rs = h->rs;
+
+	pthread_mutex_lock(&rs->lock);
+	buf_appendf(rs->out, "event: %s\ndata: %s\n\n", event, data);
+	pthread_mutex_unlock(&rs->lock);
+}
+
 static void
 rcs_open(cbl_stream *s, cbl_msg *accept, int error, void *arg)
 {
 	struct rch	*h = arg;
+	char		 text[300];
 
 	(void)s;
 	if (error != 0) {
@@ -169,6 +248,16 @@ rcs_open(cbl_stream *s, cbl_msg *accept, int error, void *arg)
 		    accept != NULL && cbl_msg_err_str(accept) != NULL ?
 		    cbl_msg_err_str(accept) : strerror(error));
 		h->closed = true;
+		return;
+	}
+	h->backoff = 0;
+	/* Back after it was said lost: said so, naming it. */
+	if (h->lost && !atomic_load(&h->rs->stop)) {
+		h->lost = false;
+		snprintf(text, sizeof(text), "{\"host\":\"%s\",\"message\":"
+		    "\"host %s: heard again, from %s\"}", h->sid, h->sid,
+		    h->last[0] != '\0' ? h->last : "now");
+		rch_say(h, "info", text);
 	}
 }
 
@@ -184,6 +273,10 @@ rcs_data(cbl_stream *s, cbl_msg *data, void *arg)
 	if ((json = notif_json(data, rs->fleet ? h->sid : NULL, when,
 	    sizeof(when))) == NULL)
 		return;
+	if (rch_seen(h, when, json)) {
+		free(json);
+		return;
+	}
 	/* Its event time its id, where it has one. */
 	pthread_mutex_lock(&rs->lock);
 	if (rs->out->offset + strlen(json) > RCS_OUT_MAX)
@@ -240,9 +333,9 @@ est_input(void)
 #define	SN(x)	IETF_SUBSCRIBED_NOTIFICATIONS_ESTABLISH_SUBSCRIPTION_INPUT_##x
 
 /* establish-subscription's input of the stream rs is: the NETCONF stream,
- * or what a POST said. */
+ * from since when it is not NULL, or what a POST said. */
 static void
-sub_input(const struct rcs *rs,
+sub_input(const struct rcs *rs, const char *since,
     struct ietf_subscribed_notifications_establish_subscription_input *in,
     struct ietf_subscribed_notifications_establish_subscription_input_yp_periodic
     *per,
@@ -264,7 +357,7 @@ sub_input(const struct rcs *rs,
 			in->stream_xpath_filter = sb->xpath;
 		}
 		in->replay_start_time = sb->replay != NULL ? sb->replay :
-		    rs->since[0] != '\0' ? rs->since : NULL;
+		    since;
 	} else {
 		in->target = SN(TARGET_DATASTORE);
 		for (uint32_t i = 0; i < ymodel_schema.nident; i++) {
@@ -323,6 +416,8 @@ rch_open(struct rch *h)
 	const struct cbl_ynode	*inode;
 	const char		*msg;
 	cbl_msg			*m;
+	struct tm		 tm;
+	time_t			 t;
 
 	if ((msg = hosts_connect(h->uri, h->peer, &h->conn,
 	    &h->tls)) != NULL) {
@@ -331,7 +426,9 @@ rch_open(struct rch *h)
 		    msg);
 		return (false);
 	}
-	sub_input(h->rs, &in, &per, &oc);
+	/* Again: from its last record, or from when it was first heard. */
+	sub_input(h->rs, h->last[0] != '\0' ? h->last : h->rs->since[0] !=
+	    '\0' ? h->rs->since : NULL, &in, &per, &oc);
 	if ((inode = est_input()) == NULL || cbl_msg_new(cbl_conn_ctx(h->conn),
 	    CBL_YANG_FAMILY, CBL_YCMD_SUBSCRIBE, 0, &m) != 0 ||
 	    cbl_msg_put_ynode(m, inode, &in) != 0 || cbl_stream_open(h->conn, m,
@@ -342,11 +439,43 @@ rch_open(struct rch *h)
 		h->conn = NULL;
 		return (false);
 	}
+	/* Heard from now on: subscribed again, from now at least. */
+	if (h->last[0] == '\0' && h->rs->since[0] == '\0') {
+		t = time(NULL);
+		if (gmtime_r(&t, &tm) != NULL)
+			strftime(h->last, sizeof(h->last),
+			    "%Y-%m-%dT%H:%M:%SZ", &tm);
+	}
 	return (true);
 }
 
+/* Host h's address now, as the stream subscribes again; false: it was
+ * removed, said so, and is not asked again. */
+static bool
+rch_reach(struct rch *h)
+{
+	char	*uri, *peer, *why, text[260];
+
+	if (servers_reach(h->sid, &uri, &peer)) {
+		free(h->uri);
+		free(h->peer);
+		h->uri = uri;
+		h->peer = peer;
+		return (true);
+	}
+	h->gone = true;
+	snprintf(text, sizeof(text), "host %s: removed, not heard again",
+	    h->sid);
+	if ((why = restconf_errors(404, text)) != NULL) {
+		rch_say(h, "error", why);
+		free(why);
+	}
+	return (false);
+}
+
 /* Host h let go, its stream closed first while it is open and its
- * connection whole; in the fleet's, said in an error event naming it. */
+ * connection whole; in the fleet's, said in an error event naming it
+ * the first time, and subscribed again a while on. */
 static void
 rch_done(struct rch *h, bool broken)
 {
@@ -363,12 +492,16 @@ rch_done(struct rch *h, bool broken)
 	h->closed = true;
 	if (!rs->fleet || atomic_load(&rs->stop))
 		return;
-	snprintf(text, sizeof(text), "host %s: %s", h->sid, h->why);
+	h->backoff = h->backoff == 0 ? 1 : MIN(h->backoff * 2, RCH_BACKOFF_S);
+	h->retry = mono_ms() + (uint64_t)h->backoff * 1000;
+	if (h->lost)
+		return;
+	h->lost = true;
+	snprintf(text, sizeof(text), "host %s: %s; subscribed again a while "
+	    "on", h->sid, h->why);
 	if ((why = restconf_errors(502, text)) == NULL)
 		return;
-	pthread_mutex_lock(&rs->lock);
-	buf_appendf(rs->out, "event: error\ndata: %s\n\n", why);
-	pthread_mutex_unlock(&rs->lock);
+	rch_say(h, "error", why);
 	free(why);
 }
 
@@ -379,7 +512,9 @@ rcs_run(void *arg)
 	struct pollfd	*pfd;
 	struct rch	*h;
 	size_t		 i, n, *at;
+	uint64_t	 now;
 	int		 error, ev, ms, wait;
+	bool		 later;
 
 	pfd = xcalloc(rs->nh, sizeof(*pfd));
 	at = xcalloc(rs->nh, sizeof(*at));
@@ -388,8 +523,29 @@ rcs_run(void *arg)
 			rch_done(&rs->h[i], true);
 	while (!atomic_load(&rs->stop)) {
 		wait = RCS_WAKE_MS;
+		later = false;
+		now = mono_ms();
 		for (i = n = 0; i < rs->nh; i++) {
 			h = &rs->h[i];
+			/* The fleet's: a host lost is asked again, in time. */
+			if (h->conn == NULL && rs->fleet && !h->gone) {
+				if (now < h->retry) {
+					later = true;
+					if (h->retry - now < (uint64_t)wait)
+						wait = (int)(h->retry - now);
+					continue;
+				}
+				if (!rch_reach(h))
+					continue;
+				h->closed = false;
+				h->why[0] = '\0';
+				if (!rch_open(h))
+					rch_done(h, true);
+				if (h->conn == NULL) {
+					later = true;
+					continue;
+				}
+			}
 			if (h->conn == NULL)
 				continue;
 			if (h->closed) {
@@ -407,8 +563,12 @@ rcs_run(void *arg)
 			pfd[n].revents = 0;
 			at[n++] = i;
 		}
-		if (n == 0)
+		if (n == 0 && !later)
 			break;
+		if (n == 0) {
+			(void)poll(NULL, 0, wait);
+			continue;
+		}
 		if (poll(pfd, n, wait) == -1)
 			continue;
 		for (i = 0; i < n; i++) {
@@ -427,7 +587,7 @@ rcs_run(void *arg)
 		if (rs->h[i].conn != NULL)
 			rch_done(&rs->h[i], false);
 	snprintf(rs->why, sizeof(rs->why), "%s", rs->fleet ?
-	    "every host's stream ended" : rs->h[0].why);
+	    "every host was removed" : rs->h[0].why);
 	free(pfd);
 	free(at);
 	atomic_store(&rs->ended, true);

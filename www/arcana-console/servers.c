@@ -383,6 +383,28 @@ servers_safe_wait(const char *uri)
 	return (k);
 }
 
+/*
+ * Where the server id is reached now, for a thread: its URI and peer
+ * name copied (*peer NULL without one); false when it is gone.
+ */
+bool
+servers_reach(const char *id, char **uri, char **peer)
+{
+	int	i;
+
+	*uri = *peer = NULL;
+	pthread_mutex_lock(&table_lock);
+	for (i = 0; i < nservers; i++)
+		if (strcmp(servers[i].id, id) == 0) {
+			*uri = xstrdup(servers[i].uri);
+			*peer = servers[i].peer_name != NULL ?
+			    xstrdup(servers[i].peer_name) : NULL;
+			break;
+		}
+	pthread_mutex_unlock(&table_lock);
+	return (*uri != NULL);
+}
+
 /* SHA-256 of a token, hex, in out (65 bytes). */
 static void
 token_hash(const char *token, char *out)

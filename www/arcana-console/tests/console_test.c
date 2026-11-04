@@ -13097,6 +13097,159 @@ ATF_TC_BODY(watch_reconnect, tc)
 	resp_free(&r);
 }
 
+/* What the fleet's stream s says until want is in buf, for secs at most. */
+static bool
+sse_until(int s, char *buf, size_t *len, size_t cap, const char *want,
+    int secs)
+{
+	time_t	t0 = time(NULL);
+	ssize_t	n;
+
+	while (strstr(buf, want) == NULL && time(NULL) - t0 < secs &&
+	    *len < cap - 1) {
+		if ((n = read(s, buf + *len, cap - 1 - *len)) <= 0) {
+			if (n == 0)
+				break;
+			continue;
+		}
+		*len += (size_t)n;
+		buf[*len] = '\0';
+	}
+	return (strstr(buf, want) != NULL);
+}
+
+/* How many arcana-events records buf has from p on. */
+static int
+events_count(const char *p)
+{
+	int	n = 0;
+
+	while ((p = strstr(p, "\"arcana-events:event\":")) != NULL) {
+		p++;
+		n++;
+	}
+	return (n);
+}
+
+/*
+ * The numbers of the arcana-events records in buf from p on, to end
+ * (NULL: to its end), each one more than the one before; how many.
+ * Every data line once.
+ */
+static int
+events_continuous(const char *p, const char *end, const char *what)
+{
+	const char	*k = "\"arcana-events:event\":", *num, *nl;
+	unsigned long	 v, prev = 0;
+	int		 n = 0;
+
+	while ((p = strstr(p, k)) != NULL && (end == NULL || p < end)) {
+		p += strlen(k);
+		nl = strchr(p, '\n');
+		if ((num = strstr(p, "\"number\":\"")) == NULL || (nl != NULL &&
+		    num > nl))
+			continue;
+		v = strtoul(num + 10, NULL, 10);
+		ATF_CHECK_MSG(n == 0 || v == prev + 1, "%s: %lu after %lu",
+		    what, v, prev);
+		prev = v;
+		n++;
+	}
+	return (n);
+}
+
+/*
+ * The fleet's stream outlives a host's agent restarting: its stream
+ * ended is said, the host subscribed again by the console, from its
+ * last record on, said heard again; what came after on the same reply,
+ * numbered on without a gap or a record twice.  A host removed is not
+ * asked again: said so, the reply ends.
+ */
+CONSOLE_TC(fleet_stream_rejoin, "The fleet's event stream subscribes "
+    "again to a host whose agent restarted, and lets go of one removed")
+ATF_TC_BODY(fleet_stream_rejoin, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	struct timeval	 tv = { 2, 0 };
+	char		 id[16], path[128], rq[512], want[128];
+	char		*buf, *info, *line, *nl;
+	size_t		 len = 0, cap = 1 << 20;
+	ssize_t		 n;
+	int		 s, before, after;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	watch_host(id, sizeof(id));
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", id);
+	ATF_REQUIRE((buf = calloc(1, cap)) != NULL);
+	s = console_socket();
+	ATF_REQUIRE(setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv,
+	    sizeof(tv)) == 0);
+	snprintf(rq, sizeof(rq), "GET /restconf/streams/fleet/json "
+	    "HTTP/1.1\r\nHost: localhost:8443\r\nCookie: %s\r\n\r\n", cookie);
+	ATF_REQUIRE(write(s, rq, strlen(rq)) == (ssize_t)strlen(rq));
+	ATF_REQUIRE_MSG(sse_until(s, buf, &len, cap, "fleet's stream", 10),
+	    "%s", buf);
+	/* Subscribed once the thread has the host: then a job. */
+	usleep(1500000);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"monitor\",\"verb\":\"set\","
+	    "\"args\":[\"name=gre9\",\"interface=gre9\",\"address=192.0.2.9\","
+	    "\"interval=500\",\"eval=10000\"]}]}", &r);
+	resp_free(&r);
+	ATF_REQUIRE_MSG(sse_until(s, buf, &len, cap, "arcana-events:event",
+	    15), "%s", buf);
+
+	/* The agent restarted: said lost, then heard again. */
+	agent_restart();
+	snprintf(want, sizeof(want), "host %s: ", id);
+	ATF_CHECK_MSG(sse_until(s, buf, &len, cap, "event: error", 15) &&
+	    strstr(strstr(buf, "event: error"), want) != NULL, "%s", buf);
+	snprintf(want, sizeof(want), "event: info\ndata: {\"host\":\"%s\"", id);
+	ATF_REQUIRE_MSG(sse_until(s, buf, &len, cap, want, 30), "%s", buf);
+	/* A job's event after it, on the same reply. */
+	after = events_count(strstr(buf, want));
+	http("POST", path, "{\"jobs\":[{\"kind\":\"monitor\",\"verb\":\"set\","
+	    "\"args\":[\"name=gre8\",\"interface=gre8\",\"address=192.0.2.8\","
+	    "\"interval=500\",\"eval=10000\"]}]}", &r);
+	resp_free(&r);
+	for (n = 0; n < 15 && events_count(strstr(buf, want)) <= after; n++)
+		(void)sse_until(s, buf, &len, cap, "\a", 1);
+	ATF_CHECK_MSG(events_count(strstr(buf, want)) > after, "%s", buf);
+	info = strstr(buf, want);
+	before = events_continuous(buf, info, "before the restart");
+	after = events_continuous(info, NULL, "after the restart");
+	ATF_CHECK_MSG(before > 0 && after > 0, "%d before, %d after:\n%s",
+	    before, after, buf);
+	/* No record twice. */
+	for (line = buf; (line = strstr(line, "\ndata: {\"ietf-restconf:"
+	    "notification\"")) != NULL; line = nl) {
+		line++;
+		if ((nl = strchr(line, '\n')) == NULL)
+			break;
+		*nl = '\0';
+		ATF_CHECK_MSG(strstr(nl + 1, line) == NULL, "twice: %s", line);
+		*nl = '\n';
+	}
+
+	/* Removed: its stream ended, it is not asked again; the reply
+	 * ends, it was the only one. */
+	snprintf(path, sizeof(path), "/api/servers/%s", id);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	agent_restart();
+	snprintf(want, sizeof(want), "host %s: removed", id);
+	ATF_CHECK_MSG(sse_until(s, buf, &len, cap, want, 15), "%s", buf);
+	ATF_CHECK_MSG(sse_until(s, buf, &len, cap, "every host was removed",
+	    10), "%s", buf);
+	n = strstr(buf, want) != NULL ? (ssize_t)(strstr(buf, want) - buf) :
+	    0;
+	ATF_CHECK_MSG(strstr(buf + n, "event: info") == NULL, "%s", buf);
+	close(s);
+	free(buf);
+}
+
 /*
  * PLAN-SDN-YANG 3.4.2: the reads the pages poll answered from the
  * subscriptions, in the shapes the host's answers have: the stats
@@ -13441,6 +13594,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, notif_receiver);
 	ATF_TP_ADD_TC(tp, notif_token);
 	ATF_TP_ADD_TC(tp, watch_reconnect);
+	ATF_TP_ADD_TC(tp, fleet_stream_rejoin);
 	ATF_TP_ADD_TC(tp, watch_held);
 	ATF_TP_ADD_TC(tp, watch_events);
 
