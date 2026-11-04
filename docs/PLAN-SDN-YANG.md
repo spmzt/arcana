@@ -1749,12 +1749,37 @@ whose first part is served.
   null for an entry without; origin is one of them.  Check: yxlate_test's
   rfc7952, a tree of cblink's with each kind annotated, the same JSON as
   `cbl_dtree_json()`.
-- 4.3.1 C (the rest): the remainder resolved against the host's cached
-  library and SID tables rather than the console's own; check: a GET
-  to two hosts of different revisions. `arcana-fleet` and the host
-  prefix are done.
-- 4.3.2 C: the SID and library cache refreshed on
-  `yang-library-update`; check: an agent updated under the console.
+- 4.3.1 done (console ycache.c, restconf.c): each host read by its
+  own schema, its YANG library's modules and its GET-SID `.sid` files
+  resolved against the console's tables (4.2's `struct ysids`), kept
+  by the agent's URI.  A path's every node, and an edit's, must be one
+  the host's modules have (404, "the host's modules have no ...");
+  the GET's target is the host's SID; its reply is made JSON by the
+  host's names (a node only the host has as YANG-CBOR's kind says, no
+  longer dropped); YANG-CBOR's pass-through lists the host's top-level
+  nodes; an edit's every node is checked against the host's numbering
+  (unknown-element where it has none, operation-not-supported where it
+  numbers one otherwise, which the console's encoder would send wrong);
+  a YANG-CBOR body is read by the host's view where one is kept.  An
+  agent that gives no `.sid` files is read by the console's tables less
+  the modules of its own datastore (L3NM's, `l3nm_module()`), which
+  are never a host's.
+  Check: console_test's restconf_revisions (ARCANA_OLD_AGENT, 0.236.0
+  beside the build): the interfaces read from both, each one's library
+  its own, arcana-steer refused of the older.  Open: a path naming a
+  node only the host has (the console's tables have no keys for it),
+  edits of such nodes, and edits translated where a host numbers a node
+  otherwise (refused now; no release has renumbered one).
+- 4.3.2 done (ycache.c, hosts.c): the cache checked again when a new
+  connection reaches the agent (a restart, an agent-update) or a
+  `yang-library-update` is among its events: the library's content-id
+  read again at the next use, the `.sid` files only where it changed;
+  a view in use is held until its users are done.  Check:
+  restconf_revisions, the older replaced by the newer program at its
+  address under the console, arcana-steer read from it after.  Open:
+  the agents send no `yang-library-update` (their modules change only
+  with the program), and cblink's hello carries no content-id the
+  console could compare without the GET.
 - 4.3.3 done (console rcstream.c): the `fleet` stream, every host's on
   one thread and one reply, each record nested in its host's entry.
 - 4.4.1 C: `arcana-console` module served from the libucl files

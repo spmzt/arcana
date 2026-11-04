@@ -70,6 +70,10 @@ int		 ysids_file_cbor(struct ysids *s, const void *cbor, size_t len,
 int		 ysids_file_json(struct ysids *s, const ucl_object_t *file,
 		    char *why, size_t whylen);
 int		 ysids_tables(struct ysids *s);
+/* The modules skip says, and what is below their nodes, passed over by
+ * all that adds after. */
+void		 ysids_skip(struct ysids *s,
+		    bool (*skip)(const struct cbl_ymodule *));
 int		 ysids_module(struct ysids *s, const char *name,
 		    const char *revision, bool implemented);
 int		 ysids_set_content_id(struct ysids *s, const char *id);

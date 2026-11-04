@@ -49,6 +49,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -65,6 +66,7 @@
 
 #include "console.h"
 #include "restconf.h"
+#include "ycache.h"
 #include "ymodel.h"
 #include "ysid.h"
 #include "ytrans.h"
@@ -144,6 +146,9 @@ struct rcreq {
 };
 
 static char	*errors_of(int, const char *, const char *, const char *);
+struct ysids;
+static int	host_tree(const struct ysids *, const cbl_dtree *,
+		    const char **, char *, size_t);
 
 /* The error-tag and its status (RFC 8040 section 7) of the console's
  * own error codes. */
@@ -2568,6 +2573,11 @@ restconf_events(const char *uri, const char *json)
 	const char		*kind;
 	time_t			 t, last = 0;
 
+	/* Its library changed (RFC 8525's notification): its schema read
+	 * again at its next use. */
+	if (uri != NULL && json != NULL && strstr(json,
+	    "yang-library-update") != NULL)
+		ycache_stale(uri);
 	/* Most have none of these: not read then. */
 	if (uri == NULL || json == NULL || (strstr(json, "\"conf\"") == NULL &&
 	    strstr(json, "\"job\"") == NULL && strstr(json,
@@ -3033,12 +3043,13 @@ edits_done(struct rcreq *r, char **json, int *status)
  * DELETE's 204, a YANG Patch's 200 and its status.
  */
 static void
-edits_run(cbl_conn *conn, struct rcreq *r, const char *uri, char **json,
-    int *status)
+edits_run(cbl_conn *conn, struct rcreq *r, const struct ysids *s,
+    const char *uri, char **json, int *status)
 {
 	const struct cbl_ynode	*tops[32];
 	cbl_dtree		*w = NULL;
 	cbl_yarena		*a;
+	const char		*tag;
 	uint64_t		 errsid = 0;
 	size_t			 ntop = 0, i, k;
 	char			 err[512], apptag[80];
@@ -3067,6 +3078,12 @@ edits_run(cbl_conn *conn, struct rcreq *r, const char *uri, char **json,
 	}
 	if (edits_made(r, w, a, json, status) != 0)
 		goto done;
+	if ((error = host_tree(s, w, &tag, err, sizeof(err))) != 0) {
+		*status = status_of(tag);
+		*json = r->patch ? patch_status(r, NULL, *status, tag, NULL,
+		    NULL, err) : errors_of(*status, tag, NULL, err);
+		goto done;
+	}
 	if (ntop > 0 && (error = yjson_edit_tree(conn, w, tops, ntop,
 	    CBL_YDS_CANDIDATE, (const char *const *)r->accept, r->naccept,
 	    err, sizeof(err), &errsid, apptag, sizeof(apptag))) != 0) {
@@ -3084,8 +3101,8 @@ done:
  * the warnings it gives with 200; the edits' as edits_run() says;
  * refused, ietf-restconf's errors. */
 static void
-change_run(cbl_conn *conn, struct rcreq *r, const char *uri, char **json,
-    int *status)
+change_run(cbl_conn *conn, struct rcreq *r, const struct ysids *s,
+    const char *uri, char **json, int *status)
 {
 	const ucl_object_t	*in, *v;
 	ucl_object_t		*warnings = NULL, *top;
@@ -3094,7 +3111,7 @@ change_run(cbl_conn *conn, struct rcreq *r, const char *uri, char **json,
 	int			 error;
 
 	if (r->rpc == NULL) {
-		edits_run(conn, r, uri, json, status);
+		edits_run(conn, r, s, uri, json, status);
 		return;
 	}
 	apptag[0] = '\0';
@@ -3129,7 +3146,11 @@ change_run(cbl_conn *conn, struct rcreq *r, const char *uri, char **json,
 	ucl_object_unref(top);
 }
 
-/* The console's own numbering of its tables, made once. */
+/*
+ * The console's numbering of what an agent may serve, its tables less
+ * the modules of its own datastore (l3nm_module(), which no host has):
+ * made once, a host read by it where its agent gives no .sid files.
+ */
 static pthread_once_t	 own_once = PTHREAD_ONCE_INIT;
 static struct ysids	*own_sids;
 
@@ -3140,8 +3161,10 @@ own_make(void)
 	char		 why[160];
 
 	why[0] = '\0';
-	if ((s = ysids_new(&ymodel_schema)) == NULL ||
-	    ysids_tables(s) != 0 || ysids_done(s, why, sizeof(why)) != 0) {
+	if ((s = ysids_new(&ymodel_schema)) != NULL)
+		ysids_skip(s, l3nm_module);
+	if (s == NULL || ysids_tables(s) != 0 ||
+	    ysids_done(s, why, sizeof(why)) != 0) {
 		log_msg(LOG_ERR, "the console's SIDs: %s", why[0] != '\0' ?
 		    why : "out of memory");
 		ysids_free(s);
@@ -3151,7 +3174,7 @@ own_make(void)
 }
 
 const struct ysids *
-restconf_own_sids(void)
+restconf_agent_sids(void)
 {
 
 	(void)pthread_once(&own_once, own_make);
@@ -3207,6 +3230,143 @@ restconf_body(const struct rcreq *r, const void **p, size_t *len)
 }
 
 /*
+ * The fleet mount's paths and data by the host's own schema (4.3.1),
+ * s: its agent's modules and SIDs (ycache.c).
+ */
+
+/* A node of r's path, or of an edit's, that the host's modules do not
+ * have: a 404's body (*status), malloc'd; NULL: all there. */
+static char *
+host_path(const struct ysids *s, const struct rcreq *r, int *status)
+{
+	const struct rcreq	*t;
+	char			 msg[256];
+
+	for (size_t i = 0; i <= r->nedit; i++) {
+		t = i < r->nedit ? r->edit[i].t : r;
+		for (size_t k = 0; t != NULL && k < t->nseg; k++) {
+			if (ysids_of(s, t->seg[k].n) != NULL)
+				continue;
+			*status = 404;
+			snprintf(msg, sizeof(msg), "the host's modules have no "
+			    "%s:%s", t->seg[k].n->module->name,
+			    t->seg[k].n->name);
+			return (errors_of(404, "invalid-value", NULL, msg));
+		}
+	}
+	return (NULL);
+}
+
+/*
+ * Each node of tree w as the host has it: one its modules do not have,
+ * unknown-element; one it numbers otherwise than the console's tables,
+ * which the console's encoder would send wrong, operation-not-supported.
+ */
+static int
+host_tree(const struct ysids *s, const cbl_dtree *w, const char **tag,
+    char *err, size_t errlen)
+{
+	const struct cbl_ynode	*sn;
+	const struct ysid_item	*it;
+	const cbl_dnode		*n, *c;
+
+	for (n = cbl_dnode_first(cbl_dtree_root(w)); n != NULL; n = c) {
+		sn = cbl_dnode_schema(n);
+		if ((it = ysids_of(s, sn)) == NULL) {
+			*tag = "unknown-element";
+			snprintf(err, errlen, "the host's modules have no %s:%s",
+			    sn->module->name, sn->name);
+			return (EINVAL);
+		}
+		if (it->sid != sn->sid) {
+			*tag = "operation-not-supported";
+			snprintf(err, errlen, "the host numbers %s %" PRIu64
+			    ", the console %" PRIu64, it->id, it->sid, sn->sid);
+			return (EINVAL);
+		}
+		/* Depth first: below, after, or after an ancestor. */
+		if ((c = cbl_dnode_first(n)) != NULL)
+			continue;
+		for (c = n; c != NULL && cbl_dnode_schema(c) != NULL &&
+		    cbl_dnode_next(c) == NULL; c = cbl_dnode_parent(c))
+			;
+		c = c != NULL && cbl_dnode_schema(c) != NULL ?
+		    cbl_dnode_next(c) : NULL;
+	}
+	return (0);
+}
+
+/*
+ * r's GET over conn as RFC 7951's JSON by the host's schema: the
+ * top-level node r names (its SID the host's), or each the agent has,
+ * named by its .sid files and typed by the console's tables, a node
+ * only the host has as YANG-CBOR's kind says.
+ */
+static int
+host_get(cbl_conn *conn, const struct ysids *s, const struct rcreq *r,
+    ucl_object_t **out, char *err, size_t errlen, uint64_t *errsid)
+{
+	struct cbl_ybuf		 b = { NULL, 0, 0 };
+	const struct ysid_item	*it;
+	struct ucl_parser	*p;
+	cbl_msg			*rep;
+	const void		*v;
+	uint64_t		 sid, *sids;
+	size_t			 len, n;
+	bool			 first = true;
+	int			 error;
+
+	*out = NULL;
+	sid = r->nseg > 0 ? ysids_of(s, r->seg[0].n)->sid : 0;
+	if ((error = ytrans_get_msg(conn, r->nseg > 0 ? &sid : NULL,
+	    r->nseg > 0 ? 1 : 0, r->xpath, r->ds, r->origin, &rep, err,
+	    errlen, errsid)) != 0)
+		return (error);
+	if ((sids = calloc(ysids_count(s) + 1, sizeof(*sids))) == NULL) {
+		cbl_msg_free(rep);
+		return (ENOMEM);
+	}
+	n = ysids_tops(s, sids, ysids_count(s));
+	b.p = (uint8_t *)strdup("{");
+	b.len = b.cap = b.p != NULL ? 1 : 0;
+	error = b.p == NULL ? ENOMEM : 0;
+	for (size_t i = 0; error == 0 && i < n; i++)
+		if (cbl_msg_sid_raw(rep, sids[i], &v, &len) == 0 &&
+		    (it = ysids_sid(s, sids[i])) != NULL)
+			error = yx_json_member(s, it, v, len, &first, &b, err,
+			    errlen);
+	free(sids);
+	cbl_msg_free(rep);
+	/* And the object closed. */
+	if (error == 0 && b.len + 1 > b.cap) {
+		uint8_t *np;
+
+		if ((np = realloc(b.p, b.len + 1)) == NULL)
+			error = ENOMEM;
+		else {
+			b.p = np;
+			b.cap = b.len + 1;
+		}
+	}
+	if (error == 0)
+		b.p[b.len++] = '}';
+	if (error == 0) {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		if (ucl_parser_add_chunk(p, b.p, b.len))
+			*out = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+		if (*out == NULL) {
+			snprintf(err, errlen, "the agent's JSON did not read "
+			    "back");
+			error = EINVAL;
+		}
+	}
+	cbl_ybuf_free(&b);
+	return (error);
+}
+
+/*
  * A GET of r as YANG-CBOR: the agent's reply passed through, {SID:
  * value} of the top-level node r names (what the path's XPath selects
  * of it, with what is above), or of each the agent has (those of s).
@@ -3224,7 +3384,7 @@ cbor_run(cbl_conn *conn, struct rcreq *r, const struct ysids *s, char **json,
 	char		 err[256], path[512];
 	int		 error;
 
-	sid = r->nseg > 0 ? r->seg[0].n->sid : 0;
+	sid = r->nseg > 0 ? ysids_of(s, r->seg[0].n)->sid : 0;
 	if ((error = ytrans_get_msg(conn, r->nseg > 0 ? &sid : NULL,
 	    r->nseg > 0 ? 1 : 0, r->xpath, r->ds, r->origin, &rep, err,
 	    sizeof(err), &errsid)) != 0) {
@@ -3283,13 +3443,9 @@ done:
 	cbl_msg_free(rep);
 }
 
-/*
- * A host's part of the datastore, read from its agent over conn: its
- * entry (id, name and what is mounted under it) or the node r names.
- * The reply's body in *json, malloc'd, and its status.
- */
-void
-restconf_run(cbl_conn *conn, struct rcreq *r, const char *id,
+/* restconf_run()'s, by s. */
+static void
+run(cbl_conn *conn, struct rcreq *r, const struct ysids *ys, const char *id,
     const char *name, const char *uri, char **json, int *status)
 {
 	const struct cbl_ynode	*n;
@@ -3297,23 +3453,24 @@ restconf_run(cbl_conn *conn, struct rcreq *r, const char *id,
 	const ucl_object_t	*v;
 	ucl_object_iter_t	 it = NULL;
 	ucl_object_t		*doc, *top, *h, *arr, *s;
-	uint64_t		 sid, errsid;
+	uint64_t		 errsid;
 	char			 err[256], path[512];
 	int			 error;
 
+	/* A path the host's modules do not have. */
+	if ((*json = host_path(ys, r, status)) != NULL)
+		return;
 	if (r->method != HTTP_METHOD_GET) {
-		change_run(conn, r, uri, json, status);
+		change_run(conn, r, ys, uri, json, status);
 		return;
 	}
 	if (r->cbor) {
-		cbor_run(conn, r, restconf_own_sids(), json, status);
+		cbor_run(conn, r, ys, json, status);
 		return;
 	}
 	*status = 200;
-	sid = r->nseg > 0 ? r->seg[0].n->sid : 0;
-	if ((error = ytrans_get_origin(conn, r->nseg > 0 ? &sid : NULL,
-	    r->nseg > 0 ? 1 : 0, r->xpath, r->ds, r->origin, &doc, err,
-	    sizeof(err), &errsid)) != 0) {
+	if ((error = host_get(conn, ys, r, &doc, err, sizeof(err),
+	    &errsid)) != 0) {
 		/* The agent's refusal as RFC 8040 section 7 has it. */
 		const char	*tag;
 
@@ -3503,4 +3660,32 @@ restconf_own_changed(const char *uri)
 {
 
 	tags_changed(uri, DS_RUNNING, time(NULL), -1);
+}
+
+/*
+ * A host's part of the datastore, read from its agent over conn, by the
+ * agent's own schema (ycache.c): its entry (id, name and what is mounted
+ * under it) or the node r names.  The reply's body in *json, malloc'd,
+ * and its status.  An agent that gives no .sid files is read by the
+ * console's numbering of what an agent may serve.
+ */
+void
+restconf_run(cbl_conn *conn, struct rcreq *r, const char *id,
+    const char *name, const char *uri, char **json, int *status)
+{
+	const struct ysids	*s;
+	struct yview		*v;
+	char			 why[256];
+
+	if ((v = ycache_get(conn, uri, why, sizeof(why))) == NULL &&
+	    why[0] != '\0')
+		log_msg(LOG_NOTICE, "%s: its schema not read, the console's "
+		    "used: %s", uri, why);
+	if ((s = v != NULL ? yview_sids(v) : restconf_agent_sids()) == NULL) {
+		*status = 500;
+		*json = restconf_errors(500, "no schema to read the host by");
+		return;
+	}
+	run(conn, r, s, id, name, uri, json, status);
+	ycache_put(v);
 }

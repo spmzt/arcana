@@ -81,15 +81,16 @@ void		 restconf_own_changed(const char *uri);
  * restconf_media(): the reply's media type as Accept says (RFC 9254's
  * application/yang-data+cbor, the agent's YANG-CBOR passed through, or
  * JSON); 0, or the status and *why.  restconf_body(): that reply's
- * bytes, when it is one.  restconf_own_sids(): the console's own
- * numbering of its tables (ysid.c).
+ * bytes, when it is one.  restconf_agent_sids(): the console's
+ * numbering of what an agent may serve, its tables less its own
+ * datastore's modules (ysid.c).
  */
 struct ysids;
 int		 restconf_media(struct rcreq *r, const char *accept,
 		    const char **why);
 bool		 restconf_body(const struct rcreq *r, const void **p,
 		    size_t *len);
-const struct ysids *restconf_own_sids(void);
+const struct ysids *restconf_agent_sids(void);
 /* establish-subscription POSTed under host sid's entry (rcstream.c). */
 int		 restconf_establish(struct http_request *req, const char *sid);
 

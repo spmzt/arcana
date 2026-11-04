@@ -61,8 +61,12 @@ struct ysids {
 	size_t			 nmod;
 	size_t			 cmod;
 	const char		*content_id;
+	bool			 (*skip)(const struct cbl_ymodule *);
 	bool			 done;
 };
+
+static const struct cbl_ymodule *module_of(const struct cbl_yschema *,
+		    const char *, size_t);
 
 static int
 fail(char *why, size_t len, const char *fmt, ...)
@@ -128,6 +132,21 @@ add(struct ysids *s, const char *mod, int ns, const char *id, size_t idlen,
 
 	if (s->done || ns < YSID_NS_MODULE || ns > YSID_NS_ANNOTATION)
 		return (EINVAL);
+	/* Of a module passed over, or of a tree one has: none. */
+	if (s->skip != NULL) {
+		const struct cbl_ymodule *m = module_of(s->types, mod,
+		    strlen(mod));
+		size_t ml;
+
+		if (m != NULL && s->skip(m))
+			return (0);
+		if (ns == YSID_NS_DATA && idlen > 1 && id[0] == '/') {
+			ml = strcspn(id + 1, ":");
+			if ((m = module_of(s->types, id + 1, ml)) != NULL &&
+			    s->skip(m))
+				return (0);
+		}
+	}
 	if (s->nitem == s->citem) {
 		c = s->citem > 0 ? s->citem * 2 : 1024;
 		if ((v = reallocarray(s->item, c, sizeof(*v))) == NULL)
@@ -233,7 +252,8 @@ ysids_file_cbor(struct ysids *s, const void *cbor, size_t len, char *why,
 		return (fail(why, whylen, "%s: item not an array", mod));
 	for (uint64_t i = 0; i < ni; i++) {
 		if (rd_map(&items, &n) != 0)
-			return (fail(why, whylen, "%s: an item not a map", mod));
+			return (fail(why, whylen, "%s: an item not a map",
+			    mod));
 		id = NULL;
 		ns = YSID_NS_DATA + 1;
 		isid = 0;
@@ -261,8 +281,8 @@ ysids_file_cbor(struct ysids *s, const void *cbor, size_t len, char *why,
 				break;
 			case S_ITEM_STATUS:
 				if (rd_uint(&items, &v) != 0)
-					return (fail(why, whylen, "%s: a status",
-					    mod));
+					return (fail(why, whylen,
+					    "%s: a status", mod));
 				obs = v == ST_OBSOLETE;
 				break;
 			default:
@@ -364,6 +384,13 @@ ysids_node_path(const struct cbl_ynode *n, char *buf, size_t len)
 	return (true);
 }
 
+void
+ysids_skip(struct ysids *s, bool (*skip)(const struct cbl_ymodule *))
+{
+
+	s->skip = skip;
+}
+
 int
 ysids_tables(struct ysids *s)
 {
@@ -372,9 +399,9 @@ ysids_tables(struct ysids *s)
 	int			 error;
 
 	for (uint32_t i = 0; i < t->nmod; i++)
-		if ((error = add(s, t->mod[i]->name, YSID_NS_MODULE,
-		    t->mod[i]->name, strlen(t->mod[i]->name), t->mod[i]->sid,
-		    false)) != 0)
+		if ((error = add(s,
+		    t->mod[i]->name, YSID_NS_MODULE, t->mod[i]->name,
+		    strlen(t->mod[i]->name), t->mod[i]->sid, false)) != 0)
 			return (error);
 	for (uint32_t i = 0; i < t->nnode; i++) {
 		const struct cbl_ynode *n = t->node[i];
@@ -389,7 +416,8 @@ ysids_tables(struct ysids *s)
 	for (uint32_t i = 0; i < t->nident; i++) {
 		const struct cbl_yident *id = &t->ident[i];
 
-		if (id->module != NULL && (error = add(s, id->module->name,
+		if (id->module != NULL &&
+		    (error = add(s, id->module->name,
 		    YSID_NS_IDENTITY, id->name, strlen(id->name), id->sid,
 		    false)) != 0)
 			return (error);
@@ -397,8 +425,9 @@ ysids_tables(struct ysids *s)
 	for (uint32_t i = 0; i < t->nannot; i++) {
 		const struct cbl_yannot *an = t->annot[i];
 
-		if ((error = add(s, an->module->name, YSID_NS_ANNOTATION,
-		    an->name, strlen(an->name), an->sid, false)) != 0)
+		if ((error = add(s,
+		    an->module->name, YSID_NS_ANNOTATION, an->name,
+		    strlen(an->name), an->sid, false)) != 0)
 			return (error);
 	}
 	return (0);
@@ -408,11 +437,15 @@ int
 ysids_module(struct ysids *s, const char *name, const char *revision,
     bool implemented)
 {
-	struct ysid_mod	*v;
-	size_t		 c;
+	const struct cbl_ymodule *m;
+	struct ysid_mod		*v;
+	size_t			 c;
 
 	if (s->done)
 		return (EINVAL);
+	if (s->skip != NULL && (m = module_of(s->types, name,
+	    strlen(name))) != NULL && s->skip(m))
+		return (0);
 	if (s->nmod == s->cmod) {
 		c = s->cmod > 0 ? s->cmod * 2 : 64;
 		if ((v = reallocarray(s->mod, c, sizeof(*v))) == NULL)
@@ -578,9 +611,9 @@ resolve(const struct cbl_yschema *t, const struct ysid_item *it)
 		    strcmp(id->module->name, it->module) == 0)
 			return (id);
 		for (uint32_t i = 0; i < t->nident; i++)
-			if (t->ident[i].module != NULL && strcmp(t->ident[i].name,
-			    it->id) == 0 && strcmp(t->ident[i].module->name,
-			    it->module) == 0)
+			if (t->ident[i].module != NULL &&
+			    strcmp(t->ident[i].name, it->id) == 0 &&
+			    strcmp(t->ident[i].module->name, it->module) == 0)
 				return (&t->ident[i]);
 		return (NULL);
 	case YSID_NS_ANNOTATION:
@@ -800,10 +833,10 @@ ysids_tops(const struct ysids *s, uint64_t *out, size_t max)
 		if (s->item[i].ns != YSID_NS_DATA || !s->item[i].top)
 			continue;
 		/* Data alone where the tables say what it is. */
-		if ((n = s->item[i].what) != NULL && n->kind != CBL_YN_CONTAINER &&
-		    n->kind != CBL_YN_LIST && n->kind != CBL_YN_LEAF &&
-		    n->kind != CBL_YN_LEAFLIST && n->kind != CBL_YN_ANYDATA &&
-		    n->kind != CBL_YN_ANYXML)
+		if ((n = s->item[i].what) != NULL &&
+		    n->kind != CBL_YN_CONTAINER && n->kind != CBL_YN_LIST &&
+		    n->kind != CBL_YN_LEAF && n->kind != CBL_YN_LEAFLIST &&
+		    n->kind != CBL_YN_ANYDATA && n->kind != CBL_YN_ANYXML)
 			continue;
 		out[k++] = s->item[i].sid;
 	}

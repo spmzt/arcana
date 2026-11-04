@@ -46,6 +46,7 @@
 #include "ysdwan.h"
 #include "ytshoot.h"
 #include "yreads.h"
+#include "ycache.h"
 #include "yxlate.h"
 #include "zprog.h"
 
@@ -1251,6 +1252,8 @@ hosts_dial(const char *uri, const char *peer, cbl_conn **connp,
 		return (why);
 	}
 	pending_sync(uri, conn);
+	/* Another agent may answer there now: its schema checked again. */
+	ycache_stale(uri);
 	*connp = conn;
 	*tlsp = tls;
 	return (NULL);
@@ -2224,9 +2227,12 @@ connect:
 	}
 connected:
 	hosts_count(false);
-	/* Just enrolled: the console's roles, once its agent answers. */
-	if (!reused)
+	/* Just enrolled: the console's roles, once its agent answers.  A
+	 * new connection may reach another agent: its schema checked. */
+	if (!reused) {
 		pending_sync(c->uri, conn);
+		ycache_stale(c->uri);
+	}
 	/* A live read's connection hears the host's steps from now on. */
 	if (c->on_step != NULL && box == NULL) {
 		/* libc's: the pool frees it, from any thread.  Without
@@ -4109,8 +4115,15 @@ api_restconf_host(struct http_request *req)
 	    HTTP_METHOD_DELETE) {
 		cbor = ctype != NULL && strncasecmp(ctype,
 		    "application/yang-data+cbor", 26) == 0;
-		body = cbor ? read_cbor(req, restconf_own_sids()) :
-		    read_json(req);
+		if (cbor) {
+			/* By the host's numbering where it is kept. */
+			struct yview *v = ycache_peek(c->uri);
+
+			body = read_cbor(req, v != NULL ? yview_sids(v) :
+			    restconf_agent_sids());
+			ycache_put(v);
+		} else
+			body = read_json(req);
 		/* A body there that is not JSON (RFC 8040 section 7), or
 		 * not YANG-CBOR of the host's modules. */
 		if (body == NULL && req->http_body != NULL &&

@@ -103,7 +103,11 @@ console's tables where they have the node, CBOR's or JSON's own kind
 where they do not; annotations, origin among them, as RFC 7952's `@`
 members.  A client that asks for `application/yang-data+cbor` gets the
 agent's YANG-CBOR as it came (`id=sid`); the page reads it by the
-host's `.sid` files (`www/arcana-ui/src/ycbor.c`).
+host's `.sid` files (`www/arcana-ui/src/ycbor.c`).  Each host is read by
+its own schema (`ycache.c`): its agent's YANG library and `.sid` files,
+kept by its address and checked again when a new connection reaches it
+(an agent of another release has other modules), so a path, a reply and
+an edit are the host's own, whatever release the console is.
 
 ## Library choices
 

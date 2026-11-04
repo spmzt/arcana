@@ -9531,6 +9531,124 @@ ATF_TC_BODY(agent_update_bridge, tc)
 	    snew.st_size);
 }
 
+/* path's GET, again while the host is not reached: its answer in r. */
+static void
+rc_get(const char *path, struct resp *r)
+{
+
+	for (int i = 0; i < 50; i++) {
+		http("GET", path, NULL, r);
+		if (r->status != 502 && r->status != 503)
+			return;
+		resp_free(r);
+		usleep(100000);
+	}
+	http("GET", path, NULL, r);
+}
+
+/*
+ * The fleet mount by each host's own schema (PLAN-SDN-YANG 4.3.1,
+ * 4.3.2): an agent of the release the console is and one of a release
+ * before (ARCANA_OLD_AGENT), each read by its own YANG library and .sid
+ * files: what both have read from both, a module only the newer has
+ * refused of the older as its modules', each one's library its own.
+ * The older updated under the console (the newer program at its
+ * address), its schema is read again and the module is there.
+ */
+CONSOLE_TC(restconf_revisions, "The fleet mount by each host's own schema: "
+    "two agents of different releases, the older updated under the "
+    "console and read again")
+ATF_TC_BODY(restconf_revisions, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], jgd[MAXPATHLEN], uri[MAXPATHLEN + 8];
+	char		 idn[16], ido[16], path[512];
+	const char	*old;
+	pid_t		 pid;
+	int		 i;
+
+	if ((old = old_agent(tc)) == NULL)
+		atf_tc_skip("no agent of a release before: set ARCANA_OLD_AGENT "
+		    "or old_agent");
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(jgd, sizeof(jgd), "%s", locate(tc,
+	    "../../../usr.sbin/arcana-agent/arcana-agent", "arcana-agent",
+	    "/usr/local/sbin/arcana-agent"));
+	snprintf(uri, sizeof(uri), "unix:%s/jgd.sock", cwd);
+	host_add("new", uri, 0, idn, sizeof(idn));
+	snprintf(uri, sizeof(uri), "unix:%s/old.sock", cwd);
+	pid = agent_spawn(old, uri, NULL, "installed-old");
+	wait_for("old.sock");
+	host_add("old", uri, 1, ido, sizeof(ido));
+
+	/* What both have, read from both by their own SIDs. */
+	for (i = 0; i < 2; i++) {
+		snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/"
+		    "host=%s/ietf-interfaces:interfaces", i == 0 ? idn : ido);
+		rc_get(path, &r);
+		ATF_CHECK_MSG(r.status == 200 && strstr(r.body,
+		    "\"name\":\"lo0\"") != NULL, "%s: %d %s", i == 0 ? "new" :
+		    "old", r.status, r.body);
+		resp_free(&r);
+	}
+	/* Each one's library its own: arcana-steer the newer's alone. */
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/host=%s"
+	    "/ietf-yang-library:yang-library", idn);
+	rc_get(path, &r);
+	ATF_CHECK_MSG(strstr(r.body, "\"arcana-steer\"") != NULL, "%d %s",
+	    r.status, r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/host=%s"
+	    "/ietf-yang-library:yang-library", ido);
+	rc_get(path, &r);
+	ATF_CHECK_MSG(r.status == 200 && strstr(r.body, "\"arcana-steer\"") ==
+	    NULL, "%d %s", r.status, r.body);
+	resp_free(&r);
+	/* A module only the newer has: the older's modules have it not. */
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/host=%s"
+	    "/arcana-steer:steering", ido);
+	rc_get(path, &r);
+	ATF_CHECK_MSG(r.status == 404 && strstr(r.body, "the host's modules "
+	    "have no arcana-steer:steering") != NULL, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/host=%s"
+	    "/arcana-steer:steering", idn);
+	rc_get(path, &r);
+	ATF_CHECK_MSG(strstr(r.body, "have no") == NULL, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+
+	/* The older updated under the console: the newer at its address. */
+	(void)kill(pid, SIGTERM);
+	for (i = 0; i < 100 && kill(pid, 0) == 0; i++)
+		usleep(50000);
+	(void)unlink("old.sock");
+	(void)agent_spawn(jgd, uri, NULL, "installed-new");
+	wait_for("old.sock");
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/host=%s"
+	    "/arcana-steer:steering", ido);
+	for (i = 0;; i++) {
+		rc_get(path, &r);
+		if (strstr(r.body, "have no") == NULL || i == 50)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(strstr(r.body, "have no") == NULL, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/host=%s"
+	    "/ietf-yang-library:yang-library", ido);
+	rc_get(path, &r);
+	ATF_CHECK_MSG(strstr(r.body, "\"arcana-steer\"") != NULL, "%d %s",
+	    r.status, r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(enrol, "The console's own CA, a host's certificate renewed, the CA changed for another and for an intermediate across the hosts, and a host joining with "
     "arcana-enrol(8)")
 ATF_TC_BODY(enrol, tc)
@@ -15025,6 +15143,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, unreachable);
 	ATF_TP_ADD_TC(tp, mtls);
 	ATF_TP_ADD_TC(tp, agent_update_bridge);
+	ATF_TP_ADD_TC(tp, restconf_revisions);
 	ATF_TP_ADD_TC(tp, enrol);
 	ATF_TP_ADD_TC(tp, tls_ec);
 	return (atf_no_error());
