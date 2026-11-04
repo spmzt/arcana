@@ -110,7 +110,7 @@ const struct route routes[] = {
 	{ "/api/sdwan/apply", api_sdwan_edges, NULL,
 	    HTTP_METHOD_GET | HTTP_METHOD_POST },
 	{ "/api/sdwan/steer", api_sdwan_edges, NULL,
-	    HTTP_METHOD_GET },
+	    HTTP_METHOD_GET | HTTP_METHOD_POST },
 	{ "/api/sdwan/rekey", api_sdwan_rekey, NULL,
 	    HTTP_METHOD_GET | HTTP_METHOD_POST },
 	{ "/api/sdwan/lists", api_sdwan_lists, NULL,

@@ -2073,6 +2073,33 @@ EOT
 	printf '%s\n' '{"jail":"gateway","entries":[{"table":"sw1_p1","prefix":"10.3.0.0/24","candidates":[{"id":"tvc-1","via":"10.202.0.2"}]}]}' > js.json
 	atf_check -o match:'^set \{"jail":"gateway","entries":' -o match:'the same back' \
 	    "$y" steer js.json gateway
+	# arcana-steer: the console's pins, the host's and a jail edge's,
+	# and the steering as sdwan.c has it, why each choice.
+	cat > pins.json <<'EOT'
+{"edges":[{"jail":"","pins":[{"table":"sw1_p1","prefix":"10.3.0.0/24","candidate":"tvc-2"}]},{"jail":"gateway","pins":[{"table":"sw1_p1","prefix":"10.4.0.0/24","candidate":"tvc-1"}]}]}
+EOT
+	cat > want <<'EOT'
+pin sw1_p1 10.3.0.0/24 tvc-2
+pin@gateway sw1_p1 10.4.0.0/24 tvc-1
+yang-cbor 75 bytes, the same back
+EOT
+	atf_check -o file:want "$y" pins pins.json
+	cat > steering.json <<'EOT'
+{"policies":[{"table":"sw1_p1","prefix":"10.3.0.0/24","chosen":"tvc-2","reason":"failover","since":1791995000,"from":"tvc-1","changes":3,"candidates":[{"id":"tvc-1","via":"10.202.0.2","order":1,"state":"down","bfd":"down","selected":false,"why":"down","delay":0.5,"ipdv":0.1,"loss":1},{"id":"tvc-2","via":"fd00:5a::2","order":2,"state":"up","selected":true,"delay":12.25,"ipdv":0.75,"loss":0.002}]},{"jail":"gateway","table":"sw1_p1","prefix":"10.4.0.0/24","pinned":"tvc-1","chosen":"tvc-1","reason":"override","since":1791995100,"changes":1,"candidates":[{"id":"tvc-1","via":"10.202.0.1","order":1,"state":"not-probed","selected":true}]}],"routes":[{"fib":2,"destination":"0.0.0.0/0","reason":"none","since":1791995000,"changes":0,"candidates":[{"id":"bo:a-inet","via":"192.0.2.254","order":1,"state":"down","selected":false,"why":"down"}]}],"time":1791995110}
+EOT
+	cat > want <<'EOT'
+time=2026-10-14T16:25:10Z
+policy sw1_p1 10.3.0.0/24 jail=- chosen=tvc-2 reason=failover from=tvc-1 since=2026-10-14T16:23:20Z changes=3 pinned=-
+  1 tvc-1 via 10.202.0.2 down bfd=down not:down delay=500 ipdv=100 loss=1000000
+  2 tvc-2 via fd00:5a::2 up bfd=- selected delay=12250 ipdv=750 loss=2000
+policy sw1_p1 10.4.0.0/24 jail=gateway chosen=tvc-1 reason=override from=- since=2026-10-14T16:25:00Z changes=1 pinned=tvc-1
+  1 tvc-1 via 10.202.0.1 not-probed bfd=- selected delay=0 ipdv=0 loss=0
+route fib=2 0.0.0.0/0 chosen=- reason=none from=- candidates=1
+EOT
+	atf_check -o save:got "$y" steering steering.json
+	sed '$d' got > got2
+	atf_check -o file:want cat got2
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 got
 	printf '%s\n' '{"targets":[{"id":"tvc-1","address":"10.202.0.2","family":"inet","jail":"gateway","fib":0,"state":"up","since":1791995000,"samples":[],"kept":0}],"time":1791995110,"probing":true}' > jp.json
 	atf_check -o match:'^  jail gateway$' -o match:'the same back' "$y" probes jp.json
 	printf '%s\n' '{"rules":{"set":0,"rules":0,"tables":[],"objects":0,"counters":[]},"steer":[],"steered":false,"edges":[{"jail":"gateway","rules":{"set":30,"rules":1,"tables":["sw1_p1"],"objects":0,"counters":[]},"steer":[{"table":"sw1_p1","prefix":"10.3.0.0/24","chosen":0,"candidates":[{"id":"tvc-1","via":"10.202.0.2","state":"up"}]}],"steered":true},{"jail":"down","error":"jail down is not running"}]}' > je.json
@@ -6984,12 +7011,45 @@ EOS
 	    -o match:'^ipfw -q set 30 table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
 	atf_check -o match:'"steer":\[\{"table":"sw1_z0p0_4","prefix":"10.20.0.0/24","chosen":0,"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"not probed"\}' \
 	    -o match:'"steered":true' "$JGC" -c "$SOCK" sdwan
-	# Kept, both, and applied again at the next start.
+	# arcana-steer: each entry's choice and why, the console's order.
+	atf_check -o save:st.json "$JGC" -c "$SOCK" get steering
+	atf_check -o match:'\{"candidate":\[\{"id":"t1","order":1,"selected":true,"state":"not-probed","via":"100.64.0.1"\},\{"id":"t2","non-selection-reason":"not-best","order":2,"selected":false,"state":"not-probed","via":"100.64.0.3"\}\],"changes":1,"chosen":"t1","prefix":"10.20.0.0/24","reason":"preference","since":"[0-9T:-]+Z","table":"sw1_z0p0_4"\}' \
+	    cat st.json
+	# The console's pin: t2 at once, the table filled again, why said;
+	# a pin of no entry, or of no candidate of it, refused, nothing
+	# changed.
+	PIN='/arcana-steer:steering/pin=sw1_z0p0_4,10.20.0.0%2F24'
+	: > ipfw.log
+	atf_check -o ignore "$JGC" -c "$SOCK" set "$PIN/candidate" t2
+	atf_check -o match:'^ipfw -q set 30 table sw1_z0p0_4_alt atomic add 10.20.0.0/24 100.64.0.3 10.30.0.0/24 100.64.0.3$' \
+	    cat ipfw.log
+	atf_check -o match:'"pin":\[\{"candidate":"t2","prefix":"10.20.0.0/24","table":"sw1_z0p0_4"\}\]' \
+	    -o match:'"changes":2,"chosen":"t2","from":"t1","pinned":"t2","prefix":"10.20.0.0/24","reason":"override",' \
+	    -o match:'\{"id":"t1","non-selection-reason":"overridden","order":1,"selected":false,"state":"not-probed","via":"100.64.0.1"\}' \
+	    "$JGC" -c "$SOCK" get steering
+	: > ipfw.log
+	atf_check -s exit:1 -o ignore -e match:'t9 is no candidate of 10.20.0.0/24 in table sw1_z0p0_4' \
+	    "$JGC" -c "$SOCK" set "$PIN/candidate" t9
+	atf_check -s exit:1 -o ignore -e match:'this edge steers no 10.99.0.0/24 in table sw1_z0p0_4' \
+	    "$JGC" -c "$SOCK" set '/arcana-steer:steering/pin=sw1_z0p0_4,10.99.0.0%2F24/candidate' t1
+	atf_check -o not-match:"atomic add" -o not-match:swap cat ipfw.log
+	atf_check -o match:'"chosen":"t2","from":"t1","pinned":"t2","prefix":"10.20.0.0/24","reason":"override"' \
+	    "$JGC" -c "$SOCK" get steering
+	# Kept, both, and applied again at the next start; the pin too.
 	: > ipfw.log
 	stop_daemon
 	start_daemon
 	atf_check -o match:'^add 12 set 30 deny ip from any to any$' \
-	    -o match:'^ipfw -q set 30 table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
+	    -o match:'^ipfw -q set 30 table sw1_z0p0_4 swap sw1_z0p0_4_alt$' \
+	    -o match:'atomic add 10.20.0.0/24 100.64.0.3 ' cat ipfw.log
+	atf_check -o match:'"pin":\[\{"candidate":"t2","prefix":"10.20.0.0/24","table":"sw1_z0p0_4"\}\]' \
+	    "$JGC" -c "$SOCK" get -d running steering
+	# Cleared: the console's order again.
+	: > ipfw.log
+	atf_check -o ignore "$JGC" -c "$SOCK" set -x "$PIN"
+	atf_check -o match:'atomic add 10.20.0.0/24 100.64.0.1 ' cat ipfw.log
+	atf_check -o match:'"chosen":"t1","from":"t2","prefix":"10.20.0.0/24","reason":"preference",' \
+	    -o not-match:'"pin"' "$JGC" -c "$SOCK" get steering
 	# Objects: dummynet pipes and queues, nat instances, made before
 	# the rules, their modules loaded, deleted with the rules, queues
 	# before their pipes; nothing a shell would read.
@@ -7203,7 +7263,7 @@ EOS
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
 	    '{"entries":[{"table":"sw1_known","prefix":"10.1.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"},{"id":"t2","via":"100.64.0.3"}]}],"routes":[{"fib":2,"destination":"0.0.0.0/0","candidates":[{"id":"bo:a-inet","via":"192.0.2.254"},{"id":"bo:a-wg","via":"192.0.2.253"}]}]}'
 	atf_check -o match:'^0 route-del 0.0.0.0/0 - - 2 0$' -o match:'^0 route-add 0.0.0.0/0 192.0.2.254 - 2 0 0 -$' cat route.log
-	atf_check -o match:'"routes":\[\{"fib":2,"destination":"0.0.0.0/0","chosen":0,"candidates":\[\{"id":"bo:a-inet","via":"192.0.2.254","state":"not probed"\},\{"id":"bo:a-wg","via":"192.0.2.253","state":"not probed"\}\]\}\]' \
+	atf_check -o match:'"routes":\[\{"fib":2,"destination":"0.0.0.0/0","chosen":0,"candidates":\[\{"id":"bo:a-inet","via":"192.0.2.254","state":"not probed"\},\{"id":"bo:a-wg","via":"192.0.2.253","state":"not probed"\}\],"reason":"preference",' \
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -s exit:1 -e match:"fib: 'x' is not a value" -o ignore "$JGC" -c "$SOCK" sdwan steer \
 	    '{"entries":[],"routes":[{"fib":"x"}]}'

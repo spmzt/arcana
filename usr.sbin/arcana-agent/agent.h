@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.240.1"
+#define	ARCANA_AGENT_VERSION	"0.241.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -894,6 +894,8 @@ int		 do_monitors_set(struct work *, const char *, const char **);
 /* The targets, links and monitors of each edge, as JSON (malloc'd). */
 char		*probe_conf_json(void);
 int		 probe_state_of(const char *, const char *);
+bool		 probe_sample_of(const char *, const char *, double *, double *,
+		    double *);
 void		 probe_link(const char *, const char *, bool);
 /* invidia/sdwan.c: the rules that steer, and the steering. */
 void		 sdwan_start(void);
@@ -908,6 +910,21 @@ const char	*sdwan_subst(struct work *, const char *, const char *const *,
 		    const char *const *, size_t);
 char		*sdwan_kept_read(const char *);
 const char	*sdwan_payload_jail(const struct ucl_object_s *, const char **);
+/* ... the steering as arcana-steer has it: why each choice, and the
+ * console's pins (a candidate chosen while not down). */
+enum { STEER_PREFERENCE, STEER_FIRST_UP, STEER_FAILOVER, STEER_OVERRIDE,
+    STEER_NONE };
+struct sdwan_pin {
+	const char	*table;
+	const char	*prefix;
+	const char	*candidate;
+};
+char		*sdwan_steer_json(void);
+char		*sdwan_pins_json(void);
+int		 sdwan_pin_check(struct work *, const char *,
+		    const struct sdwan_pin *, const char **);
+int		 sdwan_pins_set(struct work *, const char *, size_t,
+		    const struct sdwan_pin *, const char **);
 
 /* luxuria/sdbird.c: a BIRD instance of each service, at the UNIs. */
 int		 do_sdwan_bird(struct work *, const char *, const char **);
@@ -1308,6 +1325,10 @@ int		 yang_step(cbl_conn *, const struct arcana_jobs_step *);
 #define	YANG_LNES	6
 #define	YANG_COUNT	7
 void		 yang_changed(int);
+/* A steering choice changed: arcana-steer's steer-changed (fib -1, a
+ * policy's; table NULL, a route's). */
+void		 yang_steer_changed(const char *, const char *, const char *,
+		    int, const char *, const char *, const char *, int, time_t);
 /* What an event of that kind changed (of a jail's network, jailed). */
 void		 yang_event_changed(const char *, bool);
 struct cbl_ynode;

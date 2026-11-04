@@ -9487,11 +9487,30 @@ rekey_tick(ucl_object_t *st, time_t now)
 	ucl_object_unref(seen);
 }
 
+/* An edge's steering as its sdwan read has it: {at, steer, routes}. */
+static void
+live_keep(ucl_object_t *live, const char *sid, const ucl_object_t *data,
+    time_t now)
+{
+	ucl_object_t	*o;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "at", I(now));
+	put(o, "steer", ucl_object_lookup(data, "steer") != NULL ?
+	    ucl_object_copy(ucl_object_lookup(data, "steer")) :
+	    ucl_object_typed_new(UCL_ARRAY));
+	if (ucl_object_lookup(data, "routes") != NULL)
+		put(o, "routes", ucl_object_copy(ucl_object_lookup(data,
+		    "routes")));
+	put(live, sid, o);
+}
+
 /* One tick: every edge's steering looked at, and sent where changed. */
 static void
 manager_tick(void)
 {
 	ucl_object_t		*st, *doc, *entries, *sent, *e, *cands, *all;
+	ucl_object_t		*live;
 	const ucl_object_t	*ap, *s, *spec, *sw, *pol, *perf, *was, *w;
 	ucl_object_iter_t	 it, eit;
 	char			 uri[256], peer[256], name[128], *json, *text;
@@ -9515,6 +9534,11 @@ manager_tick(void)
 	if (all == NULL) {
 		all = ucl_object_typed_new(UCL_OBJECT);
 		put(st, "steer_sent", all);
+	}
+	live = (ucl_object_t *)(uintptr_t)ucl_object_lookup(st, "steer_live");
+	if (live == NULL) {
+		live = ucl_object_typed_new(UCL_OBJECT);
+		put(st, "steer_live", live);
 	}
 	it = NULL;
 	while ((s = ucl_object_iterate(ap, &it, true)) != NULL) {
@@ -9541,6 +9565,9 @@ manager_tick(void)
 			ucl_object_unref((ucl_object_t *)(uintptr_t)spec);
 			continue;
 		}
+		/* Its steering as the edge has it, why each choice
+		 * (arcana-steer), for /api/sdwan/steer. */
+		live_keep(live, sid, ucl_object_lookup(sd, "data"), now);
 		was = sent_of(st, sid);
 		changed = was == NULL || now - ucl_object_toint(ucl_object_lookup(
 		    was, "at")) > MGR_RESEND_S;
@@ -10239,6 +10266,70 @@ apply_now(ucl_object_t *doc, char *why, size_t wlen)
 	return (true);
 }
 
+/*
+ * POST /api/sdwan/steer: {"edge", "table", "prefix", "candidate"} an
+ * entry of an edge's steering pinned to one of its candidates in
+ * arcana-steer (none: the pin cleared), the console's override; the
+ * edge refuses a candidate that is not one of the entry's.
+ */
+static int
+steer_pin(struct http_request *req)
+{
+	ucl_object_t		*body, *pin;
+	const ucl_object_t	*w;
+	char			 uri[256], peer[256], name[128], jail[64], *json;
+	char			*text;
+	const char		*edge, *table, *prefix, *cand;
+	int			 status;
+
+	if ((body = read_json(req)) == NULL || (edge = str(body, "edge")) ==
+	    NULL || (table = str(body, "table")) == NULL || (prefix = str(body,
+	    "prefix")) == NULL) {
+		if (body != NULL)
+			ucl_object_unref(body);
+		return (reply_error(req, 400, "invalid", "a JSON object: edge, "
+		    "table, prefix and candidate (none: the pin cleared)"));
+	}
+	cand = str(body, "candidate");
+	if (!edge_ref(edge, uri, sizeof(uri), peer, sizeof(peer), name,
+	    sizeof(name), jail, sizeof(jail))) {
+		ucl_object_unref(body);
+		return (reply_error(req, 404, "unknown", "no such edge"));
+	}
+	pin = ucl_object_typed_new(UCL_OBJECT);
+	if (jail[0] != '\0')
+		put(pin, "jail", S(jail));
+	put(pin, "table", S(table));
+	put(pin, "prefix", S(prefix));
+	if (cand != NULL && cand[0] != '\0')
+		put(pin, "candidate", S(cand));
+	text = emit(pin);
+	ucl_object_unref(pin);
+	json = hosts_sdwan_set(uri, peer, name, "pin", text, &status);
+	free(text);
+	w = parse(json);
+	free(json);
+	if (status != 200 || w == NULL || !ucl_flag(w, "ok")) {
+		status = reply_error(req, 409, "refused", "%s", w != NULL &&
+		    str(w, "error") != NULL ? str(w, "error") : "no answer");
+		if (w != NULL)
+			ucl_object_unref((ucl_object_t *)(uintptr_t)w);
+		ucl_object_unref(body);
+		return (status);
+	}
+	ucl_object_unref((ucl_object_t *)(uintptr_t)w);
+	audit_add("steering-pinned", "Administer", table, cand != NULL &&
+	    cand[0] != '\0' ? "a far prefix pinned to a candidate, chosen while "
+	    "its far end is not down" : "a far prefix's pin cleared: the "
+	    "policy's order again", name, session_who(req), "%s %s%s%s",
+	    prefix, cand != NULL && cand[0] != '\0' ? "by " : "unpinned",
+	    cand != NULL ? cand : "", jail[0] != '\0' ? " (a jail's edge)" : "");
+	ucl_object_unref(body);
+	body = ucl_object_typed_new(UCL_OBJECT);
+	put(body, "ok", B(true));
+	return (reply_json(req, 200, body));
+}
+
 int
 api_sdwan_edges(struct http_request *req)
 {
@@ -10260,6 +10351,9 @@ api_sdwan_edges(struct http_request *req)
 			put(body, "sent", ucl_object_lookup(st, "steer_sent") !=
 			    NULL ? ucl_object_copy(ucl_object_lookup(st,
 			    "steer_sent")) : ucl_object_typed_new(UCL_OBJECT));
+			put(body, "live", ucl_object_lookup(st, "steer_live") !=
+			    NULL ? ucl_object_copy(ucl_object_lookup(st,
+			    "steer_live")) : ucl_object_typed_new(UCL_OBJECT));
 			ucl_object_unref(st);
 			return (reply_json(req, 200, body));
 		}
@@ -10280,6 +10374,8 @@ api_sdwan_edges(struct http_request *req)
 		}
 	} else if (!guard(req, true))
 		return (WEB_OK);
+	if (strcmp(req->path, "/api/sdwan/steer") == 0)
+		return (steer_pin(req));
 	doc = sdwan_load();
 	if (!sdwan_valid(doc, why, sizeof(why))) {
 		ucl_object_unref(doc);

@@ -1394,3 +1394,233 @@ nomem:
 	ucl_object_unref(top);
 	return (ENOMEM);
 }
+
+/*
+ * arcana-steer: the console's pins (sdwan.c's sdwan_pins_json(): each
+ * edge's, the host's at the top, a jail's in its entry) and the
+ * steering as it is (sdwan_steer_json()).
+ */
+static int
+pins_of(cbl_yarena *a, const ucl_object_t *arr, size_t *np,
+    const struct arcana_steer_pin **vp)
+{
+	struct arcana_steer_pin	*v;
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	size_t			 n = 0;
+
+	if (!ALLOC_N(a, v, yj_count(arr)))
+		return (ENOMEM);
+	YJ_EACH(arr, it, o) {
+		memset(&v[n], 0, sizeof(v[n]));
+		if ((v[n].table = yj_str(a, o, "table")) == NULL ||
+		    (v[n].prefix = yj_str(a, o, "prefix")) == NULL ||
+		    (v[n].candidate = yj_str(a, o, "candidate")) == NULL)
+			continue;
+		n++;
+	}
+	*np = n;
+	*vp = v;
+	return (0);
+}
+
+int
+ysteer_pins_from_json(const char *json, cbl_yarena *a,
+    struct arcana_steer_steering *out)
+{
+	struct arcana_steer_steering_jail	*j;
+	const ucl_object_t			*e;
+	ucl_object_iter_t			 it;
+	ucl_object_t				*top;
+	const char				*name;
+	size_t					 n = 0;
+	int					 error = 0;
+
+	memset(out, 0, sizeof(*out));
+	if ((top = yj_parse(json)) == NULL)
+		return (EINVAL);
+	if (!ALLOC_N(a, j, yj_count(ucl_object_lookup(top, "edges")))) {
+		ucl_object_unref(top);
+		return (ENOMEM);
+	}
+	YJ_EACH(ucl_object_lookup(top, "edges"), it, e) {
+		name = yj_str(a, e, "jail");
+		if (name == NULL || name[0] == '\0')
+			error = pins_of(a, ucl_object_lookup(e, "pins"),
+			    &out->pin.n, &out->pin.v);
+		else {
+			memset(&j[n], 0, sizeof(j[n]));
+			j[n].name = name;
+			error = pins_of(a, ucl_object_lookup(e, "pins"),
+			    &j[n].pin.n, &j[n].pin.v);
+			n++;
+		}
+		if (error != 0)
+			break;
+	}
+	out->jail.n = n;
+	out->jail.v = j;
+	ucl_object_unref(top);
+	return (error);
+}
+
+static int
+steer_far(const char *s)
+{
+
+	return (strcmp(s, "up") == 0 ? 0 : strcmp(s, "down") == 0 ? 1 :
+	    strcmp(s, "not-probed") == 0 ? 3 : 2);
+}
+
+static int
+steer_reason(const char *s)
+{
+	static const char *const v[] = { "preference", "first-up", "failover",
+	    "override", "none" };
+
+	for (size_t i = 0; i < nitems(v); i++)
+		if (strcmp(s, v[i]) == 0)
+			return ((int)i);
+	return (-1);
+}
+
+/* A number of o's as a decimal64, times m. */
+static bool
+steer_dec(const ucl_object_t *o, const char *key, double m, int64_t *v)
+{
+	const ucl_object_t	*e;
+
+	if ((e = ucl_object_lookup(o, key)) == NULL || (ucl_object_type(e) !=
+	    UCL_FLOAT && ucl_object_type(e) != UCL_INT))
+		return (false);
+	*v = (int64_t)(ucl_object_todouble(e) * m + 0.5);
+	return (true);
+}
+
+static int
+steer_cands_of(cbl_yarena *a, const ucl_object_t *arr, size_t *np,
+    const struct arcana_steer_candidate **vp)
+{
+	struct arcana_steer_candidate	*v;
+	const ucl_object_t		*o;
+	ucl_object_iter_t		 it;
+	const char			*s;
+	size_t				 n = 0;
+	bool				 has;
+
+	if (!ALLOC_N(a, v, yj_count(arr)))
+		return (ENOMEM);
+	YJ_EACH(arr, it, o) {
+		memset(&v[n], 0, sizeof(v[n]));
+		if ((v[n].id = yj_str(a, o, "id")) == NULL)
+			continue;
+		v[n].has_via = addr_union(a, o, "via", &v[n].via);
+		YJ_NUM(o, "order", &v[n], order);
+		if ((s = yj_str(a, o, "state")) != NULL) {
+			v[n].has_state = true;
+			v[n].state = steer_far(s);
+		}
+		if ((s = yj_str(a, o, "bfd")) != NULL) {
+			v[n].has_bfd = true;
+			v[n].bfd = steer_far(s);
+		}
+		v[n].selected = yj_yes(o, "selected", &has);
+		v[n].has_selected = has;
+		if ((s = yj_str(a, o, "why")) != NULL) {
+			v[n].has_non_selection_reason = true;
+			v[n].non_selection_reason = strcmp(s, "down") == 0 ?
+			    ARCANA_STEER_CANDIDATE_NON_SELECTION_REASON_DOWN :
+			    strcmp(s, "overridden") == 0 ?
+			    ARCANA_STEER_CANDIDATE_NON_SELECTION_REASON_OVERRIDDEN :
+			    ARCANA_STEER_CANDIDATE_NON_SELECTION_REASON_NOT_BEST;
+		}
+		v[n].has_delay = steer_dec(o, "delay", 1000.0, &v[n].delay);
+		v[n].has_ipdv = steer_dec(o, "ipdv", 1000.0, &v[n].ipdv);
+		v[n].has_loss = steer_dec(o, "loss", 1000000.0, &v[n].loss);
+		n++;
+	}
+	*np = n;
+	*vp = v;
+	return (0);
+}
+
+/* The why of a choice, o's, into a policy's or a route's leaves. */
+#define	STEER_WHY(a, o, y) do {						\
+	const char	*r_;						\
+	int64_t		 t_;						\
+									\
+	(y)->jail = yj_str((a), (o), "jail");				\
+	(y)->chosen = yj_str((a), (o), "chosen");			\
+	(y)->from = yj_str((a), (o), "from");				\
+	if ((r_ = yj_str((a), (o), "reason")) != NULL &&		\
+	    steer_reason(r_) >= 0) {					\
+		(y)->has_reason = true;					\
+		(y)->reason = steer_reason(r_);				\
+	}								\
+	if (yj_num((o), "since", &t_))					\
+		(y)->since = datetime((a), t_);				\
+	YJ_NUM((o), "changes", (y), changes);				\
+} while (0)
+
+int
+ysteer_state_from_json(const char *json, cbl_yarena *a,
+    struct arcana_steer_steering_state *out)
+{
+	struct arcana_steer_policy_state	*p;
+	struct arcana_steer_route_state		*r;
+	const ucl_object_t			*o, *arr;
+	ucl_object_iter_t			 it;
+	ucl_object_t				*top;
+	int64_t					 t;
+	size_t					 n;
+	int					 error = 0;
+
+	memset(out, 0, sizeof(*out));
+	if ((top = yj_parse(json)) == NULL)
+		return (EINVAL);
+	if (yj_num(top, "time", &t))
+		out->time = datetime(a, t);
+	arr = ucl_object_lookup(top, "policies");
+	if (!ALLOC_N(a, p, yj_count(arr))) {
+		ucl_object_unref(top);
+		return (ENOMEM);
+	}
+	n = 0;
+	YJ_EACH(arr, it, o) {
+		memset(&p[n], 0, sizeof(p[n]));
+		if ((p[n].table = yj_str(a, o, "table")) == NULL ||
+		    (p[n].prefix = yj_str(a, o, "prefix")) == NULL)
+			continue;
+		p[n].pinned = yj_str(a, o, "pinned");
+		STEER_WHY(a, o, &p[n]);
+		if ((error = steer_cands_of(a, ucl_object_lookup(o,
+		    "candidates"), &p[n].candidate.n, &p[n].candidate.v)) != 0)
+			break;
+		n++;
+	}
+	out->policy.n = n;
+	out->policy.v = p;
+	arr = ucl_object_lookup(top, "routes");
+	if (error == 0 && !ALLOC_N(a, r, yj_count(arr)))
+		error = ENOMEM;
+	if (error == 0) {
+		n = 0;
+		YJ_EACH(arr, it, o) {
+			memset(&r[n], 0, sizeof(r[n]));
+			if ((r[n].destination = yj_str(a, o, "destination")) ==
+			    NULL)
+				continue;
+			YJ_NUM(o, "fib", &r[n], fib);
+			STEER_WHY(a, o, &r[n]);
+			if ((error = steer_cands_of(a, ucl_object_lookup(o,
+			    "candidates"), &r[n].candidate.n,
+			    &r[n].candidate.v)) != 0)
+				break;
+			n++;
+		}
+		out->route.n = n;
+		out->route.v = r;
+	}
+	ucl_object_unref(top);
+	return (error);
+}

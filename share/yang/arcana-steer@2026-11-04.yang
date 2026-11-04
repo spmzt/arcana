@@ -1,0 +1,392 @@
+module arcana-steer {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-steer";
+  prefix arcst;
+
+  import cblink-gen {
+    prefix cg;
+  }
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The steering of a FreeBSD host as an SD-WAN edge (MEF 70.2,
+     Mplify 119), RFC 7426's control abstraction layer (CAL) that the
+     console and the agent share: for each policy table and far prefix
+     (an SWVC policy's traffic to an end point's subnet) the TVCs it
+     may go by in the console's order, and for each breakout route
+     the uplinks; which one is in use, why, and since when; each
+     change told as it happens (steer-changed), the agent's local
+     failover's as the console's.  The console's order is arcana-sdwan's
+     steer; the probes are arcana-probe's, BFD's state BIRD's.
+
+     The configuration is the console's override: a policy entry pinned
+     to one of its candidates, which the agent then chooses while its
+     far end is not down (a pin down fails over as the order does, and
+     comes back with it), written by EDIT and a confirmed commit; a pin
+     of a table, prefix or candidate the edge's steering does not have
+     is refused.  An edge's pins are kept beside its steering
+     (sdwan-pins.json, sdwan-pins@<jail>.json) for the next start.
+
+     Shaped as draft-ietf-spring-sr-policy-yang's state is: a policy's
+     candidate paths, the one in use marked (is-best-candidate-path),
+     why each other is not (non-selection-reason), a transition count,
+     and a candidate path change notification with the existing and
+     the new; not imported, its paths being segment lists and its
+     preference the higher the better, where an Arcana candidate's
+     order is the console's, first the most preferred.";
+
+  revision 2026-11-04 {
+    description
+      "Initial revision.";
+  }
+
+  typedef ms {
+    type decimal64 {
+      fraction-digits 3;
+    }
+    units "milliseconds";
+    description
+      "Milliseconds.";
+  }
+
+  typedef reason {
+    type enumeration {
+      enum preference {
+        description
+          "The first of the console's order whose far end is not
+           down, as the console last set the order.";
+      }
+      enum first-up {
+        description
+          "The first not down again, chosen by the agent when a
+           candidate before the one in use came back up.";
+      }
+      enum failover {
+        description
+          "The agent's local failover: the one in use before (from)
+           went down.";
+      }
+      enum override {
+        description
+          "The console's pin.";
+      }
+      enum none {
+        description
+          "Every candidate is down: nothing in the table.";
+      }
+    }
+    description
+      "Why the candidate in use was chosen.";
+  }
+
+  typedef far-state {
+    type enumeration {
+      enum up {
+        description
+          "Up.";
+      }
+      enum down {
+        description
+          "Down.";
+      }
+      enum unknown {
+        description
+          "Not yet known.";
+      }
+      enum not-probed {
+        description
+          "Nothing watches it.";
+      }
+    }
+    description
+      "A candidate's far end, as the probes or BFD see it.";
+  }
+
+  grouping pins {
+    description
+      "An edge's overrides.";
+    list pin {
+      cg:struct "pin";
+      key "table prefix";
+      description
+        "A policy entry the console pins to one of its candidates.";
+      leaf table {
+        type string {
+          length "1..58";
+          pattern '[A-Za-z0-9_]+';
+        }
+        description
+          "The policy table.";
+      }
+      leaf prefix {
+        type string {
+          length "1..63";
+        }
+        description
+          "The far prefix, as arcana-sdwan's steer names it.";
+      }
+      leaf candidate {
+        type string {
+          length "1..127";
+        }
+        mandatory true;
+        description
+          "The candidate (a TVC, as the probes know it) chosen while
+           its far end is not down.";
+      }
+    }
+  }
+
+  grouping selection {
+    description
+      "What is chosen, why and since when.";
+    leaf jail {
+      type string;
+      description
+        "The vnet jail whose edge it is; none, the host's.";
+    }
+    leaf chosen {
+      type string;
+      description
+        "The candidate in use; none when none is.";
+    }
+    leaf reason {
+      type reason;
+      description
+        "Why.";
+    }
+    leaf from {
+      type string;
+      description
+        "The candidate in use before, where there was one.";
+    }
+    leaf since {
+      type yang:date-and-time;
+      description
+        "When it was chosen.";
+    }
+    leaf changes {
+      type uint32;
+      description
+        "How many times the choice has changed since the agent
+         started (draft-ietf-spring-sr-policy-yang's
+         transition-count).";
+    }
+  }
+
+  grouping candidate {
+    description
+      "A candidate as it is.";
+    leaf id {
+      type string;
+      description
+        "The TVC or uplink, as the probes know it.";
+    }
+    leaf via {
+      type inet:ip-address-no-zone;
+      description
+        "The address it goes by.";
+    }
+    leaf order {
+      type uint16;
+      description
+        "Its place in the console's order, 1 the most preferred.";
+    }
+    leaf state {
+      type far-state;
+      description
+        "As the probes see its far end.";
+    }
+    leaf bfd {
+      type far-state;
+      description
+        "As BFD sees its address, where a session watches it.";
+    }
+    leaf selected {
+      type boolean;
+      description
+        "In use (draft-ietf-spring-sr-policy-yang's
+         is-best-candidate-path).";
+    }
+    leaf non-selection-reason {
+      type enumeration {
+        enum not-best {
+          description
+            "One before it in the order is not down.";
+        }
+        enum down {
+          description
+            "Its far end is down.";
+        }
+        enum overridden {
+          description
+            "The console pinned another.";
+        }
+      }
+      description
+        "Why it is not in use.";
+    }
+    leaf delay {
+      type ms;
+      description
+        "The one-way delay of the probes' last sample.";
+    }
+    leaf ipdv {
+      type ms;
+      description
+        "Its delay variation.";
+    }
+    leaf loss {
+      type decimal64 {
+        fraction-digits 6;
+        range "0..1";
+      }
+      description
+        "Its loss ratio.";
+    }
+  }
+
+  container steering {
+    description
+      "The console's pins, the host's and each vnet jail edge's, and
+       the steering as it is.";
+    uses pins;
+    list jail {
+      key "name";
+      description
+        "An edge that is a vnet jail: its pins.";
+      leaf name {
+        type string;
+        description
+          "The jail.";
+      }
+      uses pins;
+    }
+    container state {
+      config false;
+      description
+        "Each edge's steering as the agent has it.";
+      leaf time {
+        type yang:date-and-time;
+        description
+          "When read.";
+      }
+      list policy {
+        cg:struct "policy-state";
+        description
+          "A policy table's far prefix and its candidates.";
+        leaf table {
+          type string;
+          description
+            "The policy table.";
+        }
+        leaf prefix {
+          type string;
+          description
+            "The far prefix.";
+        }
+        leaf pinned {
+          type string;
+          description
+            "The candidate the console pinned, where it pinned one of
+             these.";
+        }
+        uses selection;
+        list candidate {
+          cg:struct "candidate";
+          description
+            "The candidates, in the console's order.";
+          uses candidate;
+        }
+      }
+      list route {
+        cg:struct "route-state";
+        description
+          "A breakout route: a destination of a FIB by the first
+           uplink whose beacon is not down.";
+        leaf fib {
+          type uint16;
+          description
+            "The FIB.";
+        }
+        leaf destination {
+          type string;
+          description
+            "The destination.";
+        }
+        uses selection;
+        list candidate {
+          cg:struct "candidate";
+          description
+            "The uplinks, in the console's order.";
+          uses candidate;
+        }
+      }
+    }
+  }
+
+  notification steer-changed {
+    description
+      "The candidate in use changed (draft-ietf-spring-sr-policy-yang's
+       sr-policy-candidate-path-change-event): by the console's order,
+       its pin, or the agent's local failover.";
+    leaf jail {
+      type string;
+      description
+        "The vnet jail whose edge it is; none, the host's.";
+    }
+    leaf table {
+      type string;
+      description
+        "The policy table; none for a route.";
+    }
+    leaf prefix {
+      type string;
+      description
+        "The far prefix.";
+    }
+    leaf fib {
+      type uint16;
+      description
+        "A route's FIB.";
+    }
+    leaf destination {
+      type string;
+      description
+        "A route's destination.";
+    }
+    leaf from {
+      type string;
+      description
+        "The candidate in use before; none when none was.";
+    }
+    leaf to {
+      type string;
+      description
+        "The candidate in use now; none when every one is down.";
+    }
+    leaf reason {
+      type reason;
+      description
+        "Why.";
+    }
+    leaf time {
+      type yang:date-and-time;
+      description
+        "When.";
+    }
+  }
+}

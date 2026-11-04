@@ -3455,6 +3455,178 @@ arcana_sdwan_sdwan_apply_action(cbl_req *req, const struct cbl_bytes *target,
 	return (rc);
 }
 
+/*
+ * arcana-steer: the console's pins are sdwan.c's, kept beside each
+ * edge's steering; the state its steering, why each choice and since
+ * when.  An edit sets anew each edge's pins that changed; a pin it
+ * adds is of the edge's steering, else the edit is refused whole.
+ */
+int
+arcana_steer_steering_get(cbl_req *req, struct arcana_steer *data,
+    cbl_yarena *a)
+{
+	struct arcana_steer_steering		*o;
+	struct arcana_steer_steering_state	*st;
+	char					*json;
+	int					 error;
+
+	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL || (json =
+	    sdwan_pins_json()) == NULL)
+		return (ENOMEM);
+	error = ysteer_pins_from_json(json, a, o);
+	free(json);
+	if (error != 0)
+		return (error);
+	if (cbl_req_ydatastore(req) == CBL_YDS_OPERATIONAL) {
+		if ((st = cbl_yarena_alloc(a, sizeof(*st))) == NULL || (json =
+		    sdwan_steer_json()) == NULL)
+			return (ENOMEM);
+		error = ysteer_state_from_json(json, a, st);
+		free(json);
+		if (error != 0)
+			return (error);
+		o->state = st;
+	}
+	data->steering = o;
+	return (0);
+}
+
+/* An edge's pins of s's (jail NULL: the host's); none where s is. */
+static void
+steer_pins(const struct arcana_steer_steering *s, const char *jail,
+    size_t *np, const struct arcana_steer_pin **vp)
+{
+
+	*np = 0;
+	*vp = NULL;
+	if (s == NULL)
+		return;
+	if (jail == NULL) {
+		*np = s->pin.n;
+		*vp = s->pin.v;
+		return;
+	}
+	for (size_t i = 0; i < s->jail.n; i++)
+		if (strcmp(s->jail.v[i].name, jail) == 0) {
+			*np = s->jail.v[i].pin.n;
+			*vp = s->jail.v[i].pin.v;
+			return;
+		}
+}
+
+static bool
+pin_same(const struct arcana_steer_pin *x, const struct arcana_steer_pin *y)
+{
+
+	return (strcmp(x->table, y->table) == 0 && strcmp(x->prefix,
+	    y->prefix) == 0 && strcmp(x->candidate, y->candidate) == 0);
+}
+
+/*
+ * An edge's pins as they were and are to be: each one added checked
+ * (check), or the edge's set anew where they differ.
+ */
+static int
+steer_edge_pins(struct work *w, const char *jail,
+    const struct arcana_steer_steering *b,
+    const struct arcana_steer_steering *f, bool check, const char **why)
+{
+	const struct arcana_steer_pin	*bv, *fv;
+	struct sdwan_pin		*v;
+	size_t				 bn, fn, i, k;
+	int				 rc;
+	bool				 same;
+
+	steer_pins(b, jail, &bn, &bv);
+	steer_pins(f, jail, &fn, &fv);
+	same = bn == fn;
+	for (i = 0; i < fn; i++) {
+		for (k = 0; k < bn && !pin_same(&fv[i], &bv[k]); k++)
+			;
+		if (k == bn)
+			same = false;
+		if (check && k == bn && sdwan_pin_check(w, jail != NULL ? jail :
+		    "", &(struct sdwan_pin){ fv[i].table, fv[i].prefix,
+		    fv[i].candidate }, why) != 0)
+			return (-1);
+	}
+	if (check || same)
+		return (0);
+	if ((v = calloc(fn + 1, sizeof(*v))) == NULL) {
+		*why = "no memory";
+		return (-1);
+	}
+	for (i = 0; i < fn; i++) {
+		v[i].table = fv[i].table;
+		v[i].prefix = fv[i].prefix;
+		v[i].candidate = fv[i].candidate;
+	}
+	rc = sdwan_pins_set(w, jail != NULL ? jail : "", fn, v, why);
+	free(v);
+	return (rc);
+}
+
+/* Each edge's of b's or f's, the host's first: check, or set. */
+static int
+steer_edges(struct work *w, const struct arcana_steer_steering *b,
+    const struct arcana_steer_steering *f, bool check, const char **why)
+{
+	size_t	k, m;
+
+	if (steer_edge_pins(w, NULL, b, f, check, why) != 0)
+		return (-1);
+	for (k = 0; f != NULL && k < f->jail.n; k++)
+		if (steer_edge_pins(w, f->jail.v[k].name, b, f, check, why) != 0)
+			return (-1);
+	/* A jail no longer there: its pins gone. */
+	for (k = 0; b != NULL && k < b->jail.n; k++) {
+		for (m = 0; f != NULL && m < f->jail.n && strcmp(
+		    f->jail.v[m].name, b->jail.v[k].name) != 0; m++)
+			;
+		if ((f == NULL || m == f->jail.n) && steer_edge_pins(w,
+		    b->jail.v[k].name, b, NULL, check, why) != 0)
+			return (-1);
+	}
+	return (0);
+}
+
+int
+arcana_steer_steering_edit(cbl_req *req, const struct arcana_steer *before,
+    const struct arcana_steer *after)
+{
+	const struct arcana_steer_steering	*b, *f;
+	struct work				 w;
+	const char				*why;
+	int					 rc, root;
+
+	b = before != NULL ? before->steering : NULL;
+	f = after != NULL ? after->steering : NULL;
+	for (size_t i = 0; f != NULL && i < f->jail.n; i++)
+		if (!valid_jail(f->jail.v[i].name))
+			return (said(req, "invalid jail name"));
+	work_init(&w);
+	why = NULL;
+	/* Every pin added one of its edge's steering, before any is set. */
+	if (steer_edges(&w, b, f, true, &why) != 0) {
+		rc = said(req, why);
+		work_free(&w);
+		return (rc);
+	}
+	if (!change_begin("the steering's pins")) {
+		work_free(&w);
+		return (said(req, "not done: arcana-agent is stopping"));
+	}
+	trace_tell(&w, req);
+	root = step_begin(&w, STEP_DAEMON, "arcana-agent",
+	    "the steering's pins");
+	rc = steer_edges(&w, b, f, false, &why);
+	change_end();
+	step_end(&w, root, rc == 0, rc == 0 ? NULL : "%s", why);
+	rc = rc == 0 ? 0 : said(req, why != NULL ? why : "failed");
+	work_free(&w);
+	return (rc);
+}
+
 int
 arcana_services_services_service_reload_action(cbl_req *req,
     const struct cbl_bytes *target,

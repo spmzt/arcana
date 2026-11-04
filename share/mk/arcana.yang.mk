@@ -57,7 +57,7 @@ ARC_YMODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		arcana-system@2026-10-29 arcana-netstore@2026-10-29 \
 		arcana-suricata@2026-10-29 arcana-smtpd@2026-10-29 \
 		arcana-speeder@2026-10-29 arcana-stream@2026-10-29 \
-		arcana-network@2026-10-29
+		arcana-network@2026-10-29 arcana-steer@2026-11-04
 # Modules only imported whose identities are used: their .sid files
 # alone (a VLAN tag's types, the PHY types, the port algorithms; the
 # routing protocols', whose identities name a route's origin).

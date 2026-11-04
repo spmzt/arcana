@@ -82,10 +82,11 @@ hosts.o: jobs_spec.h
 # arcana-sdwan's and the sdwan read made of both (ysdwan.c); the host and
 # its agent through arcana-host (yhostjson.c); sshd, poudriere and the
 # notices through their modules (yreads.c); the network through
-# arcana-network (ynet.c).  arcanactl builds the same.
+# arcana-network (ynet.c).  arcanactl builds the same.  An edge's
+# steering pinned in arcana-steer (ysteer.c), the console's alone.
 SRCS+=		yqueue.c ychange.c ystore.c ygula.c yevjson.c ytshoot.c \
 		ytsjson.c yplug.c yprobes.c yhostjson.c ysdwan.c yreads.c \
-		yflat.c ystream.c ynet.c
+		yflat.c ystream.c ynet.c ysteer.c
 CFLAGS.ychange.c+= -I${.CURDIR}
 CLEANFILES+=	ychange.c ychange.c.tmp
 ychange.c: ${ARC_TOP}/share/arcana/jobs.awk ${ARC_TOP}/share/arcana/jobs.yaml \

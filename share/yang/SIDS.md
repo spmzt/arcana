@@ -165,6 +165,7 @@ on the wire.
 | 85 700 | 100 | `arcana-smtpd` | `share/yang/arcana-smtpd@2026-10-29.sid` (68 used) |
 | 85 800 | 160 | `arcana-speeder` | `share/yang/arcana-speeder@2026-10-29.sid` (156 used) |
 | 85 960 | 40 | `arcana-stream`, the structures of Arcana's own stream family | `share/yang/arcana-stream@2026-10-29.sid` (9 used) |
+| 86 000 | 100 | `arcana-steer`, the CAL: the steering's choices, why, its pins and steer-changed | `share/yang/arcana-steer@2026-11-04.sid` (65 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

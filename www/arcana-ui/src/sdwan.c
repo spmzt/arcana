@@ -87,6 +87,7 @@ static struct {
 	ucl_object_t	*paths;		/* sid: /api/servers/<sid>/sdwan data */
 	ucl_object_t	*faults;	/* sid: the agent's faults of the day */
 	ucl_object_t	*rekeys;	/* /api/sdwan/rekey: the rotations */
+	ucl_object_t	*steer_live;	/* /api/sdwan/steer's live: why */
 	ucl_object_t	*lists;		/* /api/sdwan/lists: the feeds and lists */
 	char		 record_filter[80];	/* the record's filter text */
 	ucl_object_t	*identities;	/* /api/sdwan/identities */
@@ -661,6 +662,43 @@ rekeys_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		render();
 }
 
+/* An edge's entry as /api/sdwan/steer's live has it (reason, from,
+ * pinned), by the table and prefix of e; NULL none. */
+static const ucl_object_t *
+steer_why_of(const char *edge, const ucl_object_t *e)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+
+	if (sd.steer_live == NULL || jstr(e, "table") == NULL || jstr(e,
+	    "prefix") == NULL)
+		return (NULL);
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(jget(sd.steer_live, edge), "steer"),
+	    &it, true)) != NULL)
+		if (jstr(o, "table") != NULL && jstr(o, "prefix") != NULL &&
+		    strcmp(jstr(o, "table"), jstr(e, "table")) == 0 && strcmp(
+		    jstr(o, "prefix"), jstr(e, "prefix")) == 0)
+			return (o);
+	return (NULL);
+}
+
+/* Each edge's steering as the manager last read it, why each choice. */
+static void
+steer_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)err;
+	(void)arg;
+	if (status != 200 || jget(o, "live") == NULL)
+		return;
+	if (sd.steer_live != NULL)
+		ucl_object_unref(sd.steer_live);
+	sd.steer_live = ucl_object_copy(jget(o, "live"));
+	if (app.node == NODE_SDWAN && sd.tab == SD_PATHS)
+		render();
+}
+
 static void
 identities_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -992,6 +1030,7 @@ paths_load(void)
 	}
 	ucl_object_unref(asked);
 	api("GET", "/api/sdwan/rekey", NULL, rekeys_cb, NULL);
+	api("GET", "/api/sdwan/steer", NULL, steer_cb, NULL);
 	if (sd.tab == SD_SECURITY)
 		api("GET", "/api/sdwan/lists", NULL, lists_cb, NULL);
 }
@@ -3389,10 +3428,11 @@ view_paths(struct html *h)
 	 * now, and the others in the order the console gave. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Steering <small class=\"dim\">"
 	    "each far prefix by the first tunnel of its policy's order that "
-	    "is not down, chosen on the edge; the order is the console's, by "
-	    "the policy's performance criteria</small></h3><table class=\"net "
-	    "sd\"><thead><tr><th>Edge</th><th>Prefix</th><th>Policy</th><th>"
-	    "Goes by</th><th>Then</th></tr></thead><tbody>");
+	    "is not down, chosen on the edge (arcana-steer); the order is the "
+	    "console's, by the policy's performance criteria, or its pin"
+	    "</small></h3><table class=\"net sd\"><thead><tr><th>Edge</th>"
+	    "<th>Prefix</th><th>Policy</th><th>Goes by</th><th>Why</th><th>"
+	    "Then</th></tr></thead><tbody>");
 	n = 0;
 	it = NULL;
 	while (sd.paths != NULL && (f = ucl_object_iterate(sd.paths, &it,
@@ -3400,7 +3440,7 @@ view_paths(struct html *h)
 		fit = NULL;
 		while ((e = ucl_object_iterate(jget(f, "steer"), &fit, true)) !=
 		    NULL) {
-			const ucl_object_t	*c;
+			const ucl_object_t	*c, *why;
 			ucl_object_iter_t	 cit;
 			long long		 chosen;
 			int			 i;
@@ -3417,16 +3457,33 @@ view_paths(struct html *h)
 			if (chosen < 0)
 				h_raw(h, "<span class=\"chip st-down\">no tunnel "
 				    "up</span>");
+			else
+				h_txt(h, jstr(ucl_array_find_index(jget(e,
+				    "candidates"), (unsigned)chosen), "id"));
+			h_raw(h, "</td><td>");
+			why = steer_why_of(ucl_object_key(f), e);
+			if (why != NULL && jstr(why, "reason") != NULL) {
+				h_fmt(h, "<span class=\"chip%s\">", strcmp(jstr(why,
+				    "reason"), "failover") == 0 || strcmp(jstr(why,
+				    "reason"), "none") == 0 ? " st-down" : "");
+				h_txt(h, jstr(why, "reason"));
+				h_raw(h, "</span>");
+				if (jstr(why, "from") != NULL) {
+					h_raw(h, " <small class=\"dim\">from ");
+					h_txt(h, jstr(why, "from"));
+					h_raw(h, "</small>");
+				}
+				if (jstr(why, "pinned") != NULL) {
+					h_raw(h, " <small class=\"dim\">pinned to ");
+					h_txt(h, jstr(why, "pinned"));
+					h_raw(h, "</small>");
+				}
+			}
 			h_raw(h, "</td><td class=\"dim\">");
 			i = 0;
 			cit = NULL;
 			while ((c = ucl_object_iterate(jget(e, "candidates"),
 			    &cit, true)) != NULL) {
-				if (i == chosen) {
-					/* Into the Goes by cell: drawn in place
-					 * of the empty one above. */
-					;
-				}
 				h_fmt(h, "%s<span class=\"%s\">", i > 0 ? ", " : "",
 				    i == chosen ? "chosen" : "");
 				h_txt(h, jstr(c, "id"));
@@ -3438,7 +3495,7 @@ view_paths(struct html *h)
 		}
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None: a policy "
+		h_raw(h, "<tr><td colspan=\"6\" class=\"dim\">None: a policy "
 		    "with a far prefix to reach has entries once applied.</td>"
 		    "</tr>");
 	h_raw(h, "</tbody></table></div>");

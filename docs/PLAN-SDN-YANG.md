@@ -1474,9 +1474,42 @@ whose first part is served.
   it followed by a thread and connection of the follow's own as before.
   Checked: console_test `watch_events` (two follows, one subscription,
   the event in the page no later than in the agent's own read).
-- 3.5.1 A, C: `arcana-steer`: candidates, chosen, reason, events;
-  written by local failover and by the console; check: a failover
-  seen on both.
+- 3.5.1 A, C (done, agent 0.241.0, console 0.346.0): `arcana-steer`:
+  candidates, chosen, reason, events; written by local failover and by
+  the console; check: a failover seen on both.  Done: the module (SIDs
+  86 000, 65 used) shaped as draft-ietf-spring-sr-policy-yang's state
+  (candidate paths in order, is-best as `selected`,
+  `non-selection-reason`, a transition count as `changes`, the
+  candidate-path change event as `steer-changed`), not imported: its
+  paths are segment lists and its preference the higher the better,
+  ours the console's order; no MEF or Mplify YANG is in the YangModels
+  clone, the terms are MEF 70.2's (an SWVC policy's table, TVCs, the
+  breakout's uplinks).  State: each policy table's far prefix and each
+  breakout route per edge (the host's, a vnet jail's), the candidates
+  with their probes' and BFD's word and last sample (delay, delay
+  variation, loss), the one chosen, why (`preference`, the console's
+  order set; `first-up`, one before came back; `failover` from the one
+  that went down; `override`, the console's pin; `none`), from which,
+  since when.  Configuration: the console's pins, an entry pinned to a
+  candidate, chosen while its far end is not down (a pin down fails
+  over as the order does and comes back with it, never a black hole);
+  an EDIT and a confirmed commit, a pin added refused whole when its
+  table, prefix or candidate is not the edge's steering's; kept per
+  edge in `sdwan-pins.json` (`@jail`) for the next start.  sdwan.c's
+  loop records why on every choice and tells `steer-changed` once its
+  lock is let go; a new order keeps the choice it had where it stays.
+  The console reads it in the sdwan read (the steer entries' `reason`,
+  `from`, `since`, `changes`, `pinned`), the manager keeps each edge's
+  as `live` in `/api/sdwan/steer` (the Paths tab's Why column), and
+  writes a pin by `POST /api/sdwan/steer` (ysteer.c, the trace's
+  `sdwan-pin`).  Checked: agent_root_test `sdwan_probe` (the first
+  candidate down: the agent's state `failover` from it, the
+  notification, the console's read with the reason), agent_test
+  `sdwan` (a pin chosen at once, kept over a restart, cleared to the
+  order; a pin of no entry or of no candidate refused, nothing
+  changed), `yang_sdwan` (both through YANG-CBOR and back),
+  console_test `sdwan_apply` (the read's reason, `live`, a pin, a bad
+  one refused with the agent's words, cleared).
 - 3.5.2 G, A: the control stream: a push stream of its own for steer
   and probe notifications, its own SCTP stream; check: order kept
   under a bulk dump.

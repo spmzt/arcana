@@ -1,0 +1,67 @@
+module: arcana-steer
+  +--rw steering
+     +--rw pin* [table prefix]
+     |  +--rw table        string
+     |  +--rw prefix       string
+     |  +--rw candidate    string
+     +--rw jail* [name]
+     |  +--rw name    string
+     |  +--rw pin* [table prefix]
+     |     +--rw table        string
+     |     +--rw prefix       string
+     |     +--rw candidate    string
+     +--ro state
+        +--ro time?     yang:date-and-time
+        +--ro policy*
+        |  +--ro table?       string
+        |  +--ro prefix?      string
+        |  +--ro pinned?      string
+        |  +--ro jail?        string
+        |  +--ro chosen?      string
+        |  +--ro reason?      reason
+        |  +--ro from?        string
+        |  +--ro since?       yang:date-and-time
+        |  +--ro changes?     uint32
+        |  +--ro candidate*
+        |     +--ro id?                     string
+        |     +--ro via?                    inet:ip-address-no-zone
+        |     +--ro order?                  uint16
+        |     +--ro state?                  far-state
+        |     +--ro bfd?                    far-state
+        |     +--ro selected?               boolean
+        |     +--ro non-selection-reason?   enumeration
+        |     +--ro delay?                  ms
+        |     +--ro ipdv?                   ms
+        |     +--ro loss?                   decimal64
+        +--ro route*
+           +--ro fib?           uint16
+           +--ro destination?   string
+           +--ro jail?          string
+           +--ro chosen?        string
+           +--ro reason?        reason
+           +--ro from?          string
+           +--ro since?         yang:date-and-time
+           +--ro changes?       uint32
+           +--ro candidate*
+              +--ro id?                     string
+              +--ro via?                    inet:ip-address-no-zone
+              +--ro order?                  uint16
+              +--ro state?                  far-state
+              +--ro bfd?                    far-state
+              +--ro selected?               boolean
+              +--ro non-selection-reason?   enumeration
+              +--ro delay?                  ms
+              +--ro ipdv?                   ms
+              +--ro loss?                   decimal64
+
+  notifications:
+    +---n steer-changed
+       +---- jail?          string
+       +---- table?         string
+       +---- prefix?        string
+       +---- fib?           uint16
+       +---- destination?   string
+       +---- from?          string
+       +---- to?            string
+       +---- reason?        reason
+       +---- time?          yang:date-and-time

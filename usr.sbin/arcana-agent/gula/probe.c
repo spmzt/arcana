@@ -1333,6 +1333,36 @@ probe_state_of(const char *jail, const char *id)
 	return (st);
 }
 
+/* A target's last sample's delay, delay variation and loss; false when
+ * it is none or has none. */
+bool
+probe_sample_of(const char *jail, const char *id, double *delay,
+    double *ipdv, double *loss)
+{
+	const struct target	*t;
+	const struct sample	*s;
+	bool			 ok = false;
+	int			 i;
+
+	pthread_mutex_lock(&lock);
+	for (i = 0; i < ntargets; i++) {
+		t = &targets[i];
+		if (is_monitor(t) || strcmp(t->jail, jail) != 0 || strcmp(t->id,
+		    id) != 0)
+			continue;
+		if (t->nsamples > 0 && t->samples != NULL) {
+			s = &t->samples[(t->head + t->nsamples - 1) % t->history];
+			*delay = s->delay;
+			*ipdv = s->ipdv;
+			*loss = s->loss;
+			ok = true;
+		}
+		break;
+	}
+	pthread_mutex_unlock(&lock);
+	return (ok);
+}
+
 /* A target as JSON: what it is, its state, the sample in progress and
  * those kept after the time after.  The lock is held. */
 static ucl_object_t *

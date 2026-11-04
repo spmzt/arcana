@@ -970,6 +970,20 @@ The node's
 action sets a part again as it is, which starts what of it is not
 running;
 .It
+the steering's pins (arcana-steer): an entry of an edge's steering
+pinned by the console to one of its candidates, chosen while its far
+end is not down, the order's first otherwise; a pin of a table, prefix
+or candidate the edge's steering has not is refused.
+Each edge's pins are kept beside its steering for the next start
+.Pq Pa sdwan-pins.json No and its Pa @ Ns Ar jail No files .
+As state, each entry's and breakout route's candidates with their
+probes' and BFD's word and last sample, the one chosen, why
+.Pq preference , first-up , failover , override , none ,
+from which and since when; each change of choice, the agent's local
+failover's too, is arcana-steer's
+.Ic steer-changed
+notification;
+.It
 the network instance an interface is in, its FIB
 .Pq Dq fib Ar N No first on Va ifconfig_ Ns Ar if ,
 .Dv SIOCSIFFIB ;

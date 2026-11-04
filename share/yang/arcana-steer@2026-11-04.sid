@@ -1,0 +1,355 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-steer",
+    "module-revision": "2026-11-04",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
+      },
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "86000",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-steer",
+        "sid": "86000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steer-changed",
+        "sid": "86001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steer-changed/destination",
+        "sid": "86002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steer-changed/fib",
+        "sid": "86003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steer-changed/from",
+        "sid": "86004"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steer-changed/jail",
+        "sid": "86005"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steer-changed/prefix",
+        "sid": "86006"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steer-changed/reason",
+        "sid": "86007"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steer-changed/table",
+        "sid": "86008"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steer-changed/time",
+        "sid": "86009"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steer-changed/to",
+        "sid": "86010"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering",
+        "sid": "86011"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/jail",
+        "sid": "86012"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/jail/name",
+        "sid": "86013"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/jail/pin",
+        "sid": "86014"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/jail/pin/candidate",
+        "sid": "86015"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/jail/pin/prefix",
+        "sid": "86016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/jail/pin/table",
+        "sid": "86017"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/pin",
+        "sid": "86018"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/pin/candidate",
+        "sid": "86019"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/pin/prefix",
+        "sid": "86020"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/pin/table",
+        "sid": "86021"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state",
+        "sid": "86022"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy",
+        "sid": "86023"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/candidate",
+        "sid": "86024"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/candidate/bfd",
+        "sid": "86025"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/candidate/delay",
+        "sid": "86026"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/candidate/id",
+        "sid": "86027"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/candidate/ipdv",
+        "sid": "86028"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/candidate/loss",
+        "sid": "86029"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/candidate/non-selection-reason",
+        "sid": "86030"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/candidate/order",
+        "sid": "86031"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/candidate/selected",
+        "sid": "86032"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/candidate/state",
+        "sid": "86033"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/candidate/via",
+        "sid": "86034"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/changes",
+        "sid": "86035"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/chosen",
+        "sid": "86036"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/from",
+        "sid": "86037"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/jail",
+        "sid": "86038"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/pinned",
+        "sid": "86039"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/prefix",
+        "sid": "86040"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/reason",
+        "sid": "86041"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/since",
+        "sid": "86042"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/policy/table",
+        "sid": "86043"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route",
+        "sid": "86044"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/candidate",
+        "sid": "86045"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/candidate/bfd",
+        "sid": "86046"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/candidate/delay",
+        "sid": "86047"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/candidate/id",
+        "sid": "86048"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/candidate/ipdv",
+        "sid": "86049"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/candidate/loss",
+        "sid": "86050"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/candidate/non-selection-reason",
+        "sid": "86051"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/candidate/order",
+        "sid": "86052"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/candidate/selected",
+        "sid": "86053"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/candidate/state",
+        "sid": "86054"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/candidate/via",
+        "sid": "86055"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/changes",
+        "sid": "86056"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/chosen",
+        "sid": "86057"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/destination",
+        "sid": "86058"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/fib",
+        "sid": "86059"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/from",
+        "sid": "86060"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/jail",
+        "sid": "86061"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/reason",
+        "sid": "86062"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/route/since",
+        "sid": "86063"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-steer:steering/state/time",
+        "sid": "86064"
+      }
+    ]
+  }
+}

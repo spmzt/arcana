@@ -1514,6 +1514,105 @@ read_json(const struct arcana_sdwan_sdwan *sd,
 	return (top);
 }
 
+/* ---- arcana-steer: why each choice, and the console's pins ---------- */
+
+static const char *const steer_reasons[] = { "preference", "first-up",
+    "failover", "override", "none" };
+
+/* The read's entries of key (steer, routes) of an edge: the host's in
+ * top, a jail's in its entry of edges; NULL none. */
+static ucl_object_t *
+steer_entries(ucl_object_t *top, const char *jail, const char *key)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	if (jail == NULL || jail[0] == '\0')
+		return ((ucl_object_t *)(uintptr_t)ucl_object_lookup(top, key));
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(top, "edges"), &it,
+	    true)) != NULL)
+		if (str(e, "jail") != NULL && strcmp(str(e, "jail"), jail) == 0)
+			return ((ucl_object_t *)(uintptr_t)ucl_object_lookup(e,
+			    key));
+	return (NULL);
+}
+
+/* The why of a choice into its entry. */
+static void
+steer_put(ucl_object_t *e, bool has_reason, int reason,
+    const char *from, const char *since, bool has_changes, uint32_t changes)
+{
+
+	if (has_reason && reason >= 0 && (size_t)reason < nitems(steer_reasons))
+		put_str(e, "reason", steer_reasons[reason]);
+	if (from != NULL)
+		put_str(e, "from", from);
+	if (since != NULL)
+		put(e, "since", ucl_object_fromint(epoch(since)));
+	if (has_changes)
+		put(e, "changes", ucl_object_fromint(changes));
+}
+
+/*
+ * arcana-steer's why of each choice, into the read's steer entries and
+ * steered routes (reason, from, since, changes, pinned); an
+ * agent without the module is read as before.
+ */
+static void
+steer_why(cbl_conn *conn, ucl_object_t *top, cbl_yarena *a)
+{
+	const struct arcana_steer_steering_state	*st;
+	const struct cbl_ynode				*n;
+	struct arcana_steer				 d;
+	ucl_object_t					*arr, *e;
+	ucl_object_iter_t				 it;
+	char						 err[128];
+
+	if ((n = yq_top("arcana-steer", "steering")) == NULL)
+		return;
+	memset(&d, 0, sizeof(d));
+	if (yq_get(conn, n, CBL_YDS_OPERATIONAL, &d, a, err, sizeof(err)) !=
+	    0 || d.steering == NULL || (st = d.steering->state) == NULL)
+		return;
+	for (size_t i = 0; i < st->policy.n; i++) {
+		const struct arcana_steer_policy_state *p = &st->policy.v[i];
+
+		arr = steer_entries(top, p->jail, "steer");
+		it = NULL;
+		while (arr != NULL && (e = (ucl_object_t *)(uintptr_t)
+		    ucl_object_iterate(arr, &it, true)) != NULL) {
+			if (str(e, "table") == NULL || str(e, "prefix") == NULL ||
+			    strcmp(str(e, "table"), p->table) != 0 || strcmp(str(e,
+			    "prefix"), p->prefix) != 0)
+				continue;
+			steer_put(e, p->has_reason, (int)p->reason,
+			    p->from, p->since, p->has_changes, p->changes);
+			if (p->pinned != NULL)
+				put_str(e, "pinned", p->pinned);
+			break;
+		}
+	}
+	for (size_t i = 0; i < st->route.n; i++) {
+		const struct arcana_steer_route_state *r = &st->route.v[i];
+
+		arr = steer_entries(top, r->jail, "routes");
+		it = NULL;
+		while (arr != NULL && (e = (ucl_object_t *)(uintptr_t)
+		    ucl_object_iterate(arr, &it, true)) != NULL) {
+			if (str(e, "destination") == NULL || strcmp(str(e,
+			    "destination"), r->destination) != 0 ||
+			    ucl_object_toint(ucl_object_lookup(e, "fib")) !=
+			    r->fib)
+				continue;
+			steer_put(e, r->has_reason, (int)r->reason,
+			    r->from, r->since, r->has_changes, r->changes);
+			break;
+		}
+	}
+}
+
+
 int
 ysdwan_read(cbl_conn *conn, bool has_after, uint64_t after,
     ucl_object_t **data, char *err, size_t errlen)
@@ -1552,8 +1651,10 @@ ysdwan_read(cbl_conn *conn, bool has_after, uint64_t after,
 	if ((error = yq_get(conn, np, CBL_YDS_RUNNING, &pr, a, err,
 	    errlen)) == 0 && (error = yq_call(conn, np, NULL, act, &in, &rd, a,
 	    err, errlen)) == 0 && (error = yq_get(conn, ns,
-	    CBL_YDS_OPERATIONAL, &sd, a, err, errlen)) == 0)
+	    CBL_YDS_OPERATIONAL, &sd, a, err, errlen)) == 0) {
 		*data = read_json(sd.sdwan, pr.probes, &rd);
+		steer_why(conn, *data, a);
+	}
 	cbl_yarena_free(a);
 	return (error);
 }

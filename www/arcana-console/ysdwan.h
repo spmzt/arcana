@@ -43,6 +43,16 @@ int	ysdwan_read(cbl_conn *conn, bool has_after, uint64_t after,
 int	ysdwan_monitors(cbl_conn *conn, bool has_after, uint64_t after,
 	    ucl_object_t **data, char *err, size_t errlen);
 /*
+ * ysdwan_pin() (ysteer.c, the console's): json {"jail", "table",
+ * "prefix", "candidate"} an edge's entry pinned to the candidate in
+ * arcana-steer, none clearing the pin, committed confirmed and confirmed
+ * at once; 0, or an errno, err and tag as the agent said.  ysdwan_read()
+ * puts arcana-steer's why of each choice in its steer entries and
+ * routes: reason, from, since, changes, pinned.
+ */
+int	ysdwan_pin(cbl_conn *conn, const char *json, char *err, size_t errlen,
+	    char *tag, size_t taglen);
+/*
  * ysdwan_held(): the same of what the console holds (watch.c):
  * arcana-sdwan's state as a push held it, arcana-probe's edges and the
  * probes' read with the samples held, of which those after after.

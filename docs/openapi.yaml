@@ -2903,11 +2903,39 @@ paths:
   /api/sdwan/steer:
     get:
       tags: [sdwan]
-      summary: The steering the console's manager last sent each edge
+      summary: The steering the console's manager last sent each edge, and what each edge chose
       responses:
         "200":
           description: sent, by server id, each with at and entries
-            (table, prefix, swvc, policy, candidates in order).
+            (table, prefix, swvc, policy, candidates in order); live, by
+            server id, the edge's steering as the manager last read it
+            (at; steer, each entry with chosen, candidates, and
+            arcana-steer's reason, from, since, changes, pinned; routes).
+    post:
+      tags: [sdwan]
+      summary: An entry of an edge's steering pinned to a candidate (arcana-steer), or its pin cleared
+      description: The console's override, written to the edge by a
+        confirmed commit; the edge chooses the pinned candidate while its
+        far end is not down and fails over as the order does otherwise.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [edge, table, prefix]
+              properties:
+                edge: { type: string, description: "server id, or server/jail" }
+                table: { type: string }
+                prefix: { type: string }
+                candidate: { type: string, description: "a tunnel of the entry; none clears the pin" }
+      responses:
+        "200":
+          description: ok
+        "404":
+          description: no such edge
+        "409":
+          description: the edge refused it (a candidate, table or prefix
+            its steering does not have)
   /api/sdwan/lists:
     get:
       tags: [sdwan]

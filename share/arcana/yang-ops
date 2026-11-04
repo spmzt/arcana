@@ -71,6 +71,10 @@ sdwan-dhcp	arcana-sdwan@2026-10-15
 sdwan-dns	arcana-sdwan@2026-10-15
 sdwan-proxy	arcana-sdwan@2026-10-15
 sdwan-ids	arcana-sdwan@2026-10-15
+# sdwan-pin: an entry of an edge's steering pinned in arcana-steer, or
+# its pin cleared, by EDIT and a commit; the sdwan read's why of each
+# choice is arcana-steer's state.
+sdwan-pin	arcana-steer@2026-11-04
 # address: the address action arcana-network adds to arcana-jails' jail.
 address	arcana-network@2026-10-29
 # network's kinds the read actions of arcana-network's network (the

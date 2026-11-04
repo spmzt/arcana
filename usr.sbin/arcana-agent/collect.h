@@ -552,6 +552,12 @@ char	*ysd_instances_json(int kind, const char *jail, int group, size_t n,
 	    const void *v, const char **errp);
 int	ysd_state_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_sdwan_sdwan_state *out);
+/* arcana-steer (invidia/ysd.c): sdwan.c's pins as configuration, its
+ * steering as state. */
+int	ysteer_pins_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_steer_steering *out);
+int	ysteer_state_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_steer_steering_state *out);
 
 /* arcana-sshd (superbia/ysshd.c): the ssh operation's JSON. */
 int	ysshd_from_json(const char *json, cbl_yarena *a,

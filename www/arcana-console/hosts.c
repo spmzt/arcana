@@ -85,6 +85,7 @@ enum op {
 	OP_SDWAN_DNS,
 	OP_SDWAN_PROXY,
 	OP_SDWAN_IDS,
+	OP_SDWAN_PIN,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
 	OP_JAIL_FILES,
@@ -158,6 +159,7 @@ static const char *const op_names[] = {
 	[OP_SDWAN_DNS] = "sdwan-dns",
 	[OP_SDWAN_PROXY] = "sdwan-proxy",
 	[OP_SDWAN_IDS] = "sdwan-ids",
+	[OP_SDWAN_PIN] = "sdwan-pin",
 	[OP_BIRD_CONFIG] = "bird-config",
 	[OP_KERNEL] = "kernel",
 	[OP_JAIL_FILES] = "jail-files",
@@ -2642,6 +2644,16 @@ connected:
 			    conn, NULL, NULL, NULL, 0, 0, tok, sizeof(tok),
 			    ywhy, sizeof(ywhy), ytag, sizeof(ytag)) == 0;
 		}
+		ysteps_end(conn, &ys, &steps, &nsteps);
+		if (!ok)
+			put_str(top, "error", ywhy);
+		break;
+	case OP_SDWAN_PIN:
+		/* An entry of the edge's steering pinned in arcana-steer, or
+		 * its pin cleared, committed confirmed (ysteer.c). */
+		ysteps_begin(conn, c, &ys);
+		ok = ysdwan_pin(conn, c->text, ywhy, sizeof(ywhy), ytag,
+		    sizeof(ytag)) == 0;
 		ysteps_end(conn, &ys, &steps, &nsteps);
 		if (!ok)
 			put_str(top, "error", ywhy);
@@ -6245,7 +6257,8 @@ hosts_net_in(const char *uri, const char *peer, const char *name,
  * The host's SD-WAN told: what is probes (the targets, an array),
  * rules (the ruleset), steer (the tables' entries), or bird, dhcp, dns,
  * proxy or ids (the instances), json as its retired operation took it,
- * an edge's part in arcana-probe or arcana-sdwan by a commit.
+ * an edge's part in arcana-probe or arcana-sdwan by a commit; pin, an
+ * entry's pin in arcana-steer (ysdwan_pin()).
  */
 char *
 hosts_sdwan_set(const char *uri, const char *peer, const char *name,
@@ -6260,7 +6273,7 @@ hosts_sdwan_set(const char *uri, const char *peer, const char *name,
 	    OP_SDWAN_BIRD : strcmp(what, "dhcp") == 0 ? OP_SDWAN_DHCP :
 	    strcmp(what, "dns") == 0 ? OP_SDWAN_DNS : strcmp(what, "proxy") ==
 	    0 ? OP_SDWAN_PROXY : strcmp(what, "ids") == 0 ? OP_SDWAN_IDS :
-	    OP_SDWAN_PROBES;
+	    strcmp(what, "pin") == 0 ? OP_SDWAN_PIN : OP_SDWAN_PROBES;
 	c->text = xstrdup(json);
 	snprintf(label, sizeof(label), "sdwan-%s", what);
 	return (self_call(c, uri, peer, name, label, status));

@@ -15,6 +15,8 @@
  *	ysd bird|dhcp|dns|proxy|ids instances.json [jail]
  *					the instances of one kind
  *	ysd state reply.json		the sdwan read, all of it
+ *	ysd pins pins.json		arcana-steer's pins
+ *	ysd steering steer.json		arcana-steer's state
  *
  * Through YANG-CBOR and back, the same bytes; the configuration back as
  * the JSON the setters take, of the jail named.
@@ -36,7 +38,7 @@ main(int argc, char **argv)
 
 	if (argc != 3 && argc != 4)
 		errx(2, "usage: ysd targets|probes|rules|steer|bird|dhcp|dns|"
-		    "proxy|ids|state file.json [jail]");
+		    "proxy|ids|state|pins|steering file.json [jail]");
 	jail = argc == 4 ? argv[3] : NULL;
 	if ((a = cbl_yarena_new()) == NULL)
 		err(1, "cbl_yarena_new");
@@ -199,6 +201,62 @@ main(int argc, char **argv)
 		free(js);
 		same((void *)arcana_sdwan_steer_config_encode, (void *)
 		    arcana_sdwan_steer_config_decode, &s, &back, a);
+	} else if (strcmp(argv[1], "pins") == 0) {
+		struct arcana_steer_steering s, back;
+
+		if ((error = ysteer_pins_from_json(slurp(argv[2]), a, &s)) != 0)
+			errc(1, error, "ysteer_pins_from_json");
+		for (size_t i = 0; i < s.pin.n; i++)
+			printf("pin %s %s %s\n", s.pin.v[i].table,
+			    s.pin.v[i].prefix, s.pin.v[i].candidate);
+		for (size_t k = 0; k < s.jail.n; k++)
+			for (size_t i = 0; i < s.jail.v[k].pin.n; i++)
+				printf("pin@%s %s %s %s\n", s.jail.v[k].name,
+				    s.jail.v[k].pin.v[i].table,
+				    s.jail.v[k].pin.v[i].prefix,
+				    s.jail.v[k].pin.v[i].candidate);
+		same((void *)arcana_steer_steering_encode, (void *)
+		    arcana_steer_steering_decode, &s, &back, a);
+	} else if (strcmp(argv[1], "steering") == 0) {
+		static const char *const rs[] = { "preference", "first-up",
+		    "failover", "override", "none" };
+		static const char *const ns[] = { "not-best", "down",
+		    "overridden" };
+		struct arcana_steer_steering_state s, back;
+
+		if ((error = ysteer_state_from_json(slurp(argv[2]), a, &s)) != 0)
+			errc(1, error, "ysteer_state_from_json");
+		printf("time=%s\n", str(s.time));
+		for (size_t i = 0; i < s.policy.n; i++) {
+			const struct arcana_steer_policy_state *p = &s.policy.v[i];
+
+			printf("policy %s %s jail=%s chosen=%s reason=%s from=%s "
+			    "since=%s changes=%u pinned=%s\n", p->table, p->prefix,
+			    str(p->jail), str(p->chosen), p->has_reason ?
+			    rs[p->reason] : "-", str(p->from), str(p->since),
+			    p->changes, str(p->pinned));
+			for (size_t k = 0; k < p->candidate.n; k++) {
+				const struct arcana_steer_candidate *c =
+				    &p->candidate.v[k];
+
+				printf("  %u %s via %s %s bfd=%s %s%s delay=%jd "
+				    "ipdv=%jd loss=%jd\n", c->order, c->id,
+				    c->has_via ? c->via.v.m0 : "-", c->has_state ?
+				    cstates[c->state] : "-", c->has_bfd ?
+				    cstates[c->bfd] : "-", c->selected ? "selected" :
+				    "not:", c->has_non_selection_reason ?
+				    ns[c->non_selection_reason] : "", (intmax_t)
+				    c->delay, (intmax_t)c->ipdv, (intmax_t)c->loss);
+			}
+		}
+		for (size_t i = 0; i < s.route.n; i++)
+			printf("route fib=%u %s chosen=%s reason=%s from=%s "
+			    "candidates=%zu\n", s.route.v[i].fib,
+			    s.route.v[i].destination, str(s.route.v[i].chosen),
+			    s.route.v[i].has_reason ? rs[s.route.v[i].reason] :
+			    "-", str(s.route.v[i].from), s.route.v[i].candidate.n);
+		same((void *)arcana_steer_steering_state_encode, (void *)
+		    arcana_steer_steering_state_decode, &s, &back, a);
 	} else if (strcmp(argv[1], "bird") == 0 || strcmp(argv[1], "dhcp") == 0
 	    || strcmp(argv[1], "dns") == 0) {
 		struct arcana_sdwan_sdwan w = { 0 }, back;

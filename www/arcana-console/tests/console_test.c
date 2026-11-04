@@ -11871,6 +11871,76 @@ ATF_TC_BODY(sdwan_apply, tc)
 	snprintf(body, sizeof(body), "sent.%s.entries.0.policy", sb);
 	ATF_CHECK_STREQ("fast", jstr(&r, body));
 	resp_free(&r);
+	/*
+	 * arcana-steer: the edge says why each choice is what it is, in
+	 * its read and as the manager last read it; the console's pin is
+	 * in the edge's read at once, one of no candidate refused, and
+	 * cleared, the policy's order is again.
+	 */
+	{
+		char	tbl[64], pfx[64], c1[96], pin[400];
+
+		snprintf(body, sizeof(body), "/api/servers/%s/sdwan", sb);
+		http("GET", body, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_REQUIRE_MSG(jstr(&r, "data.steer.0.table") != NULL, "%s",
+		    r.body);
+		snprintf(tbl, sizeof(tbl), "%s", jstr(&r, "data.steer.0.table"));
+		snprintf(pfx, sizeof(pfx), "%s", jstr(&r, "data.steer.0.prefix"));
+		ATF_REQUIRE_MSG(jstr(&r, "data.steer.0.candidates.0.id") != NULL,
+		    "%s", r.body);
+		snprintf(c1, sizeof(c1), "%s", jstr(&r,
+		    "data.steer.0.candidates.0.id"));
+		ATF_CHECK_STREQ("preference", jstr(&r, "data.steer.0.reason"));
+		ATF_CHECK(jstr(&r, "data.steer.0.since") != NULL);
+		resp_free(&r);
+		for (i = 0; i < 60; i++) {
+			http("GET", "/api/sdwan/steer", NULL, &r);
+			EXPECT(&r, 200);
+			snprintf(body, sizeof(body), "live.%s.steer.0.reason", sb);
+			if (jstr(&r, body) != NULL)
+				break;
+			resp_free(&r);
+			usleep(300000);
+		}
+		ATF_REQUIRE_MSG(i < 60, "the manager read no steering");
+		ATF_CHECK_STREQ("preference", jstr(&r, body));
+		resp_free(&r);
+		snprintf(pin, sizeof(pin), "{\"edge\":\"%s\",\"table\":\"%s\","
+		    "\"prefix\":\"%s\",\"candidate\":\"%s\"}", sb, tbl, pfx,
+		    c1);
+		http("POST", "/api/sdwan/steer", pin, &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		snprintf(body, sizeof(body), "/api/servers/%s/sdwan", sb);
+		http("GET", body, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("override", jstr(&r, "data.steer.0.reason"));
+		ATF_CHECK_STREQ(c1, jstr(&r, "data.steer.0.pinned"));
+		ATF_CHECK_STREQ("0", jstr(&r, "data.steer.0.chosen"));
+		resp_free(&r);
+		snprintf(pin, sizeof(pin), "{\"edge\":\"%s\",\"table\":\"%s\","
+		    "\"prefix\":\"%s\",\"candidate\":\"acme/nowhere\"}", sb, tbl,
+		    pfx);
+		http("POST", "/api/sdwan/steer", pin, &r);
+		ATF_CHECK_MSG(r.status == 409 && strstr(r.body,
+		    "acme/nowhere is no candidate") != NULL, "%s", r.body);
+		resp_free(&r);
+		snprintf(pin, sizeof(pin), "{\"edge\":\"%s\",\"table\":\"%s\","
+		    "\"prefix\":\"%s\"}", sb, tbl, pfx);
+		http("POST", "/api/sdwan/steer", pin, &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		snprintf(body, sizeof(body), "/api/servers/%s/sdwan", sb);
+		http("GET", body, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("preference", jstr(&r, "data.steer.0.reason"));
+		ATF_CHECK(jstr(&r, "data.steer.0.pinned") == NULL);
+		ATF_CHECK_STREQ("0", jstr(&r, "data.steer.0.chosen"));
+		resp_free(&r);
+		ATF_CHECK(system("grep -q 'steering-pinned' data/audit.log") ==
+		    0 || system("grep -rq 'steering-pinned' data") == 0);
+	}
 	/* Again: nothing to do. */
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);

@@ -599,7 +599,7 @@ crash_event_cleanup()
 atf_test_case sdwan_probe cleanup
 sdwan_probe_head()
 {
-	atf_set "descr" "a tunnel measured for real: the loopback pinged every 50 ms, up with its samples, and an address nothing routes to down, each an event"
+	atf_set "descr" "a tunnel measured for real: the loopback pinged every 50 ms, up with its samples, and an address nothing routes to down, each an event; the steering's failover seen by the agent (arcana-steer, its steer-changed) and by the console's read"
 	atf_set "require.user" "root"
 	atf_set "is.exclusive" "true"
 }
@@ -627,14 +627,30 @@ sdwan_probe_body()
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
 	    '{"set":30,"tables":[{"name":"swt_p_4","valtype":"ipv4"}],"rules":["12 fwd tablearg ip4 from any to table(swt_p_4)"]}'
 	: > ipfw.log
+	"$JGC" -c "$SOCK" notifications > notif.out 2>&1 &
+	echo $! > notif.pid
+	sleep 0.5
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
 	    '{"entries":[{"table":"swt_p_4","prefix":"10.20.0.0/24","candidates":[{"id":"void","via":"100.64.0.9"},{"id":"lo","via":"100.64.0.1"}]}]}'
 	atf_check -o match:'atomic add 10.20.0.0/24 100.64.0.9' cat ipfw.log
+	atf_check -o match:'"changes":1,"chosen":"void","prefix":"10.20.0.0/24","reason":"preference",' \
+	    "$JGC" -c "$SOCK" get steering
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
 	    '[{"id":"lo","address":"127.0.0.1","interval":50,"eval":300,"down":2,"up":2,"timeout":200},{"id":"void","address":"192.0.2.77","fib":2,"interval":50,"eval":300,"down":2,"timeout":100}]'
 	sleep 1.5
 	atf_check -o match:'atomic add 10.20.0.0/24 100.64.0.1' cat ipfw.log
-	atf_check -o match:'"chosen":1,"candidates":\[\{"id":"void","via":"100.64.0.9","state":"down"\},\{"id":"lo","via":"100.64.0.1","state":"up"\}' \
+	# A failover seen on both: the agent's steering says why, and told
+	# it as it happened; the console's read (arcanactl's sdwan is the
+	# console's ysdwan.c) has it in the entry.
+	atf_check -o match:'"id":"void","ipdv":"[0-9.]+","loss":"1.000000","non-selection-reason":"down","order":1,"selected":false,"state":"down","via":"100.64.0.9"\}' \
+	    -o match:'"id":"lo","ipdv":"[0-9.]+","loss":"0.000000","order":2,"selected":true,"state":"up"' \
+	    -o match:'"changes":2,"chosen":"lo","from":"void","prefix":"10.20.0.0/24","reason":"failover",' \
+	    "$JGC" -c "$SOCK" get steering
+	kill "$(cat notif.pid)"
+	atf_check -o match:'"arcana-steer:steer-changed":\{"prefix":"10.20.0.0/24","reason":"preference","table":"swt_p_4","time":"[0-9T:-]+Z","to":"void"\}' \
+	    -o match:'"arcana-steer:steer-changed":\{"from":"void","prefix":"10.20.0.0/24","reason":"failover","table":"swt_p_4","time":"[0-9T:-]+Z","to":"lo"\}' \
+	    cat notif.out
+	atf_check -o match:'"chosen":1,"candidates":\[\{"id":"void","via":"100.64.0.9","state":"down"\},\{"id":"lo","via":"100.64.0.1","state":"up"\}\],"reason":"failover","from":"void","since":[0-9]+,"changes":2' \
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"id":"void","address":"192.0.2.77","family":"inet","fib":2,"state":"down"' \
 	    -o match:'"id":"lo",[^}]*"state":"up"' "$JGC" -c "$SOCK" sdwan
@@ -644,6 +660,7 @@ sdwan_probe_body()
 }
 sdwan_probe_cleanup()
 {
+	[ -f notif.pid ] && kill "$(cat notif.pid)" 2>/dev/null
 	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
 	# Its rule and tables, which outlive the agent, gone from the
 	# host's ipfw: only they, by their names.

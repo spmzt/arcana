@@ -160,7 +160,7 @@ and Arcana's own modules, each read as the operation that reads the
 same:
 .Cm jails , services , packages , jobs , storage , sysctl , kernel ,
 .Cm processes , logs , firewall , troubleshoot , history , events ,
-.Cm bird , wireguard , netgraph , host , agent , probes , sdwan , sshd
+.Cm bird , wireguard , netgraph , host , agent , probes , sdwan , steering , sshd
 and
 .Cm builder ;
 of
@@ -374,7 +374,9 @@ For example
 The notifications of the models the agent serves, as they come, each a
 line of RFC 8040's JSON, until interrupted: every event the agent tells
 .Pq Cm events
-as arcana-events' event, its kind and its data.
+as arcana-events' event, its kind and its data, and each change of an
+SD-WAN edge's steering as arcana-steer's steer-changed: the entry, the
+candidate before and now, and why.
 .It Xo
 .Cm subscribe
 .Op Fl n Ar count
@@ -2586,7 +2588,8 @@ arcana-probe's targets (each its state, the sample in progress and the
 samples kept: the one-way delay, its variation, the loss, each eval
 interval) and arcana-sdwan's state (the rules and the steering, each
 edge that is a vnet jail, the services' instances, ClamAV, the record,
-the keys and the faults).
+the keys and the faults), each steering entry with arcana-steer's why
+of its choice: reason, from, since, changes and pinned.
 .It Cm sdwan probes Ar json
 The targets the agent is to measure from now on, a JSON array as the
 console's SD-WAN apply makes them: each an id and an address, and maybe
@@ -2631,6 +2634,16 @@ the first not down is chosen, and chosen again when a probe's state
 changes; and the breakout's routes, each a destination of a FIB and its
 gateways.
 With jail, a jail's edge's.
+An entry is pinned to a candidate by arcana-steer's
+.Ic pin
+list, which
+.Cm set
+writes:
+.Dl arcanactl set '/arcana-steer:steering/pin=sw1_p4,10.20.0.0%2F24/candidate' tvc-2
+.Dl arcanactl set -x '/arcana-steer:steering/pin=sw1_p4,10.20.0.0%2F24'
+and
+.Cm get steering
+reads each entry's candidates, the one chosen and why.
 .It Cm sdwan bird Ar json
 The BIRD instances of the services at this edge: each a name, the fib
 it runs in, the host's name and its form (spec, JSON text in the

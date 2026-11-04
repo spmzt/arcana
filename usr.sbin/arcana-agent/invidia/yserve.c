@@ -35,6 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <cblink.h>
@@ -1431,6 +1432,41 @@ yang_step(cbl_conn *conn, const struct arcana_jobs_step *s)
 	n.step.n = 1;
 	n.step.v = s;
 	return (cbl_ynotify_conn(conn, node, &n));
+}
+
+/*
+ * arcana-steer's steer-changed: a policy's prefix (fib -1) or a route
+ * (table NULL) by another candidate, and why (STEER_*); "" none.
+ */
+void
+yang_steer_changed(const char *jail, const char *table, const char *prefix,
+    int fib, const char *dest, const char *from, const char *to, int reason,
+    time_t when)
+{
+	struct arcana_steer_steer_changed	 n;
+	struct tm				 tm;
+	char					 t[32];
+
+	if (yctx == NULL)
+		return;
+	memset(&n, 0, sizeof(n));
+	n.jail = jail != NULL && jail[0] != '\0' ? jail : NULL;
+	if (table != NULL) {
+		n.table = table;
+		n.prefix = prefix;
+	} else {
+		n.has_fib = fib >= 0;
+		n.fib = (uint16_t)fib;
+		n.destination = dest;
+	}
+	n.from = from != NULL && from[0] != '\0' ? from : NULL;
+	n.to = to != NULL && to[0] != '\0' ? to : NULL;
+	n.has_reason = true;
+	n.reason = (enum arcana_steer_steer_changed_reason)reason;
+	if (gmtime_r(&when, &tm) != NULL && strftime(t, sizeof(t),
+	    "%Y-%m-%dT%H:%M:%SZ", &tm) > 0)
+		n.time = t;
+	(void)arcana_steer_steer_changed_notify(yctx, &n);
 }
 
 /* RFC 8530's bind-lne-name-failed: an interface bound to a logical
