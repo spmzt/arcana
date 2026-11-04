@@ -99,9 +99,11 @@ ARC_YFEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F arcana-notif: -F arcana-ra:
 
 # The console's own datastore (ARC_YANG_CONSOLE=yes): the services
-# stored as L3NM (RFC 9181, RFC 9182), which no agent serves.
+# stored as L3NM (RFC 9181, RFC 9182) with Arcana's augments of it,
+# which no agent serves.
 .if ${ARC_YANG_CONSOLE:Uno} == "yes"
-ARC_YMODS+=	ietf-vpn-common@2022-02-11 ietf-l3vpn-ntw@2022-02-14
+ARC_YMODS+=	ietf-vpn-common@2022-02-11 ietf-l3vpn-ntw@2022-02-14 \
+		arcana-l3nm@2026-11-05
 ARC_YIMPORTS+=	ietf-key-chain@2017-06-15 ietf-tcp@2024-10-10
 ARC_YFEATS+=	-F ietf-vpn-common:* -F ietf-l3vpn-ntw:*
 .endif

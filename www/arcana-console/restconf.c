@@ -512,6 +512,7 @@ library_object(void)
 		    "urn:ietf:params:xml:ns:yang:ietf-vpn-common" },
 		{ "ietf-l3vpn-ntw", "2022-02-14",
 		    "urn:ietf:params:xml:ns:yang:ietf-l3vpn-ntw" },
+		{ "arcana-l3nm", "2026-11-05", "urn:arcana:yang:arcana-l3nm" },
 	};
 	/* What they import alone, for its identities and types. */
 	static const char *const imps[][3] = {
@@ -521,6 +522,7 @@ library_object(void)
 		    "urn:ietf:params:xml:ns:yang:ietf-packet-fields" },
 		{ "ietf-routing-types", "2017-12-04",
 		    "urn:ietf:params:xml:ns:yang:ietf-routing-types" },
+		{ "arcana-steer", "2026-11-04", "urn:arcana:yang:arcana-steer" },
 	};
 	ucl_object_t	*lib, *set, *sets, *arr, *imp, *m, *sch, *ds;
 

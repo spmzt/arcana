@@ -1755,10 +1755,32 @@ whose first part is served.
   modules (a type 0 RD/RT with a 4-byte AS, IPv4's `static-addresses`
   case as a node, `direct` for `direct-routing`).  Open: a key with
   "/" in a path (the server decodes it first), the library's features.
-- 4.5.2 C: the Arcana augmentations of L3NM: application flows, the
-  policy map, performance criteria, breakout, security policies,
-  tunnel virtual connections, probes, steering criteria, routing
-  domains; check: the example document expressible.
+- 4.5.2 done (share/yang arcana-l3nm, the console's): the Arcana
+  augmentations of L3NM, MEF terms in their descriptions.  An SWVC is
+  a vpn-service (its MEF attributes in an `sdwan` container: zones,
+  virtual topologies, application flows and groups, policies with the
+  steering's criteria, rate limiters, importance, MEF 138 function
+  policies and the security policies of them, BFD, intervals, TCA,
+  probes, bgp-sets, NAT64, iBGP, the control plane); its routing
+  domains its VPN instance profiles (RD and RTs L3NM's, "ASN:n" written
+  "0:ASN:n", fib, label and prefix augments; a profile `subscriber`
+  always, with the service's AS and FIB); an edge with end points a
+  vpn-node (vpn-node-id the edge, ne-id its host); an end point a
+  vpn-network-access (interface-id the UNI's or the remote's
+  interface, a VLAN its dot1q cvlan-id, the first provider address
+  and the subnet's length L3NM's local-address and prefix-length,
+  static routes, BGP and OSPF its routing-protocols, a password the
+  explicit key; the UNI id, policy map, NAT, CLAT, remote access,
+  mode, providers, reserved, DNS, lease and secondary subnets
+  augments); the UCSs, edges, UCS End Points and named lists an
+  augment of the top.  Check (console_test l3nm_sdwan): the example
+  document so written, and every field it has not, kept and read back
+  the same.  What does not fit losslessly: an object or a list of one
+  where the document takes either (routing at a UNI, an encryption, a
+  list item `id` alone or `{id}`), null and absent alike, `false` and
+  absent alike for BGP multihop and the UNI's routing, a document's
+  version and changed (the datastore's entity-tag instead), and the
+  order of a UNI's static routes across the two families.
 - 4.5.3 C: the MEF 70.2 importer (document → L3NM + augments) and
   exporter; check: the example document imports and exports to the
   same bytes.

@@ -1,0 +1,2356 @@
+module arcana-l3nm {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-l3nm";
+  prefix arcl3;
+
+  import ietf-l3vpn-ntw {
+    prefix l3nm;
+    reference
+      "RFC 9182: A YANG Network Data Model for Layer 3 VPNs";
+  }
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import arcana-steer {
+    prefix arcst;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "What an SD-WAN service has that RFC 9182's L3NM has no node for,
+     in MEF 70.2's and Mplify 119's terms, as augments of the L3NM the
+     console stores (PLAN-SDN-YANG D-4): the underlay (the UCSs, the
+     edges and their UCS End Points, the named lists), and of each SWVC
+     (an L3NM vpn-service) its zones, virtual topologies, application
+     flows and their groups, policies with their steering criteria,
+     rate limiters, importance levels, the security function policies
+     of MEF 138 and the security policies made of them, BFD, the
+     performance intervals, the TCA thresholds and the probes; its
+     routing domains on the VPN instance profiles (RD and RTs L3NM's);
+     of each SWVC End Point (an L3NM vpn-network-access at the edge's
+     vpn-node) its UNI's id, policy map, NAT, CLAT, the remote access
+     by WireGuard and what its addressing and routing have beyond
+     L3NM's.  An SWVC's End Point is at an SD-WAN UNI: the access's
+     interface-id is the UNI's interface, a VLAN its dot1q cvlan-id,
+     the provider's first address and the subnet's length its
+     local-address and prefix-length; static routes, BGP and OSPF at
+     the UNI are L3NM's routing-protocols, what they have beyond
+     L3NM's here.  The steering's criteria are the policies' (MEF 70.2
+     Tables 5 and 6): what arcana-steer's candidates are chosen by on
+     each edge.";
+
+  revision 2026-11-05 {
+    description
+      "Initial revision.";
+  }
+
+  typedef name {
+    type string {
+      length "1..64";
+      pattern '[ -~]+';
+    }
+    description
+      "An Identifier String (MEF 70.2 §7.17, R12): printable ASCII.";
+  }
+
+  typedef fib {
+    type uint16 {
+      range "1..max";
+    }
+    description
+      "A FreeBSD routing table (setfib(1)).";
+  }
+
+  typedef afs-value {
+    type union {
+      type uint32;
+      type string {
+        length "1..64";
+      }
+    }
+    description
+      "A criterion's value: a number, a range (n-m), or a name the
+       base system knows (a protocol, a service, an application).";
+  }
+
+  typedef ratio {
+    type decimal64 {
+      fraction-digits 6;
+      range "0..1";
+    }
+    description
+      "A ratio, as a loss is.";
+  }
+
+  typedef metric-value {
+    type decimal64 {
+      fraction-digits 6;
+      range "0..max";
+    }
+    description
+      "A performance metric's value: milliseconds of delay or delay
+       variation (arcana-steer's ms), or a loss ratio.";
+  }
+
+  typedef family {
+    type enumeration {
+      enum ipv4 {
+        description
+          "IPv4.";
+      }
+      enum ipv6 {
+        description
+          "IPv6.";
+      }
+      enum both {
+        description
+          "IPv4 and IPv6.";
+      }
+    }
+    description
+      "The address families a session carries (MEF 70.2 §11.6).";
+  }
+
+  typedef sf-list {
+    type enumeration {
+      enum block {
+        description
+          "Block.";
+      }
+      enum allow {
+        description
+          "Allow.";
+      }
+      enum quarantine {
+        description
+          "Quarantine.";
+      }
+    }
+    description
+      "A Security Function Policy's lists (MEF 138 §9).";
+  }
+
+  typedef dns-method {
+    type enumeration {
+      enum unencrypted {
+        description
+          "DNS on port 53.";
+      }
+      enum dot {
+        description
+          "DNS over TLS.";
+      }
+      enum any {
+        description
+          "Either.";
+      }
+    }
+    description
+      "How DNS is carried (MEF 138 Table 8's Encryption Method).";
+  }
+
+  grouping community {
+    description
+      "BGP communities.";
+    list community {
+      key "as value";
+      ordered-by user;
+      description
+        "A community, as:value (RFC 1997).";
+      leaf as {
+        type uint16;
+        description
+          "Its AS half.";
+      }
+      leaf value {
+        type uint16;
+        description
+          "Its value half.";
+      }
+    }
+  }
+
+  grouping bgp-extra {
+    description
+      "A BGP session's own beyond L3NM's (MEF 70.2 §11.6.2): BIRD's
+       preference, BFD and communities.";
+    leaf distance {
+      type uint8 {
+        range "1..255";
+      }
+      description
+        "The preference of its routes (BIRD's).";
+    }
+    leaf bfd {
+      type boolean;
+      description
+        "BFD watches the session.";
+    }
+    uses community;
+  }
+
+  grouping ospf-extra {
+    description
+      "An OSPF area's own beyond L3NM's (MEF 70.2 §11.6.3).";
+    leaf hello {
+      type uint16 {
+        range "1..max";
+      }
+      units "seconds";
+      description
+        "The hello interval.";
+    }
+    leaf dead {
+      type uint16 {
+        range "2..max";
+      }
+      units "seconds";
+      description
+        "The dead interval.";
+    }
+    leaf distance {
+      type uint8 {
+        range "1..255";
+      }
+      description
+        "The preference of its routes.";
+    }
+    leaf bfd {
+      type boolean;
+      description
+        "BFD watches the neighbours.";
+    }
+  }
+
+  grouping underlay-routing {
+    description
+      "BGP and OSPF with an underlay at a UCS End Point (Mplify 119
+       §12.2.3.4), each one session or area, or several.";
+    list bgp {
+      key "id";
+      ordered-by user;
+      description
+        "A BGP session.";
+      leaf id {
+        type uint8;
+        description
+          "Its place.";
+      }
+      leaf family {
+        type family;
+        description
+          "Its families.";
+      }
+      leaf as {
+        type inet:as-number;
+        description
+          "The peer's AS.";
+      }
+      leaf-list neighbor {
+        type inet:ip-address-no-zone;
+        ordered-by user;
+        description
+          "The peers.";
+      }
+      leaf password {
+        type string {
+          length "1..80";
+        }
+        description
+          "TCP MD5's key.";
+      }
+      leaf hold-time {
+        type uint16 {
+          range "3..max";
+        }
+        units "seconds";
+        description
+          "The hold time.";
+      }
+      leaf source {
+        type inet:ip-address-no-zone;
+        description
+          "The address it is from.";
+      }
+      leaf multihop {
+        type boolean;
+        description
+          "Multihop.";
+      }
+      uses bgp-extra;
+    }
+    list ospf {
+      key "id";
+      ordered-by user;
+      description
+        "An OSPF area.";
+      leaf id {
+        type uint8;
+        description
+          "Its place.";
+      }
+      leaf family {
+        type family;
+        description
+          "Its families.";
+      }
+      leaf area {
+        type uint32;
+        description
+          "The area, 0 the backbone.";
+      }
+      leaf cost {
+        type uint16 {
+          range "1..max";
+        }
+        description
+          "The interface's cost.";
+      }
+      leaf password {
+        type string {
+          length "1..80";
+        }
+        description
+          "The key.";
+      }
+      uses ospf-extra;
+    }
+  }
+
+  grouping addressing {
+    description
+      "An SD-WAN UNI's addressing beyond L3NM's (MEF 70.2 §11.4,
+       §11.5): the mode, the provider's addresses (the first is L3NM's
+       local-address), what the edge's DHCP server (dnsmasq) or router
+       advertisements (rtadvd) give out, the secondary subnets.";
+    leaf mode {
+      type enumeration {
+        enum none {
+          description
+            "Not of this family.";
+        }
+        enum static {
+          description
+            "Static.";
+        }
+        enum dhcp {
+          description
+            "Given out by DHCP.";
+        }
+        enum slaac {
+          description
+            "By SLAAC (IPv6).";
+        }
+        enum ll-only {
+          description
+            "Link-local alone (IPv6).";
+        }
+      }
+      description
+        "The UNI's Connection Address (§11.4, §11.5).";
+    }
+    leaf-list provider {
+      type inet:ip-address-no-zone;
+      ordered-by user;
+      description
+        "The provider's addresses in the subnet.";
+    }
+    leaf-list reserved {
+      type inet:ip-prefix;
+      ordered-by user;
+      description
+        "What is not given out.";
+    }
+    leaf-list dns {
+      type inet:ip-address-no-zone;
+      ordered-by user;
+      max-elements 4;
+      description
+        "The DNS servers told to the hosts.";
+    }
+    leaf lease {
+      type string {
+        pattern '[0-9]{1,6}[mhd]';
+      }
+      description
+        "A lease's length, as 12h.";
+    }
+    list secondary {
+      key "prefix";
+      ordered-by user;
+      description
+        "A secondary subnet.";
+      leaf prefix {
+        type inet:ip-prefix;
+        description
+          "Its prefix.";
+      }
+      leaf-list provider {
+        type inet:ip-address-no-zone;
+        ordered-by user;
+        description
+          "The provider's addresses in it.";
+      }
+    }
+  }
+
+  grouping tuple {
+    description
+      "An IPPF entry's (MEF 138 Table 5) or a DPF entry's (Table 6)
+       addresses and what goes with them.";
+    leaf-list sav4 {
+      type inet:ipv4-prefix;
+      ordered-by user;
+      description
+        "Source IPv4 prefixes.";
+    }
+    leaf-list dav4 {
+      type inet:ipv4-prefix;
+      ordered-by user;
+      description
+        "Destination IPv4 prefixes.";
+    }
+    leaf-list protv4 {
+      type afs-value;
+      ordered-by user;
+      description
+        "IPv4 protocols.";
+    }
+    leaf-list sav6 {
+      type inet:ipv6-prefix;
+      ordered-by user;
+      description
+        "Source IPv6 prefixes.";
+    }
+    leaf-list dav6 {
+      type inet:ipv6-prefix;
+      ordered-by user;
+      description
+        "Destination IPv6 prefixes.";
+    }
+    leaf-list nextheadv6 {
+      type afs-value;
+      ordered-by user;
+      description
+        "IPv6 next headers.";
+    }
+    leaf-list sport {
+      type afs-value;
+      ordered-by user;
+      description
+        "Source ports.";
+    }
+    leaf-list dport {
+      type afs-value;
+      ordered-by user;
+      description
+        "Destination ports.";
+    }
+    leaf message-type {
+      type enumeration {
+        enum any {
+          description
+            "Any.";
+        }
+        enum query {
+          description
+            "A query, to port 53.";
+        }
+        enum response {
+          description
+            "A response, from port 53.";
+        }
+      }
+      description
+        "A DPF entry's DNS message type.";
+    }
+  }
+
+  grouping sf-entries {
+    description
+      "A Security Function Policy's list: its entries as its function
+       takes them.";
+    leaf-list value {
+      type string {
+        length "1..1024";
+      }
+      ordered-by user;
+      description
+        "DNF's domain names, URLF's URLs, MBSF's TLS versions, MD+R's
+         hashes.";
+    }
+    list tuple {
+      key "id";
+      ordered-by user;
+      description
+        "IPPF's and DPF's entries.";
+      leaf id {
+        type uint16;
+        description
+          "Its place.";
+      }
+      uses tuple;
+    }
+    list pdns {
+      key "id";
+      ordered-by user;
+      description
+        "PDNS's entries (Table 8).";
+      leaf id {
+        type uint16;
+        description
+          "Its place.";
+      }
+      leaf type {
+        type enumeration {
+          enum A {
+            description
+              "An A answer's address.";
+          }
+          enum AAAA {
+            description
+              "An AAAA answer's address.";
+          }
+          enum CNAME {
+            description
+              "The name an alias leads to.";
+          }
+          enum NS {
+            description
+              "A name server's name or address.";
+          }
+        }
+        description
+          "The record type.";
+      }
+      leaf value {
+        type string {
+          length "1..253";
+        }
+        description
+          "The value: a prefix, a name, or any.";
+      }
+      leaf-list encryption {
+        type dns-method;
+        description
+          "The ways it is for.";
+      }
+    }
+  }
+
+  augment "/l3nm:l3vpn-ntw" {
+    description
+      "The underlay the services are over: what is the network's, not
+       one service's.";
+    container sdwan {
+      description
+        "The SD-WAN's underlay.";
+      list ucs {
+        key "id";
+        ordered-by user;
+        description
+          "An Underlay Connectivity Service (MEF 70.2 §12).";
+        leaf id {
+          type name;
+          description
+            "Its id.";
+        }
+        leaf type {
+          type enumeration {
+            enum public {
+              description
+                "An Internet Access (R170).";
+            }
+            enum private {
+              description
+                "A private UCS (R171).";
+            }
+          }
+          description
+            "Public or private.";
+        }
+        leaf billing {
+          type enumeration {
+            enum flat-rate {
+              description
+                "Flat rate.";
+            }
+            enum usage-based {
+              description
+                "Usage based.";
+            }
+            enum other {
+              description
+                "Other.";
+            }
+          }
+          description
+            "Its billing method (§12.1.3).";
+        }
+        container tunnel {
+          presence "Its TVCs' encapsulation.";
+          description
+            "The Tunnel Virtual Connections over it (§7.10).";
+          leaf kind {
+            type enumeration {
+              enum gre {
+                description
+                  "gre(4).";
+              }
+              enum gif {
+                description
+                  "gif(4).";
+              }
+              enum geneve {
+                description
+                  "geneve(4).";
+              }
+              enum wg {
+                description
+                  "wg(4).";
+              }
+              enum uswe {
+                description
+                  "The USWE tunnel (Mplify 119 §10): IPsec keyed by the
+                   edges.";
+              }
+            }
+            description
+              "The encapsulation.";
+          }
+          leaf ipsec {
+            type boolean;
+            description
+              "Under IPsec IKEv2.";
+          }
+          leaf mss {
+            type union {
+              type enumeration {
+                enum auto {
+                  description
+                    "From the MTU.";
+                }
+              }
+              type uint16 {
+                range "536..1460";
+              }
+            }
+            description
+              "TCP's MSS clamped on the tunnels.";
+          }
+          leaf mtu {
+            type union {
+              type enumeration {
+                enum auto {
+                  description
+                    "1500 less the overhead.";
+                }
+              }
+              type uint16 {
+                range "1280..9000";
+              }
+            }
+            description
+              "The tunnel interfaces' MTU.";
+          }
+          leaf algorithms {
+            type enumeration {
+              enum aes-cbc-hmac-sha2-256 {
+                description
+                  "AES-CBC with HMAC-SHA-256 (R44).";
+              }
+              enum aes-gcm-16 {
+                description
+                  "AES-GCM (R45).";
+              }
+            }
+            description
+              "A USWE tunnel's algorithms.";
+          }
+          leaf esn {
+            type boolean;
+            description
+              "A USWE tunnel's extended sequence numbers.";
+          }
+          leaf encap {
+            type boolean;
+            description
+              "A USWE tunnel's UDP encapsulation.";
+          }
+          leaf lifetime {
+            type uint32 {
+              range "120..31536000";
+            }
+            units "seconds";
+            description
+              "A USWE tunnel's keys' lifetime (R110, R112).";
+          }
+        }
+      }
+      list edge {
+        key "server";
+        ordered-by user;
+        description
+          "An SD-WAN Edge (MEF 70.2 §7.8).";
+        leaf server {
+          type string {
+            length "1..127";
+          }
+          description
+            "Its host's id, or host/jail for a vnet jail on it.";
+        }
+        leaf own-table {
+          type boolean;
+          description
+            "Host as subscriber: the services in its own table.";
+        }
+        leaf host-bird {
+          type boolean;
+          description
+            "The host runs its own BIRD.";
+        }
+        leaf transit {
+          type boolean;
+          description
+            "It carries what the other edges exchange.";
+        }
+        leaf bgp-import {
+          type enumeration {
+            enum all {
+              description
+                "Every BGP route into the kernel.";
+            }
+            enum sets {
+              description
+                "The destination sets' alone.";
+            }
+          }
+          description
+            "Which BGP routes reach the kernel.";
+        }
+        list breakout-set {
+          key "set";
+          ordered-by user;
+          description
+            "The uplink a destination set goes out by.";
+          leaf set {
+            type name;
+            description
+              "A service's bgp-set.";
+          }
+          leaf via {
+            type name;
+            description
+              "A breakout UCS End Point of this edge.";
+          }
+        }
+        leaf-list ntp {
+          type string {
+            length "1..253";
+          }
+          ordered-by user;
+          max-elements 8;
+          description
+            "The time servers (Mplify 119 §12.2.2).";
+        }
+        list ucs-end-point {
+          key "id";
+          ordered-by user;
+          description
+            "A UCS End Point (§12.3).";
+          leaf id {
+            type name;
+            description
+              "Its id.";
+          }
+          leaf ucs {
+            type leafref {
+              path "../../../ucs/id";
+            }
+            description
+              "Its UCS.";
+          }
+          leaf interface {
+            type string {
+              length "1..15";
+            }
+            description
+              "Its interface.";
+          }
+          leaf address {
+            type inet:ip-address-no-zone;
+            description
+              "Its address.";
+          }
+          leaf gateway {
+            type inet:ip-address-no-zone;
+            description
+              "Its gateway.";
+          }
+          leaf beacon {
+            type inet:ip-address-no-zone;
+            description
+              "What is probed by this uplink.";
+          }
+          leaf breakout {
+            type boolean;
+            description
+              "It breaks out to the Internet.";
+          }
+          leaf backup {
+            type boolean;
+            description
+              "A backup.";
+          }
+          leaf bandwidth {
+            type uint64;
+            units "bits/second";
+            description
+              "Its bandwidth.";
+          }
+          leaf preference {
+            type uint16;
+            description
+              "Its place among the edge's uplinks, the higher first.";
+          }
+          leaf nat {
+            type boolean;
+            description
+              "Behind NAT.";
+          }
+          list relay {
+            key "to";
+            ordered-by user;
+            description
+              "A relay toward an edge (FEC, obfuscation).";
+            leaf to {
+              type string;
+              description
+                "The far edge.";
+            }
+            leaf endpoint {
+              type string {
+                length "1..80";
+              }
+              description
+                "host:port, the relay's listener here.";
+            }
+            leaf port {
+              type inet:port-number;
+              description
+                "The far relay's port.";
+            }
+            leaf plugin {
+              type enumeration {
+                enum speederv2 {
+                  description
+                    "UDPspeeder.";
+                }
+              }
+              description
+                "What makes it.";
+            }
+            leaf fec {
+              type string {
+                pattern '[0-9:,]{1,80}';
+              }
+              description
+                "The plugin's ratios.";
+            }
+            leaf mode {
+              type uint8 {
+                range "0..1";
+              }
+              description
+                "The plugin's mode.";
+            }
+          }
+          leaf addressing {
+            type enumeration {
+              enum static {
+                description
+                  "Static.";
+              }
+              enum dhcp {
+                description
+                  "DHCP.";
+              }
+              enum slaac {
+                description
+                  "SLAAC.";
+              }
+            }
+            description
+              "How it is addressed (Mplify 119 §12.2.3.2).";
+          }
+          leaf vrf {
+            type fib;
+            description
+              "A table of its own (§12.2.3.4).";
+          }
+          container routing {
+            description
+              "Its routing with the underlay.";
+            uses underlay-routing;
+          }
+        }
+      }
+      list named-list {
+        key "name";
+        ordered-by user;
+        description
+          "A list kept once and named where a value would be.";
+        leaf name {
+          type string {
+            length "1..32";
+            pattern '[A-Za-z0-9_-]+';
+          }
+          description
+            "Its name.";
+        }
+        leaf kind {
+          type enumeration {
+            enum prefixes {
+              description
+                "Prefixes.";
+            }
+            enum services {
+              description
+                "Protocols and ports.";
+            }
+            enum ucs {
+              description
+                "UCSs.";
+            }
+            enum edges {
+              description
+                "Edges.";
+            }
+            enum ucs-end-points {
+              description
+                "UCS End Points.";
+            }
+          }
+          description
+            "What it holds.";
+        }
+        leaf-list item {
+          type string;
+          ordered-by user;
+          description
+            "Its items: prefixes, UCSs, edges, UCS End Points.";
+        }
+        list end-point {
+          key "id";
+          ordered-by user;
+          description
+            "A UCS End Point with its preference.";
+          leaf id {
+            type name;
+            description
+              "Its id.";
+          }
+          leaf preference {
+            type uint16;
+            description
+              "The higher taken first.";
+          }
+        }
+        leaf-list protocol {
+          type afs-value;
+          ordered-by user;
+          description
+            "A services list's protocols.";
+        }
+        leaf-list port {
+          type afs-value;
+          ordered-by user;
+          description
+            "A services list's ports.";
+        }
+      }
+    }
+  }
+
+  augment "/l3nm:l3vpn-ntw/l3nm:vpn-services/l3nm:vpn-service" {
+    description
+      "An SWVC (MEF 70.2 §9) beyond L3NM's vpn-service.";
+    container sdwan {
+      description
+        "The SWVC's attributes.";
+      leaf fib {
+        type fib;
+        description
+          "Its table on the edges.";
+      }
+      leaf md5 {
+        type string {
+          length "1..80";
+        }
+        description
+          "The key of the edges' BGP among themselves (Mplify 119
+           R12).";
+      }
+      leaf-list ucs {
+        type string;
+        ordered-by user;
+        description
+          "SWVC List of UCSs (§9.3).";
+      }
+      leaf-list reserved-prefix {
+        type inet:ip-prefix;
+        ordered-by user;
+        description
+          "SWVC Reserved Prefixes (§9.4).";
+      }
+      list bgp-set {
+        key "name";
+        ordered-by user;
+        description
+          "A destination set by BGP attribute.";
+        leaf name {
+          type name;
+          description
+            "Its name.";
+        }
+        leaf-list as-path {
+          type inet:as-number;
+          ordered-by user;
+          description
+            "AS numbers a route's path holds.";
+        }
+        uses community;
+      }
+      container nat64 {
+        presence "NAT64 (RFC 6146).";
+        description
+          "The IPv6 hosts' way to the Internet's IPv4.";
+        leaf prefix {
+          type inet:ipv6-prefix;
+          description
+            "The /96.";
+        }
+        leaf pool {
+          type inet:ipv4-prefix;
+          description
+            "The edge's IPv4 addresses.";
+        }
+        leaf edge {
+          type string;
+          description
+            "Where it is done.";
+        }
+      }
+      leaf ibgp {
+        type enumeration {
+          enum tunnel {
+            description
+              "A session each tunnel.";
+          }
+          enum loopback {
+            description
+              "One with each edge, between loopbacks.";
+          }
+        }
+        description
+          "The edges' iBGP.";
+      }
+      container control-plane {
+        presence "A route reflector.";
+        description
+          "The control plane (Mplify 119 §8.3).";
+        leaf host {
+          type string;
+          description
+            "The edge that reflects.";
+        }
+        leaf cluster-id {
+          type inet:ipv4-address-no-zone;
+          description
+            "Its cluster (RFC 4456).";
+        }
+        leaf ctvc {
+          type string;
+          description
+            "The UCS of the control tunnels (R5, R6).";
+        }
+      }
+      list zone {
+        key "name";
+        ordered-by user;
+        description
+          "SWVC List of Zones (§9.5).";
+        leaf name {
+          type name;
+          description
+            "Its name.";
+        }
+        choice prefixes {
+          description
+            "Its prefixes.";
+          leaf default {
+            type empty;
+            description
+              "Default: what no other zone has (R21).";
+          }
+          case listed {
+            leaf-list prefix {
+              type inet:ip-prefix;
+              ordered-by user;
+              description
+                "Its prefixes.";
+            }
+            leaf prefix-list {
+              type string;
+              description
+                "A named list of prefixes.";
+            }
+          }
+        }
+        list policy {
+          key "app";
+          ordered-by user;
+          description
+            "Its policies, zone-wide.";
+          leaf app {
+            type name;
+            description
+              "An application flow or group.";
+          }
+          leaf policy {
+            type name;
+            description
+              "An ingress policy, or Block.";
+          }
+        }
+      }
+      list virtual-topology {
+        key "name";
+        ordered-by user;
+        description
+          "SWVC List of Virtual Topologies (§9.6).";
+        leaf name {
+          type name;
+          description
+            "Its name.";
+        }
+        leaf type {
+          type enumeration {
+            enum multipoint-to-multipoint {
+              description
+                "Multipoint-to-multipoint.";
+            }
+            enum rooted-multipoint {
+              description
+                "Rooted-multipoint.";
+            }
+          }
+          description
+            "Its type.";
+        }
+        leaf-list end-point {
+          type name;
+          ordered-by user;
+          description
+            "A multipoint-to-multipoint's end points.";
+        }
+        leaf-list root {
+          type name;
+          ordered-by user;
+          description
+            "A rooted-multipoint's roots.";
+        }
+        leaf-list leaf {
+          type name;
+          ordered-by user;
+          description
+            "A rooted-multipoint's leaves.";
+        }
+      }
+      container intervals {
+        presence "Its Performance Time Intervals.";
+        description
+          "SWVC Performance Time Intervals (§9.7).";
+        leaf eval {
+          type uint32 {
+            range "100..86400000";
+          }
+          units "milliseconds";
+          description
+            "The evaluation interval.";
+        }
+        leaf arrival {
+          type uint32 {
+            range "1..86400000";
+          }
+          units "milliseconds";
+          description
+            "The arrival interval.";
+        }
+        leaf ir {
+          type uint32 {
+            range "1..86400000";
+          }
+          units "milliseconds";
+          description
+            "The Information Rate interval.";
+        }
+      }
+      container bfd {
+        presence "BFD on the tunnels.";
+        description
+          "BFD on the tunnels (Mplify 119 §10.5).";
+        leaf interval {
+          type uint16 {
+            range "100..300";
+          }
+          units "milliseconds";
+          description
+            "Its interval.";
+        }
+        leaf multiplier {
+          type uint8 {
+            range "2..10";
+          }
+          description
+            "Its multiplier (R159).";
+        }
+      }
+      container tca {
+        presence "Threshold crossing alerts.";
+        description
+          "Threshold crossing alerts (Mplify 119 §11.4, MEF 105 §7.4).";
+        leaf delay {
+          type arcst:ms;
+          description
+            "The one-way delay over which.";
+        }
+        leaf ipdv {
+          type arcst:ms;
+          description
+            "The delay variation over which.";
+        }
+        leaf loss {
+          type ratio;
+          description
+            "The loss ratio over which.";
+        }
+        leaf damping {
+          type uint8 {
+            range "1..100";
+          }
+          description
+            "Intervals a crossing holds before it is told.";
+        }
+      }
+      container probe {
+        presence "The probes' settings.";
+        description
+          "The tunnels' probes (Mplify 119 §11.4), arcana-probe's
+           targets' defaults.";
+        leaf interval {
+          type uint16 {
+            range "10..60000";
+          }
+          units "milliseconds";
+          description
+            "Between two.";
+        }
+        leaf size {
+          type uint16 {
+            range "64..10000";
+          }
+          units "bytes";
+          description
+            "A probe's size.";
+        }
+        leaf count {
+          type uint32 {
+            range "0..2147483647";
+          }
+          description
+            "How many; 0, for ever.";
+        }
+        leaf dscp {
+          type inet:dscp;
+          description
+            "Their DSCP.";
+        }
+        leaf down {
+          type uint8 {
+            range "1..100";
+          }
+          description
+            "Misses in a row for down.";
+        }
+        leaf up {
+          type uint8 {
+            range "1..100";
+          }
+          description
+            "Answers in a row for up.";
+        }
+        leaf timeout {
+          type uint16 {
+            range "10..60000";
+          }
+          units "milliseconds";
+          description
+            "An answer's wait.";
+        }
+        leaf history {
+          type uint32 {
+            range "1..100000";
+          }
+          description
+            "Samples kept.";
+        }
+        leaf report {
+          type uint16 {
+            range "1..1000";
+          }
+          description
+            "Intervals between two reports.";
+        }
+      }
+      list rate-limiter {
+        key "name";
+        ordered-by user;
+        description
+          "SWVC List of Rate Limiters (§9.9).";
+        leaf name {
+          type name;
+          description
+            "Its name.";
+        }
+        leaf commit {
+          type uint64;
+          units "bits/second";
+          description
+            "The committed rate.";
+        }
+        leaf limit {
+          type uint64;
+          units "bits/second";
+          description
+            "The limit, none for none (R7).";
+        }
+      }
+      list security-function-policy {
+        key "id";
+        ordered-by user;
+        description
+          "A Security Function Policy (MEF 138 §9).";
+        leaf id {
+          type name;
+          description
+            "Its Policy ID (R119).";
+        }
+        leaf function {
+          type enumeration {
+            enum ippf {
+              description
+                "IP, port and protocol filtering.";
+            }
+            enum dnf {
+              description
+                "Domain name filtering.";
+            }
+            enum urlf {
+              description
+                "URL filtering.";
+            }
+            enum mbsf {
+              description
+                "The middlebox, TLS opened.";
+            }
+            enum mdr {
+              description
+                "Malware detection and removal.";
+            }
+            enum dpf {
+              description
+                "DNS protocol filtering.";
+            }
+            enum pdns {
+              description
+                "Protective DNS.";
+            }
+          }
+          description
+            "Its Security Function (§8).";
+        }
+        container block {
+          description
+            "Block.";
+          uses sf-entries;
+        }
+        container allow {
+          description
+            "Allow.";
+          uses sf-entries;
+        }
+        container quarantine {
+          description
+            "Quarantine.";
+          uses sf-entries;
+        }
+        container lists {
+          description
+            "The console's lists (feeds or pasted) each list takes.";
+          leaf-list block {
+            type string;
+            ordered-by user;
+            description
+              "Into Block.";
+          }
+          leaf-list allow {
+            type string;
+            ordered-by user;
+            description
+              "Into Allow.";
+          }
+          leaf-list quarantine {
+            type string;
+            ordered-by user;
+            description
+              "Into Quarantine.";
+          }
+        }
+        leaf no-match {
+          type enumeration {
+            enum allow {
+              description
+                "Allow.";
+            }
+            enum block {
+              description
+                "Block.";
+            }
+          }
+          description
+            "No-match.";
+        }
+        leaf duration {
+          type uint16 {
+            range "1..720";
+          }
+          units "hours";
+          description
+            "Between updates of the threat data.";
+        }
+        leaf-list notify {
+          type sf-list;
+          description
+            "The lists whose matches are told (R20).";
+        }
+        leaf detection-type {
+          type enumeration {
+            enum signature {
+              description
+                "By signature (R84).";
+            }
+          }
+          description
+            "MD+R's detection.";
+        }
+        leaf removal {
+          type enumeration {
+            enum block-subset {
+              description
+                "What is found is not passed on (R87).";
+            }
+          }
+          description
+            "MD+R's removal.";
+        }
+        leaf invalid-server-certificate {
+          type enumeration {
+            enum allow {
+              description
+                "Allow.";
+            }
+            enum block {
+              description
+                "Block.";
+            }
+          }
+          description
+            "MBSF (Table 9).";
+        }
+        leaf invalid-client-certificate {
+          type enumeration {
+            enum allow {
+              description
+                "Allow.";
+            }
+          }
+          description
+            "MBSF (Table 9).";
+        }
+        leaf unencrypted {
+          type enumeration {
+            enum allow {
+              description
+                "Allow.";
+            }
+            enum block {
+              description
+                "Block.";
+            }
+          }
+          description
+            "MBSF (Table 9).";
+        }
+        leaf trusted-cas {
+          type enumeration {
+            enum system {
+              description
+                "The system's.";
+            }
+          }
+          description
+            "MBSF (Table 9).";
+        }
+        leaf-list pass-through {
+          type string {
+            length "1..253";
+          }
+          ordered-by user;
+          description
+            "MBSF's names not opened.";
+        }
+        leaf redirect {
+          type boolean;
+          description
+            "DPF's redirect.";
+        }
+        leaf-list southbound {
+          type dns-method;
+          description
+            "PDNS: to the zone's clients (D21, D22).";
+        }
+        leaf northbound {
+          type enumeration {
+            enum unencrypted {
+              description
+                "Unencrypted.";
+            }
+            enum dot {
+              description
+                "DNS over TLS.";
+            }
+          }
+          description
+            "PDNS: to the servers asked.";
+        }
+        leaf-list upstream {
+          type string {
+            length "1..300";
+          }
+          ordered-by user;
+          max-elements 8;
+          description
+            "PDNS's servers: address[@port][#name].";
+        }
+      }
+      list security-policy {
+        key "name";
+        ordered-by user;
+        description
+          "A security policy (MEF 70.2 §9.10), made of Security
+           Function Policies (MEF 138).";
+        leaf name {
+          type name;
+          description
+            "Its name.";
+        }
+        leaf-list function-policy {
+          type leafref {
+            path "../../security-function-policy/id";
+          }
+          ordered-by user;
+          description
+            "Its function policies, one of a function.";
+        }
+        leaf rate-limit {
+          type uint64 {
+            range "1000..1000000000000";
+          }
+          units "bits/second";
+          description
+            "Arcana's own.";
+        }
+        container ids {
+          presence "Suricata on the edge.";
+          description
+            "Intrusion detection, Arcana's own.";
+          leaf mode {
+            type enumeration {
+              enum detect {
+                description
+                  "Watching.";
+              }
+              enum prevent {
+                description
+                  "In the way.";
+              }
+            }
+            description
+              "Its mode.";
+          }
+          leaf ruleset {
+            type boolean;
+            description
+              "suricata-update's rules too.";
+          }
+          leaf-list rule {
+            type string {
+              length "1..4096";
+            }
+            ordered-by user;
+            description
+              "Its own rules.";
+          }
+        }
+      }
+      container importance {
+        presence "Importance levels.";
+        description
+          "Business importance (§9.11).";
+        leaf-list level {
+          type name;
+          ordered-by user;
+          description
+            "The levels.";
+        }
+        leaf default {
+          type name;
+          description
+            "The default level.";
+        }
+      }
+      leaf-list application-flow-group {
+        type name;
+        ordered-by user;
+        description
+          "SWVC List of AFS Groups (§9.13).";
+      }
+      list application-flow {
+        key "name";
+        ordered-by user;
+        description
+          "An Application Flow Specification (§9.14).";
+        leaf name {
+          type name;
+          description
+            "Its name.";
+        }
+        leaf group {
+          type name;
+          description
+            "Its group, or None.";
+        }
+        container criteria {
+          description
+            "Its criteria (Tables 8, 9).";
+          leaf any {
+            type boolean;
+            description
+              "Every packet (R99).";
+          }
+          leaf-list sav4 {
+            type inet:ipv4-prefix;
+            ordered-by user;
+            description
+              "SAV4.";
+          }
+          leaf-list dav4 {
+            type inet:ipv4-prefix;
+            ordered-by user;
+            description
+              "DAV4.";
+          }
+          leaf-list sdav4 {
+            type inet:ipv4-prefix;
+            ordered-by user;
+            description
+              "SDAV4.";
+          }
+          leaf-list sav6 {
+            type inet:ipv6-prefix;
+            ordered-by user;
+            description
+              "SAV6.";
+          }
+          leaf-list dav6 {
+            type inet:ipv6-prefix;
+            ordered-by user;
+            description
+              "DAV6.";
+          }
+          leaf-list sdav6 {
+            type inet:ipv6-prefix;
+            ordered-by user;
+            description
+              "SDAV6.";
+          }
+          leaf-list protv4 {
+            type afs-value;
+            ordered-by user;
+            description
+              "PROTV4.";
+          }
+          leaf-list nextheadv6 {
+            type afs-value;
+            ordered-by user;
+            description
+              "NEXTHEADV6.";
+          }
+          leaf-list dscp {
+            type inet:dscp;
+            ordered-by user;
+            description
+              "DSCP.";
+          }
+          leaf-list sport {
+            type afs-value;
+            ordered-by user;
+            description
+              "SPORT.";
+          }
+          leaf-list dport {
+            type afs-value;
+            ordered-by user;
+            description
+              "DPORT.";
+          }
+          leaf-list sdport {
+            type afs-value;
+            ordered-by user;
+            description
+              "SDPORT.";
+          }
+          leaf-list ethertype {
+            type uint16 {
+              range "1536..65535";
+            }
+            ordered-by user;
+            description
+              "ETHERTYPE.";
+          }
+          leaf-list appid {
+            type string;
+            ordered-by user;
+            description
+              "APPID.";
+          }
+          leaf src-list {
+            type string;
+            description
+              "A named list of prefixes, SAV4 and SAV6.";
+          }
+          leaf dst-list {
+            type string;
+            description
+              "A named list of prefixes, DAV4 and DAV6.";
+          }
+          leaf sdst-list {
+            type string;
+            description
+              "A named list of prefixes, SDAV4 and SDAV6.";
+          }
+          leaf service-list {
+            type string;
+            description
+              "A named list of services, PROTV4 and DPORT.";
+          }
+        }
+      }
+      list policy {
+        key "name";
+        ordered-by user;
+        description
+          "SWVC List of Policies (§9.12): its criteria are what the
+           steering (arcana-steer) chooses each flow's TVC by.";
+        leaf name {
+          type name;
+          description
+            "Its name.";
+        }
+        leaf direction {
+          type enumeration {
+            enum ingress {
+              description
+                "Ingress (§9.12.2).";
+            }
+            enum egress {
+              description
+                "Egress (§9.12.3).";
+            }
+          }
+          description
+            "Its direction (R34).";
+        }
+        container criteria {
+          description
+            "Its criteria (Tables 5, 6).";
+          leaf ucs-list {
+            type string;
+            description
+              "A named list of the UCSs it may take.";
+          }
+          leaf edge-list {
+            type string;
+            description
+              "A named list of the edges it may go by.";
+          }
+          leaf ucs-end-point-list {
+            type string;
+            description
+              "A named list of the UCS End Points it may take, in
+               order.";
+          }
+          leaf encryption {
+            type enumeration {
+              enum required-always {
+                description
+                  "Always.";
+              }
+              enum required-public-only {
+                description
+                  "Over public UCSs.";
+              }
+              enum optional {
+                description
+                  "Optional.";
+              }
+            }
+            description
+              "ENCRYPTION.";
+          }
+          leaf public-private {
+            type enumeration {
+              enum private-only {
+                description
+                  "Private UCSs alone.";
+              }
+              enum either {
+                description
+                  "Either.";
+              }
+            }
+            description
+              "PUBLIC-PRIVATE.";
+          }
+          leaf internet-breakout {
+            type enumeration {
+              enum enabled {
+                description
+                  "Enabled.";
+              }
+              enum disabled {
+                description
+                  "Disabled.";
+              }
+            }
+            description
+              "INTERNET-BREAKOUT.";
+          }
+          leaf backup {
+            type enumeration {
+              enum enabled {
+                description
+                  "Enabled.";
+              }
+              enum disabled {
+                description
+                  "Disabled.";
+              }
+            }
+            description
+              "BACKUP.";
+          }
+          leaf billing-method {
+            type enumeration {
+              enum flat-rate-only {
+                description
+                  "Flat-rate UCSs alone.";
+              }
+              enum usage-based-only {
+                description
+                  "Usage-based UCSs alone.";
+              }
+              enum either {
+                description
+                  "Either.";
+              }
+            }
+            description
+              "BILLING-METHOD.";
+          }
+          leaf virtual-topology {
+            type name;
+            description
+              "VIRTUAL-TOPOLOGY: Swvc or a topology (R47).";
+          }
+          container allowed-destination-zones {
+            presence "ALLOWED-DESTINATION-ZONES said; none listed, none
+                      (R59).";
+            description
+              "ALLOWED-DESTINATION-ZONES.";
+            choice zones {
+              description
+                "All, or those listed.";
+              leaf all {
+                type empty;
+                description
+                  "All.";
+              }
+              leaf-list zone {
+                type name;
+                ordered-by user;
+                description
+                  "A zone, or Self.";
+              }
+            }
+          }
+          leaf business-importance {
+            type name;
+            description
+              "BUSINESS-IMPORTANCE.";
+          }
+          container performance {
+            presence "PERFORMANCE.";
+            description
+              "PERFORMANCE (Table 7): what arcana-steer's candidates
+               are measured against.";
+            container primary {
+              description
+                "The primary metric.";
+              leaf metric {
+                type enumeration {
+                  enum delay {
+                    description
+                      "One-way delay.";
+                  }
+                  enum ipdv {
+                    description
+                      "Delay variation.";
+                  }
+                  enum loss {
+                    description
+                      "Loss ratio.";
+                  }
+                }
+                description
+                  "Which.";
+              }
+              leaf threshold {
+                type metric-value;
+                description
+                  "The threshold.";
+              }
+              leaf ceiling {
+                type metric-value;
+                description
+                  "The ceiling (R72).";
+              }
+              leaf remediation {
+                type metric-value;
+                description
+                  "The remediation (R75, R76).";
+              }
+            }
+            list secondary {
+              key "metric";
+              ordered-by user;
+              description
+                "A secondary metric.";
+              leaf metric {
+                type enumeration {
+                  enum delay {
+                    description
+                      "One-way delay.";
+                  }
+                  enum ipdv {
+                    description
+                      "Delay variation.";
+                  }
+                  enum loss {
+                    description
+                      "Loss ratio.";
+                  }
+                }
+                description
+                  "Which.";
+              }
+              leaf threshold {
+                type metric-value;
+                description
+                  "The threshold.";
+              }
+            }
+          }
+          choice rate {
+            description
+              "BANDWIDTH: a rate limiter, or a rate of its own.";
+            leaf rate-limiter {
+              type name;
+              description
+                "A rate limiter's name.";
+            }
+            container bandwidth {
+              description
+                "A commit and a limit (§7.15).";
+              leaf commit {
+                type uint64;
+                units "bits/second";
+                description
+                  "The committed rate.";
+              }
+              leaf limit {
+                type uint64;
+                units "bits/second";
+                description
+                  "The limit.";
+              }
+            }
+          }
+          leaf af-security-ingress {
+            type name;
+            description
+              "AF-SECURITY-INGRESS: a security policy.";
+          }
+          leaf af-security-egress {
+            type name;
+            description
+              "AF-SECURITY-EGRESS: a security policy.";
+          }
+          leaf egress-block {
+            type enumeration {
+              enum allow {
+                description
+                  "Allow.";
+              }
+              enum discard {
+                description
+                  "Discard.";
+              }
+            }
+            description
+              "EGRESS-BLOCK.";
+          }
+        }
+      }
+    }
+  }
+
+  augment "/l3nm:l3vpn-ntw/l3nm:vpn-services/l3nm:vpn-service/"
+        + "l3nm:vpn-instance-profiles/l3nm:vpn-instance-profile" {
+    description
+      "A routing domain of the SWVC (Mplify 119 §7.3, R15-R26): its RD
+       and RTs are the profile's; the profile subscriber, the service's
+       own table, is always there.";
+    leaf domain {
+      type enumeration {
+        enum service {
+          description
+            "The service domain: the tunnels' addresses.";
+        }
+        enum breakout {
+          description
+            "The breakout domain: a table for the Internet.";
+        }
+        enum subscriber {
+          description
+            "The subscriber domain: the service's own table.";
+        }
+      }
+      description
+        "Which domain the document said.";
+    }
+    leaf fib {
+      type fib;
+      description
+        "Its table (R20).";
+    }
+    leaf label {
+      type uint32 {
+        range "16..1048575";
+      }
+      description
+        "Its MPLS label (R19).";
+    }
+    leaf prefix {
+      type inet:ip-prefix;
+      description
+        "The service domain's prefix.";
+    }
+  }
+
+  augment "/l3nm:l3vpn-ntw/l3nm:vpn-services/l3nm:vpn-service/"
+        + "l3nm:vpn-nodes/l3nm:vpn-node/l3nm:vpn-network-accesses/"
+        + "l3nm:vpn-network-access" {
+    description
+      "An SWVC End Point (MEF 70.2 §10) beyond L3NM's access.";
+    container sdwan {
+      description
+        "The end point's attributes.";
+      leaf uni-id {
+        type name;
+        description
+          "Its SD-WAN UNI's id (§11).";
+      }
+      leaf host-addressed {
+        type boolean;
+        description
+          "The host has the UNI's addresses already.";
+      }
+      leaf max-frame {
+        type uint16 {
+          range "1522..max";
+        }
+        units "bytes";
+        description
+          "The UNI's maximum frame (R126).";
+      }
+      container clat {
+        presence "CLAT (RFC 6877).";
+        description
+          "The IPv4 hosts behind the UNI as IPv6 to the NAT64.";
+        leaf prefix {
+          type inet:ipv6-prefix;
+          description
+            "Its /96.";
+        }
+      }
+      list policy-map {
+        key "zone app";
+        ordered-by user;
+        description
+          "Its policy map (§10.4).";
+        leaf zone {
+          type name;
+          description
+            "A zone, or Internet.";
+        }
+        leaf app {
+          type name;
+          description
+            "An application flow or group.";
+        }
+        leaf ingress {
+          type name;
+          description
+            "An ingress policy, or Block.";
+        }
+        leaf egress {
+          type name;
+          description
+            "An egress policy.";
+        }
+      }
+      container nat {
+        presence "NAT (§10.5).";
+        description
+          "Its NAT.";
+        choice nat {
+          description
+            "Disabled, or how.";
+          leaf disabled {
+            type empty;
+            description
+              "Disabled.";
+          }
+          case enabled {
+            leaf ip-version {
+              type family;
+              description
+                "Its families.";
+            }
+            leaf public-prefix {
+              type inet:ipv4-prefix;
+              description
+                "The public prefix.";
+            }
+            leaf-list exception {
+              type inet:ip-prefix;
+              ordered-by user;
+              description
+                "Not translated.";
+            }
+          }
+        }
+      }
+      leaf availability {
+        type decimal64 {
+          fraction-digits 6;
+          range "0..max";
+        }
+        description
+          "Its availability objective.";
+      }
+      container remote {
+        presence "A remote end point: identities by WireGuard.";
+        description
+          "No UNI: a wg(4) interface of the edge in the service's
+           table; L3NM's interface-id is it.";
+        leaf prefix {
+          type inet:ip-prefix;
+          description
+            "Where the identities' addresses come from.";
+        }
+        leaf port {
+          type inet:port-number;
+          description
+            "The port it listens on.";
+        }
+        leaf reauth {
+          type uint32 {
+            range "3600..31622400";
+          }
+          units "seconds";
+          description
+            "How long an identity is authorised for.";
+        }
+        list group {
+          key "name";
+          ordered-by user;
+          description
+            "A group of identities.";
+          leaf name {
+            type name;
+            description
+              "Its name.";
+          }
+          leaf zone {
+            type name;
+            description
+              "The zone its members' flows are of.";
+          }
+          leaf pool {
+            type inet:ip-prefix;
+            description
+              "Where its members' addresses come from.";
+          }
+          leaf-list reach {
+            type name;
+            ordered-by user;
+            description
+              "The groups its members reach.";
+          }
+        }
+        list identity {
+          key "name";
+          ordered-by user;
+          description
+            "An identity.";
+          leaf name {
+            type name;
+            description
+              "Its name.";
+          }
+          leaf zone {
+            type name;
+            description
+              "Its zone, where it is in no group.";
+          }
+          leaf group {
+            type name;
+            description
+              "Its group.";
+          }
+          leaf public-key {
+            type string {
+              pattern '[A-Za-z0-9+/]{43}=';
+            }
+            description
+              "Its WireGuard public key.";
+          }
+          leaf issued {
+            type int64;
+            description
+              "When it was issued, seconds since the epoch.";
+          }
+          leaf user {
+            type boolean;
+            description
+              "A console user's.";
+          }
+        }
+      }
+    }
+  }
+
+  augment "/l3nm:l3vpn-ntw/l3nm:vpn-services/l3nm:vpn-service/"
+        + "l3nm:vpn-nodes/l3nm:vpn-node/l3nm:vpn-network-accesses/"
+        + "l3nm:vpn-network-access/l3nm:ip-connection/l3nm:ipv4" {
+    description
+      "The UNI's IPv4 beyond L3NM's.";
+    uses addressing;
+  }
+
+  augment "/l3nm:l3vpn-ntw/l3nm:vpn-services/l3nm:vpn-service/"
+        + "l3nm:vpn-nodes/l3nm:vpn-node/l3nm:vpn-network-accesses/"
+        + "l3nm:vpn-network-access/l3nm:ip-connection/l3nm:ipv6" {
+    description
+      "The UNI's IPv6 beyond L3NM's.";
+    uses addressing;
+  }
+
+  augment "/l3nm:l3vpn-ntw/l3nm:vpn-services/l3nm:vpn-service/"
+        + "l3nm:vpn-nodes/l3nm:vpn-node/l3nm:vpn-network-accesses/"
+        + "l3nm:vpn-network-access/l3nm:routing-protocols/"
+        + "l3nm:routing-protocol/l3nm:static/"
+        + "l3nm:cascaded-lan-prefixes/l3nm:ipv4-lan-prefixes" {
+    description
+      "A static route at the UNI (§11.6.1).";
+    leaf distance {
+      type uint8 {
+        range "1..255";
+      }
+      description
+        "Its preference.";
+    }
+  }
+
+  augment "/l3nm:l3vpn-ntw/l3nm:vpn-services/l3nm:vpn-service/"
+        + "l3nm:vpn-nodes/l3nm:vpn-node/l3nm:vpn-network-accesses/"
+        + "l3nm:vpn-network-access/l3nm:routing-protocols/"
+        + "l3nm:routing-protocol/l3nm:static/"
+        + "l3nm:cascaded-lan-prefixes/l3nm:ipv6-lan-prefixes" {
+    description
+      "A static route at the UNI (§11.6.1).";
+    leaf distance {
+      type uint8 {
+        range "1..255";
+      }
+      description
+        "Its preference.";
+    }
+  }
+
+  augment "/l3nm:l3vpn-ntw/l3nm:vpn-services/l3nm:vpn-service/"
+        + "l3nm:vpn-nodes/l3nm:vpn-node/l3nm:vpn-network-accesses/"
+        + "l3nm:vpn-network-access/l3nm:routing-protocols/"
+        + "l3nm:routing-protocol/l3nm:bgp" {
+    description
+      "BGP at the UNI beyond L3NM's (§11.6.2).";
+    uses bgp-extra;
+  }
+
+  augment "/l3nm:l3vpn-ntw/l3nm:vpn-services/l3nm:vpn-service/"
+        + "l3nm:vpn-nodes/l3nm:vpn-node/l3nm:vpn-network-accesses/"
+        + "l3nm:vpn-network-access/l3nm:routing-protocols/"
+        + "l3nm:routing-protocol/l3nm:ospf" {
+    description
+      "OSPF at the UNI beyond L3NM's (§11.6.3).";
+    uses ospf-extra;
+  }
+}

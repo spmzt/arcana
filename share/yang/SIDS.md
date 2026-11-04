@@ -170,6 +170,7 @@ on the wire.
 | 86 400 | 800 | `ietf-l3vpn-ntw@2022-02-14`, RFC 9182 (no IETF range): the services as the console stores them | `share/yang/ietf-l3vpn-ntw@2022-02-14.sid` (622 used) |
 | 87 200 | 100 | `ietf-key-chain@2017-06-15`, RFC 8177 (no IETF range; imported by `ietf-l3vpn-ntw`, its identities used) | `share/yang/ietf-key-chain@2017-06-15.sid` (56 used) |
 | 87 300 | 100 | `ietf-tcp@2024-10-10`, RFC 9648 (no IETF range; its identities derive from `ietf-key-chain`'s) | `share/yang/ietf-tcp@2024-10-10.sid` (44 used) |
+| 87 400 | 600 | `arcana-l3nm`, the SD-WAN's augments of L3NM, the console's | `share/yang/arcana-l3nm@2026-11-05.sid` (347 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

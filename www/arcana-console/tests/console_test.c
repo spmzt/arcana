@@ -1752,6 +1752,362 @@ ATF_TC_BODY(l3nm, tc)
 	resp_free(&r);
 }
 
+/*
+ * The SD-WAN document's example (sdwan_good, @A and @B as edges a and
+ * b) as L3NM and arcana-l3nm, by the mapping arcana-l3nm says: an SWVC
+ * a vpn-service, its domains its VPN instance profiles (RD, RTs), each
+ * edge with end points a vpn-node, each end point a vpn-network-access
+ * (the UNI's interface, VLAN, first provider address and subnet length,
+ * static routes and BGP L3NM's), the rest the augments.
+ */
+static const char l3nm_good[] =
+    "{\"ietf-l3vpn-ntw:l3vpn-ntw\":{\"arcana-l3nm:sdwan\":{\"ucs\":[{\"id\""
+    ":\"inet\",\"type\":\"public\",\"billing\":\"flat-rate\",\"tunnel\":{\""
+    "kind\":\"gre\",\"ipsec\":true}},{\"id\":\"mpls\",\"type\":\"private\","
+    "\"billing\":\"flat-rate\",\"tunnel\":{\"kind\":\"geneve\"}}],\"edge\":"
+    "[{\"server\":\"a\",\"ntp\":[\"ntp.example.org\",\"10.99.0.9\"],\"ucs-e"
+    "nd-point\":[{\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0"
+    "\",\"breakout\":true},{\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface"
+    "\":\"vtnet1\"}]},{\"server\":\"b\",\"ucs-end-point\":[{\"id\":\"b-inet"
+    "\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"},{\"id\":\"b-mpls\",\"ucs"
+    "\":\"mpls\",\"interface\":\"vtnet1\",\"backup\":true}]}]},\"vpn-servic"
+    "es\":{\"vpn-service\":[{\"vpn-id\":\"acme\",\"vpn-instance-profiles\":"
+    "{\"vpn-instance-profile\":[{\"profile-id\":\"subscriber\",\"local-as\""
+    ":64600,\"rd\":\"0:64600:3\",\"arcana-l3nm:domain\":\"subscriber\",\"ar"
+    "cana-l3nm:fib\":1,\"arcana-l3nm:label\":1003},{\"profile-id\":\"servic"
+    "e\",\"local-as\":64600,\"rd\":\"0:64600:1\",\"address-family\":[{\"add"
+    "ress-family\":\"ietf-vpn-common:dual-stack\",\"vpn-targets\":{\"vpn-ta"
+    "rget\":[{\"id\":1,\"route-targets\":[{\"route-target\":\"0:64600:1\"}]"
+    ",\"route-target-type\":\"both\"}]}}],\"arcana-l3nm:domain\":\"service"
+    "\",\"arcana-l3nm:label\":1001,\"arcana-l3nm:prefix\":\"100.64.0.0/24\""
+    "},{\"profile-id\":\"breakout\",\"local-as\":64600,\"rd\":\"0:64600:2\""
+    ",\"arcana-l3nm:domain\":\"breakout\",\"arcana-l3nm:fib\":2,\"arcana-l3"
+    "nm:label\":1002}]},\"vpn-nodes\":{\"vpn-node\":[{\"vpn-node-id\":\"a\""
+    ",\"ne-id\":\"a\",\"active-vpn-instance-profiles\":{\"vpn-instance-prof"
+    "ile\":[{\"profile-id\":\"subscriber\"}]},\"vpn-network-accesses\":{\"v"
+    "pn-network-access\":[{\"id\":\"hq\",\"interface-id\":\"vtnet2\",\"vpn-"
+    "network-access-type\":\"ietf-vpn-common:multipoint\",\"vpn-instance-pr"
+    "ofile\":\"subscriber\",\"ip-connection\":{\"ipv4\":{\"local-address\":"
+    "\"10.1.0.1\",\"prefix-length\":24,\"address-allocation-type\":\"ietf-l"
+    "3vpn-ntw:provider-dhcp\",\"arcana-l3nm:mode\":\"dhcp\",\"arcana-l3nm:p"
+    "rovider\":[\"10.1.0.1\"],\"arcana-l3nm:reserved\":[\"10.1.0.0/26\",\"1"
+    "0.1.0.200/30\"],\"arcana-l3nm:dns\":[\"10.1.0.1\"],\"arcana-l3nm:lease"
+    "\":\"1h\"}},\"routing-protocols\":{\"routing-protocol\":[{\"id\":\"sta"
+    "tic\",\"type\":\"ietf-vpn-common:static-routing\",\"static\":{\"cascad"
+    "ed-lan-prefixes\":{\"ipv4-lan-prefixes\":[{\"lan\":\"10.1.8.0/22\",\"n"
+    "ext-hop\":\"10.1.0.2\",\"arcana-l3nm:distance\":10}]}}},{\"id\":\"bgp-"
+    "1\",\"type\":\"ietf-vpn-common:bgp-routing\",\"bgp\":{\"peer-as\":6501"
+    "0,\"address-family\":\"ietf-vpn-common:ipv4\",\"neighbor\":[\"10.1.0.2"
+    "\"],\"bgp-timers\":{\"hold-time\":90},\"authentication\":{\"enable\":t"
+    "rue,\"keying-material\":{\"key\":\"s3cret\",\"crypto-algorithm\":\"iet"
+    "f-key-chain:md5\"}},\"arcana-l3nm:distance\":150,\"arcana-l3nm:communi"
+    "ty\":[{\"as\":64600,\"value\":100}]}}]},\"arcana-l3nm:sdwan\":{\"uni-i"
+    "d\":\"uni-hq\",\"policy-map\":[{\"zone\":\"office\",\"app\":\"all\",\""
+    "ingress\":\"hubonly\",\"egress\":\"quiet\"}],\"nat\":{\"ip-version\":"
+    "\"ipv4\",\"public-prefix\":\"198.51.100.0/30\"}}},{\"id\":\"road\",\"i"
+    "nterface-id\":\"wg5\",\"vpn-network-access-type\":\"ietf-vpn-common:mu"
+    "ltipoint\",\"vpn-instance-profile\":\"subscriber\",\"arcana-l3nm:sdwan"
+    "\":{\"remote\":{\"prefix\":\"10.30.0.0/24\",\"port\":51820,\"group\":["
+    "{\"name\":\"staff\",\"zone\":\"office\",\"pool\":\"10.30.0.64/26\"},{"
+    "\"name\":\"guests\",\"zone\":\"office\"}],\"identity\":[{\"name\":\"al"
+    "ice\",\"zone\":\"office\",\"public-key\":\"xTIBA5rboUvnH4htodjb6e697Qj"
+    "LERt1NAB4mZqp8Dg=\"},{\"name\":\"carol\",\"group\":\"staff\",\"public-"
+    "key\":\"HIgo9xNzJMWLKASShiTqIYNW7HVnKq0pjaZxmvZ6rKA=\"}]}}}]}},{\"vpn-"
+    "node-id\":\"b\",\"ne-id\":\"b\",\"active-vpn-instance-profiles\":{\"vp"
+    "n-instance-profile\":[{\"profile-id\":\"subscriber\"}]},\"vpn-network-"
+    "accesses\":{\"vpn-network-access\":[{\"id\":\"branch\",\"interface-id"
+    "\":\"vtnet2\",\"vpn-network-access-type\":\"ietf-vpn-common:multipoint"
+    "\",\"vpn-instance-profile\":\"subscriber\",\"connection\":{\"encapsula"
+    "tion\":{\"type\":\"ietf-vpn-common:dot1q\",\"dot1q\":{\"cvlan-id\":20}"
+    "}},\"ip-connection\":{\"ipv6\":{\"local-address\":\"2001:db8:1::1\",\""
+    "prefix-length\":64,\"address-allocation-type\":\"ietf-l3vpn-ntw:slaac"
+    "\",\"arcana-l3nm:mode\":\"slaac\",\"arcana-l3nm:provider\":[\"2001:db8"
+    ":1::1\"],\"arcana-l3nm:dns\":[\"2001:db8:1::1\"]}},\"arcana-l3nm:sdwan"
+    "\":{\"uni-id\":\"uni-br\"}}]}}]},\"arcana-l3nm:sdwan\":{\"fib\":1,\"md"
+    "5\":\"edges-secret\",\"ucs\":[\"inet\",\"mpls\"],\"reserved-prefix\":["
+    "\"100.64.0.0/24\"],\"zone\":[{\"name\":\"office\",\"prefix\":[\"10.1.0"
+    ".0/16\"],\"policy\":[{\"app\":\"web\",\"policy\":\"fast\"}]},{\"name\""
+    ":\"rest\",\"default\":[null]}],\"virtual-topology\":[{\"name\":\"hub\""
+    ",\"type\":\"rooted-multipoint\",\"root\":[\"hq\"],\"leaf\":[\"branch\""
+    "]}],\"intervals\":{\"eval\":1000,\"arrival\":100,\"ir\":500},\"bfd\":{"
+    "\"interval\":200,\"multiplier\":3},\"tca\":{\"delay\":\"30\",\"loss\":"
+    "\"0.05\",\"damping\":2},\"rate-limiter\":[{\"name\":\"shared\",\"commi"
+    "t\":\"1000000\",\"limit\":\"5000000\"}],\"security-function-policy\":["
+    "{\"id\":\"g-ippf\",\"function\":\"ippf\",\"allow\":{\"tuple\":[{\"id\""
+    ":1,\"dav4\":[\"192.0.2.8/29\"]}]},\"block\":{\"tuple\":[{\"id\":1,\"da"
+    "v4\":[\"192.0.2.0/24\"]}]},\"no-match\":\"allow\",\"duration\":6},{\"i"
+    "d\":\"g-dnf\",\"function\":\"dnf\",\"block\":{\"value\":[\"ads.example"
+    "\"]},\"allow\":{\"value\":[\"ok.ads.example\"]},\"no-match\":\"allow\""
+    ",\"duration\":6},{\"id\":\"g-dpf\",\"function\":\"dpf\",\"block\":{\"t"
+    "uple\":[{\"id\":1,\"sav4\":[\"192.0.2.53/32\"],\"message-type\":\"resp"
+    "onse\"},{\"id\":2,\"dav4\":[\"192.0.2.54/32\"],\"message-type\":\"quer"
+    "y\"}]},\"no-match\":\"block\",\"redirect\":true,\"duration\":6},{\"id"
+    "\":\"g-urlf\",\"function\":\"urlf\",\"block\":{\"value\":[\"bad.exampl"
+    "e\"]},\"no-match\":\"allow\",\"duration\":6},{\"id\":\"g-mdr\",\"funct"
+    "ion\":\"mdr\",\"detection-type\":\"signature\",\"removal\":\"block-sub"
+    "set\",\"block\":{\"value\":[\"44D88612FEA8A8F36DE82E1278ABB02F:68\",\""
+    "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f\"]},"
+    "\"allow\":{\"value\":[\"3395856ce81f2b7382dee72602f798b642f14140\"]},"
+    "\"no-match\":\"allow\",\"duration\":24}],\"security-policy\":[{\"name"
+    "\":\"guard\",\"function-policy\":[\"g-ippf\",\"g-dnf\",\"g-dpf\",\"g-u"
+    "rlf\",\"g-mdr\"],\"rate-limit\":\"2000000\",\"ids\":{\"mode\":\"preven"
+    "t\",\"ruleset\":true,\"rule\":[\"alert http any any -> $HOME_NET any ("
+    "msg:\\\"x\\\"; sid:1000001; rev:1;)\"]}}],\"importance\":{\"level\":["
+    "\"high\",\"low\"],\"default\":\"low\"},\"application-flow-group\":[\"b"
+    "ulk\"],\"application-flow\":[{\"name\":\"web\",\"criteria\":{\"dport\""
+    ":[80,\"https\"],\"protv4\":[\"tcp\"]}},{\"name\":\"voice\",\"group\":"
+    "\"bulk\",\"criteria\":{\"appid\":[\"sip\"],\"dscp\":[46]}},{\"name\":"
+    "\"all\",\"criteria\":{\"any\":true}}],\"policy\":[{\"name\":\"fast\","
+    "\"direction\":\"ingress\",\"criteria\":{\"encryption\":\"required-publ"
+    "ic-only\",\"performance\":{\"primary\":{\"metric\":\"delay\",\"thresho"
+    "ld\":\"10\",\"ceiling\":\"12\",\"remediation\":\"9\"},\"secondary\":[{"
+    "\"metric\":\"loss\",\"threshold\":\"0.05\"}]},\"rate-limiter\":\"share"
+    "d\",\"business-importance\":\"high\",\"internet-breakout\":\"enabled\""
+    ",\"af-security-ingress\":\"guard\"}},{\"name\":\"hubonly\",\"direction"
+    "\":\"ingress\",\"criteria\":{\"virtual-topology\":\"hub\"}},{\"name\":"
+    "\"quiet\",\"direction\":\"egress\",\"criteria\":{\"egress-block\":\"di"
+    "scard\"}}]}}]}}}";
+
+static const char l3nm_full[] =
+    "{\"ietf-l3vpn-ntw:l3vpn-ntw\":{\"arcana-l3nm:sdwan\":{\"ucs\":[{\"id\""
+    ":\"wgu\",\"type\":\"public\",\"billing\":\"usage-based\",\"tunnel\":{"
+    "\"kind\":\"wg\",\"mss\":\"auto\",\"mtu\":1420}},{\"id\":\"usw\",\"type"
+    "\":\"public\",\"billing\":\"other\",\"tunnel\":{\"kind\":\"uswe\",\"ms"
+    "s\":1360,\"mtu\":\"auto\",\"algorithms\":\"aes-gcm-16\",\"esn\":true,"
+    "\"encap\":true,\"lifetime\":3600}}],\"edge\":[{\"server\":\"c/edge1\","
+    "\"own-table\":true,\"host-bird\":false,\"transit\":true,\"bgp-import\""
+    ":\"sets\",\"breakout-set\":[{\"set\":\"cdn\",\"via\":\"c-wg\"}],\"ucs-"
+    "end-point\":[{\"id\":\"c-wg\",\"ucs\":\"wgu\",\"interface\":\"igb0\","
+    "\"address\":\"192.0.2.10\",\"gateway\":\"192.0.2.1\",\"beacon\":\"198."
+    "51.100.53\",\"breakout\":true,\"bandwidth\":\"100000000\",\"preference"
+    "\":200,\"nat\":true,\"relay\":[{\"to\":\"a\",\"endpoint\":\"127.0.0.1:"
+    "4096\",\"port\":4097,\"plugin\":\"speederv2\",\"fec\":\"20:10\",\"mode"
+    "\":0}],\"addressing\":\"dhcp\",\"vrf\":3,\"routing\":{\"bgp\":[{\"id\""
+    ":1,\"family\":\"both\",\"as\":65001,\"neighbor\":[\"192.0.2.1\",\"2001"
+    ":db8::1\"],\"password\":\"pw\",\"hold-time\":30,\"source\":\"192.0.2.1"
+    "0\",\"multihop\":true,\"distance\":20,\"bfd\":true,\"community\":[{\"a"
+    "s\":65001,\"value\":7}]}],\"ospf\":[{\"id\":1,\"family\":\"ipv4\",\"ar"
+    "ea\":0,\"cost\":10,\"password\":\"k\",\"hello\":10,\"dead\":40,\"dista"
+    "nce\":110,\"bfd\":false}]}}]}],\"named-list\":[{\"name\":\"branches\","
+    "\"kind\":\"prefixes\",\"item\":[\"10.2.0.0/16\"]},{\"name\":\"web\",\""
+    "kind\":\"services\",\"protocol\":[\"tcp\"],\"port\":[80,\"443\",\"8000"
+    "-8080\"]},{\"name\":\"links\",\"kind\":\"ucs-end-points\",\"item\":[\""
+    "c-wg\"],\"end-point\":[{\"id\":\"c-wg\",\"preference\":5}]}]},\"vpn-se"
+    "rvices\":{\"vpn-service\":[{\"vpn-id\":\"full\",\"vpn-instance-profile"
+    "s\":{\"vpn-instance-profile\":[{\"profile-id\":\"subscriber\",\"local-"
+    "as\":64700,\"arcana-l3nm:fib\":9}]},\"vpn-nodes\":{\"vpn-node\":[{\"vp"
+    "n-node-id\":\"c/edge1\",\"ne-id\":\"c\",\"active-vpn-instance-profiles"
+    "\":{\"vpn-instance-profile\":[{\"profile-id\":\"subscriber\"}]},\"vpn-"
+    "network-accesses\":{\"vpn-network-access\":[{\"id\":\"lan\",\"interfac"
+    "e-id\":\"igb1\",\"vpn-instance-profile\":\"subscriber\",\"connection\""
+    ":{\"encapsulation\":{\"type\":\"ietf-vpn-common:untagged-int\"}},\"ip-"
+    "connection\":{\"ipv4\":{\"local-address\":\"10.2.0.1\",\"prefix-length"
+    "\":24,\"address-allocation-type\":\"ietf-l3vpn-ntw:static-address\",\""
+    "arcana-l3nm:mode\":\"static\",\"arcana-l3nm:provider\":[\"10.2.0.1\","
+    "\"10.2.0.2\"],\"arcana-l3nm:secondary\":[{\"prefix\":\"10.2.9.0/24\","
+    "\"provider\":[\"10.2.9.1\"]}]},\"ipv6\":{\"arcana-l3nm:mode\":\"ll-onl"
+    "y\"}},\"routing-protocols\":{\"routing-protocol\":[{\"id\":\"static\","
+    "\"type\":\"ietf-vpn-common:static-routing\",\"static\":{\"cascaded-lan"
+    "-prefixes\":{\"ipv6-lan-prefixes\":[{\"lan\":\"2001:db8:9::/48\",\"nex"
+    "t-hop\":\"fe80::1\",\"arcana-l3nm:distance\":5}]}}},{\"id\":\"ospf-1\""
+    ",\"type\":\"ietf-vpn-common:ospf-routing\",\"ospf\":{\"address-family"
+    "\":\"ietf-vpn-common:ipv4\",\"area-id\":\"0.0.0.1\",\"metric\":10,\"au"
+    "thentication\":{\"enable\":true,\"keying-material\":{\"key\":\"k2\"}},"
+    "\"arcana-l3nm:hello\":5,\"arcana-l3nm:dead\":20,\"arcana-l3nm:bfd\":tr"
+    "ue,\"arcana-l3nm:distance\":100}}]},\"arcana-l3nm:sdwan\":{\"uni-id\":"
+    "\"uni-lan\",\"host-addressed\":true,\"max-frame\":9000,\"clat\":{\"pre"
+    "fix\":\"2001:db8:46::/96\"},\"policy-map\":[{\"zone\":\"Internet\",\"a"
+    "pp\":\"all\",\"egress\":\"out\"}],\"nat\":{\"disabled\":[null]},\"avai"
+    "lability\":\"99.9\"}}]}}]},\"arcana-l3nm:sdwan\":{\"fib\":9,\"ucs\":["
+    "\"wgu\",\"usw\"],\"bgp-set\":[{\"name\":\"cdn\",\"as-path\":[13335],\""
+    "community\":[{\"as\":65001,\"value\":1}]}],\"nat64\":{\"prefix\":\"64:"
+    "ff9b::/96\",\"pool\":\"192.0.2.64/28\",\"edge\":\"c/edge1\"},\"ibgp\":"
+    "\"tunnel\",\"control-plane\":{\"host\":\"c/edge1\",\"cluster-id\":\"10"
+    ".255.0.1\",\"ctvc\":\"wgu\"},\"zone\":[{\"name\":\"lan\",\"prefix-list"
+    "\":\"branches\"}],\"virtual-topology\":[{\"name\":\"mesh\",\"type\":\""
+    "multipoint-to-multipoint\",\"end-point\":[\"lan\",\"lan2\"]}],\"probe"
+    "\":{\"interval\":500,\"size\":128,\"count\":0,\"dscp\":46,\"down\":3,"
+    "\"up\":2,\"timeout\":1000,\"history\":100,\"report\":10},\"tca\":{\"ip"
+    "dv\":\"5.5\"},\"security-function-policy\":[{\"id\":\"m\",\"function\""
+    ":\"mbsf\",\"allow\":{\"value\":[\"tls1.2\",\"tls1.3\"]},\"no-match\":"
+    "\"block\",\"invalid-server-certificate\":\"block\",\"invalid-client-ce"
+    "rtificate\":\"allow\",\"unencrypted\":\"allow\",\"trusted-cas\":\"syst"
+    "em\",\"pass-through\":[\"*.bank.example\"]},{\"id\":\"p\",\"function\""
+    ":\"pdns\",\"block\":{\"pdns\":[{\"id\":1,\"type\":\"A\",\"value\":\"20"
+    "3.0.113.0/24\",\"encryption\":[\"any\"]},{\"id\":2,\"type\":\"NS\",\"v"
+    "alue\":\"ns.bad.example\"}]},\"lists\":{\"block\":[\"feed1\"]},\"no-ma"
+    "tch\":\"allow\",\"duration\":12,\"notify\":[\"block\",\"quarantine\"],"
+    "\"southbound\":[\"unencrypted\",\"dot\"],\"northbound\":\"dot\",\"upst"
+    "ream\":[\"192.0.2.53@853#dns.example\"]},{\"id\":\"q\",\"function\":\""
+    "ippf\",\"quarantine\":{\"tuple\":[{\"id\":1,\"sav6\":[\"2001:db8::/32"
+    "\"],\"nextheadv6\":[\"udp\"],\"sport\":[53],\"dport\":[\"1000-2000\"]}"
+    "]},\"no-match\":\"allow\",\"duration\":1}],\"security-policy\":[{\"nam"
+    "e\":\"edge\",\"function-policy\":[\"m\",\"p\"]}],\"application-flow\":"
+    "[{\"name\":\"svc\",\"group\":\"None\",\"criteria\":{\"service-list\":"
+    "\"web\",\"src-list\":\"branches\",\"sdav4\":[\"10.0.0.0/8\"],\"dav6\":"
+    "[\"2001:db8::/32\"],\"sdav6\":[\"2001:db8:1::/48\"],\"sav6\":[\"2001:d"
+    "b8:2::/48\"],\"sdport\":[22],\"sport\":[1024],\"ethertype\":[2048],\"n"
+    "extheadv6\":[6],\"sav4\":[\"10.9.0.0/16\"],\"dav4\":[\"10.8.0.0/16\"]}"
+    "},{\"name\":\"tun\",\"criteria\":{\"dst-list\":\"branches\",\"sdst-lis"
+    "t\":\"branches\"}}],\"policy\":[{\"name\":\"p1\",\"direction\":\"ingre"
+    "ss\",\"criteria\":{\"ucs-list\":\"u\",\"edge-list\":\"e\",\"ucs-end-po"
+    "int-list\":\"links\",\"public-private\":\"either\",\"backup\":\"disabl"
+    "ed\",\"billing-method\":\"either\",\"virtual-topology\":\"Swvc\",\"all"
+    "owed-destination-zones\":{\"zone\":[\"lan\",\"Self\"]},\"bandwidth\":{"
+    "\"commit\":\"1000\",\"limit\":\"2000\"},\"performance\":{\"primary\":{"
+    "\"metric\":\"loss\"}}}},{\"name\":\"p2\",\"direction\":\"ingress\",\"c"
+    "riteria\":{\"allowed-destination-zones\":{\"all\":[null]}}},{\"name\":"
+    "\"p3\",\"direction\":\"ingress\",\"criteria\":{\"allowed-destination-z"
+    "ones\":{},\"internet-breakout\":\"enabled\"}},{\"name\":\"out\",\"dire"
+    "ction\":\"egress\",\"criteria\":{\"egress-block\":\"allow\",\"af-secur"
+    "ity-egress\":\"edge\"}}]}}]}}}";
+/* a and b the same JSON: objects with the same members, arrays in the
+ * same order, values with the same text.  false, where says where. */
+static bool
+same_json(const ucl_object_t *a, const ucl_object_t *b, char *where,
+    size_t len)
+{
+	const ucl_object_t	*x, *y;
+	ucl_object_iter_t	 it = NULL;
+	const char		*sa, *sb;
+	size_t			 n, i;
+	double			 da, db;
+	char			 sub[256], *ea, *eb;
+
+	if (a == NULL || b == NULL || ucl_object_type(a) != ucl_object_type(b))
+		return (false);
+	switch (ucl_object_type(a)) {
+	case UCL_OBJECT:
+		if (a->len != b->len) {
+			snprintf(where, len, "%s: %u members, not %u", where,
+			    a->len, b->len);
+			return (false);
+		}
+		while ((x = ucl_object_iterate(a, &it, true)) != NULL) {
+			snprintf(sub, sizeof(sub), "%s.%s", where,
+			    ucl_object_key(x));
+			if (!same_json(x, ucl_object_lookup(b, ucl_object_key(x)),
+			    sub, sizeof(sub))) {
+				snprintf(where, len, "%s", sub);
+				return (false);
+			}
+		}
+		return (true);
+	case UCL_ARRAY:
+		if ((n = ucl_array_size(a)) != ucl_array_size(b))
+			return (false);
+		for (i = 0; i < n; i++) {
+			x = ucl_array_find_index(a, i);
+			y = ucl_array_find_index(b, i);
+			snprintf(sub, sizeof(sub), "%s.%zu", where, i);
+			if (!same_json(x, y, sub, sizeof(sub))) {
+				snprintf(where, len, "%s", sub);
+				return (false);
+			}
+		}
+		return (true);
+	case UCL_NULL:
+		return (true);
+	default:
+		/* A decimal64 is written with all its fraction digits. */
+		sa = ucl_object_tostring_forced(a);
+		sb = ucl_object_tostring_forced(b);
+		if (strcmp(sa, sb) == 0)
+			return (true);
+		da = strtod(sa, &ea);
+		db = strtod(sb, &eb);
+		return (ea != sa && *ea == '\0' && eb != sb && *eb == '\0' &&
+		    da == db);
+	}
+}
+
+static ucl_object_t *
+json_of(const char *s)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+	ATF_REQUIRE(ucl_parser_add_string(p, s, 0));
+	o = ucl_parser_get_object(p);
+	ucl_parser_free(p);
+	return (o);
+}
+
+CONSOLE_TC(l3nm_sdwan, "the SD-WAN document's example as L3NM and "
+    "arcana-l3nm, every field the document has in a node, kept and read "
+    "back the same")
+ATF_TC_BODY(l3nm_sdwan, tc)
+{
+	struct authn		 a;
+	struct resp		 r;
+	ucl_object_t		*want, *full;
+	const ucl_object_t	*w, *g;
+	char			 where[256];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("PUT", L3NM, l3nm_good, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("GET", L3NM, NULL, &r);
+	EXPECT(&r, 200);
+	want = json_of(l3nm_good);
+	snprintf(where, sizeof(where), "l3vpn-ntw");
+	ATF_CHECK_MSG(same_json(want, r.json, where, sizeof(where)),
+	    "not as put at %s: %s", where, r.body);
+	resp_free(&r);
+	/* The fields the example has not: merged, read back the same. */
+	http("PATCH", L3NM, l3nm_full, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", L3NM, NULL, &r);
+	EXPECT(&r, 200);
+	full = json_of(l3nm_full);
+	w = ucl_array_find_index(ucl_object_lookup_path(full,
+	    "ietf-l3vpn-ntw:l3vpn-ntw.vpn-services.vpn-service"), 0);
+	g = ucl_array_find_index(ucl_object_lookup_path(r.json,
+	    "ietf-l3vpn-ntw:l3vpn-ntw.vpn-services.vpn-service"), 1);
+	snprintf(where, sizeof(where), "vpn-service");
+	ATF_CHECK_MSG(same_json(w, g, where, sizeof(where)),
+	    "not as merged at %s: %s", where, r.body);
+	w = ucl_array_find_index(ucl_object_lookup_path(full,
+	    "ietf-l3vpn-ntw:l3vpn-ntw.arcana-l3nm:sdwan.edge"), 0);
+	g = ucl_array_find_index(ucl_object_lookup_path(r.json,
+	    "ietf-l3vpn-ntw:l3vpn-ntw.arcana-l3nm:sdwan.edge"), 2);
+	snprintf(where, sizeof(where), "edge");
+	ATF_CHECK_MSG(same_json(w, g, where, sizeof(where)),
+	    "not as merged at %s: %s", where, r.body);
+	ATF_CHECK_STREQ("speederv2", jstr(&r, "ietf-l3vpn-ntw:l3vpn-ntw."
+	    "arcana-l3nm:sdwan.edge.2.ucs-end-point.0.relay.0.plugin"));
+	ATF_CHECK_STREQ("8000-8080", jstr(&r, "ietf-l3vpn-ntw:l3vpn-ntw."
+	    "arcana-l3nm:sdwan.named-list.1.port.2"));
+	resp_free(&r);
+	/* The augments are checked as L3NM is: a security policy naming
+	 * no function policy, a UCS End Point of no UCS. */
+	http("PATCH", L3NM "/vpn-services/vpn-service=acme",
+	    "{\"ietf-l3vpn-ntw:vpn-service\":[{\"vpn-id\":\"acme\","
+	    "\"arcana-l3nm:sdwan\":{\"security-policy\":[{\"name\":\"x\","
+	    "\"function-policy\":[\"nosuch\"]}]}}]}", &r);
+	ATF_CHECK_MSG(r.status == 400 || r.status == 409, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	http("PATCH", L3NM, "{\"ietf-l3vpn-ntw:l3vpn-ntw\":{\"arcana-l3nm:"
+	    "sdwan\":{\"edge\":[{\"server\":\"a\",\"ucs-end-point\":[{\"id\":"
+	    "\"a-x\",\"ucs\":\"nosuch\"}]}]}}}", &r);
+	ATF_CHECK_MSG(r.status == 400 || r.status == 409, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	/* A metric's value of no type refused. */
+	http("PATCH", L3NM "/vpn-services/vpn-service=acme",
+	    "{\"ietf-l3vpn-ntw:vpn-service\":[{\"vpn-id\":\"acme\","
+	    "\"arcana-l3nm:sdwan\":{\"tca\":{\"loss\":\"2\"}}}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	ucl_object_unref(want);
+	ucl_object_unref(full);
+}
+
 ATF_TC_BODY(restconf, tc)
 {
 	struct authn	 a;
@@ -13876,6 +14232,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf_tag_bad_element);
 	ATF_TP_ADD_TC(tp, restconf_tag_malformed_message);
 	ATF_TP_ADD_TC(tp, l3nm);
+	ATF_TP_ADD_TC(tp, l3nm_sdwan);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_sync);
 	ATF_TP_ADD_TC(tp, server_readdress);

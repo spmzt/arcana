@@ -1,0 +1,1765 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-l3nm",
+    "module-revision": "2026-11-05",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-l3vpn-ntw",
+        "module-revision": "2022-02-14"
+      },
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "arcana-steer",
+        "module-revision": "2026-11-04"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "87400",
+        "size": "600"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-l3nm",
+        "sid": "87400"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan",
+        "sid": "87401"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge",
+        "sid": "87402"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/bgp-import",
+        "sid": "87403"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/breakout-set",
+        "sid": "87404"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/breakout-set/set",
+        "sid": "87405"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/breakout-set/via",
+        "sid": "87406"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/host-bird",
+        "sid": "87407"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ntp",
+        "sid": "87408"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/own-table",
+        "sid": "87409"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/server",
+        "sid": "87410"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/transit",
+        "sid": "87411"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point",
+        "sid": "87412"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/address",
+        "sid": "87413"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/addressing",
+        "sid": "87414"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/backup",
+        "sid": "87415"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/bandwidth",
+        "sid": "87416"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/beacon",
+        "sid": "87417"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/breakout",
+        "sid": "87418"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/gateway",
+        "sid": "87419"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/id",
+        "sid": "87420"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/interface",
+        "sid": "87421"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/nat",
+        "sid": "87422"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/preference",
+        "sid": "87423"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/relay",
+        "sid": "87424"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/relay/endpoint",
+        "sid": "87425"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/relay/fec",
+        "sid": "87426"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/relay/mode",
+        "sid": "87427"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/relay/plugin",
+        "sid": "87428"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/relay/port",
+        "sid": "87429"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/relay/to",
+        "sid": "87430"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing",
+        "sid": "87431"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp",
+        "sid": "87432"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/as",
+        "sid": "87433"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/bfd",
+        "sid": "87434"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/community",
+        "sid": "87435"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/community/as",
+        "sid": "87436"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/community/value",
+        "sid": "87437"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/distance",
+        "sid": "87438"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/family",
+        "sid": "87439"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/hold-time",
+        "sid": "87440"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/id",
+        "sid": "87441"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/multihop",
+        "sid": "87442"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/neighbor",
+        "sid": "87443"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/password",
+        "sid": "87444"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/bgp/source",
+        "sid": "87445"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/ospf",
+        "sid": "87446"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/ospf/area",
+        "sid": "87447"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/ospf/bfd",
+        "sid": "87448"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/ospf/cost",
+        "sid": "87449"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/ospf/dead",
+        "sid": "87450"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/ospf/distance",
+        "sid": "87451"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/ospf/family",
+        "sid": "87452"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/ospf/hello",
+        "sid": "87453"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/ospf/id",
+        "sid": "87454"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/routing/ospf/password",
+        "sid": "87455"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/ucs",
+        "sid": "87456"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/edge/ucs-end-point/vrf",
+        "sid": "87457"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/named-list",
+        "sid": "87458"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/named-list/end-point",
+        "sid": "87459"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/named-list/end-point/id",
+        "sid": "87460"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/named-list/end-point/preference",
+        "sid": "87461"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/named-list/item",
+        "sid": "87462"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/named-list/kind",
+        "sid": "87463"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/named-list/name",
+        "sid": "87464"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/named-list/port",
+        "sid": "87465"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/named-list/protocol",
+        "sid": "87466"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs",
+        "sid": "87467"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/billing",
+        "sid": "87468"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/id",
+        "sid": "87469"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/tunnel",
+        "sid": "87470"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/tunnel/algorithms",
+        "sid": "87471"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/tunnel/encap",
+        "sid": "87472"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/tunnel/esn",
+        "sid": "87473"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/tunnel/ipsec",
+        "sid": "87474"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/tunnel/kind",
+        "sid": "87475"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/tunnel/lifetime",
+        "sid": "87476"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/tunnel/mss",
+        "sid": "87477"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/tunnel/mtu",
+        "sid": "87478"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/arcana-l3nm:sdwan/ucs/type",
+        "sid": "87479"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan",
+        "sid": "87480"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow",
+        "sid": "87481"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow-group",
+        "sid": "87482"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria",
+        "sid": "87483"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/any",
+        "sid": "87484"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/appid",
+        "sid": "87485"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/dav4",
+        "sid": "87486"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/dav6",
+        "sid": "87487"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/dport",
+        "sid": "87488"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/dscp",
+        "sid": "87489"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/dst-list",
+        "sid": "87490"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/ethertype",
+        "sid": "87491"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/nextheadv6",
+        "sid": "87492"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/protv4",
+        "sid": "87493"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/sav4",
+        "sid": "87494"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/sav6",
+        "sid": "87495"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/sdav4",
+        "sid": "87496"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/sdav6",
+        "sid": "87497"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/sdport",
+        "sid": "87498"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/sdst-list",
+        "sid": "87499"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/service-list",
+        "sid": "87500"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/sport",
+        "sid": "87501"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/criteria/src-list",
+        "sid": "87502"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/group",
+        "sid": "87503"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/application-flow/name",
+        "sid": "87504"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/bfd",
+        "sid": "87505"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/bfd/interval",
+        "sid": "87506"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/bfd/multiplier",
+        "sid": "87507"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/bgp-set",
+        "sid": "87508"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/bgp-set/as-path",
+        "sid": "87509"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/bgp-set/community",
+        "sid": "87510"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/bgp-set/community/as",
+        "sid": "87511"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/bgp-set/community/value",
+        "sid": "87512"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/bgp-set/name",
+        "sid": "87513"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/control-plane",
+        "sid": "87514"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/control-plane/cluster-id",
+        "sid": "87515"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/control-plane/ctvc",
+        "sid": "87516"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/control-plane/host",
+        "sid": "87517"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/fib",
+        "sid": "87518"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/ibgp",
+        "sid": "87519"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/importance",
+        "sid": "87520"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/importance/default",
+        "sid": "87521"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/importance/level",
+        "sid": "87522"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/intervals",
+        "sid": "87523"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/intervals/arrival",
+        "sid": "87524"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/intervals/eval",
+        "sid": "87525"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/intervals/ir",
+        "sid": "87526"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/md5",
+        "sid": "87527"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/nat64",
+        "sid": "87528"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/nat64/edge",
+        "sid": "87529"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/nat64/pool",
+        "sid": "87530"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/nat64/prefix",
+        "sid": "87531"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy",
+        "sid": "87532"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria",
+        "sid": "87533"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/af-security-egress",
+        "sid": "87534"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/af-security-ingress",
+        "sid": "87535"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/allowed-destination-zones",
+        "sid": "87536"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/allowed-destination-zones/all",
+        "sid": "87537"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/allowed-destination-zones/zone",
+        "sid": "87538"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/backup",
+        "sid": "87539"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/bandwidth",
+        "sid": "87540"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/bandwidth/commit",
+        "sid": "87541"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/bandwidth/limit",
+        "sid": "87542"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/billing-method",
+        "sid": "87543"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/business-importance",
+        "sid": "87544"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/edge-list",
+        "sid": "87545"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/egress-block",
+        "sid": "87546"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/encryption",
+        "sid": "87547"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/internet-breakout",
+        "sid": "87548"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/performance",
+        "sid": "87549"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/performance/primary",
+        "sid": "87550"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/performance/primary/ceiling",
+        "sid": "87551"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/performance/primary/metric",
+        "sid": "87552"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/performance/primary/remediation",
+        "sid": "87553"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/performance/primary/threshold",
+        "sid": "87554"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/performance/secondary",
+        "sid": "87555"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/performance/secondary/metric",
+        "sid": "87556"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/performance/secondary/threshold",
+        "sid": "87557"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/public-private",
+        "sid": "87558"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/rate-limiter",
+        "sid": "87559"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/ucs-end-point-list",
+        "sid": "87560"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/ucs-list",
+        "sid": "87561"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/criteria/virtual-topology",
+        "sid": "87562"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/direction",
+        "sid": "87563"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/policy/name",
+        "sid": "87564"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/probe",
+        "sid": "87565"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/probe/count",
+        "sid": "87566"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/probe/down",
+        "sid": "87567"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/probe/dscp",
+        "sid": "87568"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/probe/history",
+        "sid": "87569"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/probe/interval",
+        "sid": "87570"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/probe/report",
+        "sid": "87571"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/probe/size",
+        "sid": "87572"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/probe/timeout",
+        "sid": "87573"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/probe/up",
+        "sid": "87574"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/rate-limiter",
+        "sid": "87575"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/rate-limiter/commit",
+        "sid": "87576"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/rate-limiter/limit",
+        "sid": "87577"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/rate-limiter/name",
+        "sid": "87578"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/reserved-prefix",
+        "sid": "87579"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy",
+        "sid": "87580"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow",
+        "sid": "87581"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/pdns",
+        "sid": "87582"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/pdns/encryption",
+        "sid": "87583"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/pdns/id",
+        "sid": "87584"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/pdns/type",
+        "sid": "87585"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/pdns/value",
+        "sid": "87586"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/tuple",
+        "sid": "87587"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/tuple/dav4",
+        "sid": "87588"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/tuple/dav6",
+        "sid": "87589"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/tuple/dport",
+        "sid": "87590"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/tuple/id",
+        "sid": "87591"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/tuple/message-type",
+        "sid": "87592"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/tuple/nextheadv6",
+        "sid": "87593"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/tuple/protv4",
+        "sid": "87594"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/tuple/sav4",
+        "sid": "87595"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/tuple/sav6",
+        "sid": "87596"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/tuple/sport",
+        "sid": "87597"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/allow/value",
+        "sid": "87598"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block",
+        "sid": "87599"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/pdns",
+        "sid": "87600"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/pdns/encryption",
+        "sid": "87601"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/pdns/id",
+        "sid": "87602"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/pdns/type",
+        "sid": "87603"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/pdns/value",
+        "sid": "87604"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/tuple",
+        "sid": "87605"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/tuple/dav4",
+        "sid": "87606"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/tuple/dav6",
+        "sid": "87607"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/tuple/dport",
+        "sid": "87608"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/tuple/id",
+        "sid": "87609"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/tuple/message-type",
+        "sid": "87610"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/tuple/nextheadv6",
+        "sid": "87611"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/tuple/protv4",
+        "sid": "87612"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/tuple/sav4",
+        "sid": "87613"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/tuple/sav6",
+        "sid": "87614"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/tuple/sport",
+        "sid": "87615"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/block/value",
+        "sid": "87616"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/detection-type",
+        "sid": "87617"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/duration",
+        "sid": "87618"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/function",
+        "sid": "87619"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/id",
+        "sid": "87620"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/invalid-client-certificate",
+        "sid": "87621"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/invalid-server-certificate",
+        "sid": "87622"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/lists",
+        "sid": "87623"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/lists/allow",
+        "sid": "87624"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/lists/block",
+        "sid": "87625"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/lists/quarantine",
+        "sid": "87626"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/no-match",
+        "sid": "87627"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/northbound",
+        "sid": "87628"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/notify",
+        "sid": "87629"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/pass-through",
+        "sid": "87630"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine",
+        "sid": "87631"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/pdns",
+        "sid": "87632"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/pdns/encryption",
+        "sid": "87633"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/pdns/id",
+        "sid": "87634"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/pdns/type",
+        "sid": "87635"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/pdns/value",
+        "sid": "87636"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/tuple",
+        "sid": "87637"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/tuple/dav4",
+        "sid": "87638"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/tuple/dav6",
+        "sid": "87639"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/tuple/dport",
+        "sid": "87640"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/tuple/id",
+        "sid": "87641"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/tuple/message-type",
+        "sid": "87642"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/tuple/nextheadv6",
+        "sid": "87643"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/tuple/protv4",
+        "sid": "87644"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/tuple/sav4",
+        "sid": "87645"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/tuple/sav6",
+        "sid": "87646"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/tuple/sport",
+        "sid": "87647"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/quarantine/value",
+        "sid": "87648"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/redirect",
+        "sid": "87649"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/removal",
+        "sid": "87650"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/southbound",
+        "sid": "87651"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/trusted-cas",
+        "sid": "87652"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/unencrypted",
+        "sid": "87653"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-function-policy/upstream",
+        "sid": "87654"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-policy",
+        "sid": "87655"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-policy/function-policy",
+        "sid": "87656"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-policy/ids",
+        "sid": "87657"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-policy/ids/mode",
+        "sid": "87658"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-policy/ids/rule",
+        "sid": "87659"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-policy/ids/ruleset",
+        "sid": "87660"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-policy/name",
+        "sid": "87661"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/security-policy/rate-limit",
+        "sid": "87662"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/tca",
+        "sid": "87663"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/tca/damping",
+        "sid": "87664"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/tca/delay",
+        "sid": "87665"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/tca/ipdv",
+        "sid": "87666"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/tca/loss",
+        "sid": "87667"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/ucs",
+        "sid": "87668"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/virtual-topology",
+        "sid": "87669"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/virtual-topology/end-point",
+        "sid": "87670"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/virtual-topology/leaf",
+        "sid": "87671"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/virtual-topology/name",
+        "sid": "87672"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/virtual-topology/root",
+        "sid": "87673"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/virtual-topology/type",
+        "sid": "87674"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/zone",
+        "sid": "87675"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/zone/default",
+        "sid": "87676"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/zone/name",
+        "sid": "87677"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/zone/policy",
+        "sid": "87678"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/zone/policy/app",
+        "sid": "87679"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/zone/policy/policy",
+        "sid": "87680"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/zone/prefix",
+        "sid": "87681"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/arcana-l3nm:sdwan/zone/prefix-list",
+        "sid": "87682"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-instance-profiles/vpn-instance-profile/arcana-l3nm:domain",
+        "sid": "87683"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-instance-profiles/vpn-instance-profile/arcana-l3nm:fib",
+        "sid": "87684"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-instance-profiles/vpn-instance-profile/arcana-l3nm:label",
+        "sid": "87685"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-instance-profiles/vpn-instance-profile/arcana-l3nm:prefix",
+        "sid": "87686"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan",
+        "sid": "87687"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/availability",
+        "sid": "87688"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/clat",
+        "sid": "87689"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/clat/prefix",
+        "sid": "87690"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/host-addressed",
+        "sid": "87691"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/max-frame",
+        "sid": "87692"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/nat",
+        "sid": "87693"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/nat/disabled",
+        "sid": "87694"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/nat/exception",
+        "sid": "87695"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/nat/ip-version",
+        "sid": "87696"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/nat/public-prefix",
+        "sid": "87697"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/policy-map",
+        "sid": "87698"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/policy-map/app",
+        "sid": "87699"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/policy-map/egress",
+        "sid": "87700"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/policy-map/ingress",
+        "sid": "87701"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/policy-map/zone",
+        "sid": "87702"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote",
+        "sid": "87703"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/group",
+        "sid": "87704"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/group/name",
+        "sid": "87705"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/group/pool",
+        "sid": "87706"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/group/reach",
+        "sid": "87707"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/group/zone",
+        "sid": "87708"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/identity",
+        "sid": "87709"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/identity/group",
+        "sid": "87710"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/identity/issued",
+        "sid": "87711"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/identity/name",
+        "sid": "87712"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/identity/public-key",
+        "sid": "87713"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/identity/user",
+        "sid": "87714"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/identity/zone",
+        "sid": "87715"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/port",
+        "sid": "87716"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/prefix",
+        "sid": "87717"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/remote/reauth",
+        "sid": "87718"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/arcana-l3nm:sdwan/uni-id",
+        "sid": "87719"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv4/arcana-l3nm:dns",
+        "sid": "87720"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv4/arcana-l3nm:lease",
+        "sid": "87721"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv4/arcana-l3nm:mode",
+        "sid": "87722"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv4/arcana-l3nm:provider",
+        "sid": "87723"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv4/arcana-l3nm:reserved",
+        "sid": "87724"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv4/arcana-l3nm:secondary",
+        "sid": "87725"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv4/arcana-l3nm:secondary/prefix",
+        "sid": "87726"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv4/arcana-l3nm:secondary/provider",
+        "sid": "87727"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv6/arcana-l3nm:dns",
+        "sid": "87728"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv6/arcana-l3nm:lease",
+        "sid": "87729"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv6/arcana-l3nm:mode",
+        "sid": "87730"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv6/arcana-l3nm:provider",
+        "sid": "87731"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv6/arcana-l3nm:reserved",
+        "sid": "87732"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv6/arcana-l3nm:secondary",
+        "sid": "87733"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv6/arcana-l3nm:secondary/prefix",
+        "sid": "87734"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/ip-connection/ipv6/arcana-l3nm:secondary/provider",
+        "sid": "87735"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/bgp/arcana-l3nm:bfd",
+        "sid": "87736"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/bgp/arcana-l3nm:community",
+        "sid": "87737"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/bgp/arcana-l3nm:community/as",
+        "sid": "87738"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/bgp/arcana-l3nm:community/value",
+        "sid": "87739"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/bgp/arcana-l3nm:distance",
+        "sid": "87740"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/ospf/arcana-l3nm:bfd",
+        "sid": "87741"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/ospf/arcana-l3nm:dead",
+        "sid": "87742"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/ospf/arcana-l3nm:distance",
+        "sid": "87743"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/ospf/arcana-l3nm:hello",
+        "sid": "87744"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/static/cascaded-lan-prefixes/ipv4-lan-prefixes/arcana-l3nm:distance",
+        "sid": "87745"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/static/cascaded-lan-prefixes/ipv6-lan-prefixes/arcana-l3nm:distance",
+        "sid": "87746"
+      }
+    ]
+  }
+}
