@@ -1935,7 +1935,21 @@ whose first part is served.
   address (a kernel refuses a gateway on no network of the table; it
   is the UNI's step's now, after the UNI), and a job's read by the
   console's own calls was cached by job id alone, so one host's job 1
-  answered for another's.
+  answered for another's.  Warnings accepted per apply (console 0.358.0):
+  an edit may name the warnings its commit may ask (`warns`, the
+  agent's error-app-tags, rc-conf-files and rc-conf-conflict where it
+  writes Arcana's rc.conf file); the plan lists each, once a step,
+  under `accept` (server, name, key, title, warning, says), the page
+  under the plan ("To accept") and in its Deploy and Make all again
+  dialogs, whose button accepts them for that apply alone.  The
+  apply's `accept`, [{server, key, warning}], must be what the plan
+  lists (else 400, nothing made); accepted, they go on the step's
+  edits (and its unmake's, kept for taking it away) as `accept`, sent
+  as RESTCONF's arcana-accept on the edit and both commits.  Never
+  silently: one not accepted is the agent's refusal, the step failed
+  ("not accepted: the plan lists it, the apply accepts it for this
+  step") and the apply rolled back; an apply the console makes itself
+  (an identity's) accepts none.
 - 4.5.6 done (console sdwan_edge.c): refusal of the infeasible with the
   reason and an alternative: an edge's policies' committed bandwidth
   (each rate limiter's or policy's commit, a security policy's rate

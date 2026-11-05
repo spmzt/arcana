@@ -13121,6 +13121,18 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    r.body);
 	resp_free(&r);
 	ATF_REQUIRE(rename("tools/squid.off", "tools/squid") == 0);
+	/* A warning accepted is one the plan lists for that step and host,
+	 * or the apply is refused, nothing made. */
+	http("POST", "/api/sdwan/apply", "{\"accept\":[{\"server\":\"nosuch\","
+	    "\"key\":\"uni:hq\",\"warning\":\"rc-conf-files\"}]}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "accept: rc-conf-files "
+	    "of uni:hq on nosuch is not a warning the plan lists") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	http("POST", "/api/sdwan/apply", "{\"accept\":\"rc-conf-files\"}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "accept is an array")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
 	http("POST", "/api/sdwan/apply", "{}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);

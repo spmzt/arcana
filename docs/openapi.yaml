@@ -2990,8 +2990,12 @@ paths:
             server, name, change of make, remake, unmake or keep, and
             its make and unmake jobs); tunnels, each with its kind,
             ipsec, encrypted, public, backup, fib, vni and its two ends
-            (edge, ucs_ep, underlay, unit, ifname, inner4, inner6); and
-            notes, what the plan leaves out and why.
+            (edge, ucs_ep, underlay, unit, ifname, inner4, inner6);
+            notes, what the plan leaves out and why; and accept, the
+            warnings its device edits may ask on the hosts (server,
+            name, key and title of the step, warning, the agent's
+            error-app-tag, and says, what accepting it does), each to be
+            accepted by the apply or its step is refused.
         "409": { $ref: "#/components/responses/Error" }
   /api/sdwan/ledger:
     get:
@@ -3022,7 +3026,13 @@ paths:
     post:
       tags: [sdwan]
       summary: Apply, in a thread of the console
-      description: '{"fresh": true} takes away everything made first.'
+      description: '{"fresh": true} takes away everything made first;
+        accept, an array of {server, key, warning}, the warnings of the
+        plan''s accept the operator accepts for this apply, sent with
+        those steps'' edits (RESTCONF''s arcana-accept) and kept with
+        what they made for taking it away.  One the plan does not list
+        is a 400; a step whose edit asks one not accepted fails, and the
+        apply is rolled back.'
       requestBody:
         content:
           application/json:
@@ -3030,6 +3040,7 @@ paths:
       responses:
         "200":
           description: "{steps: n}"
+        "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /api/sdwan/steer:
     get:

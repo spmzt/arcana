@@ -50,7 +50,9 @@
  *
  *	GET  /api/sdwan/plan	what an apply would do, edge by edge
  *	POST /api/sdwan/apply	do it; {"fresh": true} takes everything
- *				made away first and makes it again
+ *				made away first and makes it again; "accept"
+ *				the warnings of the plan's the operator
+ *				accepts for their steps' edits
  *	GET  /api/sdwan/apply	how the last apply went, the history, and the tunnels
  */
 
@@ -534,6 +536,24 @@ edit(const char *method, const char *path, ucl_object_t *body)
 		put(j, "body", body);
 	return (j);
 }
+
+/*
+ * The warnings an edit's commit may ask (the agent's error-app-tags a
+ * request goes on despite when it accepts them), what each does; the
+ * plan lists them for the operator to accept per apply (accepts()).
+ */
+static const struct {
+	const char	*tag;
+	const char	*says;
+} warnings[] = {
+	{ "rc-conf-files", "Arcana's rc.conf file, /usr/local/etc/rc.conf.d/"
+	    "arcana, added to rc_conf_files in /etc/rc.conf, once, where it "
+	    "is not named yet" },
+	{ "rc-conf-conflict", "a variable this edit writes that the host's "
+	    "own rc.conf files set too (an interface's ifconfig_, the static "
+	    "routes, rtadvd's) commented out there, kept in Arcana's file "
+	    "alone" },
+};
 
 /*
  * The n sysctls of names set to value at boot and now: arcana-sysctl's
@@ -7668,18 +7688,60 @@ rc_why(const char *json, int status, char *why, size_t wlen)
 		ucl_object_unref(o);
 }
 
-/* The host's rpc op of its fleet entry, with input in (consumed). */
+/* A refusal for a warning the edit may ask and its step's accept had
+ * not: said where the operator accepts it. */
+static void
+unaccepted(const ucl_object_t *j, char *why, size_t wlen)
+{
+	const ucl_object_t	*w;
+	ucl_object_iter_t	 it;
+	char			 tag[80];
+
+	it = NULL;
+	while ((w = ucl_object_iterate(ucl_object_lookup(j, "warns"), &it,
+	    true)) != NULL) {
+		snprintf(tag, sizeof(tag), "(%s)", ucl_object_tostring_forced(
+		    w));
+		if (strstr(why, tag) != NULL && !in_list(ucl_object_lookup(j,
+		    "accept"), ucl_object_tostring_forced(w)))
+			snprintf(why + strlen(why), wlen - strlen(why), "; not "
+			    "accepted: the plan lists it, the apply accepts it "
+			    "for this step");
+	}
+}
+
+/*
+ * The warnings an edit's commit goes on despite, as RESTCONF's query
+ * (arcana-accept): those the operator accepted for its step (the
+ * apply's accept), into q; "" when none.
+ */
+static void
+accept_query(const ucl_object_t *j, char *q, size_t len)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+
+	q[0] = '\0';
+	it = NULL;
+	while ((a = ucl_object_iterate(ucl_object_lookup(j, "accept"), &it,
+	    true)) != NULL)
+		snprintf(q + strlen(q), len - strlen(q), "%s%s", q[0] == '\0' ?
+		    "?arcana-accept=" : ",", ucl_object_tostring_forced(a));
+}
+
+/* The host's rpc op of its fleet entry, with input in (consumed), the
+ * query q after it. */
 static int
 host_rpc(const char *sid, const char *uri, const char *peer,
-    const char *name, const char *op, ucl_object_t *in, char *why,
-    size_t wlen)
+    const char *name, const char *op, const char *q, ucl_object_t *in,
+    char *why, size_t wlen)
 {
 	ucl_object_t	*body;
-	char		 path[256], *json;
+	char		 path[512], *json;
 	int		 status;
 
 	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/"
-	    "host=%s/ietf-netconf:%s", sid, op);
+	    "host=%s/ietf-netconf:%s%s", sid, op, q);
 	body = ucl_object_typed_new(UCL_OBJECT);
 	put(body, "ietf-netconf:input", in);
 	json = hosts_restconf(sid, uri, peer, name, HTTP_METHOD_POST, path,
@@ -7695,22 +7757,25 @@ host_rpc(const char *sid, const char *uri, const char *peer,
  * confirmed, and confirmed over a connection dialled for it (a commit
  * that cut the host off is undone by the host at its timeout).  Refused
  * or failing, the candidate's changes are discarded and why says why;
- * what a DELETE takes away and is not there is done.
+ * what a DELETE takes away and is not there is done.  The warnings the
+ * operator accepted for its step go with the edit and the commit; one
+ * it may ask (warns) and was not accepted refuses it, said so.
  */
 static bool
 edit_run(const char *sid, const char *uri, const char *peer,
     const char *name, const ucl_object_t *j, char *why, size_t wlen)
 {
 	ucl_object_t	*in, *c;
-	char		 path[1024], tok[40], w2[200], *json;
+	char		 path[1024], q[256], tok[40], w2[200], *json;
 	int		 method, status;
 	bool		 del;
 
 	del = str(j, "method") != NULL && strcmp(str(j, "method"), "DELETE") ==
 	    0;
 	method = del ? HTTP_METHOD_DELETE : HTTP_METHOD_PATCH;
+	accept_query(j, q, sizeof(q));
 	snprintf(path, sizeof(path), "/restconf/ds/ietf-datastores:candidate/"
-	    "arcana-fleet:fleet/host=%s/%s", sid, str(j, "path"));
+	    "arcana-fleet:fleet/host=%s/%s%s", sid, str(j, "path"), q);
 	json = hosts_restconf(sid, uri, peer, name, method, path,
 	    ucl_object_lookup(j, "body") != NULL ? ucl_object_copy(
 	    ucl_object_lookup(j, "body")) : NULL, &status);
@@ -7720,8 +7785,9 @@ edit_run(const char *sid, const char *uri, const char *peer,
 	}
 	if (status >= 300) {
 		rc_why(json, status, why, wlen);
+		unaccepted(j, why, wlen);
 		free(json);
-		(void)host_rpc(sid, uri, peer, name, "discard-changes",
+		(void)host_rpc(sid, uri, peer, name, "discard-changes", "",
 		    ucl_object_typed_new(UCL_OBJECT), w2, sizeof(w2));
 		return (false);
 	}
@@ -7734,14 +7800,15 @@ edit_run(const char *sid, const char *uri, const char *peer,
 	put(in, "confirmed", c);
 	put(in, "confirm-timeout", I(EDIT_CONFIRM_S));
 	put(in, "persist", S(tok));
-	if (host_rpc(sid, uri, peer, name, "commit", in, why, wlen) >= 300) {
-		(void)host_rpc(sid, uri, peer, name, "discard-changes",
+	if (host_rpc(sid, uri, peer, name, "commit", q, in, why, wlen) >= 300) {
+		unaccepted(j, why, wlen);
+		(void)host_rpc(sid, uri, peer, name, "discard-changes", "",
 		    ucl_object_typed_new(UCL_OBJECT), w2, sizeof(w2));
 		return (false);
 	}
 	in = ucl_object_typed_new(UCL_OBJECT);
 	put(in, "persist-id", S(tok));
-	if (host_rpc(sid, uri, peer, name, "commit", in, w2, sizeof(w2)) >=
+	if (host_rpc(sid, uri, peer, name, "commit", q, in, w2, sizeof(w2)) >=
 	    300) {
 		snprintf(why, wlen, "not confirmed, so undone by the host in "
 		    "%d s: %s", EDIT_CONFIRM_S, w2);
@@ -10454,6 +10521,8 @@ needs_met(const ucl_object_t *needs, char *why, size_t wlen)
 	return (false);
 }
 
+static ucl_object_t	*accepts(const ucl_object_t *);
+
 /* The changes as the API shows them: no job's own fields of ours. */
 static ucl_object_t *
 plan_reply(const struct plan *pl, const ucl_object_t *chg)
@@ -10475,18 +10544,152 @@ plan_reply(const struct plan *pl, const ucl_object_t *chg)
 	put(top, "tunnels", ucl_object_copy(pl->tunnels));
 	put(top, "notes", ucl_object_copy(pl->notes));
 	put(top, "needs", plan_needs(pl));
+	put(top, "accept", accepts(chg));
 	return (top);
+}
+
+/* Has list the warning tag of step key on server sid? */
+static bool
+accept_has(const ucl_object_t *list, const char *sid, const char *key,
+    const char *tag)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((a = ucl_object_iterate(list, &it, true)) != NULL)
+		if (str(a, "server") != NULL && str(a, "key") != NULL &&
+		    str(a, "warning") != NULL && strcmp(str(a, "server"), sid) ==
+		    0 && strcmp(str(a, "key"), key) == 0 && strcmp(str(a,
+		    "warning"), tag) == 0)
+			return (true);
+	return (false);
+}
+
+/*
+ * The warnings the changes' edits may ask, each for the operator to
+ * accept for its step in the apply, or the step is refused: {server,
+ * name, key, title, warning, says}, once a step and warning.
+ */
+static ucl_object_t *
+accepts(const ucl_object_t *chg)
+{
+	const ucl_object_t	*o, *j, *w;
+	ucl_object_iter_t	 it, jt, wt;
+	ucl_object_t		*out, *a;
+	size_t			 i;
+
+	out = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((o = ucl_object_iterate(chg, &it, true)) != NULL) {
+		if (strcmp(str(o, "change"), "make") != 0 && strcmp(str(o,
+		    "change"), "remake") != 0)
+			continue;
+		jt = NULL;
+		while ((j = ucl_object_iterate(ucl_object_lookup(o, "make"),
+		    &jt, true)) != NULL) {
+			wt = NULL;
+			while ((w = ucl_object_iterate(ucl_object_lookup(j,
+			    "warns"), &wt, true)) != NULL) {
+				if (accept_has(out, str(o, "server"), str(o,
+				    "key"), ucl_object_tostring_forced(w)))
+					continue;
+				for (i = 0; i < nitems(warnings) && strcmp(
+				    warnings[i].tag, ucl_object_tostring_forced(
+				    w)) != 0; i++)
+					;
+				a = ucl_object_typed_new(UCL_OBJECT);
+				put(a, "server", S(str(o, "server")));
+				put(a, "name", S(server_name_of(str(o,
+				    "server"))));
+				put(a, "key", S(str(o, "key")));
+				put(a, "title", S(str(o, "title")));
+				put(a, "warning", S(ucl_object_tostring_forced(
+				    w)));
+				if (i < nitems(warnings))
+					put(a, "says", S(warnings[i].says));
+				ucl_array_append(out, a);
+			}
+		}
+	}
+	return (out);
+}
+
+/*
+ * The apply's accept: an array of {server, key, warning}, each one the
+ * plan lists (accepts()); false and why for another, or one not so.
+ */
+static bool
+accept_ok(const ucl_object_t *given, const ucl_object_t *listed, char *why,
+    size_t wlen)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+
+	if (given == NULL)
+		return (true);
+	if (ucl_object_type(given) != UCL_ARRAY) {
+		snprintf(why, wlen, "accept is an array of {server, key, "
+		    "warning}, as the plan lists them");
+		return (false);
+	}
+	it = NULL;
+	while ((a = ucl_object_iterate(given, &it, true)) != NULL)
+		if (str(a, "server") == NULL || str(a, "key") == NULL ||
+		    str(a, "warning") == NULL || !accept_has(listed, str(a,
+		    "server"), str(a, "key"), str(a, "warning"))) {
+			snprintf(why, wlen, "accept: %s of %s on %s is not a "
+			    "warning the plan lists", str(a, "warning") != NULL ?
+			    str(a, "warning") : "(none)", str(a, "key") != NULL ?
+			    str(a, "key") : "(no step)", str(a, "server") !=
+			    NULL ? str(a, "server") : "(no server)");
+			return (false);
+		}
+	return (true);
+}
+
+/* A step's edits given the warnings accepted for it (acc's). */
+static void
+accept_step(ucl_object_t *s, const ucl_object_t *acc)
+{
+	static const char *const lists[] = { "make", "unmake_new" };
+	const ucl_object_t	*w;
+	ucl_object_t		*j, *tags;
+	ucl_object_iter_t	 jt, wt;
+	size_t			 i;
+
+	for (i = 0; i < nitems(lists); i++) {
+		jt = NULL;
+		while ((j = (ucl_object_t *)(uintptr_t)ucl_object_iterate(
+		    ucl_object_lookup(s, lists[i]), &jt, true)) != NULL) {
+			if (strcmp(str(j, "kind"), "edit") != 0)
+				continue;
+			tags = ucl_object_typed_new(UCL_ARRAY);
+			wt = NULL;
+			while ((w = ucl_object_iterate(ucl_object_lookup(j,
+			    "warns"), &wt, true)) != NULL)
+				if (accept_has(acc, str(s, "server"), str(s,
+				    "key"), ucl_object_tostring_forced(w)))
+					ucl_array_append(tags, S(
+					    ucl_object_tostring_forced(w)));
+			if (ucl_array_size(tags) > 0)
+				put(j, "accept", tags);
+			else
+				ucl_object_unref(tags);
+		}
+	}
 }
 
 /*
  * An apply begun from a plan built: the lock, the steps, the thread.
- * The plan, the changes and the state are consumed.  Refused (-1,
- * why, the HTTP status) while one runs, or when no thread could be
- * made; else how many steps there are.
+ * The plan, the changes and the state are consumed; acc, the warnings
+ * the operator accepted (accept_ok()), is not.  Refused (-1, why, the
+ * HTTP status) while one runs, or when no thread could be made; else
+ * how many steps there are.
  */
 static int
 apply_begin(struct plan *plp, ucl_object_t *st, ucl_object_t *chg, bool fresh,
-    char *why, size_t wlen, int *statusp)
+    const ucl_object_t *acc, char *why, size_t wlen, int *statusp)
 {
 	ucl_object_t		*ap, *steps, *s;
 	const ucl_object_t	*o;
@@ -10536,6 +10739,9 @@ apply_begin(struct plan *plp, ucl_object_t *st, ucl_object_t *chg, bool fresh,
 			put(s, "unmake_new", n != NULL ? ucl_object_copy(
 			    ucl_object_lookup(n, "unmake")) :
 			    ucl_object_typed_new(UCL_ARRAY));
+			/* Its edits' warnings as accepted, kept with them
+			 * for taking it away too. */
+			accept_step(s, acc);
 		}
 		put(s, "name", S(server_name_of(str(o, "server"))));
 		put(s, "state", S("pending"));
@@ -10626,7 +10832,7 @@ apply_now(ucl_object_t *doc, char *why, size_t wlen)
 	}
 	ucl_object_unref(needs);
 	chg = changes(&pl, st, false);
-	if (apply_begin(&pl, st, chg, false, why, wlen, &status) < 0) {
+	if (apply_begin(&pl, st, chg, false, NULL, why, wlen, &status) < 0) {
 		ucl_object_unref(doc);
 		return (false);
 	}
@@ -10701,7 +10907,7 @@ steer_pin(struct http_request *req)
 int
 api_sdwan_edges(struct http_request *req)
 {
-	ucl_object_t		*doc, *st, *chg, *body, *needs;
+	ucl_object_t		*doc, *st, *chg, *body, *needs, *acc, *listed;
 	struct plan		 pl;
 	char			 why[300];
 	bool			 apply, fresh, invalid;
@@ -10768,8 +10974,12 @@ api_sdwan_edges(struct http_request *req)
 		return (reply_json(req, 200, body));
 	}
 	fresh = false;
+	acc = NULL;
 	if (apply && (body = read_json(req)) != NULL) {
 		fresh = ucl_flag(body, "fresh");
+		if (ucl_object_lookup(body, "accept") != NULL)
+			acc = ucl_object_copy(ucl_object_lookup(body,
+			    "accept"));
 		ucl_object_unref(body);
 	}
 	chg = changes(&pl, st, fresh);
@@ -10782,16 +10992,27 @@ api_sdwan_edges(struct http_request *req)
 		return (reply_json(req, 200, body));
 	}
 	needs = plan_needs(&pl);
-	if (!needs_met(needs, why, sizeof(why))) {
+	listed = accepts(chg);
+	if (!needs_met(needs, why, sizeof(why)) || !accept_ok(acc, listed,
+	    why, sizeof(why))) {
+		bool	missing = !needs_met(needs, NULL, 0);
+
 		ucl_object_unref(needs);
+		ucl_object_unref(listed);
+		if (acc != NULL)
+			ucl_object_unref(acc);
 		ucl_object_unref(chg);
 		plan_free(&pl);
 		ucl_object_unref(doc);
 		ucl_object_unref(st);
-		return (reply_error(req, 409, "missing", "%s", why));
+		return (missing ? reply_error(req, 409, "missing", "%s", why) :
+		    reply_error(req, 400, "invalid", "%s", why));
 	}
 	ucl_object_unref(needs);
-	n = apply_begin(&pl, st, chg, fresh, why, sizeof(why), &status);
+	ucl_object_unref(listed);
+	n = apply_begin(&pl, st, chg, fresh, acc, why, sizeof(why), &status);
+	if (acc != NULL)
+		ucl_object_unref(acc);
 	ucl_object_unref(doc);
 	if (n < 0)
 		return (reply_error(req, status, status == 409 ? "busy" : "thread",

@@ -2654,6 +2654,99 @@ view_needs(struct html *h, bool brief)
 	    "data-act=\"sd-needs-check\">Check again</button></div></section>");
 }
 
+/*
+ * The warnings the plan's device edits may ask on the edges, each for
+ * its step: Deploy accepts them, listed in its dialog; refused without.
+ */
+static void
+view_accept(struct html *h)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+
+	if (jget(sd.plan, "accept") == NULL || ucl_array_size(jget(sd.plan,
+	    "accept")) == 0)
+		return;
+	h_raw(h, "<div class=\"sd-block\"><h3>To accept <small class=\"dim\">"
+	    "what an edit may do on the host beyond itself; Deploy accepts "
+	    "these for this apply, and an edit whose warning is not accepted "
+	    "is refused</small></h3><table class=\"net\"><thead><tr><th>Edge"
+	    "</th><th>Step</th><th>Warning</th><th>What it does</th></tr>"
+	    "</thead><tbody>");
+	it = NULL;
+	while ((a = ucl_object_iterate(jget(sd.plan, "accept"), &it, true)) !=
+	    NULL) {
+		h_raw(h, "<tr><td>");
+		h_txt(h, jstr(a, "name"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(a, "title"));
+		h_raw(h, "</td><td><code>");
+		h_txt(h, jstr(a, "warning"));
+		h_raw(h, "</code></td><td class=\"dim\">");
+		h_txt(h, jstr(a, "says"));
+		h_raw(h, "</td></tr>");
+	}
+	h_raw(h, "</tbody></table></div>");
+}
+
+/* The apply's request: fresh or not, and every warning the plan lists
+ * accepted, as its dialog said; malloc'd. */
+static char *
+apply_body(bool fresh)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*o, *arr, *e;
+	char			*json;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	if (fresh)
+		ucl_object_insert_key(o, ucl_object_frombool(true), "fresh", 0,
+		    false);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((a = ucl_object_iterate(jget(sd.plan, "accept"), &it, true)) !=
+	    NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(e, ucl_object_fromstring(jstr(a,
+		    "server")), "server", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromstring(jstr(a, "key")),
+		    "key", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromstring(jstr(a,
+		    "warning")), "warning", 0, false);
+		ucl_array_append(arr, e);
+	}
+	if (ucl_array_size(arr) > 0)
+		ucl_object_insert_key(o, arr, "accept", 0, false);
+	else
+		ucl_object_unref(arr);
+	json = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(o);
+	return (json);
+}
+
+/* The dialog's word on the warnings it accepts, after body. */
+static void
+accept_said(char *body, size_t len)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+	size_t			 n;
+
+	n = jget(sd.plan, "accept") != NULL ? ucl_array_size(jget(sd.plan,
+	    "accept")) : 0;
+	if (n == 0)
+		return;
+	snprintf(body + strlen(body), len - strlen(body), " Deploying accepts "
+	    "%zu warning%s for this apply (To accept, below the plan):", n,
+	    n == 1 ? "" : "s");
+	it = NULL;
+	while ((a = ucl_object_iterate(jget(sd.plan, "accept"), &it, true)) !=
+	    NULL)
+		snprintf(body + strlen(body), len - strlen(body), " %s on %s;",
+		    jstr(a, "warning"), jstr(a, "name"));
+}
+
 static void
 view_edges(struct html *h)
 {
@@ -2709,6 +2802,7 @@ view_edges(struct html *h)
 			h_raw(h, "</div>");
 		}
 	}
+	view_accept(h);
 	view_applied(h);
 	view_tunnels(h, jget(sd.plan, "tunnels"));
 	/*
@@ -9653,9 +9747,12 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		free(json);
 	} else if (strcmp(act, "sd-apply") == 0 || strcmp(act,
 	    "do-sd-apply-fresh") == 0) {
+		char	*json;
+
 		sd.applying = true;
-		api("POST", "/api/sdwan/apply", strcmp(act, "sd-apply") == 0 ?
-		    "{}" : "{\"fresh\":true}", apply_cb, NULL);
+		json = apply_body(strcmp(act, "sd-apply") != 0);
+		api("POST", "/api/sdwan/apply", json, apply_cb, NULL);
+		free(json);
 	} else if (strcmp(act, "sd-needs-check") == 0) {
 		plan_load();
 	} else if (strcmp(act, "sd-need-install") == 0) {
@@ -9680,7 +9777,7 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		    value);
 		job_send_host(s, json, sd.need_title, JOB_PACKAGES, "");
 	} else if (strcmp(act, "sd-apply-ask") == 0) {
-		char	body[400];
+		char	body[512];
 
 		snprintf(body, sizeof(body), "On the edges, as jobs in Mplify "
 		    "119's order: %d to make, %d to make again, %d to take away; "
@@ -9691,16 +9788,23 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		    "stays away. The UNIs come last.", count_change("make"),
 		    count_change("remake"), count_change("unmake"), count_change(
 		    "keep"));
-		confirm("Deploy to the edges", body, "Deploy", false, "",
-		    "sd-apply", "", "");
+		accept_said(body, sizeof(body));
+		confirm("Deploy to the edges", body, jget(sd.plan, "accept") !=
+		    NULL && ucl_array_size(jget(sd.plan, "accept")) > 0 ?
+		    "Accept and deploy" : "Deploy", false, "", "sd-apply", "",
+		    "");
 	} else if (strcmp(act, "sd-show-kept") == 0) {
 		sd.show_kept = !sd.show_kept;
-	} else if (strcmp(act, "sd-apply-fresh") == 0)
-		confirm("Make all again", "Everything the console made on the "
-		    "edges is taken away and made again: tunnels go down for a "
-		    "while.", "Make all again", true, "", "do-sd-apply-fresh",
-		    "", "");
-	else if (strcmp(act, "sd-revert") == 0) {
+	} else if (strcmp(act, "sd-apply-fresh") == 0) {
+		char	body[512];
+
+		snprintf(body, sizeof(body), "Everything the console made on "
+		    "the edges is taken away and made again: tunnels go down "
+		    "for a while.");
+		accept_said(body, sizeof(body));
+		confirm("Make all again", body, "Make all again", true, "",
+		    "do-sd-apply-fresh", "", "");
+	} else if (strcmp(act, "sd-revert") == 0) {
 		free(sd.text);
 		sd.text = sd.doc != NULL ? pretty(sd.doc) : NULL;
 		sd.error[0] = sd.note[0] = '\0';
