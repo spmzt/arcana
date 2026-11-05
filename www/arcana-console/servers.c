@@ -474,6 +474,37 @@ servers_notif_token_check(const char *id, const char *token)
 	return (ok);
 }
 
+/*
+ * Whether host s, reached at nu with peer name pf (NULL: its address's
+ * host), would have its certificate checked against another name than
+ * now: the agent reached another's, which a console owner alone says.
+ */
+static bool
+peer_changes(const struct server *s, const char *nu, const char *pf)
+{
+	char	was[256], now[256];
+
+	if (s->peer_name != NULL)
+		snprintf(was, sizeof(was), "%s", s->peer_name);
+	else
+		uri_host_of(s->uri, was, sizeof(was));
+	if (pf != NULL && pf[0] != '\0')
+		snprintf(now, sizeof(now), "%s", pf);
+	else
+		uri_host_of(nu, now, sizeof(now));
+	return (strcmp(was, now) != 0);
+}
+
+/* May the request's user say which agent a host is: a console owner. */
+static bool
+owner_asks(struct http_request *req)
+{
+	const char	*u;
+
+	u = session_user(req);
+	return (u == NULL || user_console(u) == CROLE_OWNER);
+}
+
 const struct server *
 server_find(const char *id)
 {
@@ -732,6 +763,15 @@ api_server(struct http_request *req)
 			}
 			uri_host_of(servers[i].uri, oldhost, sizeof(oldhost));
 			was_peer = servers[i].peer_name;
+			if (!owner_asks(req) && peer_changes(&servers[i], u,
+			    pn != NULL ? pn : was_peer == NULL && oldhost[0] !=
+			    '\0' && strcmp(u, servers[i].uri) != 0 ? oldhost :
+			    was_peer)) {
+				ucl_object_unref(body);
+				return (reply_error(req, 403, "forbidden", "which "
+				    "agent a host is, its certificate's name, a "
+				    "console owner alone changes"));
+			}
 			pthread_mutex_lock(&table_lock);
 			if (pn != NULL)
 				servers[i].peer_name = pn[0] != '\0' ?
@@ -1265,6 +1305,24 @@ servers_yang_set(struct http_request *req, const ucl_object_t *was,
 			snprintf(why, len, "a %s of host %s may not administer "
 			    "it", role_name(user_host(u, id)), id);
 			return (403);
+		} else {
+			const struct server	*s = server_find(id);
+			const char		*pf = ucl_str(e, "peer-name");
+			const char		*eu = ucl_str(e, "uri");
+			char			 oh[256];
+
+			/* As the change below makes it; no URI refused below. */
+			uri_host_of(s->uri, oh, sizeof(oh));
+			if (eu != NULL && pf == NULL && s->peer_name == NULL &&
+			    oh[0] != '\0' && strcmp(eu, s->uri) != 0)
+				pf = oh;
+			if (eu != NULL && !owner_asks(req) && peer_changes(s, eu,
+			    pf)) {
+				snprintf(why, len, "which agent host %s is, its "
+				    "certificate's name, a console owner alone "
+				    "changes", id);
+				return (403);
+			}
 		}
 		if ((w = entry_why(e)) != NULL) {
 			snprintf(why, len, "host %s: %s", id, w);

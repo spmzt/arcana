@@ -17478,6 +17478,142 @@ ATF_TC_BODY(cyang_transfers, tc)
 	resp_free(&r);
 }
 
+/* The id of the host named name in a reply of /api/servers. */
+static void
+host_id_of(struct resp *r, const char *name, char *sid, size_t len)
+{
+	char	k[64];
+	int	i;
+
+	sid[0] = '\0';
+	for (i = 0; i < 8; i++) {
+		snprintf(k, sizeof(k), "servers.%d.name", i);
+		if (jstr(r, k) != NULL && strcmp(jstr(r, k), name) == 0) {
+			snprintf(k, sizeof(k), "servers.%d.id", i);
+			snprintf(sid, len, "%s", jstr(r, k));
+		}
+	}
+	ATF_REQUIRE(sid[0] != '\0');
+}
+
+CONSOLE_TC(authz_scope, "labels and transfers of hosts one may not read "
+    "not shown nor stopped; which agent a host is a console owner's alone "
+    "to change, a move keeping its certificate's name an admin's")
+ATF_TC_BODY(authz_scope, tc)
+{
+	struct authn	a, d;
+	struct resp	r;
+	char		sa[16], sb[16], sc[16], body[600], path[160];
+	char		keep[sizeof(cookie)];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	cc_host("a", "jgd.sock", sa, sizeof(sa));
+	http("POST", "/api/servers", "{\"name\":\"b\",\"uri\":"
+	    "\"tcp://192.0.2.50:4310\"}", &r);
+	EXPECT(&r, 200);
+	host_id_of(&r, "b", sb, sizeof(sb));
+	resp_free(&r);
+	http("POST", "/api/servers", "{\"name\":\"c\",\"uri\":"
+	    "\"tcp://192.0.2.70:4310\"}", &r);
+	EXPECT(&r, 200);
+	host_id_of(&r, "c", sc, sizeof(sc));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"arcana-console:labels\":{\"label\":["
+	    "{\"host\":\"%s\",\"interface\":\"em0\",\"text\":\"uplink a\"},"
+	    "{\"host\":\"%s\",\"interface\":\"em0\",\"text\":\"uplink b\"}]}}",
+	    sa, sb);
+	http("PUT", CC "labels", body, &r);
+	ATF_CHECK_MSG(r.status == 204 || r.status == 201, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"transfers\":[{\"id\":90,\"from\":"
+	    "\"%s\",\"snapshot\":\"tank/a@1\",\"recursive\":false,\"to\":"
+	    "\"%s\",\"dataset\":\"tank/b\",\"state\":\"running\",\"bytes\":1,"
+	    "\"started\":1700000000}]}", sa, sb);
+	put("data/transfers.json", body);
+
+	/* dave: an operator, admin of a and c, nothing of b. */
+	snprintf(body, sizeof(body), "{\"console\":\"operator\",\"hosts\":"
+	    "{\"%s\":\"admin\",\"%s\":\"admin\"}}", sa, sc);
+	http("PUT", "/api/roles/ac", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	memcpy(keep, cookie, sizeof(keep));
+	cc_user(&d, "dave", "{\"roles\":[\"ac\"]}", -7);
+
+	/* Labels: a's alone. */
+	http("GET", "/api/labels", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "uplink a") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "uplink b") == NULL && strstr(r.body,
+	    sb) == NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", CC "labels", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "uplink a") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "uplink b") == NULL, "%s", r.body);
+	resp_free(&r);
+	/* A PUT of what he sees leaves b's label alone. */
+	snprintf(body, sizeof(body), "{\"arcana-console:labels\":{\"label\":["
+	    "{\"host\":\"%s\",\"interface\":\"em0\",\"text\":\"uplink a\"}]}}",
+	    sa);
+	http("PUT", CC "labels", body, &r);
+	ATF_CHECK_MSG(r.status < 300, "%d %s", r.status, r.body);
+	resp_free(&r);
+
+	/* Transfers: one to b neither shown nor stopped. */
+	http("GET", "/api/transfers", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "transfers.0.id") == NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", CC "transfers", NULL, &r);
+	ATF_CHECK_MSG(strstr(r.body, "\"90\"") == NULL && strstr(r.body,
+	    ":90") == NULL, "%s", r.body);
+	resp_free(&r);
+	http("DELETE", "/api/transfers/90", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("POST", CC "transfers/transfer=90/stop", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+
+	/* Which agent c is: not his to change; a move keeping it is. */
+	snprintf(path, sizeof(path), "/api/servers/%s", sc);
+	http("POST", path, "{\"uri\":\"tcp://192.0.2.71:4310\",\"peer_name\":"
+	    "\"other.example\"}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("POST", path, "{\"uri\":\"tcp://192.0.2.72:4310\",\"peer_name\":"
+	    "\"\"}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("POST", path, "{\"uri\":\"tcp://192.0.2.71:4310\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(path, sizeof(path), CC "hosts/host=%s", sc);
+	snprintf(body, sizeof(body), "{\"arcana-console:host\":[{\"id\":\"%s\","
+	    "\"name\":\"c\",\"uri\":\"tcp://192.0.2.71:4310\",\"peer-name\":"
+	    "\"other.example\"}]}", sc);
+	http("PATCH", path, body, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+
+	/* The owner: b's label kept; he may say which agent c is. */
+	memcpy(cookie, keep, sizeof(cookie));
+	http("GET", "/api/labels", NULL, &r);
+	ATF_CHECK_MSG(strstr(r.body, "uplink b") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/transfers", NULL, &r);
+	ATF_CHECK_STREQ("90", jstr(&r, "transfers.0.id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s", sc);
+	http("POST", path, "{\"uri\":\"tcp://192.0.2.71:4310\",\"peer_name\":"
+	    "\"other.example\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+}
+
 CONSOLE_TC(cyang_push, "arcana-console's push: each user's own "
     "subscriptions, their keys never read and kept when left out, a "
     "message sent to the user's own devices alone")
@@ -18679,6 +18815,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, cyang_labels);
 	ATF_TP_ADD_TC(tp, cyang_pfxlists);
 	ATF_TP_ADD_TC(tp, cyang_transfers);
+	ATF_TP_ADD_TC(tp, authz_scope);
 	ATF_TP_ADD_TC(tp, cyang_push);
 	ATF_TP_ADD_TC(tp, cyang_settings_actions);
 	ATF_TP_ADD_TC(tp, cyang_feeds);

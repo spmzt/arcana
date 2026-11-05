@@ -519,12 +519,55 @@ name_ok(const char *s, bool snap)
 	return (true);
 }
 
-/* The stop of transfer n asked: 0, or the HTTP status and why. */
+static int	host_ok(struct http_request *, const char *, char *, size_t);
+
+/* Whether the request may read both hosts of transfer t. */
+static bool
+seen(struct http_request *req, const ucl_object_t *t)
+{
+	const char	*from, *to;
+
+	return ((from = ucl_str(t, "from")) != NULL && (to = ucl_str(t,
+	    "to")) != NULL && host_role_ok(req, from, false, false) &&
+	    host_role_ok(req, to, false, false));
+}
+
+/* The transfers file, those of hosts the request may not read left out. */
+static ucl_object_t *
+seen_load(struct http_request *req)
+{
+	ucl_object_t		*top, *arr;
+	const ucl_object_t	*t;
+	ucl_object_iter_t	 it;
+
+	pthread_mutex_lock(&xf_lock);
+	top = store_load(XF_FILE);
+	pthread_mutex_unlock(&xf_lock);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while (top != NULL && (t = ucl_object_iterate(ucl_object_lookup(top,
+	    "transfers"), &it, true)) != NULL)
+		if (seen(req, t))
+			ucl_array_append(arr, ucl_object_copy(t));
+	if (top != NULL)
+		ucl_object_unref(top);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	put(top, "transfers", arr);
+	return (top);
+}
+
+/*
+ * The stop of transfer n asked, by one who may change both its hosts:
+ * 0, or the HTTP status and why (one who may not read them told of no
+ * such transfer).
+ */
 int
-transfers_yang_stop(uint32_t n, char *why, size_t len)
+transfers_yang_stop(struct http_request *req, uint32_t n, char *why,
+    size_t len)
 {
 	ucl_object_t		*top, *o, *e;
 	ucl_object_iter_t	 it;
+	int			 rc;
 
 	pthread_mutex_lock(&xf_lock);
 	top = store_load(XF_FILE);
@@ -536,12 +579,18 @@ transfers_yang_stop(uint32_t n, char *why, size_t len)
 		if ((uint32_t)ucl_object_toint(ucl_object_lookup(e, "id")) == n)
 			o = e;
 	if (o == NULL || strcmp(ucl_object_tostring_forced(
-	    ucl_object_lookup(o, "state")), "running") != 0) {
+	    ucl_object_lookup(o, "state")), "running") != 0 || !seen(req, o)) {
 		pthread_mutex_unlock(&xf_lock);
 		if (top != NULL)
 			ucl_object_unref(top);
 		snprintf(why, len, "no such transfer running");
 		return (404);
+	}
+	if ((rc = host_ok(req, ucl_str(o, "from"), why, len)) != 0 ||
+	    (rc = host_ok(req, ucl_str(o, "to"), why, len)) != 0) {
+		pthread_mutex_unlock(&xf_lock);
+		ucl_object_unref(top);
+		return (rc);
 	}
 	/* A mark the transfer's thread looks for. */
 	put(o, "cancel", ucl_object_frombool(true));
@@ -680,13 +729,7 @@ api_transfers(struct http_request *req)
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
 			return (WEB_OK);
-		pthread_mutex_lock(&xf_lock);
-		top = store_load(XF_FILE);
-		pthread_mutex_unlock(&xf_lock);
-		if (top == NULL)
-			top = ucl_object_typed_new(UCL_OBJECT);
-		if (ucl_object_lookup(top, "transfers") == NULL)
-			put(top, "transfers", ucl_object_typed_new(UCL_ARRAY));
+		top = seen_load(req);
 		return (reply_json(req, 200, top));
 	}
 	if (!guard(req, true))
@@ -694,7 +737,7 @@ api_transfers(struct http_request *req)
 	if (req->method == HTTP_METHOD_DELETE) {
 		id = strrchr(req->path, '/') + 1;
 		n = (uint32_t)strtoul(id, NULL, 10);
-		if ((rc = transfers_yang_stop(n, why, sizeof(why))) != 0)
+		if ((rc = transfers_yang_stop(req, n, why, sizeof(why))) != 0)
 			return (reply_error(req, rc, "not-found", "%s", why));
 		top = ucl_object_typed_new(UCL_OBJECT);
 		put(top, "ok", ucl_object_frombool(true));
@@ -718,7 +761,7 @@ api_transfers(struct http_request *req)
 
 /* arcana-console:transfers's value: each, its times RFC 6991's. */
 ucl_object_t *
-transfers_yang(void)
+transfers_yang(struct http_request *req)
 {
 	static const char *const keep[] = { "from", "snapshot", "since",
 	    "to", "dataset", "state", "error", NULL };
@@ -727,9 +770,7 @@ transfers_yang(void)
 	ucl_object_iter_t	 it;
 	size_t			 k;
 
-	pthread_mutex_lock(&xf_lock);
-	top = store_load(XF_FILE);
-	pthread_mutex_unlock(&xf_lock);
+	top = seen_load(req);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
 	while (top != NULL && (t = ucl_object_iterate(ucl_object_lookup(top,

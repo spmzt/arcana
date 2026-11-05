@@ -127,7 +127,39 @@ label_of(const char *sid, const char *ifname, char *buf, size_t len)
 	return (buf);
 }
 
-/* GET /api/labels: every label, by server/interface. */
+/* The labels of the hosts the request may read alone. */
+static ucl_object_t *
+seen_load(struct http_request *req)
+{
+	ucl_object_t		*all, *out;
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	const char		*k;
+	char			 sid[16];
+	size_t			 n;
+
+	all = all_load();
+	out = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(all, "labels"), &it,
+	    true)) != NULL) {
+		k = ucl_object_key(v);
+		if ((n = strcspn(k, "/")) == 0 || n >= sizeof(sid) ||
+		    k[n] != '/')
+			continue;
+		memcpy(sid, k, n);
+		sid[n] = '\0';
+		if (host_role_ok(req, sid, false, false))
+			put(out, k, ucl_object_copy(v));
+	}
+	ucl_object_unref(all);
+	all = ucl_object_typed_new(UCL_OBJECT);
+	put(all, "labels", out);
+	return (all);
+}
+
+/* GET /api/labels: every label of the hosts one may read, by
+ * server/interface. */
 int
 api_labels(struct http_request *req)
 {
@@ -137,7 +169,7 @@ api_labels(struct http_request *req)
 		return (reply_error(req, 405, "method", "GET"));
 	if (!guard(req, false))
 		return (WEB_OK);
-	all = all_load();
+	all = seen_load(req);
 	return (reply_json(req, 200, all));
 }
 
@@ -244,7 +276,7 @@ api_label(struct http_request *req)
 
 /* arcana-console:labels's value: each label by its host and interface. */
 ucl_object_t *
-labels_yang(void)
+labels_yang(struct http_request *req)
 {
 	ucl_object_t		*all, *arr, *e, *o;
 	const ucl_object_t	*v;
@@ -252,7 +284,7 @@ labels_yang(void)
 	const char		*k;
 	size_t			 n;
 
-	all = all_load();
+	all = seen_load(req);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
 	while ((v = ucl_object_iterate(ucl_object_lookup(all, "labels"), &it,

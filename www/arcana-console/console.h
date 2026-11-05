@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.369.2"
+#define	ARCW_VERSION		"0.369.3"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -593,7 +593,7 @@ bool		 cyang_same(const ucl_object_t *, const ucl_object_t *);
 ucl_object_t	*templates_yang(void);
 int		 templates_yang_set(struct http_request *, const ucl_object_t *,
 		    const ucl_object_t *, char *, size_t);
-ucl_object_t	*labels_yang(void);
+ucl_object_t	*labels_yang(struct http_request *);
 int		 labels_yang_set(struct http_request *, const ucl_object_t *,
 		    const ucl_object_t *, char *, size_t);
 ucl_object_t	*pfxlists_yang(void);
@@ -604,10 +604,11 @@ int		 feeds_yang_set(struct http_request *, const ucl_object_t *,
 		    const ucl_object_t *, char *, size_t);
 int		 feeds_yang_ask(struct http_request *, const char *,
 		    const char *, char *, size_t);
-ucl_object_t	*transfers_yang(void);
+ucl_object_t	*transfers_yang(struct http_request *);
 int		 transfers_yang_start(struct http_request *,
 		    const ucl_object_t *, uint32_t *, char *, size_t);
-int		 transfers_yang_stop(uint32_t, char *, size_t);
+int		 transfers_yang_stop(struct http_request *, uint32_t, char *,
+		    size_t);
 ucl_object_t	*push_yang(struct http_request *);
 int		 push_yang_set(struct http_request *, const ucl_object_t *,
 		    const ucl_object_t *, char *, size_t);

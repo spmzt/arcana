@@ -503,13 +503,13 @@ value_of(struct http_request *req, const struct part *p, uint32_t one)
 	if (strcmp(p->name, "templates") == 0)
 		return (templates_yang());
 	if (strcmp(p->name, "labels") == 0)
-		return (labels_yang());
+		return (labels_yang(req));
 	if (strcmp(p->name, "prefix-lists") == 0)
 		return (pfxlists_yang());
 	if (strcmp(p->name, "threat-feeds") == 0)
 		return (feeds_yang(req));
 	if (strcmp(p->name, "transfers") == 0)
-		return (transfers_yang());
+		return (transfers_yang(req));
 	if (strcmp(p->name, "push") == 0)
 		return (push_yang(req));
 	if (strcmp(p->name, "hosts") == 0)
@@ -828,8 +828,8 @@ action(struct http_request *req)
 		}
 	} else if (action_at(req->path, "transfers", "transfer", "stop", key,
 	    sizeof(key))) {
-		rc = transfers_yang_stop((uint32_t)strtoul(key, NULL, 10), why,
-		    sizeof(why));
+		rc = transfers_yang_stop(req, (uint32_t)strtoul(key, NULL,
+		    10), why, sizeof(why));
 	} else if (action_at(req->path, "threat-feeds", "feed", "fetch", key,
 	    sizeof(key))) {
 		rc = feeds_yang_ask(req, key, "fetch", why, sizeof(why));
