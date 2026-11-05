@@ -14280,6 +14280,52 @@ ATF_TC_BODY(sdwan_apply, tc)
 		ATF_CHECK(jstr(&r, "ietf-vn:vn-member.0.if-selected") == NULL);
 		resp_free(&r);
 	}
+	/*
+	 * An operator of no host: the plan's tunnels shown, no edge's
+	 * steering read for him, so no tunnel's state nor selection and
+	 * no oper-status.
+	 */
+	{
+		struct authn	o;
+		char		tp[200], u[128], inv[128], keep[sizeof(cookie)];
+		int		k;
+
+		http("PUT", "/api/roles/a-op", "{\"console\":\"operator\","
+		    "\"hosts\":{}}", &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		http("PUT", "/api/users/dave", "{\"roles\":[\"a-op\"]}", &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		http("POST", "/api/users/dave/invite", NULL, &r);
+		EXPECT(&r, 200);
+		snprintf(inv, sizeof(inv), "%s", jstr(&r, "token"));
+		resp_free(&r);
+		memcpy(keep, cookie, sizeof(keep));
+		cookie[0] = '\0';
+		authn_new(&o, -7);
+		do_register(&o, inv, &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		snprintf(tp, sizeof(tp), "/restconf/data/ietf-vn:virtual-network/"
+		    "vn=acme/vn-member=%s%%3Ahq~%s%%3Abranch", sa, sb);
+		http("GET", tp, NULL, &r);
+		EXPECT(&r, 200);
+		for (k = 0; k < 2; k++) {
+			snprintf(u, sizeof(u), "ietf-vn:vn-member.0.underlay."
+			    "arcana-sdwan-underlay:sdwan.tunnel.%d.", k);
+			snprintf(tp, sizeof(tp), "%sid", u);
+			ATF_CHECK_MSG(jstr(&r, tp) != NULL, "%s", r.body);
+			snprintf(tp, sizeof(tp), "%sselected", u);
+			ATF_CHECK_MSG(jstr(&r, tp) == NULL, "%s", r.body);
+			snprintf(tp, sizeof(tp), "%sstate", u);
+			ATF_CHECK_MSG(jstr(&r, tp) == NULL, "%s", r.body);
+		}
+		ATF_CHECK_MSG(jstr(&r, "ietf-vn:vn-member.0.oper-status") ==
+		    NULL, "%s", r.body);
+		resp_free(&r);
+		memcpy(cookie, keep, sizeof(cookie));
+	}
 	/* Again: nothing to do. */
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);

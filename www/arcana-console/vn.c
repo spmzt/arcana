@@ -77,6 +77,7 @@
 
 /* A view's making: the plan's tunnels, the edges' steering read. */
 struct vctx {
+	struct http_request *req;	/* whose: hosts it may not read unread */
 	ucl_object_t	*tunnels;
 	ucl_object_t	*steer;		/* edge: its policies, or null */
 };
@@ -295,7 +296,7 @@ steer_at(struct vctx *x, const char *edge)
 		return (ucl_object_type(v) == UCL_ARRAY ? v : NULL);
 	arr = NULL;
 	if (sdwan_edge_split(edge, sid, sizeof(sid), jail, sizeof(jail)) &&
-	    host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
+	    host_role_ok(x->req, sid, false, false) && host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
 	    sizeof(name))) {
 		snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:"
 		    "fleet/host=%s/arcana-steer:steering/state", sid);
@@ -576,12 +577,13 @@ vn_of(struct vctx *x, const ucl_object_t *s, ucl_object_t *aps)
  * service.
  */
 static ucl_object_t *
-view_make(const ucl_object_t *y, struct vctx *x)
+view_make(struct http_request *req, const ucl_object_t *y, struct vctx *x)
 {
 	const ucl_object_t	*s, *e;
 	ucl_object_iter_t	 it = NULL;
 	ucl_object_t		*top, *aps, *vns, *arr, *o, *vn;
 
+	x->req = req;
 	x->tunnels = ucl_object_lookup_path(y, "vpn-services.vpn-service") !=
 	    NULL ? sdwan_plan_tunnels(y) : NULL;
 	x->steer = ucl_object_typed_new(UCL_OBJECT);
@@ -619,12 +621,12 @@ view_done(struct vctx *x)
 }
 
 ucl_object_t *
-vn_view(const ucl_object_t *y)
+vn_view(struct http_request *req, const ucl_object_t *y)
 {
 	struct vctx	 x;
 	ucl_object_t	*top;
 
-	top = view_make(y, &x);
+	top = view_make(req, y, &x);
 	view_done(&x);
 	return (top);
 }
@@ -689,7 +691,7 @@ vn_into(struct http_request *req, ucl_object_t *top)
 	    VN_PREFIX VN_VN, false))
 		return;
 	y = l3nm_kept();
-	view = vn_view(y);
+	view = vn_view(req, y);
 	ucl_object_unref(y);
 	while ((v = ucl_object_iterate(view, &it, true)) != NULL)
 		ucl_object_insert_key(top, ucl_object_copy(v),
@@ -732,7 +734,7 @@ api_vn(struct http_request *req)
 		return (restconf_error(req, 500, "out of memory"));
 	}
 	y = l3nm_kept();
-	view = vn_view(y);
+	view = vn_view(req, y);
 	ucl_object_unref(y);
 	t = vn_tree(view, a, err, sizeof(err));
 	ucl_object_unref(view);
@@ -1094,7 +1096,7 @@ api_restconf_operations(struct http_request *req)
 		    "upper-bound"));
 	}
 	y = l3nm_kept();
-	top = view_make(y, &x);
+	top = view_make(req, y, &x);
 	ucl_object_unref(y);
 	list = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
