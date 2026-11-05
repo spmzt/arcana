@@ -181,6 +181,13 @@ check-root: .PHONY
 	    2>&1 | sed -n '/->/p;$$p' || { kyua report --verbose \
 	    --results-filter broken,failed | awk '/^===> /{ \
 	    ctx = $$0 == "===> Execution context" } !ctx'; exit 1; }
+.if !defined(WITHOUT_CONSOLE)
+	@set -o pipefail; cd ${.OBJDIR}/www/arcana-console/tests && \
+	    mdo ${.OBJDIR}/closefds kyua test -k Kyuafile \
+	    console_test:sdwan_lab 2>&1 | sed -n '/->/p;$$p' || { kyua report \
+	    --verbose --results-filter broken,failed | awk '/^===> /{ \
+	    ctx = $$0 == "===> Execution context" } !ctx'; exit 1; }
+.endif
 
 # Everything built is under obj/, cblink's under its own.
 clean cleandir: .PHONY

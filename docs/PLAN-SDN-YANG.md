@@ -1915,10 +1915,27 @@ whose first part is served.
   rpc of arcana-kernel, kld_list a commit), ntp, wireguard's keys and
   peers (3.1.8), geneve's VNI and ends, ipsec and ipsec-sa (6.2, 6.3),
   speeder; the `sdwan-*` parts were arcana-sdwan's and arcana-probe's
-  commits already (3.1.11, 3.1.12).  Next: a root lab case of the
-  console's apply, then interfaces, ip and routing as edits with the
-  apply's accepted warnings.  Check (console_test sdwan_apply): the
-  plan's edits, sysctl.conf and sysctl(8) after the apply.
+  commits already (3.1.11, 3.1.12).  Next: interfaces, ip and routing
+  as edits with the apply's accepted warnings.  Check (console_test
+  sdwan_apply): the plan's edits, sysctl.conf and sysctl(8) after the
+  apply.  The root lab (console_test sdwan_lab, in `make check-root`):
+  two vnet jails, each a host whose agent runs in it
+  (harness agent_jailed(): the system's ifconfig(8), sysctl(8),
+  netstat(1) and helper, its files its own), an epair between them as
+  the Internet and another whose ends are their UNIs; a service of a
+  gre tunnel, a UNI each and a UNI's static route.  An apply failing at
+  b's UNI (no such interface) rolled back leaves each jail's addresses,
+  FIBs, tunnels and routes to the lab's prefixes as they were; the
+  good one makes them (the tunnel's ends and inner /31 in FIB 1, the
+  UNIs' addresses there, hq's route, b's routes to hq by the tunnel,
+  net.fibs 2, forwarding on) and a ping crosses the tunnel; the service
+  taken away leaves them as before but for net.fibs and forwarding,
+  which an apply never lowers.  It found two faults the stand-ins hid:
+  a UNI's static route was made with the routes, before the UNI's
+  address (a kernel refuses a gateway on no network of the table; it
+  is the UNI's step's now, after the UNI), and a job's read by the
+  console's own calls was cached by job id alone, so one host's job 1
+  answered for another's.
 - 4.5.6 done (console sdwan_edge.c): refusal of the infeasible with the
   reason and an alternative: an edge's policies' committed bandwidth
   (each rate limiter's or policy's commit, a security policy's rate

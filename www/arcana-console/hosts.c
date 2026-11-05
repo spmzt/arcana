@@ -1918,7 +1918,7 @@ fetch_put(ucl_object_t *top, int error, ucl_object_t *data,
 #define	JOBCACHE	32
 #define	JOBCACHE_US	1000000
 struct jobread {
-	char		 sid[9];
+	char		 host[256];	/* its server, else its URI */
 	char		 user[64];
 	uint64_t	 id;
 	char		*json;
@@ -1927,6 +1927,15 @@ struct jobread {
 };
 static struct jobread	jobcache[JOBCACHE];
 static pthread_mutex_t	jobcache_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* Whose job: a call of the console's own (self_call()) has no server,
+ * its host the URI, each host's ids its own. */
+static const char *
+jobcache_host(const struct call *c)
+{
+
+	return (c->sid[0] != '\0' || c->uri == NULL ? c->sid : c->uri);
+}
 
 static char *
 jobcache_get(const struct call *c)
@@ -1938,8 +1947,8 @@ jobcache_get(const struct call *c)
 	pthread_mutex_lock(&jobcache_lock);
 	for (size_t i = 0; i < nitems(jobcache); i++) {
 		j = &jobcache[i];
-		if (j->json != NULL && j->id == c->jobid && strcmp(j->sid,
-		    c->sid) == 0 && strcmp(j->user, acting) == 0 &&
+		if (j->json != NULL && j->id == c->jobid && strcmp(j->host,
+		    jobcache_host(c)) == 0 && strcmp(j->user, acting) == 0 &&
 		    (j->ended || now - j->at < JOBCACHE_US))
 			json = strdup(j->json);
 	}
@@ -1956,8 +1965,8 @@ jobcache_put(const struct call *c, const char *json, bool ended)
 	pthread_mutex_lock(&jobcache_lock);
 	for (size_t i = 0; i < nitems(jobcache); i++) {
 		j = &jobcache[i];
-		if (j->id == c->jobid && strcmp(j->sid, c->sid) == 0 &&
-		    strcmp(j->user, acting) == 0) {
+		if (j->id == c->jobid && strcmp(j->host, jobcache_host(c)) ==
+		    0 && strcmp(j->user, acting) == 0) {
 			old = j;
 			break;
 		}
@@ -1966,7 +1975,7 @@ jobcache_put(const struct call *c, const char *json, bool ended)
 	}
 	free(old->json);
 	if ((old->json = strdup(json)) != NULL) {
-		snprintf(old->sid, sizeof(old->sid), "%s", c->sid);
+		snprintf(old->host, sizeof(old->host), "%s", jobcache_host(c));
 		snprintf(old->user, sizeof(old->user), "%s", acting);
 		old->id = c->jobid;
 		old->at = now_us();

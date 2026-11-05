@@ -43,6 +43,9 @@ static char	*agent_argv[140];
 static char	 agent_fjl[MAXPATHLEN], agent_fjf[MAXPATHLEN + 8];
 
 static void	 terminate(const char *);
+/* The pid files of agent_jailed()'s agents. */
+static char	 jailed[4][MAXPATHLEN];
+static int	 njailed;
 /* The console sends another build of arcana-agent than the host runs. */
 bool		 harness_other_agent;
 bool		 harness_newer_agent;
@@ -1584,10 +1587,86 @@ terminate(const char *pidfile)
 	fclose(fp);
 }
 
+/*
+ * Another agent, in vnet jail jail (the test's, path "/"), as start()'s
+ * but in dir: its socket dir/agent.sock, its state, files and system
+ * tree there, and the system's ifconfig(8), sysctl(8), netstat(1) and
+ * its own helper, so that what it does is the jail's network's for
+ * real; no libfakejail.  Its pid in dir/agent.pid, stopped by stop().
+ * After start().
+ */
+void
+agent_jailed(const char *jail, const char *dir)
+{
+	static const char *const own[] = { "-l", "agent.sock", "-1",
+	    "history.conf", "-O", "sysctl.conf", "-o", "wg", "-4", "ntp.conf",
+	    "-6", "rtadvd.conf", "-5", "swanctl", "--root", "root",
+	    "--jobs-conf", "jobs.conf", "--subscriptions", "subscriptions.cbor",
+	    NULL };
+	static const char *const real[] = { "-I", "-Q", "-N", "-H", NULL };
+	char	 cwd[MAXPATHLEN], buf[3 * MAXPATHLEN], *argv[160], *v;
+	FILE	*fp;
+	pid_t	 pid;
+	int	 i, k, n;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(buf, sizeof(buf), "mkdir -p %s/wg %s/swanctl/conf.d && "
+	    "chmod 700 %s/wg && cp -R root %s/ && : > %s/sysctl.conf", dir,
+	    dir, dir, dir, dir);
+	ATF_REQUIRE(system(buf) == 0);
+	n = 0;
+	argv[n++] = (char *)(uintptr_t)"/usr/sbin/jexec";
+	argv[n++] = (char *)(uintptr_t)jail;
+	argv[n++] = (char *)(uintptr_t)"/bin/sh";
+	argv[n++] = (char *)(uintptr_t)"-c";
+	argv[n++] = (char *)(uintptr_t)"cd \"$0\" && exec \"$@\"";
+	argv[n++] = strdup(cwd);
+	argv[n++] = agent_argv[0];
+	for (i = 1; agent_argv[i] != NULL && n < 156; i++) {
+		/* A flag alone (-F) as it is. */
+		if (agent_argv[i][0] != '-' || agent_argv[i + 1] == NULL ||
+		    agent_argv[i + 1][0] == '-') {
+			argv[n++] = agent_argv[i];
+			continue;
+		}
+		for (k = 0; real[k] != NULL && strcmp(real[k], agent_argv[i]) !=
+		    0; k++)
+			;
+		if (real[k] != NULL) {
+			i++;
+			continue;
+		}
+		argv[n++] = agent_argv[i];
+		v = agent_argv[++i];
+		for (k = 0; own[k] != NULL && strcmp(own[k], agent_argv[i - 1])
+		    != 0; k += 2)
+			;
+		if (own[k] != NULL) {
+			snprintf(buf, sizeof(buf), "%s%s/%s/%s", strcmp(own[k],
+			    "-l") == 0 ? "unix:" : "", cwd, dir, own[k + 1]);
+			v = strdup(buf);
+		}
+		argv[n++] = v;
+	}
+	argv[n] = NULL;
+	snprintf(buf, sizeof(buf), "%s/agent.out", dir);
+	pid = spawn_server(argv, buf);
+	snprintf(buf, sizeof(buf), "%s/agent.pid", dir);
+	ATF_REQUIRE((fp = fopen(buf, "w")) != NULL);
+	fprintf(fp, "%d\n", (int)pid);
+	fclose(fp);
+	snprintf(jailed[njailed++ % nitems(jailed)], sizeof(jailed[0]), "%s",
+	    buf);
+	snprintf(buf, sizeof(buf), "%s/agent.sock", dir);
+	wait_for(buf);
+}
+
 void
 stop(void)
 {
 
+	for (int i = 0; i < njailed && i < (int)nitems(jailed); i++)
+		terminate(jailed[i]);
 	terminate("arcana-agent2.pid");
 	terminate("console.pid");
 	terminate("arcana-agent.pid");

@@ -6961,21 +6961,14 @@ plan_build(struct plan *pl, const ucl_object_t *y, const ucl_object_t *st)
 		    ucl_object_lookup(o, "make"), 0);
 		put(j, "links", links);
 	}
-	/* Routes: a far end point's prefixes by a tunnel to its edge; a
-	 * UNI's static routes by their next hop. */
+	/* Routes: a far end point's prefixes by a tunnel to its edge (a
+	 * UNI's static routes with the UNI, after its address). */
 	it = NULL;
 	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
 	    true)) != NULL) {
 		it2 = NULL;
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
 		    "end_points"), &it2, true)) != NULL) {
-			rit = NULL;
-			while ((r = ucl_object_iterate(ucl_object_lookup(
-			    ucl_object_lookup(ep, "uni"), "routes"), &rit,
-			    true)) != NULL)
-				route_obj(pl, str(ep, "edge"), sw, str(r,
-				    "prefix"), str(r, "next_hop"), "a static "
-				    "route of the UNI");
 			/* The other edges' prefixes come by iBGP between the
 			 * loopbacks, no static for them. */
 			if (sw_loop(sw))
@@ -7045,17 +7038,28 @@ plan_build(struct plan *pl, const ucl_object_t *y, const ucl_object_t *st)
 			}
 		}
 	}
-	/* The UNIs, last. */
+	/* The UNIs, last; a UNI's static routes after its address, their
+	 * next hops on it (a kernel refuses a gateway on no network of the
+	 * table). */
 	it = NULL;
 	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
 	    true)) != NULL) {
 		it2 = NULL;
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
-		    "end_points"), &it2, true)) != NULL)
+		    "end_points"), &it2, true)) != NULL) {
 			if (ucl_object_lookup(ep, "uni") != NULL ? !uni_obj(pl, sw,
 			    ep) : ucl_object_lookup(ep, "remote") != NULL &&
 			    !remote_obj(pl, sw, ep))
 				return (false);
+			rit = NULL;
+			while ((r = ucl_object_iterate(ucl_object_lookup(
+			    ucl_object_lookup(ep, "uni"), "routes"), &rit,
+			    true)) != NULL)
+				route_fib_obj(pl, str(ep, "edge"), sw, efib(pl,
+				    sw, str(ep, "edge")), PH_UNI, str(r,
+				    "prefix"), str(r, "next_hop"), "a static "
+				    "route of the UNI");
+		}
 	}
 	/*
 	 * Breakout (§9.12.2.5): where a flow of an edge's UNI may leave

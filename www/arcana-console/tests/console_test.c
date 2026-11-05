@@ -23,6 +23,7 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 
+#include <net/if.h>
 #include <netinet/in.h>
 
 #include <openssl/evp.h>
@@ -10589,7 +10590,12 @@ sdwan_wait(struct resp *r)
 		resp_free(r);
 		usleep(200000);
 	}
-	ATF_REQUIRE_MSG(false, "the apply did not end");
+	/* What the console and the lab's agents (sdwan_lab) said. */
+	show("console.out");
+	show("ea/agent.out");
+	show("eb/agent.out");
+	http("GET", "/api/sdwan/apply", NULL, r);
+	ATF_REQUIRE_MSG(false, "the apply did not end: %s", r->body);
 }
 
 /* How many of the plan's changes are of that kind. */
@@ -11121,6 +11127,279 @@ ATF_TC_BODY(sdwan_jail, tc)
 	    strstr(r.body, "an edge that is a vnet jail has no ntp yet") != NULL,
 	    "%s", r.body);
 	resp_free(&r);
+}
+
+/*
+ * The root lab (sdwan_lab): two vnet jails, each an agent's host, an
+ * epair between them for the Internet and another whose ends are their
+ * UNIs.  What a service makes there, snapshot by lab.sh: each jail's
+ * addresses, FIBs and tunnels, and its routes to the lab's prefixes in
+ * every table.
+ */
+#define	LAB_A	"arcw_la"
+#define	LAB_B	"arcw_lb"
+
+static const char lab_sh[] =
+    "#!/bin/sh\n"
+    "# up: the jails and epairs; snap: what is made; down: all gone.\n"
+    "case $1 in\n"
+    "up)\n"
+    "\tfor j in " LAB_A " " LAB_B "; do jail -c name=$j vnet persist "
+    "path=/ host.hostname=$j >/dev/null || exit 1; jexec $j ifconfig lo0 "
+    "inet 127.0.0.1/8 up; done\n"
+    "\tu=$(ifconfig epair create) && n=$(ifconfig epair create) || exit 1\n"
+    "\techo \"${u%a} ${n%a}\" > lab.epairs\n"
+    "\tifconfig ${u} vnet " LAB_A " && ifconfig ${u%a}b vnet " LAB_B " && "
+    "ifconfig ${n} vnet " LAB_A " && ifconfig ${n%a}b vnet " LAB_B " || "
+    "exit 1\n"
+    "\tjexec " LAB_A " ifconfig ${u} inet 10.203.0.1/24 up && jexec " LAB_B
+    " ifconfig ${u%a}b inet 10.203.0.2/24 up && jexec " LAB_A " ifconfig "
+    "${n} up && jexec " LAB_B " ifconfig ${n%a}b up\n"
+    "\techo \"${u} ${u%a}b ${n} ${n%a}b\" ;;\n"
+    "snap)\n"
+    "\tfor j in " LAB_A " " LAB_B "; do echo \"== $j\"\n"
+    "\t\tjexec $j ifconfig -a | awk '/^[a-z]/ { i = $1 } /^\\t(inet |fib:|"
+    "tunnelfib:|tunnel )/ && !/fe80:/ { print i, $1, $2, $3, $4 }'\n"
+    "\t\tf=0; while [ $f -lt $(jexec $j sysctl -n net.fibs) ]; do jexec $j "
+    "netstat -rn4 -F $f | awk -v f=$f '$1 ~ /^(10\\.|100\\.64\\.)/ { print "
+    "f, $1, $2, $4 }'; f=$((f + 1)); done\n"
+    "\tdone ;;\n"
+    "down)\n"
+    "\tfor j in " LAB_A " " LAB_B "; do jls -j $j >/dev/null 2>&1 || "
+    "continue\n"
+    "\t\tfor i in $(jexec $j ifconfig -l); do case $i in gre*|gif*|vlan*) "
+    "jexec $j ifconfig $i destroy ;; esac; done; done\n"
+    "\t[ -f lab.epairs ] && for e in $(cat lab.epairs); do for j in "
+    LAB_A " " LAB_B "; do ifconfig -j $j ${e}a destroy 2>/dev/null; "
+    "ifconfig -j $j ${e}b destroy 2>/dev/null; done; ifconfig ${e}a "
+    "destroy 2>/dev/null; done\n"
+    "\tfor j in " LAB_A " " LAB_B "; do jls -j $j >/dev/null 2>&1 && "
+    "jail -r $j >/dev/null; done; true ;;\n"
+    "esac\n";
+
+/* The lab's service: hq on a, branch on b (its UNI on unib), a gre
+ * tunnel between them; hq's UNI routes 10.1.8.0/22 by 10.1.0.2. */
+static void
+lab_doc(char *buf, size_t len, const char *version, const char *sa,
+    const char *sb, char ifs[4][IFNAMSIZ], const char *unib)
+{
+
+	snprintf(buf, len, "{\"version\":%s,"
+	    "\"ucs\":[{\"id\":\"inet\",\"type\":\"public\",\"billing\":"
+	    "\"flat-rate\",\"tunnel\":{\"kind\":\"gre\",\"ipsec\":false}}],"
+	    "\"edges\":[{\"server\":\"%s\",\"ucs_end_points\":[{\"id\":"
+	    "\"a-inet\",\"ucs\":\"inet\",\"interface\":\"%s\",\"address\":"
+	    "\"10.203.0.1\"}]},{\"server\":\"%s\",\"ucs_end_points\":[{\"id\":"
+	    "\"b-inet\",\"ucs\":\"inet\",\"interface\":\"%s\",\"address\":"
+	    "\"10.203.0.2\"}]}],"
+	    "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"ucs\":[\"inet\"],"
+	    "\"reserved_prefixes\":[\"100.64.0.0/24\"],"
+	    "\"zones\":[{\"name\":\"rest\",\"prefixes\":\"Default\"}],"
+	    "\"intervals\":{\"eval\":1000,\"arrival\":100,\"ir\":500},"
+	    "\"flows\":[{\"name\":\"all\",\"criteria\":{\"any\":true}}],"
+	    "\"policies\":[{\"name\":\"open\",\"direction\":\"ingress\","
+	    "\"criteria\":{}}],"
+	    "\"end_points\":[{\"id\":\"hq\",\"edge\":\"%s\",\"uni\":{\"id\":"
+	    "\"uni-hq\",\"interface\":\"%s\",\"ipv4\":{\"mode\":\"static\","
+	    "\"prefix\":\"10.1.0.0/24\",\"provider\":[\"10.1.0.1\"]},"
+	    "\"routes\":[{\"prefix\":\"10.1.8.0/22\",\"next_hop\":"
+	    "\"10.1.0.2\"}]},"
+	    "\"policy_map\":[{\"zone\":\"rest\",\"app\":\"all\",\"ingress\":"
+	    "\"open\"}]},{\"id\":\"branch\",\"edge\":\"%s\",\"uni\":{\"id\":"
+	    "\"uni-br\",\"interface\":\"%s\",\"ipv4\":{\"mode\":\"static\","
+	    "\"prefix\":\"10.2.0.0/24\",\"provider\":[\"10.2.0.1\"]}},"
+	    "\"policy_map\":[{\"zone\":\"rest\",\"app\":\"all\",\"ingress\":"
+	    "\"open\"}]}]}]}", version, sa, ifs[0], sb, ifs[1], sa, ifs[2],
+	    sb, unib);
+}
+
+/* The document's version now, for the next PUT. */
+static void
+lab_version(char *buf, size_t len)
+{
+	struct resp	r;
+
+	http("GET", "/api/sdwan", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(buf, len, "%s", jstr(&r, "version") != NULL ? jstr(&r,
+	    "version") : "0");
+	resp_free(&r);
+}
+
+/* What lab.sh's snap says, malloc'd. */
+static char *
+lab_snap(void)
+{
+	FILE	*fp;
+	char	*s;
+	size_t	 n;
+
+	ATF_REQUIRE(system("./lab.sh snap > snap.out 2>&1") == 0);
+	ATF_REQUIRE((fp = fopen("snap.out", "r")) != NULL);
+	s = calloc(1, 65536);
+	n = fread(s, 1, 65535, fp);
+	s[n] = '\0';
+	fclose(fp);
+	return (s);
+}
+
+/* A sysctl of a lab jail, its value. */
+static long
+lab_sysctl(const char *jail, const char *oid)
+{
+	char	 cmd[200], line[64];
+	FILE	*fp;
+	long	 v = -1;
+
+	snprintf(cmd, sizeof(cmd), "jexec %s sysctl -n %s", jail, oid);
+	if ((fp = popen(cmd, "r")) == NULL)
+		return (-1);
+	if (fgets(line, sizeof(line), fp) != NULL)
+		v = strtol(line, NULL, 10);
+	pclose(fp);
+	return (v);
+}
+
+ATF_TC_WITH_CLEANUP(sdwan_lab);
+ATF_TC_HEAD(sdwan_lab, tc)
+{
+	atf_tc_set_md_var(tc, "descr", "The console's SD-WAN apply on a lab "
+	    "for real, as root: two vnet jails, each an agent's host; a "
+	    "failing apply rolled back leaves their addresses, FIBs and "
+	    "routes as they were, a good one makes them, the service taken "
+	    "away takes them away again");
+	atf_tc_set_md_var(tc, "require.user", "root");
+	atf_tc_set_md_var(tc, "is.exclusive", "true");
+	atf_tc_set_md_var(tc, "timeout", "300");
+}
+ATF_TC_CLEANUP(sdwan_lab, tc)
+{
+
+	stop();
+	/* Interfaces out of the jails before they go: a vnet torn down
+	 * with them panics a debug kernel. */
+	if (access("lab.sh", X_OK) == 0)
+		(void)system("./lab.sh down");
+}
+ATF_TC_BODY(sdwan_lab, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN + 64], sa[16], sb[16];
+	char		doc[4096], ver[16], line[128], ifs[4][IFNAMSIZ];
+	char		*before, *after;
+	FILE		*fp;
+
+	if (system("jls -j " LAB_A " >/dev/null 2>&1 || jls -j " LAB_B
+	    " >/dev/null 2>&1") == 0)
+		atf_tc_skip("a jail of the lab's names is there already");
+	if (system("ifconfig -C | grep -qw gre && ifconfig -C | grep -qw "
+	    "epair") != 0)
+		atf_tc_skip("no gre(4) or epair(4)");
+	put("lab.sh", lab_sh);
+	ATF_REQUIRE(chmod("lab.sh", 0755) == 0);
+	ATF_REQUIRE((fp = popen("./lab.sh up", "r")) != NULL);
+	ATF_REQUIRE(fgets(line, sizeof(line), fp) != NULL);
+	ATF_REQUIRE(pclose(fp) == 0);
+	ATF_REQUIRE(sscanf(line, "%15s %15s %15s %15s", ifs[0], ifs[1],
+	    ifs[2], ifs[3]) == 4);
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	agent_jailed(LAB_A, "ea");
+	agent_jailed(LAB_B, "eb");
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/ea/"
+	    "agent.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/eb/"
+	    "agent.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	before = lab_snap();
+	ATF_REQUIRE_EQ(1, lab_sysctl(LAB_A, "net.fibs"));
+
+	/*
+	 * b's UNI on an interface b has not: its step fails after the
+	 * tunnel's and a's UNI's were made, and the apply rolled back
+	 * leaves the jails as they were, but net.fibs, which only goes up.
+	 */
+	lab_doc(doc, sizeof(doc), "0", sa, sb, ifs, "lab9");
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/sdwan/apply", "{\"fresh\":true}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "rolled back") == 0 &&
+	    strstr(r.body, "\"state\":\"undone\"") != NULL, "%s", r.body);
+	resp_free(&r);
+	after = lab_snap();
+	ATF_CHECK_STREQ(before, after);
+	free(after);
+
+	/* The good one: made for real. */
+	lab_version(ver, sizeof(ver));
+	lab_doc(doc, sizeof(doc), ver, sa, sb, ifs, ifs[3]);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/sdwan/apply", "{\"fresh\":true}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_REQUIRE_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
+	    r.body);
+	resp_free(&r);
+	after = lab_snap();
+	/* Each end of the tunnel in the service's table, its inner /31
+	 * and its outer ends the underlay's; the UNI's address in it too,
+	 * and hq's static route; b's routes to hq by the tunnel. */
+	snprintf(line, sizeof(line), "%s: inet 10.1.0.1 netmask 0xffffff00\n"
+	    "%s: fib: 1", ifs[2], ifs[2]);
+	ATF_CHECK_MSG(strstr(after, "gre100: tunnel inet 10.203.0.1 -->\n"
+	    "gre100: inet 100.64.0.0 --> 100.64.0.1\ngre100: fib: 1") != NULL &&
+	    strstr(after, "gre101: inet 100.64.0.1 --> 100.64.0.0\n"
+	    "gre101: fib: 1") != NULL && strstr(after, line) != NULL, "%s",
+	    after);
+	ATF_CHECK_MSG(strstr(after, "1 10.1.0.0/24 link#") != NULL &&
+	    strstr(after, "1 10.1.8.0/22 10.1.0.2 ") != NULL && strstr(after,
+	    "1 10.1.8.0/22 100.64.0.0 gre101") != NULL && strstr(after,
+	    "1 10.2.0.0/24 link#") != NULL, "%s", after);
+	free(after);
+	ATF_CHECK_EQ(2, lab_sysctl(LAB_A, "net.fibs"));
+	ATF_CHECK_EQ(2, lab_sysctl(LAB_B, "net.fibs"));
+	ATF_CHECK_EQ(1, lab_sysctl(LAB_A, "net.inet.ip.forwarding"));
+	ATF_CHECK_EQ(1, lab_sysctl(LAB_B, "net.inet6.ip6.forwarding"));
+	/* The tunnel carries: b's inner end answers a's ping, in the
+	 * service's table. */
+	ATF_CHECK_MSG(system("jexec " LAB_A " setfib 1 ping -c 1 -t 5 "
+	    "100.64.0.1 >/dev/null") == 0, "no answer through the tunnel");
+
+	/* The service taken away: what it made goes, the rest stays. */
+	lab_version(ver, sizeof(ver));
+	snprintf(doc, sizeof(doc), "{\"version\":%s,\"ucs\":[],\"edges\":[],"
+	    "\"swvcs\":[]}", ver);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
+	    r.body);
+	resp_free(&r);
+	after = lab_snap();
+	ATF_CHECK_STREQ(before, after);
+	free(after);
+	free(before);
 }
 
 CONSOLE_TC(sdwan_mesh, "Several transports on a pair of edges: two Internet "
@@ -15464,6 +15743,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_sfp);
 	ATF_TP_ADD_TC(tp, sdwan_jail);
+	ATF_TP_ADD_TC(tp, sdwan_lab);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, churn);
 	ATF_TP_ADD_TC(tp, session_restart);
