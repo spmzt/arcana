@@ -12592,8 +12592,15 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"rtadvd\",\"interface\":\"vlan")
 	    != NULL && strstr(r.body, "\"args\":[\"2001:db8:1::/64\",\"2001:db8:1::1"
 	    "\"],\"persist\":true") != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "\"kind\":\"sysctl\",\"args\":[\"net.inet6.ip6."
-	    "forwarding\",\"1\"]") != NULL);
+	/* Forwarding and the FIBs by arcana-sysctl, device edits of the
+	 * hosts' candidates (4.5.5), no longer sysctl jobs. */
+	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"edit\",\"method\":\"PATCH\","
+	    "\"path\":\"arcana-sysctl:sysctl\",\"body\":{\"arcana-sysctl:sysctl\""
+	    ":{\"kept\":[{\"name\":\"net.inet.ip.forwarding\",\"value\":\"1\"},"
+	    "{\"name\":\"net.inet6.ip6.forwarding\",\"value\":\"1\"}]}}}") !=
+	    NULL && strstr(r.body, "{\"name\":\"net.fibs\",\"value\":\"4\"}") !=
+	    NULL && strstr(r.body, "\"kind\":\"sysctl\"") == NULL, "%s",
+	    r.body);
 	/* The iBGP by the control tunnel alone: the host a reflector, b its
 	 * client and nothing else; no session by the data tunnels. */
 	ATF_CHECK_MSG(strstr(r.body, "\"peers\":[{\"tunnel\":"
@@ -12766,6 +12773,10 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "history.1.state") == NULL, "%s", r.body);
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^gre100 create' ifconfig.log") == 0);
+	/* The edits committed: sysctl.conf has them, sysctl(8) set them. */
+	ATF_CHECK(system("grep -qx 'net.inet6.ip6.forwarding=1' sysctl.conf && "
+	    "grep -qx 'net.fibs=4' sysctl.conf && grep -q "
+	    "'^sysctl net.inet.ip.forwarding=1' kld.log") == 0);
 	/* Suricata's alert (the stand-in writes one as it starts) is an
 	 * event, and the event a Security Event Notification (MEF 138
 	 * R24, Table 3): Arcana's own function, the service, the source,

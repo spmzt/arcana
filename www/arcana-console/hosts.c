@@ -6351,6 +6351,66 @@ hosts_sdwan_set(const char *uri, const char *peer, const char *name,
 }
 
 /*
+ * A RESTCONF request of the console's own to server sid (the SD-WAN
+ * apply's device edits, PLAN-SDN-YANG 4.5.5): method on path, an
+ * RFC 8040 path below the host's fleet entry with its query, body
+ * (consumed) RFC 7951's JSON, run as restconf.c runs a page's, a
+ * commit's confirmation over a connection dialled for it.  The reply's
+ * JSON (ietf-restconf:errors when refused), malloc'd; its status.
+ */
+char *
+hosts_restconf(const char *sid, const char *uri, const char *peer,
+    const char *name, int method, const char *path, ucl_object_t *body,
+    int *status)
+{
+	struct call	*c;
+	const char	*why = NULL;
+	char		*p, *q, *json;
+	int		 st;
+
+	c = xcalloc(1, sizeof(*c));
+	c->op = OP_RESTCONF;
+	snprintf(c->sid, sizeof(c->sid), "%s", sid);
+	p = xstrdup(path);
+	if ((q = strchr(p, '?')) != NULL)
+		*q++ = '\0';
+	if ((c->rc = restconf_parse(p, q, &why)) == NULL) {
+		free(p);
+		ucl_object_unref(body);
+		free(c);
+		*status = 400;
+		return (restconf_errors(400, why));
+	}
+	free(p);
+	if ((st = restconf_prepare(c->rc, method, body != NULL ?
+	    "application/yang-data+json" : NULL, body, &why)) != 0) {
+		restconf_free(c->rc);
+		free(c);
+		*status = st;
+		return (restconf_errors(st, why));
+	}
+	c->fresh = restconf_confirms(c->rc);
+	snprintf(c->route, sizeof(c->route), "sdwan restconf");
+	c->uri = xstrdup(uri);
+	c->peer = peer != NULL && peer[0] != '\0' ? xstrdup(peer) : NULL;
+	c->sname = xstrdup(name != NULL ? name : uri);
+	c->t0 = now_us();
+	(void)call_run(&c->task);
+	/* What restconf_run() made, else the call's own error. */
+	if (c->rc_json != NULL) {
+		json = c->rc_json;
+		c->rc_json = NULL;
+		*status = c->rc_status;
+	} else {
+		json = restconf_errors(502, "the host was not reached");
+		*status = 502;
+	}
+	call_release(c);
+	free(c);
+	return (json);
+}
+
+/*
  * POST /api/servers/<id>/security: the Security section's instances of
  * a kind, {"what": "proxy" or "ids", "instances": [the page's forms]},
  * made by security.c into what the agent takes and applied; [] stops

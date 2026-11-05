@@ -33,7 +33,10 @@
  *	uni:EP		the SD-WAN UNI: its interface (or a VLAN on it) in
  *			the service's FIB, the provider's addresses on it
  *
- * Each is the jobs that make it.  What was made is kept in
+ * Each is the jobs that make it, or, where the edge's agent has the
+ * module for it, device edits (PLAN-SDN-YANG 4.5.5): RESTCONF edits of
+ * the host's candidate, each committed confirmed and confirmed over a
+ * connection of its own (edit_run()).  What was made is kept in
  * sdwan-state.json with the jobs that take it away again: made from
  * other jobs now, it is taken away and made again; no longer there, it
  * is taken away.  The tunnels' units and inner addresses are kept
@@ -514,6 +517,59 @@ job(const char *kind, ...)
 #define	S(x)	ucl_object_fromstring(x)
 #define	I(x)	ucl_object_fromint(x)
 #define	B(x)	ucl_object_frombool(x)
+
+/*
+ * A device edit (PLAN-SDN-YANG 4.5.5): method (PATCH, a merge; DELETE)
+ * of path, a node of the host's data as RFC 8040 names it, with body,
+ * in the host's candidate, then committed (edit_run()); in place of a
+ * job where the host's module says what the job did.
+ */
+static ucl_object_t *
+edit(const char *method, const char *path, ucl_object_t *body)
+{
+	ucl_object_t	*j;
+
+	j = job("edit", "method", S(method), "path", S(path), NULL);
+	if (body != NULL)
+		put(j, "body", body);
+	return (j);
+}
+
+/*
+ * The n sysctls of names set to value at boot and now: arcana-sysctl's
+ * kept, sysctl.conf(5) and sysctl(8) as a commit makes them (the sysctl
+ * job's persist).
+ */
+static ucl_object_t *
+sysctl_edit(const char *const *names, int n, const char *value)
+{
+	ucl_object_t	*kept, *k, *c, *body;
+	int		 i;
+
+	kept = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < n; i++) {
+		k = ucl_object_typed_new(UCL_OBJECT);
+		put(k, "name", S(names[i]));
+		put(k, "value", S(value));
+		ucl_array_append(kept, k);
+	}
+	c = ucl_object_typed_new(UCL_OBJECT);
+	put(c, "kept", kept);
+	body = ucl_object_typed_new(UCL_OBJECT);
+	put(body, "arcana-sysctl:sysctl", c);
+	return (edit("PATCH", "arcana-sysctl:sysctl", body));
+}
+
+/* Is the edge a vnet jail's?  Its agent's modules are the host's: the
+ * jail's network keeps the jobs (a mount's root takes no edit). */
+static bool
+edge_jailed(const char *sid)
+{
+	char	host[64], jail[64];
+
+	return (sid != NULL && sdwan_edge_split(sid, host, sizeof(host), jail,
+	    sizeof(jail)) && jail[0] != '\0');
+}
 
 /*
  * A UCS End Point's address: the document's, or, when the host gets it
@@ -6556,6 +6612,13 @@ plan_build(struct plan *pl, const ucl_object_t *y, const ucl_object_t *st)
 				put(o, "title", S("net.fibs, raised to it when "
 				    "lower"));
 				put(o, "make", ucl_object_typed_new(UCL_ARRAY));
+				if (!edge_jailed(str(ep, "edge"))) {
+					static const char *const nf[] = {
+					    "net.fibs" };
+
+					make(o, sysctl_edit(nf, 1, n));
+					continue;
+				}
 				args = ucl_object_typed_new(UCL_ARRAY);
 				ucl_array_append(args, S("net.fibs"));
 				ucl_array_append(args, S(n));
@@ -6624,6 +6687,10 @@ plan_build(struct plan *pl, const ucl_object_t *y, const ucl_object_t *st)
 		    "tunnels (net.inet.ip.forwarding, net.inet6.ip6.forwarding)");
 		if (o == NULL)
 			continue;
+		if (!edge_jailed(str(e, "server"))) {
+			make(o, sysctl_edit(oids, 2, "1"));
+			continue;
+		}
 		for (i = 0; i < 2; i++) {
 			args = ucl_object_typed_new(UCL_ARRAY);
 			ucl_array_append(args, S(oids[i]));
@@ -7484,6 +7551,111 @@ job_ready(struct run *r, const ucl_object_t *j, char *why, size_t wlen)
 }
 
 /* A job sent to a host and waited for; false and why when it failed. */
+#define	EDIT_CONFIRM_S	120	/* a commit undone unless confirmed by then */
+
+/* What a refusal (ietf-restconf:errors) says, into why. */
+static void
+rc_why(const char *json, int status, char *why, size_t wlen)
+{
+	ucl_object_t		*o;
+	const ucl_object_t	*e;
+
+	o = parse(json);
+	e = ucl_array_find_index(at_path(o, "ietf-restconf:errors", "error"),
+	    0);
+	if (str(e, "error-message") != NULL)
+		snprintf(why, wlen, "%s%s%s%s", str(e, "error-message"),
+		    str(e, "error-app-tag") != NULL ? " (" : "",
+		    str(e, "error-app-tag") != NULL ? str(e, "error-app-tag") :
+		    "", str(e, "error-app-tag") != NULL ? ")" : "");
+	else
+		snprintf(why, wlen, "HTTP %d", status);
+	if (o != NULL)
+		ucl_object_unref(o);
+}
+
+/* The host's rpc op of its fleet entry, with input in (consumed). */
+static int
+host_rpc(const char *sid, const char *uri, const char *peer,
+    const char *name, const char *op, ucl_object_t *in, char *why,
+    size_t wlen)
+{
+	ucl_object_t	*body;
+	char		 path[256], *json;
+	int		 status;
+
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/"
+	    "host=%s/ietf-netconf:%s", sid, op);
+	body = ucl_object_typed_new(UCL_OBJECT);
+	put(body, "ietf-netconf:input", in);
+	json = hosts_restconf(sid, uri, peer, name, HTTP_METHOD_POST, path,
+	    body, &status);
+	if (status >= 300)
+		rc_why(json, status, why, wlen);
+	free(json);
+	return (status);
+}
+
+/*
+ * A device edit (edit()) made: the host's candidate edited, committed
+ * confirmed, and confirmed over a connection dialled for it (a commit
+ * that cut the host off is undone by the host at its timeout).  Refused
+ * or failing, the candidate's changes are discarded and why says why;
+ * what a DELETE takes away and is not there is done.
+ */
+static bool
+edit_run(const char *sid, const char *uri, const char *peer,
+    const char *name, const ucl_object_t *j, char *why, size_t wlen)
+{
+	ucl_object_t	*in, *c;
+	char		 path[1024], tok[40], w2[200], *json;
+	int		 method, status;
+	bool		 del;
+
+	del = str(j, "method") != NULL && strcmp(str(j, "method"), "DELETE") ==
+	    0;
+	method = del ? HTTP_METHOD_DELETE : HTTP_METHOD_PATCH;
+	snprintf(path, sizeof(path), "/restconf/ds/ietf-datastores:candidate/"
+	    "arcana-fleet:fleet/host=%s/%s", sid, str(j, "path"));
+	json = hosts_restconf(sid, uri, peer, name, method, path,
+	    ucl_object_lookup(j, "body") != NULL ? ucl_object_copy(
+	    ucl_object_lookup(j, "body")) : NULL, &status);
+	if (del && status == 404) {
+		free(json);
+		return (true);
+	}
+	if (status >= 300) {
+		rc_why(json, status, why, wlen);
+		free(json);
+		(void)host_rpc(sid, uri, peer, name, "discard-changes",
+		    ucl_object_typed_new(UCL_OBJECT), w2, sizeof(w2));
+		return (false);
+	}
+	free(json);
+	snprintf(tok, sizeof(tok), "sdwan-%08x%08x", arc4random(),
+	    arc4random());
+	in = ucl_object_typed_new(UCL_OBJECT);
+	c = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(c, ucl_object_typed_new(UCL_NULL));
+	put(in, "confirmed", c);
+	put(in, "confirm-timeout", I(EDIT_CONFIRM_S));
+	put(in, "persist", S(tok));
+	if (host_rpc(sid, uri, peer, name, "commit", in, why, wlen) >= 300) {
+		(void)host_rpc(sid, uri, peer, name, "discard-changes",
+		    ucl_object_typed_new(UCL_OBJECT), w2, sizeof(w2));
+		return (false);
+	}
+	in = ucl_object_typed_new(UCL_OBJECT);
+	put(in, "persist-id", S(tok));
+	if (host_rpc(sid, uri, peer, name, "commit", in, w2, sizeof(w2)) >=
+	    300) {
+		snprintf(why, wlen, "not confirmed, so undone by the host in "
+		    "%d s: %s", EDIT_CONFIRM_S, w2);
+		return (false);
+	}
+	return (true);
+}
+
 static bool
 job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 {
@@ -7499,6 +7671,9 @@ job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 		snprintf(why, wlen, "no server %s", sid);
 		return (false);
 	}
+	/* A device edit, by RESTCONF (never a jail's). */
+	if (strcmp(str(j, "kind"), "edit") == 0)
+		return (edit_run(sid, uri, peer, name, j, why, wlen));
 	/* An edge that is a vnet jail: what its agent does, done there. */
 	if (jail[0] != '\0' && !jail_kind_ok(str(j, "kind"), why, wlen))
 		return (false);

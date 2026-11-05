@@ -1890,6 +1890,34 @@ whose first part is served.
 - 4.5.5 C: the planner emitting device edits (interfaces, ip,
   routing, NI, LNE, dummynet, bird, probe, steer) instead of
   `sdwan-*` JSON; check: the two-jail lab applies and passes.
+  Begun (console sdwan_edge.c, hosts.c): a device edit is a step's
+  job of kind `edit`, a RESTCONF PATCH (merge) or DELETE of a node of
+  the host's data in its candidate, by the console's own RESTCONF
+  (hosts_restconf(), restconf.c's edits), then committed confirmed
+  (120 s, a persist-id) and confirmed by that id over a connection
+  dialled for it, so that a commit that cuts the host off is undone by
+  the host; refused, the candidate's changes discarded and the step
+  failed with the refusal's message and app-tag, the apply rolled back
+  as before (each step made taken away again, the last first); a
+  DELETE of what is not there done.  On a host's edge, net.fibs and
+  forwarding are arcana-sysctl's `kept` (sysctl.conf and sysctl(8), as
+  the sysctl job's persist did).  Jobs still: everything on a vnet
+  jail's edge (a `root` mount takes no edit); interfaces and
+  addresses (ietf-interfaces, ietf-ip: the module's commit sets an
+  address by ioctl(2) where the job ran ifconfig(8), which no stand-in
+  of the unprivileged suites covers, and an address on a UNI the
+  user's rc.conf names asks rc-conf-conflict, which the apply has no
+  way to accept yet), a FIB's static routes (a vrf-root's commit is
+  netlink(4)'s alone, likewise untested here), rtadvd (arcana-ra
+  under an interface the same commit makes), a UCS End Point's
+  addressing (DHCP or SLAAC: no leaf of the module), kmod (load is an
+  rpc of arcana-kernel, kld_list a commit), ntp, wireguard's keys and
+  peers (3.1.8), geneve's VNI and ends, ipsec and ipsec-sa (6.2, 6.3),
+  speeder; the `sdwan-*` parts were arcana-sdwan's and arcana-probe's
+  commits already (3.1.11, 3.1.12).  Next: a root lab case of the
+  console's apply, then interfaces, ip and routing as edits with the
+  apply's accepted warnings.  Check (console_test sdwan_apply): the
+  plan's edits, sysctl.conf and sysctl(8) after the apply.
 - 4.5.6 C: refusal of the infeasible with the reason and an
   alternative; check: a bandwidth over the link refused.
 - 4.6.1 A: each agent's node, TPs and SAPs dumped with `sap-status`;

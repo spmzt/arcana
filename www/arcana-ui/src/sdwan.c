@@ -2409,7 +2409,9 @@ job_line(struct html *h, const ucl_object_t *j)
 		h_raw(h, " <span class=\"dim\">");
 		h_txt(h, ucl_object_key(v));
 		h_raw(h, "</span> ");
-		if (ucl_object_type(v) == UCL_ARRAY) {
+		/* A device edit's body as its JSON, as a list's. */
+		if (ucl_object_type(v) == UCL_ARRAY || ucl_object_type(v) ==
+		    UCL_OBJECT) {
 			s = (char *)ucl_object_emit(v, UCL_EMIT_JSON_COMPACT);
 			h_txt(h, s);
 			free(s);
