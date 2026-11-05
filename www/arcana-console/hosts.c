@@ -3434,16 +3434,14 @@ done:
  * Common start of the host routes: session, server id from the path.
  * Returns NULL with the reply sent when the request goes no further.
  */
+static struct call	*call_open(struct http_request *, enum op, bool, bool,
+			    bool);
+
 static struct call *
 call_new(struct http_request *req, enum op op)
 {
-	const struct server	*s;
-	struct call		*c;
-	uint64_t		 t0, t1;
-	char			 sid[16];
-	bool			 mutate;
+	bool	mutate;
 
-	t0 = now_us();
 	/* A change: whatever is not a GET, as well as what the list says;
 	 * a route reads only by its method, so none can slip through as
 	 * a read (a viewer's, without the CSRF checks). */
@@ -3464,7 +3462,27 @@ call_new(struct http_request *req, enum op op)
 	    OP_IPFW_RULES || op == OP_FSTAB || op == OP_HISTORY) &&
 	    req->method ==
 	    HTTP_METHOD_POST);
-	if (!guard(req, mutate))
+	/* Updating the agent or the console from it, and building, are
+	 * the host's admin's. */
+	return (call_open(req, op, mutate, mutate, op == OP_AGENT_UPDATE ||
+	    op == OP_AGENT_BUILD || op == OP_CONSOLE_UPDATE));
+}
+
+/*
+ * call_new()'s, guard() told checked (a change's CSRF checks and a
+ * token's reach), mutate and admin the role on the host it needs.
+ */
+static struct call *
+call_open(struct http_request *req, enum op op, bool checked, bool mutate,
+    bool admin)
+{
+	const struct server	*s;
+	struct call		*c;
+	uint64_t		 t0, t1;
+	char			 sid[16];
+
+	t0 = now_us();
+	if (!guard(req, checked))
 		return (NULL);
 	t1 = now_us();
 	if (!(op == OP_RESTCONF ? restconf_host(req->path, sid,
@@ -3473,10 +3491,8 @@ call_new(struct http_request *req, enum op op)
 		reply_error(req, 404, "not_found", "no such server");
 		return (NULL);
 	}
-	/* The user's role on this host (users.c): updating the agent or
-	 * the console from it, and building, are the host's admin's. */
-	if (!host_allowed(req, sid, mutate, op == OP_AGENT_UPDATE || op ==
-	    OP_AGENT_BUILD || op == OP_CONSOLE_UPDATE))
+	/* The user's role on this host (users.c). */
+	if (!host_allowed(req, sid, mutate, admin))
 		return (NULL);
 	c = xcalloc(1, sizeof(*c));
 	c->op = op;
@@ -4069,7 +4085,8 @@ setup_ydata(struct call *c, const struct rq *q)
 #define	CBOR_BODY_MAX	(8 * 1024 * 1024)
 
 static ucl_object_t *
-read_cbor(struct http_request *req, const struct ysids *s)
+read_cbor(struct http_request *req, const struct ysids *s,
+    const struct rcreq *act)
 {
 	struct cbl_ybuf		 b = { NULL, 0, 0 };
 	struct ucl_parser	*p;
@@ -4085,8 +4102,12 @@ read_cbor(struct http_request *req, const struct ysids *s)
 		if ((r = http_body_read(req, buf + len, CBOR_BODY_MAX -
 		    len)) <= 0)
 			break;
-	if (len > 0 && len < CBOR_BODY_MAX && yx_json(s, buf, len, &b, why,
-	    sizeof(why)) == 0) {
+	/* An action's input: {its SID: input}. */
+	if (act != NULL) {
+		if (len > 0 && len < CBOR_BODY_MAX)
+			o = restconf_act_input(act, s, buf, len);
+	} else if (len > 0 && len < CBOR_BODY_MAX && yx_json(s, buf, len, &b,
+	    why, sizeof(why)) == 0) {
 		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
 		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
 		if (ucl_parser_add_chunk(p, b.p, b.len))
@@ -4104,22 +4125,43 @@ read_cbor(struct http_request *req, const struct ysids *s)
  * (restconf.c): GET reads; POST, PUT, PATCH and DELETE change the
  * candidate; a POST of ietf-netconf's commit, cancel-commit or
  * discard-changes runs it, the commit that confirms over a connection
- * of its own.  The conditions on the datastore's entity-tag are the
- * console's to judge, before the host is asked.
+ * of its own; a POST of an action or another rpc invokes it.  The
+ * conditions on the datastore's entity-tag are the console's to judge,
+ * before the host is asked.
  */
 int
 api_restconf_host(struct http_request *req)
 {
 	struct call	*c;
+	struct rcreq	*rc;
 	ucl_object_t	*body = NULL;
 	const char	*why = NULL, *ctype = NULL, *accept = NULL;
 	bool		 cbor;
-	int		 st;
+	int		 st, role;
 
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
-	if ((c = call_new(req, OP_RESTCONF)) == NULL)
+	/* An action's role is its own: one that reads a viewer's, a
+	 * token's that reads, but every POST of a browser's checked. */
+	rc = restconf_parse(req->path, req->query_string, &why);
+	if ((role = restconf_act_role(rc)) == RC_ACT_NONE)
+		c = call_new(req, OP_RESTCONF);
+	else
+		c = call_open(req, OP_RESTCONF, role != RC_ACT_READ ||
+		    session_valid(req), role != RC_ACT_READ, role ==
+		    RC_ACT_ADMIN);
+	if (c == NULL) {
+		restconf_free(rc);
 		return (WEB_OK);
+	}
+	if ((c->rc = rc) == NULL) {
+		call_release(c);
+		free(c);
+		return (restconf_error(req, why == restconf_no_node ? 404 :
+		    400, why));
+	}
+	if (role == RC_ACT_READ)
+		c->reads = true;
 	(void)http_request_header(req, "content-type", &ctype);
 	(void)http_request_header(req, "accept", &accept);
 	if (req->method != HTTP_METHOD_GET && req->method !=
@@ -4131,7 +4173,8 @@ api_restconf_host(struct http_request *req)
 			struct yview *v = ycache_peek(c->uri);
 
 			body = read_cbor(req, v != NULL ? yview_sids(v) :
-			    restconf_agent_sids());
+			    restconf_agent_sids(), role != RC_ACT_NONE ? rc :
+			    NULL);
 			ycache_put(v);
 		} else
 			body = read_json(req);
@@ -4146,13 +4189,6 @@ api_restconf_host(struct http_request *req)
 			    "YANG-CBOR of the host's modules" : "the body is "
 			    "not JSON"));
 		}
-	}
-	if ((c->rc = restconf_parse(req->path, req->query_string, &why)) ==
-	    NULL) {
-		ucl_object_unref(body);
-		call_release(c);
-		free(c);
-		return (restconf_error(req, 400, why));
 	}
 	if ((st = restconf_prepare(c->rc, req->method, ctype, body,
 	    &why)) == 0 && (st = restconf_media(c->rc, accept, &why)) == 0)

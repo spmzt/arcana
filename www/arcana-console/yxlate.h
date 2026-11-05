@@ -43,6 +43,10 @@ int	yx_cbor(const struct ysids *s, const ucl_object_t *v,
 int	yx_cbor_member(const struct ysids *s, const struct ysid_item *it,
 	    const ucl_object_t *v, struct cbl_ybuf *b, const char **tag,
 	    char *why, size_t whylen);
+/* An instance-identifier's XPath (RFC 7951 section 6.11) as YANG-CBOR's
+ * (RFC 9254 section 6.13.1): its SID, or [SID, keys...]. */
+int	yx_iid(const struct ysids *s, const char *path, struct cbl_ybuf *b,
+	    char *why, size_t whylen);
 /* The same of a JSON text (RFC 7951) or a reply to it. */
 int	yx_cbor_text(const struct ysids *s, const char *json,
 	    struct cbl_ybuf *b, const char **tag, char *why, size_t whylen);

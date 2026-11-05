@@ -32,6 +32,8 @@ int		 restconf_error(struct http_request *req, int status,
 int		 restconf_error_tag(struct http_request *req, int status,
 		    const char *tag, const char *msg);
 bool		 restconf_host(const char *path, char *sid, size_t len);
+/* *why of a path naming what no module has (404, section 3.5.3). */
+extern const char restconf_no_node[];
 struct rcreq	*restconf_parse(const char *path, const char *query,
 		    const char **why);
 void		 restconf_free(struct rcreq *r);
@@ -91,6 +93,18 @@ int		 restconf_media(struct rcreq *r, const char *accept,
 bool		 restconf_body(const struct rcreq *r, const void **p,
 		    size_t *len);
 const struct ysids *restconf_agent_sids(void);
+/*
+ * An action of a host's, or an rpc of its (PLAN-SDN-YANG 4.3.4):
+ * restconf_act_role(), the role on the host it needs, RC_ACT_NONE where
+ * r is none; restconf_act_input(), a body of YANG-CBOR, {SID: input} by
+ * the host's numbering s, as the JSON body {"<module>:input": {...}}
+ * (NULL: not one).
+ */
+enum { RC_ACT_NONE, RC_ACT_READ, RC_ACT_CHANGE, RC_ACT_ADMIN };
+
+int		 restconf_act_role(const struct rcreq *r);
+ucl_object_t	*restconf_act_input(const struct rcreq *r,
+		    const struct ysids *s, const void *cbor, size_t len);
 /* establish-subscription POSTed under host sid's entry (rcstream.c). */
 int		 restconf_establish(struct http_request *req, const char *sid);
 

@@ -1047,9 +1047,11 @@ json_node(struct xc *x, const struct ysid_item *it, const char *pmod,
 		return (json_object(x, it, it->sid, true, r, NULL));
 	default:
 		has = annotated(r, &meta);
-		/* A mount point's children: absolute SIDs, qualified. */
-		return (json_object(x, it, it->sid, n != NULL && (n->flags &
-		    CBL_YNF_MOUNT) != 0, r, has ? &meta : NULL));
+		/* A mount point's children: absolute SIDs, qualified; an
+		 * input's or an output's, deltas from its action's. */
+		return (json_object(x, it, it->io ? it->base : it->sid,
+		    n != NULL && (n->flags & CBL_YNF_MOUNT) != 0, r,
+		    has ? &meta : NULL));
 	}
 }
 
@@ -1737,6 +1739,15 @@ yx_cbor_member(const struct ysids *s, const struct ysid_item *it,
 	if (tag != NULL)
 		*tag = x.tag != NULL ? x.tag : "invalid-value";
 	return (error);
+}
+
+int
+yx_iid(const struct ysids *s, const char *path, struct cbl_ybuf *b,
+    char *why, size_t whylen)
+{
+	struct xc	x = { s, b, NULL, why, whylen, 0 };
+
+	return (iid_cbor(&x, path));
 }
 
 int

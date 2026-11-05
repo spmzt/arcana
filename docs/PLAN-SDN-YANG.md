@@ -1783,14 +1783,38 @@ whose first part is served.
   console could compare without the GET.
 - 4.3.3 done (console rcstream.c): the `fleet` stream, every host's on
   one thread and one reply, each record nested in its host's entry.
-- 4.3.4 C: an agent's actions and rpcs invoked through the fleet
-  mount (RFC 8040 3.6: a POST of `{"<module>:input"}` to the node
-  below `H`, or of a mounted rpc), NACM and the host's role as for
-  its data; today restconf_prepare() takes only ietf-netconf's
-  commit, cancel-commit, discard-changes and
-  establish-subscription there.  The per-host rows of 4.4.1's
-  table that are actions need it before 4.4.2 removes /api;
-  check: each such row asked through the mount as /api asks it.
+- 4.3.4 done (console restconf.c, hosts.c, yxlate.c): an agent's
+  actions and rpcs invoked through the fleet mount (RFC 8040 3.6).
+  Path: an action is a POST on its data path below `H`
+  (`H/arcana-jails:jails/jail=web/start`), a host's rpc a POST of
+  `H/<module>:<rpc>` (an action of the host's entry, as
+  ietf-netconf:commit is), below `/restconf/data` or the operational
+  datastore; body none, `{}` or `{"<module>:input": {...}}`, no query
+  but `arcana-accept`.  The input is made YANG-CBOR by the host's own
+  SIDs, the target (the parent's instance) by `yx_iid()`, sent as
+  cblink's action; the reply `{"<module>:output": ...}` (200, with
+  the host's warnings as `arcana-fleet:warnings`), 204 where there is
+  none; `application/yang-data+cbor` either way (in: `{SID: input}`;
+  out: `{SID: output}` as the agent sent it).  An action or rpc the
+  host's SIDs lack is 404, a path naming what no module has 404 too;
+  ietf-netconf's other rpcs and the subscriptions' 405.  Who may: the
+  role on the host by the action, as /api's routes have it: a
+  viewer's `read` and `read-*` (but `arcana-system:system/read`, an
+  operator's as /api's), arcana-network's but `address`, bird's
+  routes and ospf, firewall's trace and from-rc, troubleshoot's
+  path-check and traceroute, builder's port-options, packages'
+  refresh, ietf-routing's active-route; an admin's arcana-agent's
+  update, build and console-update and all of arcana-cluster; an
+  operator's the rest.  Every POST of a session is checked as a
+  change (Origin or X-Arcana); a read token reaches the viewer's
+  alone; NACM is the agent's, the call acting as its user.  Fixed:
+  the translator read an input's or an output's children as deltas
+  from its own SID, not its action's.  Check: console_test's
+  restconf_actions (a jail started, a sysctl read and a job
+  submitted as /api's, bad input by the host's schema, the roles,
+  tokens, CSRF, YANG-CBOR), restconf_actions_old (ARCANA_OLD_AGENT:
+  an rpc and an action it lacks, 404).  Open: the job's safe-wait
+  /api fills from the host's timer is the client's to give.
 - 4.4.1 done (console cyang.c, share/yang arcana-console at SIDs
   91800-92099): the console's own as `/restconf/data/arcana-console:`
   settings, tokens, users, roles, groups, enrolment, workflows and
@@ -1933,8 +1957,7 @@ whose first part is served.
   `/restconf/data/arcana-fleet:fleet/host=<id>`, `O` =
   `/restconf/operations/`; beside = D-10's resources beside
   `/restconf`, moved by 4.4.2.  No row is open; the agent's actions
-  and rpcs below a host are reached once 4.3.4 lets the mount invoke
-  them (their YANG homes are there now).
+  and rpcs below a host are reached through the mount (4.3.4).
 
   | /api route | Home |
   |---|---|

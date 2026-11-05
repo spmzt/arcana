@@ -2031,7 +2031,8 @@ ATF_TC_BODY(l3nm, tc)
 		snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:"
 		    "fleet/host=%s/ietf-l3vpn-ntw:l3vpn-ntw", id);
 		http("GET", path, NULL, &r);
-		EXPECT(&r, 400);
+		/* No host has it: no such resource. */
+		EXPECT(&r, 404);
 		resp_free(&r);
 	}
 	/* Taken away. */
@@ -9651,6 +9652,287 @@ ATF_TC_BODY(restconf_revisions, tc)
 	ATF_CHECK_MSG(strstr(r.body, "\"arcana-steer\"") != NULL, "%d %s",
 	    r.status, r.body);
 	resp_free(&r);
+}
+
+/*
+ * A host's actions and rpcs through the fleet mount (PLAN-SDN-YANG
+ * 4.3.4): each POSTed on its data path below the host's entry, its
+ * input and output by the host's schema, as /api's routes do the same;
+ * the role on the host each needs, a token's reach, a browser's POST
+ * checked; YANG-CBOR either way.
+ */
+#define	SYSCTL_READ	"/arcana-sysctl:sysctl/read"
+#define	JAIL_START	"/arcana-jails:jails/jail=web/start"
+
+/* Line n of file (0 the first), in buf. */
+static bool
+log_line(const char *file, int n, char *buf, size_t len)
+{
+	FILE	*fp;
+	bool	 ok = false;
+
+	if ((fp = fopen(file, "r")) == NULL)
+		return (false);
+	for (int i = 0; i <= n; i++)
+		if (!(ok = fgets(buf, (int)len, fp) != NULL))
+			break;
+	fclose(fp);
+	return (ok);
+}
+
+CONSOLE_TC(restconf_actions, "A host's actions and rpcs POSTed through "
+    "the fleet mount as /api's routes do them: input and output by the "
+    "host's schema, the role each needs, tokens, CSRF, YANG-CBOR")
+ATF_TC_BODY(restconf_actions, tc)
+{
+	/* {read: {prefix: "kern.ostype"}}, 63612 its SID. */
+	static const uint8_t cin[] = { 0xa1, 0x19, 0xf8, 0x7c, 0xa1, 0x05,
+	    0x6b, 'k', 'e', 'r', 'n', '.', 'o', 's', 't', 'y', 'p', 'e' };
+	static const char rd[] = "{\"arcana-sysctl:input\":{\"prefix\":"
+	    "\"kern.ostype\"}}";
+	struct authn	 b;
+	struct resp	 r;
+	char		 data[256], cand[256], path[512], api[512], tok[96];
+	char		 ctype[128], invite[80], l1[256], l2[256], ostype[64];
+	const char	*id;
+	uint8_t		*out;
+	size_t		 len;
+	int		 st, i;
+
+	rc_lab(tc, data, cand, sizeof(cand));
+	id = strrchr(data, '=') + 1;
+	/* jail(8)'s stand-in, what it was given kept. */
+	put("fake-jail", "#!/bin/sh\nfor a; do [ \"$a\" = -e ] && "
+	    "exec /usr/sbin/jail \"$@\"; done\necho \"fake-jail: $*\" | "
+	    "tee -a jail.log\n");
+	ATF_REQUIRE(chmod("fake-jail", 0755) == 0);
+
+	/* A jail started: the same jail(8) as /api's. */
+	snprintf(api, sizeof(api), "/api/servers/%s/jails/web/action", id);
+	http("POST", api, "{\"action\":\"start\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s" JAIL_START, data);
+	http("POST", path, "{}", &r);
+	ATF_CHECK_MSG(r.status == 200 || r.status == 204, "%d %s", r.status,
+	    r.body);
+	if (r.status == 200)
+		ATF_CHECK_MSG(strstr(r.body, "\"arcana-jails:output\"") != NULL,
+		    "%s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(log_line("jail.log", 0, l1, sizeof(l1)));
+	ATF_REQUIRE(log_line("jail.log", 1, l2, sizeof(l2)));
+	ATF_CHECK_STREQ(l1, l2);
+	ATF_CHECK_MSG(strstr(l2, "-c web") != NULL, "%s", l2);
+	/* None at all is no input too. */
+	http("POST", path, NULL, &r);
+	ATF_CHECK_MSG(r.status == 200 || r.status == 204, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+
+	/* A read action: what /api's sysctl says. */
+	snprintf(api, sizeof(api), "/api/servers/%s/sysctl?filter=kern.ostype",
+	    id);
+	http("GET", api, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "data.values.0.value") != NULL);
+	snprintf(ostype, sizeof(ostype), "%s", jstr(&r, "data.values.0.value"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s" SYSCTL_READ, data);
+	http("POST", path, rd, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("kern.ostype", jstr(&r,
+	    "arcana-sysctl:output.value.0.name"));
+	ATF_CHECK_STREQ(ostype, jstr(&r, "arcana-sysctl:output.value.0.value"));
+	resp_free(&r);
+
+	/* arcana-jobs' submit: the monitor set as /api's job sets one. */
+	snprintf(api, sizeof(api), "/api/servers/%s/jobs", id);
+	http("POST", api, "{\"jobs\":[{\"kind\":\"monitor\",\"verb\":\"set\","
+	    "\"args\":[\"name=gre9\",\"interface=gre9\",\"address=192.0.2.9\","
+	    "\"interval=500\"]}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/arcana-jobs:submit", data);
+	http("POST", path, "{\"arcana-jobs:input\":{\"change\":[{\"monitor\":"
+	    "{\"verb\":\"set\",\"args\":[\"name=gre8\",\"interface=gre8\","
+	    "\"address=192.0.2.8\",\"interval=500\"]}}]}}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "arcana-jobs:output.id.0") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	snprintf(api, sizeof(api), "/api/servers/%s/monitors", id);
+	for (i = 0; i < 100; i++) {
+		http("GET", api, NULL, &r);
+		if (r.body != NULL && strstr(r.body, "gre8") != NULL &&
+		    strstr(r.body, "gre9") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(i < 100, "the monitors are not both set");
+	ATF_CHECK_MSG(strstr(r.body, "\"address\":\"192.0.2.8\"") != NULL &&
+	    strstr(r.body, "\"address\":\"192.0.2.9\"") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* What the host's schema refuses: its input. */
+	http("POST", path, "{\"arcana-jobs:input\":{}}", &r);
+	ATF_CHECK_MSG(r.status == 400, "%d %s", r.status, r.body);
+	resp_free(&r);
+
+	/* Bad input, by the host's schema; a body not an input. */
+	snprintf(path, sizeof(path), "%s" SYSCTL_READ, data);
+	rc_expect("POST", data, SYSCTL_READ, NULL, "{\"arcana-sysctl:input\":"
+	    "{\"nosuch\":1}}", 400, "unknown-element");
+	rc_expect("POST", data, SYSCTL_READ, NULL, "{\"arcana-sysctl:input\":"
+	    "{\"count\":\"many\"}}", 400, "invalid-value");
+	rc_expect("POST", data, SYSCTL_READ, NULL, "{\"input\":{}}", 400,
+	    "malformed-message");
+	rc_expect("POST", data, SYSCTL_READ "?depth=1", NULL, rd, 400,
+	    "invalid-value");
+	/* Read, not POSTed; none such; not the mount's. */
+	rc_expect("GET", data, SYSCTL_READ, NULL, NULL, 405, NULL);
+	rc_expect("POST", data, "/arcana-jails:jails/jail=web/nosuch", NULL,
+	    "{}", 404, NULL);
+	rc_expect("POST", data, "/ietf-netconf:get-config", NULL, "{}", 405,
+	    NULL);
+	rc_expect("POST", cand, JAIL_START, NULL, "{}", 405, NULL);
+
+	/* YANG-CBOR in and out, and either alone. */
+	st = http_bin("POST", path, "Content-Type: application/yang-data+cbor"
+	    "\r\nAccept: application/yang-data+cbor\r\n", cin, sizeof(cin),
+	    ctype, sizeof(ctype), &out, &len);
+	ATF_CHECK_MSG(st == 200, "%d %s", st, out);
+	ATF_CHECK_MSG(strncmp(ctype, "application/yang-data+cbor", 26) == 0,
+	    "%s", ctype);
+	ATF_CHECK(len > 4 && memcmp(out, cin, 4) == 0);
+	ATF_CHECK(memmem(out, len, ostype, strlen(ostype)) != NULL);
+	free(out);
+	st = http_bin("POST", path, "Content-Type: application/yang-data+cbor"
+	    "\r\n", cin, sizeof(cin), ctype, sizeof(ctype), &out, &len);
+	ATF_CHECK_MSG(st == 200 && strstr((char *)out,
+	    "\"arcana-sysctl:output\"") != NULL && strstr((char *)out,
+	    ostype) != NULL, "%d %s", st, out);
+	free(out);
+	st = http_bin("POST", path, "Accept: application/yang-data+cbor\r\n",
+	    rd, strlen(rd), ctype, sizeof(ctype), &out, &len);
+	ATF_CHECK_MSG(st == 200 && len > 4 && memcmp(out, cin, 4) == 0, "%d",
+	    st);
+	free(out);
+	st = http_bin("POST", path, "Content-Type: application/yang-data+cbor"
+	    "\r\n", "\xa1\x19\x04\x00\xf6", 5, ctype, sizeof(ctype), &out,
+	    &len);
+	ATF_CHECK_MSG(st == 400 && strstr((char *)out, "malformed-message") !=
+	    NULL, "%d %s", st, out);
+	free(out);
+
+	/* A read token: a read action, nothing that changes. */
+	http("POST", "/api/tokens", "{\"name\":\"reader\"}", &r);
+	EXPECT(&r, 200);
+	snprintf(tok, sizeof(tok), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	http_bearer("POST", path, tok, rd, &r);
+	ATF_CHECK_MSG(r.status == 200, "%d %s", r.status, r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s" JAIL_START, data);
+	http_bearer("POST", path, tok, "{}", &r);
+	ATF_CHECK_MSG(r.status == 401, "%d %s", r.status, r.body);
+	resp_free(&r);
+
+	/* A browser's POST, a read's too: its Origin or X-Arcana. */
+	send_xjg = false;
+	origin_hdr = NULL;
+	rc_expect("POST", data, SYSCTL_READ, NULL, rd, 403, NULL);
+	rc_expect("POST", data, JAIL_START, NULL, "{}", 403, NULL);
+	send_xjg = true;
+	origin_hdr = harness_origin;
+
+	/* A viewer: what reads, not what changes. */
+	http("PUT", "/api/roles/look", "{\"console\":\"member\",\"hosts\":"
+	    "{\"*\":\"viewer\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("PUT", "/api/users/vic", "{\"roles\":[\"look\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/users/vic/invite", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	authn_new(&b, -8);
+	do_register(&b, invite, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	rc_expect("POST", data, SYSCTL_READ, NULL, rd, 200, NULL);
+	rc_expect("POST", data, JAIL_START, NULL, "{}", 403, NULL);
+	rc_expect("POST", data, "/arcana-jobs:submit", NULL, "{}", 403, NULL);
+	/* arcana-system's read, of its files: an operator's, as /api's. */
+	rc_expect("POST", data, "/arcana-system:system/read", NULL, "{}", 403,
+	    NULL);
+}
+
+/*
+ * An agent of a release before (ARCANA_OLD_AGENT) lacks actions the
+ * console's tables have: a clean 404, its module there all the same.
+ */
+CONSOLE_TC(restconf_actions_old, "An action or an rpc an older agent "
+    "lacks: 404, by its own schema")
+ATF_TC_BODY(restconf_actions_old, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], uri[MAXPATHLEN + 8], idn[16], ido[16];
+	char		 path[512];
+	const char	*old;
+	int		 i;
+
+	if ((old = old_agent(tc)) == NULL)
+		atf_tc_skip("no agent of a release before: set ARCANA_OLD_AGENT "
+		    "or old_agent");
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(uri, sizeof(uri), "unix:%s/jgd.sock", cwd);
+	host_add("new", uri, 0, idn, sizeof(idn));
+	snprintf(uri, sizeof(uri), "unix:%s/old.sock", cwd);
+	(void)agent_spawn(old, uri, NULL, "installed-old");
+	wait_for("old.sock");
+	host_add("old", uri, 1, ido, sizeof(ido));
+	/* Its library has the modules, not the actions. */
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/host=%s"
+	    "/ietf-yang-library:yang-library", ido);
+	rc_get(path, &r);
+	ATF_CHECK_MSG(r.status == 200 && strstr(r.body, "\"arcana-jobs\"") !=
+	    NULL && strstr(r.body, "\"arcana-firewall\"") != NULL, "%d %s",
+	    r.status, r.body);
+	resp_free(&r);
+	for (i = 0; i < 2; i++) {
+		snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/"
+		    "host=%s/arcana-jobs:dry-run", i == 0 ? ido : idn);
+		http("POST", path, "{\"arcana-jobs:input\":{\"change\":[{"
+		    "\"monitor\":{\"verb\":\"remove\",\"args\":[\"name=x\"]}}]}}",
+		    &r);
+		if (i == 0)
+			ATF_CHECK_MSG(r.status == 404 && strstr(r.body,
+			    "no rpc arcana-jobs:dry-run") != NULL, "%d %s",
+			    r.status, r.body);
+		else
+			ATF_CHECK_MSG(strstr(r.body, "have no") == NULL,
+			    "%d %s", r.status, r.body);
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/"
+		    "host=%s/arcana-firewall:firewall/from-rc", i == 0 ? ido :
+		    idn);
+		http("POST", path, "{}", &r);
+		if (i == 0)
+			ATF_CHECK_MSG(r.status == 404 && strstr(r.body,
+			    "no action arcana-firewall:from-rc") != NULL,
+			    "%d %s", r.status, r.body);
+		else
+			ATF_CHECK_MSG(strstr(r.body, "have no") == NULL,
+			    "%d %s", r.status, r.body);
+		resp_free(&r);
+	}
 }
 
 #define	SAPNET	"/restconf/data/ietf-network:networks"
@@ -18873,6 +19155,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, mtls);
 	ATF_TP_ADD_TC(tp, agent_update_bridge);
 	ATF_TP_ADD_TC(tp, restconf_revisions);
+	ATF_TP_ADD_TC(tp, restconf_actions);
+	ATF_TP_ADD_TC(tp, restconf_actions_old);
 	ATF_TP_ADD_TC(tp, sapnet);
 	ATF_TP_ADD_TC(tp, sapnet_attach);
 	ATF_TP_ADD_TC(tp, enrol);

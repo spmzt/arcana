@@ -132,6 +132,7 @@ struct rcreq {
 	int		 method;	/* HTTP_METHOD_* */
 	ucl_object_t	*body;		/* a change's, an rpc's input */
 	const struct cbl_ynode *rpc;	/* POSTed: ietf-netconf's */
+	const struct cbl_ynode *act;	/* POSTed: an action, a host's rpc */
 	char		*accept[ACCEPT_MAX];
 	size_t		 naccept;
 	char		*base;		/* the path to the host's entry */
@@ -152,6 +153,8 @@ struct rcreq {
 	size_t		 outlen;
 	char		 why[256];
 };
+
+const char	 restconf_no_node[] = "no such node";
 
 static char	*errors_of(int, const char *, const char *, const char *);
 struct ysids;
@@ -889,6 +892,39 @@ rpc_named(const char *mod, const char *name)
 	return (NULL);
 }
 
+/*
+ * An action of parent's (a container, a list's entry), or an rpc of
+ * module mod where parent is NULL (the host's entry, the mount point):
+ * RFC 8040 section 3.6's operation resource.  NULL: no such one.
+ */
+static const struct cbl_ynode *
+act_named(const struct cbl_ynode *parent, const char *mod, const char *name)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*c;
+
+	if (parent == NULL) {
+		if (mod == NULL || (m = module_named(mod)) == NULL)
+			return (NULL);
+		for (uint32_t k = 0; k < m->ntop; k++)
+			if (m->top[k]->kind == CBL_YN_RPC &&
+			    strcmp(m->top[k]->name, name) == 0)
+				return (m->top[k]);
+		return (NULL);
+	}
+	if (parent->kind != CBL_YN_CONTAINER && parent->kind != CBL_YN_LIST)
+		return (NULL);
+	for (uint32_t i = 0; i < parent->nchild; i++) {
+		c = parent->child[i];
+		if (c->kind != CBL_YN_ACTION || strcmp(c->name, name) != 0)
+			continue;
+		if (mod != NULL ? strcmp(c->module->name, mod) == 0 :
+		    c->module == parent->module)
+			return (c);
+	}
+	return (NULL);
+}
+
 /* v in an XPath literal; false when it has both kinds of quote. */
 static bool
 put_literal(FILE *fp, const char *v)
@@ -1041,6 +1077,11 @@ parse_segs(struct rcreq *r, char *rest, bool encoded, const char **why)
 		if (!encoded && r->nseg == 0 && rest == NULL && mod != NULL &&
 		    (r->rpc = rpc_named(mod, name)) != NULL)
 			break;
+		/* The last: an action of the node before it, or another
+		 * rpc of the host's (section 3.6). */
+		if (!encoded && rest == NULL && (r->act = act_named(r->nseg ==
+		    0 ? NULL : r->seg[r->nseg - 1].n, mod, name)) != NULL)
+			break;
 		/* The console's own modules at its own datastore alone, and
 		 * only they there. */
 		if ((sg->n = node_named(r->nseg == 0 ? NULL :
@@ -1049,7 +1090,7 @@ parse_segs(struct rcreq *r, char *rest, bool encoded, const char **why)
 			sg->n = NULL;
 			*why = r->nseg == 0 && mod == NULL ? "the first node "
 			    "of the path is named with its module" :
-			    "no such node";
+			    restconf_no_node;
 			return (EINVAL);
 		}
 		while (keys != NULL && (k = strsep(&keys, ",")) != NULL) {
@@ -1371,7 +1412,7 @@ parse(const char *path, const char *query, bool own, const char **why)
 		goto bad;
 	}
 	free(copy);
-	if (own && r->rpc != NULL) {
+	if (own && (r->rpc != NULL || r->act != NULL)) {
 		*why = "the console's own datastore has no rpc";
 		goto bad;
 	}
@@ -2232,6 +2273,94 @@ bad:
 }
 
 /*
+ * An action or a host's rpc (section 3.6): POSTed, below /restconf/data
+ * or the operational datastore (RFC 8527 section 3.1), with no query
+ * but arcana-accept; its body none, {} or {"<module>:input": {...}}.
+ * ietf-netconf's other rpcs and the subscriptions' are not the mount's.
+ */
+static int
+prepare_act(struct rcreq *r, const char **why)
+{
+	const ucl_object_t	*m;
+	ucl_object_iter_t	 it = NULL;
+	const char		*mod = r->act->module->name;
+	char			 key[160];
+
+	if (r->method != HTTP_METHOD_POST)
+		return (refuse(r, 405, NULL, why, "an action or an rpc is "
+		    "POSTed"));
+	if (r->act->kind == CBL_YN_RPC && (strcmp(mod, "ietf-netconf") == 0 ||
+	    strcmp(mod, "ietf-subscribed-notifications") == 0 ||
+	    strcmp(mod, "ietf-yang-push") == 0))
+		return (refuse(r, 405, "operation-not-supported", why, "of "
+		    "%s's rpcs, the mount takes ietf-netconf's commit, "
+		    "cancel-commit and discard-changes, and establish-"
+		    "subscription below /restconf/data", mod));
+	if (r->ds != -1 && r->ds != CBL_YDS_OPERATIONAL)
+		return (refuse(r, 405, NULL, why, "an action is invoked below "
+		    "/restconf/data or the operational datastore"));
+	if (r->depth != 0 || r->fields != NULL || r->content != CONTENT_ALL ||
+	    r->defaults != WD_EXPLICIT || r->origin || r->insert != 0 ||
+	    r->point != NULL)
+		return (refuse(r, 400, "invalid-value", why, "an action takes "
+		    "no query parameter but arcana-accept"));
+	if (r->body == NULL)
+		return (0);
+	snprintf(key, sizeof(key), "%s:input", mod);
+	if (ucl_object_type(r->body) != UCL_OBJECT)
+		goto bad;
+	while ((m = ucl_object_iterate(r->body, &it, true)) != NULL)
+		if (strcmp(ucl_object_key(m), key) != 0 ||
+		    ucl_object_type(m) != UCL_OBJECT)
+			goto bad;
+	return (0);
+bad:
+	return (refuse(r, 400, "malformed-message", why, "an action's body "
+	    "is {\"%s\": {...}}, or none", key));
+}
+
+/*
+ * The role on its host r's action needs (PLAN-SDN-YANG 4.3.4): a
+ * viewer's what only reads, as /api's routes have them; an admin's the
+ * agent's updates and the cluster's; an operator's the rest.
+ */
+int
+restconf_act_role(const struct rcreq *r)
+{
+	static const char *const reads[] = { "arcana-bird:routes",
+	    "arcana-bird:ospf", "arcana-firewall:trace",
+	    "arcana-firewall:from-rc", "arcana-troubleshoot:path-check",
+	    "arcana-troubleshoot:traceroute", "arcana-builder:port-options",
+	    "arcana-packages:refresh", "ietf-routing:active-route" };
+	static const char *const admins[] = { "arcana-agent:update",
+	    "arcana-agent:build", "arcana-agent:console-update" };
+	const char	*mod, *name;
+	char		 key[160];
+
+	if (r == NULL || r->act == NULL)
+		return (RC_ACT_NONE);
+	mod = r->act->module->name;
+	name = r->act->name;
+	snprintf(key, sizeof(key), "%s:%s", mod, name);
+	if (strcmp(mod, "arcana-cluster") == 0)
+		return (RC_ACT_ADMIN);
+	for (size_t i = 0; i < nitems(admins); i++)
+		if (strcmp(key, admins[i]) == 0)
+			return (RC_ACT_ADMIN);
+	/* arcana-system's read is of its files: /api's an operator's. */
+	if (strcmp(key, "arcana-system:read") == 0)
+		return (RC_ACT_CHANGE);
+	if (strcmp(name, "read") == 0 || strncmp(name, "read-", 5) == 0 ||
+	    (strcmp(mod, "arcana-network") == 0 && strcmp(name,
+	    "address") != 0))
+		return (RC_ACT_READ);
+	for (size_t i = 0; i < nitems(reads); i++)
+		if (strcmp(key, reads[i]) == 0)
+			return (RC_ACT_READ);
+	return (RC_ACT_CHANGE);
+}
+
+/*
  * A change asked of a host (RFC 8040 section 4.4 to 4.7, 3.6), checked
  * before the host is: a node POSTed (created), PUT (created or
  * replaced), PATCHed (merged; or a YANG Patch) or DELETEd in the
@@ -2252,6 +2381,8 @@ restconf_prepare(struct rcreq *r, int method, const char *ctype,
 	r->method = method;
 	r->body = body;
 	r->nbase = r->nseg;
+	if (r->act != NULL)
+		return (prepare_act(r, why));
 	if ((r->insert != 0 || r->point != NULL) && method !=
 	    HTTP_METHOD_POST && method != HTTP_METHOD_PUT)
 		return (refuse(r, 400, NULL, why, "insert and point are a "
@@ -2694,7 +2825,7 @@ restconf_precondition(struct http_request *req, struct rcreq *r,
 	bool		 edit;
 	int		 i;
 
-	if ((i = tag_ds(r)) < 0)
+	if ((i = tag_ds(r)) < 0 || r->act != NULL)
 		return (0);
 	edit = r->method != HTTP_METHOD_GET;
 	if (!http_request_header(req, "if-match", &im))
@@ -2748,8 +2879,8 @@ restconf_headers(struct http_request *req, const struct rcreq *r,
 	if (status == 201 && r->location != NULL)
 		http_response_header(req, "location", r->location);
 	/* A read's, or the datastore's after a change. */
-	if ((i = tag_ds(r)) < 0 || r->rpc != NULL || (status != 304 &&
-	    (status < 200 || status > 299)) || uri == NULL ||
+	if ((i = tag_ds(r)) < 0 || r->rpc != NULL || r->act != NULL ||
+	    (status != 304 && (status < 200 || status > 299)) || uri == NULL ||
 	    !tag_now(uri, i, etag, sizeof(etag), &at))
 		return;
 	gmtime_r(&at, &tm);
@@ -3237,6 +3368,11 @@ restconf_media(struct rcreq *r, const char *accept, const char **why)
 	    strncasecmp(id, "id=sid", 6) != 0)
 		return (refuse(r, 406, NULL, why, "YANG-CBOR is the agent's, "
 		    "its keys SIDs: id=sid"));
+	/* An action's output: {SID: output}, as the agent has it. */
+	if (r->act != NULL) {
+		r->cbor = true;
+		return (0);
+	}
 	if (r->method != HTTP_METHOD_GET)
 		return (0);
 	if (r->depth != 0 || r->fields != NULL || r->content != CONTENT_ALL ||
@@ -3283,6 +3419,13 @@ host_path(const struct ysids *s, const struct rcreq *r, int *status)
 			    t->seg[k].n->name);
 			return (errors_of(404, "invalid-value", NULL, msg));
 		}
+	}
+	if (r->act != NULL && ysids_of(s, r->act) == NULL) {
+		*status = 404;
+		snprintf(msg, sizeof(msg), "the host's modules have no %s %s:%s",
+		    r->act->kind == CBL_YN_RPC ? "rpc" : "action",
+		    r->act->module->name, r->act->name);
+		return (errors_of(404, "invalid-value", NULL, msg));
 	}
 	return (NULL);
 }
@@ -3473,6 +3616,239 @@ done:
 	cbl_msg_free(rep);
 }
 
+/* len bytes of p appended to b. */
+static int
+buf_add(struct cbl_ybuf *b, const void *p, size_t len)
+{
+	uint8_t	*np;
+	size_t	 cap;
+
+	if (b->len + len > b->cap) {
+		cap = MAX(b->cap * 2, b->len + len);
+		if ((np = realloc(b->p, cap)) == NULL)
+			return (ENOMEM);
+		b->p = np;
+		b->cap = cap;
+	}
+	memcpy(b->p + b->len, p, len);
+	b->len += len;
+	return (0);
+}
+
+/* The host's item of r's action's input or output (kind), NULL: none. */
+static const struct ysid_item *
+act_io(const struct ysids *s, const struct rcreq *r, int kind)
+{
+
+	for (uint32_t i = 0; i < r->act->nchild; i++)
+		if (r->act->child[i]->kind == kind)
+			return (ysids_of(s, r->act->child[i]));
+	return (NULL);
+}
+
+ucl_object_t *
+restconf_act_input(const struct rcreq *r, const struct ysids *s,
+    const void *cbor, size_t len)
+{
+	struct cbl_ybuf		 b = { NULL, 0, 0 };
+	struct yxrd		 rd = { cbor, (const uint8_t *)cbor + len };
+	const struct ysid_item	*ai, *ii;
+	struct ucl_parser	*p;
+	ucl_object_t		*o = NULL;
+	uint64_t		 n, sid;
+	int			 major;
+	bool			 first = true;
+	char			 why[160];
+
+	/* {SID: input}, the action's SID the host's. */
+	if (r == NULL || r->act == NULL || s == NULL ||
+	    (ai = ysids_of(s, r->act)) == NULL ||
+	    (ii = act_io(s, r, CBL_YN_INPUT)) == NULL ||
+	    yxrd_head(&rd, &major, &n) != 0 || major != 5 || n != 1 ||
+	    yxrd_head(&rd, &major, &sid) != 0 || major != 0 || sid != ai->sid)
+		return (NULL);
+	if (yxrd_peek(&rd, &major, &n) == 0 && major == 7 && n == 22 &&
+	    rd.p + 1 == rd.end)
+		return (ucl_object_typed_new(UCL_OBJECT));
+	if (buf_add(&b, "{", 1) == 0 && yx_json_member(s, ii, rd.p,
+	    (size_t)(rd.end - rd.p), &first, &b, why, sizeof(why)) == 0 &&
+	    buf_add(&b, "}", 1) == 0) {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		if (ucl_parser_add_chunk(p, b.p, b.len))
+			o = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+	}
+	cbl_ybuf_free(&b);
+	return (o);
+}
+
+/*
+ * r's action or rpc over conn, its input and output by the host's
+ * numbering (s), the target the instance of its parent r's path names:
+ * {"<module>:output": ...} (200), with the warnings the host gives;
+ * none, 204; as YANG-CBOR, {SID: output} as the agent sent it.
+ */
+static void
+act_run(cbl_conn *conn, struct rcreq *r, const struct ysids *s, char **json,
+    int *status)
+{
+	const struct ysid_item		*ai, *ii, *oi, *ei;
+	const struct cbl_ywarning	*w;
+	const ucl_object_t		*in;
+	struct cbl_ybuf			 b = { NULL, 0, 0 }, t = { NULL, 0, 0 };
+	struct ucl_parser		*p;
+	ucl_object_t			*top = NULL, *ws = NULL;
+	cbl_yarena			*a;
+	cbl_msg				*m = NULL, *rep = NULL;
+	const uint8_t			*v;
+	const char			*tag;
+	size_t				 len, nw;
+	char				 err[512], apptag[80], key[160];
+	bool				 first = true;
+	int				 error;
+
+	*json = NULL;
+	ai = ysids_of(s, r->act);
+	ii = act_io(s, r, CBL_YN_INPUT);
+	oi = act_io(s, r, CBL_YN_OUTPUT);
+	snprintf(key, sizeof(key), "%s:input", r->act->module->name);
+	in = ucl_object_lookup(r->body, key);
+	err[0] = apptag[0] = '\0';
+	/* The input by the host's schema; none, null (CORECONF's). */
+	if (in != NULL && in->len > 0) {
+		if (ii == NULL) {
+			*status = 400;
+			*json = errors_of(400, "unknown-element", NULL, "the "
+			    "host's action has no input");
+			goto done;
+		}
+		if ((error = yx_cbor_member(s, ii, in, &b, &tag, err,
+		    sizeof(err))) != 0) {
+			*status = error == ENOMEM ? 500 : status_of(tag);
+			*json = errors_of(*status, tag, NULL, err);
+			goto done;
+		}
+	} else if (yx_put_head(&b, 7, 22) != 0)
+		goto nomem;
+	if (r->nseg > 0 && (error = yx_iid(s, r->xpath, &t, err,
+	    sizeof(err))) != 0) {
+		*status = error == ENOMEM ? 500 : 400;
+		*json = errors_of(*status, "invalid-value", NULL, err);
+		goto done;
+	}
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_RPC, 0, &m)) != 0 || (error = cbl_msg_put_sid_raw(m,
+	    ai->sid, b.p, b.len)) != 0 || (r->nseg > 0 &&
+	    (error = cbl_msg_put_yaction(m, t.p, t.len)) != 0) ||
+	    (r->naccept > 0 && (error = cbl_msg_set_accept(m,
+	    (const char *const *)r->accept, r->naccept)) != 0)) {
+		snprintf(err, sizeof(err), "%s", strerror(error));
+		*json = refused(r, error, err, 0, NULL, status);
+		goto done;
+	}
+	error = cbl_request(conn, m, &rep, -1);
+	m = NULL;
+	if (error != 0) {
+		snprintf(err, sizeof(err), "%s", rep != NULL &&
+		    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
+		    strerror(error));
+		if (rep != NULL && cbl_msg_err_apptag(rep) != NULL)
+			snprintf(apptag, sizeof(apptag), "%s",
+			    cbl_msg_err_apptag(rep));
+		/* The node at fault by the host's own name of it. */
+		ei = rep != NULL ? ysids_sid(s, cbl_msg_err_sid(rep)) : NULL;
+		*status = refusal(error, &tag);
+		*json = errors_of_app(*status, tag, ei != NULL ? ei->id : NULL,
+		    apptag[0] != '\0' ? apptag : NULL, err);
+		goto done;
+	}
+	/* What the host says it did, which needs telling. */
+	if ((a = cbl_yarena_new()) != NULL) {
+		if (cbl_msg_ywarnings(rep, a, &w, &nw) == 0 && nw > 0) {
+			ws = ucl_object_typed_new(UCL_ARRAY);
+			for (size_t i = 0; i < nw; i++) {
+				ucl_object_t *o = ucl_object_typed_new(
+				    UCL_OBJECT);
+
+				ucl_object_insert_key(o, ucl_object_fromstring(
+				    w[i].tag), "tag", 0, false);
+				ucl_object_insert_key(o, ucl_object_fromstring(
+				    w[i].text), "text", 0, false);
+				ucl_array_append(ws, o);
+			}
+		}
+		cbl_yarena_free(a);
+	}
+	/* No output: null, an empty map, or none at all. */
+	if (cbl_msg_sid_raw(rep, ai->sid, (const void **)&v, &len) != 0 ||
+	    len == 0 || (len == 1 && (v[0] == 0xf6 || v[0] == 0xa0))) {
+		if (ws == NULL) {
+			*status = 204;
+			*json = strdup("");
+			goto done;
+		}
+		top = ucl_object_typed_new(UCL_OBJECT);
+	} else if (r->cbor) {
+		cbl_ybuf_free(&t);
+		if (yx_put_head(&t, 5, 1) != 0 || yx_put_head(&t, 0,
+		    ai->sid) != 0 || buf_add(&t, v, len) != 0)
+			goto nomem;
+		r->out = t.p;
+		r->outlen = t.len;
+		t.p = NULL;
+		*status = 200;
+		*json = strdup("");
+		goto done;
+	} else {
+		cbl_ybuf_free(&b);
+		if (oi == NULL) {
+			*status = 502;
+			*json = errors_of(502, "operation-failed", NULL, "the "
+			    "host's output is in none of its files");
+			goto done;
+		}
+		if (buf_add(&b, "{", 1) != 0)
+			goto nomem;
+		if ((error = yx_json_member(s, oi, v, len, &first, &b, err,
+		    sizeof(err))) != 0) {
+			*status = 502;
+			*json = errors_of(502, "operation-failed", NULL, err);
+			goto done;
+		}
+		if (buf_add(&b, "}", 1) != 0)
+			goto nomem;
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		if (ucl_parser_add_chunk(p, b.p, b.len))
+			top = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+		if (top == NULL)
+			goto nomem;
+	}
+	if (ws != NULL) {
+		ucl_object_insert_key(top, ws, "arcana-fleet:warnings", 0,
+		    false);
+		ws = NULL;
+	}
+	*status = 200;
+	if ((*json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT)) ==
+	    NULL)
+		goto nomem;
+	goto done;
+nomem:
+	free(*json);
+	*status = 500;
+	*json = restconf_errors(500, "out of memory");
+done:
+	ucl_object_unref(top);
+	ucl_object_unref(ws);
+	cbl_msg_free(m);
+	cbl_msg_free(rep);
+	cbl_ybuf_free(&b);
+	cbl_ybuf_free(&t);
+}
+
 /* restconf_run()'s, by s. */
 static void
 run(cbl_conn *conn, struct rcreq *r, const struct ysids *ys, const char *id,
@@ -3490,6 +3866,10 @@ run(cbl_conn *conn, struct rcreq *r, const struct ysids *ys, const char *id,
 	/* A path the host's modules do not have. */
 	if ((*json = host_path(ys, r, status)) != NULL)
 		return;
+	if (r->act != NULL) {
+		act_run(conn, r, ys, json, status);
+		return;
+	}
 	if (r->method != HTTP_METHOD_GET) {
 		change_run(conn, r, ys, uri, json, status);
 		return;
