@@ -1831,9 +1831,6 @@ whose first part is served.
   key with `/` (a template's file, a subscription's endpoint, a
   prefix) is named in no path: libwebsockets decodes the path before
   RESTCONF cuts it; such entries are changed through their parent.
-  Open, /api's alone still: the console's update check and notes, its
-  cluster, its CA, its plugins and their stores, a user's own security
-  keys, the path finder, the WireGuard key pair.
 - 4.4.1 the hosts done (console 0.367.0): `arcana-console:hosts`, the
   registry (servers.json) as a typed list keyed by the host's id
   (name, uri, peer-name, tenant, safe-wait, pkg-repos; local,
@@ -1896,6 +1893,33 @@ whose first part is served.
   one refused; a stale PUT 409; an apply accepting nothing, an unknown
   tunnel, edge, identity, service refused as /api; the lists kept and
   a bad interval refused; a record as CSV; a member refused).
+- 4.4.1 the console's own done (console 0.369.0): `update` and
+  `update-notes` (owners'; ?component, from, to, fresh as /api's) and
+  `cluster` (everyone's), anydata read; `ca`, owners', its `state`
+  (also the container's GET) and the change's steps as actions
+  (`make`, `request`, `import`, `discard`, `rollout`, `finish`; the
+  key written, never read; no write token).  Decided: Arcana's own,
+  not `ietf-keystore`/`ietf-truststore`: those keep keys and
+  certificates, and what the console has is a CA's rollover across
+  the fleet (staged, rolled out, finished), whose steps would be
+  contortions of their nodes.  `plugins`: a typed list (manifest,
+  files with their integrity, the directory told to owners), `enabled`
+  an owner's alone (plug_set(), /api's), none added or removed here;
+  each plugin's `store` the reader's own and `shared-store` (written by
+  operators and owners) as anydata read and written at their paths:
+  a session's alone, not a token's, If-Match /api's (412), a GET of
+  none 404.  `credentials`: the security keys, each user their own
+  and an owner every user's, typed (no public key), renamed (new) and
+  removed, never the last (409), none made here (the WebAuthn
+  ceremony beside), no token's to read.  The path finder and the key
+  pair are rpcs, `trace-path` and `wireguard-keypair`, operators' and
+  owners' (listed at /restconf/operations).  Check: console_test's
+  cyang_console (each as /api's, the CA's refusals, the path finder
+  refused and asked, a key pair, a key renamed and the last kept, a
+  token refused the keys and the CA, a member's own key alone and
+  none of the owners') and cyang_plugins (the list, enabled, a store
+  kept, If-Match, the shared one; a member enabling nothing, reading
+  no other's store, writing no shared one).
 - 4.4.2 C: the WebAuthn ceremonies, logout, `assetlinks.json`, enrol
   and health moved beside `/restconf`; `/api` removed; check: the
   console tests rewritten.

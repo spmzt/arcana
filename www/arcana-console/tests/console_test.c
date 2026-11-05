@@ -18338,6 +18338,226 @@ ATF_TC_BODY(cyang_sdwan, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(cyang_console, "arcana-console's update, notes, cluster, CA, "
+    "security keys, path finder and WireGuard key pair at their RESTCONF "
+    "paths as /api's, an owner's an owner's, a key never the last, a "
+    "token reading no key")
+ATF_TC_BODY(cyang_console, tc)
+{
+	struct authn	 a, b;
+	struct resp	 r, s;
+	char		 sa[16], id[600], path[700], token[80], body[512];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	cc_host("a", "jgd.sock", sa, sizeof(sa));
+	cc_eq("/api/cluster", CC "cluster", "cluster");
+	cc_same("GET", "/api/update", NULL, CC "update", NULL);
+	cc_same("GET", "/api/update/notes?component=agent", NULL,
+	    CC "update-notes?component=agent", NULL);
+	/* The CA: its state, at the container and below it. */
+	http("GET", "/api/ca", NULL, &r);
+	http("GET", CC "ca", NULL, &s);
+	EXPECT(&s, 200);
+	ATF_CHECK_STREQ(jstr(&r, "own"), jstr(&s, "arcana-console:ca.state.own"));
+	resp_free(&s);
+	http("GET", CC "ca/state", NULL, &s);
+	ATF_CHECK_STREQ(jstr(&r, "own"), jstr(&s, "arcana-console:state.own"));
+	resp_free(&s);
+	resp_free(&r);
+	cc_same("POST", "/api/ca", "{\"action\":\"discard\"}", CC "ca/discard",
+	    NULL);
+	cc_same("POST", "/api/ca", "{\"action\":\"finish\"}", CC "ca/finish",
+	    "{\"arcana-console:input\":{}}");
+	/* The path finder: refused as /api refuses, asked as /api asks. */
+	cc_same("POST", "/api/troubleshoot/path", "{\"src\":\"10.0.0.1\","
+	    "\"dst\":\"::1\"}", "/restconf/operations/arcana-console:trace-path",
+	    "{\"arcana-console:input\":{\"src\":\"10.0.0.1\",\"dst\":\"::1\"}}");
+	snprintf(body, sizeof(body), "{\"arcana-console:input\":{\"src\":"
+	    "\"10.1.0.2\",\"dst\":\"10.3.0.2\",\"proto\":\"tcp\",\"port\":22,"
+	    "\"places\":[{\"server\":\"%s\"}]}}", sa);
+	http("POST", "/restconf/operations/arcana-console:trace-path", body,
+	    &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "{\"arcana-console:output\":{\"result\":") ==
+	    r.body);
+	resp_free(&r);
+	http("GET", "/restconf/operations", NULL, &r);
+	ATF_CHECK(strstr(r.body, "arcana-console:wireguard-keypair") != NULL);
+	resp_free(&r);
+	/* A key pair, said once. */
+	http("POST", "/restconf/operations/arcana-console:wireguard-keypair",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "arcana-console:output.result.private_key") !=
+	    NULL && strlen(jstr(&r,
+	    "arcana-console:output.result.private_key")) == 44);
+	resp_free(&r);
+	/* The keys: /api's, renamed, never the last removed. */
+	http("GET", "/api/auth/credentials", NULL, &r);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "credentials.0.id"));
+	resp_free(&r);
+	http("GET", CC "credentials", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(id, jstr(&r,
+	    "arcana-console:credentials.credential.0.id"));
+	ATF_CHECK(jstr(&r, "arcana-console:credentials.credential.0.user") !=
+	    NULL);
+	ATF_CHECK(strstr(r.body, "public") == NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), CC "credentials/credential=%s", id);
+	snprintf(body, sizeof(body), "{\"arcana-console:credential\":[{\"id\":"
+	    "\"%s\",\"name\":\"Desk key\"}]}", id);
+	http("PATCH", path, body, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/auth/credentials", NULL, &r);
+	ATF_CHECK_STREQ("Desk key", jstr(&r, "credentials.0.name"));
+	resp_free(&r);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	/* A token reads no key, and changes no CA. */
+	http("POST", CC "tokens/create", "{\"arcana-console:input\":{"
+	    "\"name\":\"w\",\"kind\":\"write\"}}", &r);
+	EXPECT(&r, 200);
+	snprintf(token, sizeof(token), "%s", jstr(&r,
+	    "arcana-console:output.token"));
+	resp_free(&r);
+	http_bearer("GET", CC "credentials", token, NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http_bearer("POST", CC "ca/discard", token, NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	/* A member: their own key alone; none of an owner's. */
+	cc_member(&b);
+	http("GET", CC "credentials", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r,
+	    "arcana-console:credentials.credential.0.user"));
+	ATF_CHECK(jstr(&r, "arcana-console:credentials.credential.1.id") ==
+	    NULL);
+	resp_free(&r);
+	/* Another's key is not there for a member. */
+	http("DELETE", path, NULL, &r);
+	ATF_CHECK_MSG(r.status == 409 && strstr(r.body, "data-missing") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", CC "ca", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", CC "update", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("POST", "/restconf/operations/arcana-console:wireguard-keypair",
+	    NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	cc_eq("/api/cluster", CC "cluster", "cluster");
+}
+
+CONSOLE_TC(cyang_plugins, "arcana-console's plugins: listed as /api's, "
+    "enabled by an owner alone, each user's store their own, the shared "
+    "one written by operators and owners, If-Match held")
+ATF_TC_BODY(cyang_plugins, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], tag[64], hdr[128];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	ATF_REQUIRE(mkdir("plugins", 0755) == 0);
+	ATF_REQUIRE(mkdir("plugins/good", 0755) == 0);
+	put("plugins/good/plugin.json", "{\"id\":\"good\",\"name\":\"Good\","
+	    "\"version\":\"1.2.0\",\"arcana\":\"0.1.0\",\"entry\":"
+	    "[\"main.js\"],\"provides\":[\"theme\"]}");
+	put("plugins/good/main.js", "window.x = 1;\n");
+	snprintf(harness_webconf, sizeof(harness_webconf), "plugins_dir = "
+	    "\"%s/plugins\";\n", cwd);
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("GET", CC "plugins", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "arcana-console:plugins.directory") != NULL);
+	ATF_CHECK_STREQ("good", jstr(&r, "arcana-console:plugins.plugin.0.id"));
+	ATF_CHECK_STREQ("false", jstr(&r,
+	    "arcana-console:plugins.plugin.0.enabled"));
+	ATF_CHECK_STREQ("main.js", jstr(&r,
+	    "arcana-console:plugins.plugin.0.file.0.path"));
+	ATF_CHECK_STREQ("theme", jstr(&r,
+	    "arcana-console:plugins.plugin.0.provides.0"));
+	resp_free(&r);
+	/* Its store not found until enabled, as /api's. */
+	cc_same("GET", "/api/plugins/good/store", NULL,
+	    CC "plugins/plugin=good/store", NULL);
+	http("PATCH", CC "plugins/plugin=good", "{\"arcana-console:plugin\":"
+	    "[{\"id\":\"good\",\"enabled\":true}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/plugins", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "plugins.0.enabled"));
+	resp_free(&r);
+	http("POST", CC "plugins", "{\"arcana-console:plugin\":[{\"id\":"
+	    "\"nosuch\",\"enabled\":true}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* The owner's store: none yet, kept, then only by its tag. */
+	http("GET", CC "plugins/plugin=good/store", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("PUT", CC "plugins/plugin=good/store",
+	    "{\"arcana-console:store\":{\"level\":3}}", &r);
+	EXPECT(&r, 204);
+	ATF_REQUIRE(resp_header(&r, "etag", tag, sizeof(tag)) != NULL);
+	resp_free(&r);
+	http("GET", "/api/plugins/good/store", NULL, &r);
+	ATF_CHECK_STREQ("3", jstr(&r, "data.level"));
+	resp_free(&r);
+	http("GET", CC "plugins/plugin=good/store", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("3", jstr(&r, "arcana-console:store.level"));
+	resp_free(&r);
+	http("PUT", CC "plugins/plugin=good/store",
+	    "{\"arcana-console:store\":{\"level\":9}}", &r);
+	EXPECT(&r, 412);
+	resp_free(&r);
+	snprintf(hdr, sizeof(hdr), "If-Match: %s\r\n", tag);
+	http_with("PUT", CC "plugins/plugin=good/store", hdr,
+	    "{\"arcana-console:store\":{\"level\":4}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("PUT", CC "plugins/plugin=good/store", "{\"level\":5}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PUT", CC "plugins/plugin=good/shared-store",
+	    "{\"arcana-console:shared-store\":{\"theme\":\"dark\"}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	/* A member: reads the list and the shared store, a store of its
+	 * own, enables nothing, writes no shared store. */
+	cc_member(&b);
+	http("GET", CC "plugins", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "arcana-console:plugins.directory") == NULL);
+	resp_free(&r);
+	http("PATCH", CC "plugins/plugin=good", "{\"arcana-console:plugin\":"
+	    "[{\"id\":\"good\",\"enabled\":false}]}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", CC "plugins/plugin=good/store", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("GET", CC "plugins/plugin=good/shared-store", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("dark", jstr(&r, "arcana-console:shared-store.theme"));
+	resp_free(&r);
+	http("PUT", CC "plugins/plugin=good/shared-store",
+	    "{\"arcana-console:shared-store\":{\"theme\":\"light\"}}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, feeds);
@@ -18462,5 +18682,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, cyang_hosts);
 	ATF_TP_ADD_TC(tp, cyang_host_verbs);
 	ATF_TP_ADD_TC(tp, cyang_sdwan);
+	ATF_TP_ADD_TC(tp, cyang_console);
+	ATF_TP_ADD_TC(tp, cyang_plugins);
 	return (atf_no_error());
 }

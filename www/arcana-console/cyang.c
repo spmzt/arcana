@@ -29,6 +29,16 @@
  *							added by operators,
  *							changed by admins
  *	/restconf/data/arcana-console:sdwan/...		operators and owners
+ *	/restconf/data/arcana-console:update, update-notes, ca
+ *							owners
+ *	/restconf/data/arcana-console:cluster		everyone
+ *	/restconf/data/arcana-console:plugins		everyone; enabled by
+ *							owners, each user's
+ *							store their own
+ *	/restconf/data/arcana-console:credentials	everyone, their own
+ *							keys; an owner's all
+ *	/restconf/operations/arcana-console:trace-path, wireguard-keypair
+ *							operators and owners
  *
  * What the console makes rather than keeps (a host's drift, its
  * subscription, a bundle) and its verbs on it are /api's handlers
@@ -91,6 +101,8 @@ static const struct part {
 	{ "transfers", false, false },
 	{ "push", false, true },
 	{ "hosts", false, true },
+	{ "plugins", false, true },
+	{ "credentials", false, true },
 };
 
 static void	put(ucl_object_t *, const char *, ucl_object_t *);
@@ -156,6 +168,24 @@ static const struct bridge {
 	{ S "revoke-identity", "result", NULL, true },
 	{ S "attach", "result", NULL, false },
 #undef	S
+#define	C	"data/arcana-console:"
+	{ C "update", NULL, NULL, false },
+	{ C "update-notes", NULL, NULL, false },
+	{ C "cluster", NULL, NULL, false },
+	{ C "ca", "ca/state", NULL, false },
+	{ C "ca/state", NULL, NULL, false },
+	{ C "ca/make", "result", NULL, false },
+	{ C "ca/request", "result", NULL, false },
+	{ C "ca/import", "result", NULL, false },
+	{ C "ca/discard", "result", NULL, false },
+	{ C "ca/rollout", "result", NULL, false },
+	{ C "ca/finish", "result", NULL, false },
+	{ C "plugins/plugin=*/store", NULL, NULL, false },
+	{ C "plugins/plugin=*/shared-store", NULL, NULL, false },
+#undef	C
+	{ "operations/arcana-console:trace-path", "result", NULL, false },
+	{ "operations/arcana-console:wireguard-keypair", "result", NULL,
+	    false },
 };
 
 /* Whether path is pattern pat, each * a key (no /). */
@@ -484,6 +514,10 @@ value_of(struct http_request *req, const struct part *p, uint32_t one)
 		return (push_yang(req));
 	if (strcmp(p->name, "hosts") == 0)
 		return (servers_yang(req));
+	if (strcmp(p->name, "plugins") == 0)
+		return (cplugs_yang(req));
+	if (strcmp(p->name, "credentials") == 0)
+		return (credentials_yang(req));
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put(o, "enabled", ucl_object_frombool(enrol_enabled()));
 	return (o);
@@ -649,6 +683,13 @@ keep(struct http_request *req, const struct part *p, const ucl_object_t *was,
 	if (strcmp(p->name, "hosts") == 0)
 		return (servers_yang_set(req, ucl_object_lookup(was, "hosts"),
 		    ucl_object_lookup(now, "hosts"), why, len));
+	if (strcmp(p->name, "plugins") == 0)
+		return (cplugs_yang_set(req, ucl_object_lookup(was,
+		    "plugins"), ucl_object_lookup(now, "plugins"), why, len));
+	if (strcmp(p->name, "credentials") == 0)
+		return (credentials_yang_set(req, ucl_object_lookup(was,
+		    "credentials"), ucl_object_lookup(now, "credentials"), why,
+		    len));
 	snprintf(why, len, "%s is not configuration", p->name);
 	return (405);
 }
@@ -851,7 +892,9 @@ api_cyang(struct http_request *req)
 		return (restconf_error(req, 404, "no such resource: "
 		    MODULE "'s are settings, tokens, users, roles, groups, "
 		    "enrolment, workflows, runs, templates, labels, "
-		    "prefix-lists, threat-feeds, transfers, push and hosts"));
+		    "prefix-lists, threat-feeds, transfers, push, hosts, "
+		    "plugins and credentials; the others, sdwan's, ca's, "
+		    "update, update-notes and cluster, read at their nodes"));
 	if (req->method == HTTP_METHOD_POST && (st = action(req)) != -1)
 		return (st);
 	if (!guard(req, req->method != HTTP_METHOD_GET))

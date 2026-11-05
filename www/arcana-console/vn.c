@@ -1066,6 +1066,11 @@ api_restconf_operations(struct http_request *req)
 		ucl_array_append(list, ucl_object_typed_new(UCL_NULL));
 		o = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(o, list, "ietf-vn:vn-compute", 0, false);
+		/* arcana-console's, routed before this (routes.c). */
+		ucl_object_insert_key(o, ucl_object_copy(list),
+		    "arcana-console:trace-path", 0, false);
+		ucl_object_insert_key(o, ucl_object_copy(list),
+		    "arcana-console:wireguard-keypair", 0, false);
 		top = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(top, o, "ietf-restconf:operations", 0,
 		    false);

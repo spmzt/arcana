@@ -814,18 +814,37 @@ api_cplugs(struct http_request *req)
 	return (reply_json(req, 200, o));
 }
 
+static int	plug_set(const char *, bool, const char *, char *, size_t);
+
+/* The plugin's id of /api/plugins/<id>/... or of arcana-console's
+ * plugins/plugin=<id>/... */
+static bool
+plug_id_of(struct http_request *req, char *id, size_t len)
+{
+	static const char	pre[] = CYANG_DATA "plugins/plugin=";
+	const char		*p;
+	size_t			 n;
+
+	if (strncmp(req->path, pre, sizeof(pre) - 1) != 0)
+		return (capture(req, 3, id, len) && id_ok(id));
+	p = req->path + sizeof(pre) - 1;
+	if ((n = strcspn(p, "/")) == 0 || n >= len)
+		return (false);
+	memcpy(id, p, n);
+	id[n] = '\0';
+	return (id_ok(id));
+}
+
 /* POST /api/plugins/<id> {"enabled": bool}: by a console owner. */
 int
 api_cplug(struct http_request *req)
 {
-	ucl_object_t		*body, *st, *e, *rec;
+	ucl_object_t		*body;
 	const ucl_object_t	*v;
-	struct stat		 sb;
-	char			 path[MAXPATHLEN];
-	struct cplug		*p;
 	const char		*who;
-	char			 id[ID_MAX + 1];
+	char			 id[ID_MAX + 1], why[300];
 	bool			 on;
+	int			 status;
 
 	if (!guard(req, true))
 		return (WEB_OK);
@@ -846,43 +865,179 @@ api_cplug(struct http_request *req)
 	ucl_object_unref(body);
 	cplug_check();
 	state_check();
-	p = plug_find(id);
-	if (on && p == NULL)
-		return (reply_error(req, 404, "not_found", "no plugin %s in %s",
-		    id, cfg.plugins_dir != NULL ? cfg.plugins_dir : "(none)"));
-	if (on && p->error != NULL)
-		return (reply_error(req, 409, "plugin", "plugin %s: %s", id,
-		    p->error));
 	who = session_who(req) != NULL ? session_who(req) : "?";
-	if (on != enabled(id)) {
-		st = ucl_object_copy(cp.state);
-		e = (ucl_object_t *)(uintptr_t)ucl_object_lookup(st, "enabled");
-		if (on) {
-			rec = ucl_object_typed_new(UCL_OBJECT);
-			put(rec, "by", ucl_object_fromstring(who));
-			put(rec, "at", ucl_object_fromint(time(NULL)));
-			put(e, id, rec);
-		} else
-			ucl_object_delete_key(e, id);
-		if (store_save(CPLUG_STATE, st) != 0) {
-			ucl_object_unref(st);
-			return (reply_error(req, 500, "store", "%s could not be "
-			    "written", CPLUG_STATE));
-		}
-		/* In force at once; a cluster's write, when it comes, the
-		 * same read again. */
-		ucl_object_unref(cp.state);
-		cp.state = st;
-		snprintf(path, sizeof(path), "%s/%s", cfg.datadir, CPLUG_STATE);
-		if (stat(path, &sb) == 0)
-			cp.state_mtim = sb.st_mtim;
-		audit_add(on ? "plugin-enabled" : "plugin-disabled",
-		    "Administer", id, CPLUG_STATE, "the console", who,
-		    "plugin %s %s", id, on ? "enabled" : "disabled");
-		log_msg(LOG_NOTICE, "console plugin %s %s by %s", id, on ?
-		    "enabled" : "disabled", who);
-	}
+	if ((status = plug_set(id, on, who, why, sizeof(why))) != 0)
+		return (reply_error(req, status, status == 404 ? "not_found" :
+		    status == 409 ? "plugin" : "store", "%s", why));
 	return (api_cplugs(req));
+}
+
+/* Plugin id enabled or not by who: 0, or the HTTP status and why. */
+static int
+plug_set(const char *id, bool on, const char *who, char *why, size_t len)
+{
+	ucl_object_t	*st, *e, *rec;
+	struct stat	 sb;
+	struct cplug	*p;
+	char		 path[MAXPATHLEN];
+
+	p = plug_find(id);
+	if (on && p == NULL) {
+		snprintf(why, len, "no plugin %s in %s", id, cfg.plugins_dir !=
+		    NULL ? cfg.plugins_dir : "(none)");
+		return (404);
+	}
+	if (on && p->error != NULL) {
+		snprintf(why, len, "plugin %s: %s", id, p->error);
+		return (409);
+	}
+	if (on == enabled(id))
+		return (0);
+	st = ucl_object_copy(cp.state);
+	e = (ucl_object_t *)(uintptr_t)ucl_object_lookup(st, "enabled");
+	if (on) {
+		rec = ucl_object_typed_new(UCL_OBJECT);
+		put(rec, "by", ucl_object_fromstring(who));
+		put(rec, "at", ucl_object_fromint(time(NULL)));
+		put(e, id, rec);
+	} else
+		ucl_object_delete_key(e, id);
+	if (store_save(CPLUG_STATE, st) != 0) {
+		ucl_object_unref(st);
+		snprintf(why, len, "%s could not be written", CPLUG_STATE);
+		return (500);
+	}
+	/* In force at once; a cluster's write, when it comes, the same
+	 * read again. */
+	ucl_object_unref(cp.state);
+	cp.state = st;
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, CPLUG_STATE);
+	if (stat(path, &sb) == 0)
+		cp.state_mtim = sb.st_mtim;
+	audit_add(on ? "plugin-enabled" : "plugin-disabled", "Administer",
+	    id, CPLUG_STATE, "the console", who, "plugin %s %s", id, on ?
+	    "enabled" : "disabled");
+	log_msg(LOG_NOTICE, "console plugin %s %s by %s", id, on ?
+	    "enabled" : "disabled", who);
+	cyang_changed("plugins");
+	return (0);
+}
+
+/* arcana-console's plugins (cyang.c): /api/plugins' list, typed. */
+ucl_object_t *
+cplugs_yang(struct http_request *req)
+{
+	static const char	*texts[] = { "name", "version", "arcana",
+				    "description", "author" };
+	const ucl_object_t	*v;
+	ucl_object_t		*top, *list, *o, *f, *a;
+	size_t			 i;
+	int			 k, j;
+
+	cplug_check();
+	state_check();
+	list = ucl_object_typed_new(UCL_ARRAY);
+	for (k = 0; k < cp.n; k++) {
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put(o, "id", ucl_object_fromstring(cp.v[k].id));
+		put(o, "enabled", ucl_object_frombool(enabled(cp.v[k].id)));
+		for (i = 0; i < nitems(texts); i++)
+			if (cp.v[k].m != NULL && (v = ucl_object_lookup(
+			    cp.v[k].m, texts[i])) != NULL &&
+			    ucl_object_type(v) == UCL_STRING)
+				put(o, texts[i], ucl_object_copy(v));
+		if (cp.v[k].error != NULL) {
+			put(o, "error", ucl_object_fromstring(cp.v[k].error));
+			ucl_array_append(list, o);
+			continue;
+		}
+		if (cp.v[k].m != NULL && (v = ucl_object_lookup(cp.v[k].m,
+		    "provides")) != NULL && ucl_object_type(v) == UCL_ARRAY &&
+		    ucl_array_size(v) > 0)
+			put(o, "provides", ucl_object_copy(v));
+		a = ucl_object_typed_new(UCL_ARRAY);
+		for (j = 0; j < cp.v[k].nfiles; j++) {
+			char	sri[80];
+
+			f = ucl_object_typed_new(UCL_OBJECT);
+			put(f, "path", ucl_object_fromstring(
+			    cp.v[k].files[j].path));
+			put(f, "kind", ucl_object_fromstring(
+			    cp.v[k].files[j].kind == F_SCRIPT ? "script" :
+			    cp.v[k].files[j].kind == F_STYLE ? "style" :
+			    "asset"));
+			put(f, "size", ucl_object_fromint(
+			    cp.v[k].files[j].size));
+			snprintf(sri, sizeof(sri), "sha384-%s",
+			    cp.v[k].files[j].sri);
+			put(f, "integrity", ucl_object_fromstring(sri));
+			ucl_array_append(a, f);
+		}
+		put(o, "file", a);
+		ucl_array_append(list, o);
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	if (user_console(session_user(req)) == CROLE_OWNER)
+		put(top, "directory", ucl_object_fromstring(cfg.plugins_dir !=
+		    NULL ? cfg.plugins_dir : ""));
+	put(top, "plugin", list);
+	return (top);
+}
+
+/*
+ * The plugins' change from was to now: each enabled or not, by an owner
+ * of the console alone, as POST /api/plugins/<id>; a plugin is
+ * installed and removed in its directory, not here.  0, or the HTTP
+ * status and why.
+ */
+int
+cplugs_yang_set(struct http_request *req, const ucl_object_t *was,
+    const ucl_object_t *now, char *why, size_t len)
+{
+	const ucl_object_t	*wl, *nl, *e, *o;
+	ucl_object_iter_t	 it;
+	const char		*id, *who;
+	int			 st;
+
+	wl = ucl_object_lookup(was, "plugin");
+	nl = ucl_object_lookup(now, "plugin");
+	if (ucl_array_size(wl) != ucl_array_size(nl)) {
+		snprintf(why, len, "a plugin is installed and removed in %s",
+		    cfg.plugins_dir != NULL ? cfg.plugins_dir : "the plugins "
+		    "directory");
+		return (400);
+	}
+	it = NULL;
+	while ((e = ucl_object_iterate(nl, &it, true)) != NULL) {
+		id = ucl_str(e, "id");
+		if ((o = cyang_entry(wl, "id", id)) == NULL) {
+			snprintf(why, len, "no plugin %s in %s", id,
+			    cfg.plugins_dir != NULL ? cfg.plugins_dir :
+			    "(none)");
+			return (404);
+		}
+		if (ucl_object_toboolean(ucl_object_lookup(o, "enabled")) ==
+		    ucl_object_toboolean(ucl_object_lookup(e, "enabled")))
+			continue;
+		if (user_console(session_user(req)) != CROLE_OWNER) {
+			snprintf(why, len, "a console plugin is enabled or "
+			    "disabled by an owner of this console alone");
+			return (403);
+		}
+		if (ucl_object_toboolean(ucl_object_lookup(e, "enabled")) &&
+		    plug_find(id) != NULL && plug_find(id)->error != NULL) {
+			snprintf(why, len, "plugin %s: %s", id,
+			    plug_find(id)->error);
+			return (409);
+		}
+	}
+	who = session_who(req) != NULL ? session_who(req) : "?";
+	it = NULL;
+	while ((e = ucl_object_iterate(nl, &it, true)) != NULL)
+		if ((st = plug_set(ucl_str(e, "id"), ucl_object_toboolean(
+		    ucl_object_lookup(e, "enabled")), who, why, len)) != 0)
+			return (st);
+	return (0);
 }
 
 /* A 404 of the plugin files' own: plain, as the web root's. */
@@ -1138,17 +1293,20 @@ api_cplug_store(struct http_request *req)
 	struct cplug	*p;
 	ssize_t		 len;
 	size_t		 plen;
-	bool		 shared, ok;
+	bool		 shared, ok, rc;
 	int		 fd, status;
 
 	plen = strlen(req->path);
-	shared = plen > 7 && strcmp(req->path + plen - 7, "/shared") == 0;
+	shared = (plen > 7 && strcmp(req->path + plen - 7, "/shared") == 0) ||
+	    (plen > 13 && strcmp(req->path + plen - 13, "/shared-store") ==
+	    0);
+	rc = cyang_bridged(req->path);
 	if (!guard(req, req->method != HTTP_METHOD_GET))
 		return (WEB_OK);
 	if ((user = session_user(req)) == NULL)
 		return (reply_error(req, 403, "token", "a plugin's store is a "
 		    "console user's, not an API token's"));
-	if (!capture(req, 3, id, sizeof(id)) || !id_ok(id))
+	if (!plug_id_of(req, id, sizeof(id)))
 		return (reply_error(req, 404, "not_found", "no such plugin"));
 	cplug_check();
 	state_check();
@@ -1157,6 +1315,14 @@ api_cplug_store(struct http_request *req)
 		    "enabled", id));
 	if (!pstore_name(id, shared ? NULL : user, name, sizeof(name)))
 		return (reply_error(req, 400, "invalid", "a user's name"));
+	if (req->method == HTTP_METHOD_GET && rc) {
+		/* RESTCONF's: the object, its tag the ETag; none, 404. */
+		if ((o = pstore_load(name, etag)) == NULL)
+			return (reply_error(req, 404, "not_found", "nothing is "
+			    "stored"));
+		http_response_header(req, "etag", etag);
+		return (reply_json(req, 200, o));
+	}
 	if (req->method == HTTP_METHOD_GET) {
 		top = ucl_object_typed_new(UCL_OBJECT);
 		if ((o = pstore_load(name, etag)) != NULL) {
@@ -1178,6 +1344,10 @@ api_cplug_store(struct http_request *req)
 		return (reply_error(req, status, status == 413 ? "too_large" :
 		    "invalid", status == 413 ? "%d bytes at most" :
 		    "a JSON object", PSTORE_MAX));
+	/* RESTCONF's PUT: {"arcana-console:<store>": {...}}. */
+	if (rc && (o = cyang_unwrap(req, o)) == NULL)
+		return (reply_error(req, 400, "invalid", "{\"arcana-console:"
+		    "%s\": a JSON object}", shared ? "shared-store" : "store"));
 	if ((len = pstore_tag(o, etag)) == -1 || len > PSTORE_MAX) {
 		ucl_object_unref(o);
 		return (len == -1 ? reply_error(req, 500, "store", "out of "

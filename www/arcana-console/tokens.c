@@ -77,7 +77,8 @@ token_readable(const char *path)
 	if (strncmp(path, CYANG_DATA "settings", sizeof(CYANG_DATA) + 7) ==
 	    0 || strncmp(path, CYANG_DATA "enrolment", sizeof(CYANG_DATA) +
 	    8) == 0 || strncmp(path, CYANG_DATA "push", sizeof(CYANG_DATA) +
-	    3) == 0)
+	    3) == 0 || strncmp(path, CYANG_DATA "credentials",
+	    sizeof(CYANG_DATA) + 10) == 0)
 		return (false);
 	if (strcmp(path, "/restconf") == 0 || strncmp(path, "/restconf/",
 	    10) == 0)
@@ -102,7 +103,8 @@ token_writable(const char *path)
 	    "tokens", sizeof(CYANG_DATA) + 5) != 0 && strncmp(path, CYANG_DATA
 	    "users", sizeof(CYANG_DATA) + 4) != 0 && strncmp(path, CYANG_DATA
 	    "roles", sizeof(CYANG_DATA) + 4) != 0 && strncmp(path, CYANG_DATA
-	    "groups", sizeof(CYANG_DATA) + 5) != 0);
+	    "groups", sizeof(CYANG_DATA) + 5) != 0 && strncmp(path, CYANG_DATA
+	    "ca", sizeof(CYANG_DATA) + 1) != 0);
 }
 
 static void

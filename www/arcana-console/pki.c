@@ -1601,8 +1601,16 @@ api_ca(struct http_request *req)
 	if (!cfg.tls_own)
 		return (reply_error(req, 409, "not_own", "web.conf's tls block "
 		    "names the CA: it is changed there, not here"));
-	if ((body = read_json(req)) == NULL || (act = ucl_str(body, "action")) ==
-	    NULL) {
+	/* arcana-console's ca/<action>: the action its node, no input
+	 * none. */
+	if (cyang_path(req->path)) {
+		if ((body = read_json(req)) == NULL)
+			body = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_replace_key(body, ucl_object_fromstring(
+		    strrchr(req->path, '/') + 1), "action", 0, true);
+	} else
+		body = read_json(req);
+	if (body == NULL || (act = ucl_str(body, "action")) == NULL) {
 		if (body != NULL)
 			ucl_object_unref(body);
 		return (reply_error(req, 400, "bad_request", "an action"));

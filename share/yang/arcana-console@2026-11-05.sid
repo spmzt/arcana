@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-console",
     "module-revision": "2026-11-05",
-    "sid-file-version": 3,
+    "sid-file-version": 4,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -2788,6 +2788,401 @@
         "namespace": "data",
         "identifier": "/arcana-console:sdwan/steering",
         "sid": "92351"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca",
+        "sid": "92352"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/discard",
+        "sid": "92353"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/discard/input",
+        "sid": "92354"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/discard/output",
+        "sid": "92355"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/discard/output/result",
+        "sid": "92356"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/finish",
+        "sid": "92357"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/finish/input",
+        "sid": "92358"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/finish/input/force",
+        "sid": "92359"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/finish/output",
+        "sid": "92360"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/finish/output/result",
+        "sid": "92361"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/import",
+        "sid": "92362"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/import/input",
+        "sid": "92363"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/import/input/cert",
+        "sid": "92364"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/import/input/key",
+        "sid": "92365"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/import/output",
+        "sid": "92366"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/import/output/result",
+        "sid": "92367"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/make",
+        "sid": "92368"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/make/input",
+        "sid": "92369"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/make/input/cn",
+        "sid": "92370"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/make/output",
+        "sid": "92371"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/make/output/result",
+        "sid": "92372"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/request",
+        "sid": "92373"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/request/input",
+        "sid": "92374"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/request/input/cn",
+        "sid": "92375"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/request/output",
+        "sid": "92376"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/request/output/result",
+        "sid": "92377"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/rollout",
+        "sid": "92378"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/rollout/input",
+        "sid": "92379"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/rollout/input/force",
+        "sid": "92380"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/rollout/output",
+        "sid": "92381"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/rollout/output/result",
+        "sid": "92382"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:ca/state",
+        "sid": "92383"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:cluster",
+        "sid": "92384"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:credentials",
+        "sid": "92385"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:credentials/credential",
+        "sid": "92386"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:credentials/credential/alg",
+        "sid": "92387"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:credentials/credential/created",
+        "sid": "92388"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:credentials/credential/id",
+        "sid": "92389"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:credentials/credential/last-used",
+        "sid": "92390"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:credentials/credential/name",
+        "sid": "92391"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:credentials/credential/sign-count",
+        "sid": "92392"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:credentials/credential/transports",
+        "sid": "92393"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:credentials/credential/user",
+        "sid": "92394"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins",
+        "sid": "92395"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/directory",
+        "sid": "92396"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin",
+        "sid": "92397"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/arcana",
+        "sid": "92398"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/author",
+        "sid": "92399"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/description",
+        "sid": "92400"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/enabled",
+        "sid": "92401"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/error",
+        "sid": "92402"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/file",
+        "sid": "92403"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/file/integrity",
+        "sid": "92404"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/file/kind",
+        "sid": "92405"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/file/path",
+        "sid": "92406"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/file/size",
+        "sid": "92407"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/id",
+        "sid": "92408"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/name",
+        "sid": "92409"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/provides",
+        "sid": "92410"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/shared-store",
+        "sid": "92411"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/store",
+        "sid": "92412"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:plugins/plugin/version",
+        "sid": "92413"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:trace-path",
+        "sid": "92414"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:trace-path/input",
+        "sid": "92415"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:trace-path/input/dst",
+        "sid": "92416"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:trace-path/input/places",
+        "sid": "92417"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:trace-path/input/places/jail",
+        "sid": "92418"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:trace-path/input/places/server",
+        "sid": "92419"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:trace-path/input/port",
+        "sid": "92420"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:trace-path/input/proto",
+        "sid": "92421"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:trace-path/input/src",
+        "sid": "92422"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:trace-path/output",
+        "sid": "92423"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:trace-path/output/result",
+        "sid": "92424"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:update",
+        "sid": "92425"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:update-notes",
+        "sid": "92426"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:wireguard-keypair",
+        "sid": "92427"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:wireguard-keypair/input",
+        "sid": "92428"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:wireguard-keypair/output",
+        "sid": "92429"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:wireguard-keypair/output/result",
+        "sid": "92430"
       }
     ]
   }

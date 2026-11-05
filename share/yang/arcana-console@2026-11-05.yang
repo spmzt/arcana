@@ -3025,4 +3025,401 @@ module arcana-console {
       }
     }
   }
+
+  /* The console itself */
+
+  anydata update {
+    config false;
+    description
+      "The newest release against this one, from update_url (checked
+       at most every few hours); owners'.";
+  }
+
+  anydata update-notes {
+    config false;
+    description
+      "What is new in agent_source's repository since the version
+       running: its tags' release notes, else its commits; owners'.
+       The query parameters component (console or agent), from, to
+       and fresh pick, as on /api.";
+  }
+
+  anydata cluster {
+    config false;
+    description
+      "The console's cluster: its nodes, who leads, how far each has
+       come.";
+  }
+
+  container ca {
+    description
+      "The console's CA, which signs the hosts' and its own
+       certificates, and its change: a next CA made, requested of
+       another or imported, rolled out to the hosts, then finished.
+       Owners'.  Neither ietf-keystore nor ietf-truststore: they keep
+       keys and certificates, not a rollover across a fleet.  A key
+       is written, never read.";
+    anydata state {
+      config false;
+      description
+        "The CA now, the next one, the change's state.";
+    }
+    action make {
+      description
+        "A next CA made here.";
+      input {
+        leaf cn {
+          type string {
+            length "0..64";
+          }
+          description
+            "Its common name; none, arcana CA.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "The CA's state.";
+        }
+      }
+    }
+    action request {
+      description
+        "A key made here, its certificate signing request for another
+         CA to sign.";
+      input {
+        leaf cn {
+          type string {
+            length "0..64";
+          }
+          description
+            "Its common name.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "The CA's state, the request in it.";
+        }
+      }
+    }
+    action import {
+      description
+        "A next CA given: its certificate, and its key unless the
+         request's.";
+      input {
+        leaf cert {
+          type string;
+          mandatory true;
+          description
+            "PEM.";
+        }
+        leaf key {
+          type string;
+          description
+            "PEM: write-only.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "The CA's state.";
+        }
+      }
+    }
+    action discard {
+      description
+        "The next CA thrown away, before it is rolled out.";
+      output {
+        anydata result {
+          description
+            "The CA's state.";
+        }
+      }
+    }
+    action rollout {
+      description
+        "The next CA sent to every host as trusted, their certificates
+         renewed by it.";
+      input {
+        leaf force {
+          type boolean;
+          description
+            "Past the hosts that do not answer.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "The CA's state.";
+        }
+      }
+    }
+    action finish {
+      description
+        "The old CA no longer trusted anywhere.";
+      input {
+        leaf force {
+          type boolean;
+          description
+            "Past the hosts that do not answer.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "The CA's state.";
+        }
+      }
+    }
+  }
+
+  container plugins {
+    description
+      "The console's plugins in its plugins directory, each enabled or
+       not by an owner, every user's to read; each plugin's store, a
+       user's own or the one shared (written by operators and owners),
+       read and written at its own path by a signed-in user alone.";
+    leaf directory {
+      type string;
+      config false;
+      description
+        "Where they are installed; told to owners.";
+    }
+    list plugin {
+      key "id";
+      description
+        "A plugin.";
+      leaf id {
+        type string {
+          length "1..40";
+          pattern '[a-z0-9-]+';
+        }
+        description
+          "Its directory's name.";
+      }
+      leaf enabled {
+        type boolean;
+        default "false";
+        description
+          "Its files served to the page; an owner's to change.";
+      }
+      leaf name {
+        type string;
+        config false;
+        description
+          "Its manifest's name.";
+      }
+      leaf version {
+        type string;
+        config false;
+        description
+          "Its version.";
+      }
+      leaf arcana {
+        type string;
+        config false;
+        description
+          "The console versions it is for.";
+      }
+      leaf description {
+        type string;
+        config false;
+        description
+          "What it does.";
+      }
+      leaf author {
+        type string;
+        config false;
+        description
+          "Who made it.";
+      }
+      leaf-list provides {
+        type string;
+        config false;
+        description
+          "What it gives the page.";
+      }
+      leaf error {
+        type string;
+        config false;
+        description
+          "Why it cannot be enabled.";
+      }
+      list file {
+        key "path";
+        config false;
+        description
+          "A file it lists.";
+        leaf path {
+          type string;
+          description
+            "Its path in the plugin.";
+        }
+        leaf kind {
+          type enumeration {
+            enum script;
+            enum style;
+            enum asset;
+          }
+          description
+            "What the page does with it.";
+        }
+        leaf size {
+          type uint64;
+          units "bytes";
+          description
+            "Its size.";
+        }
+        leaf integrity {
+          type string;
+          description
+            "Its subresource integrity, sha384-.";
+        }
+      }
+      anydata store {
+        description
+          "The reader's own store of the plugin, a JSON object; written
+           whole, with If-Match its entity-tag where one is kept.";
+      }
+      anydata shared-store {
+        description
+          "The store every user of the plugin shares; written by
+           operators and owners.";
+      }
+    }
+  }
+
+  container credentials {
+    description
+      "The security keys users sign in with (WebAuthn): each user
+       their own, an owner every user's.  Registered by the WebAuthn
+       ceremony beside RESTCONF; here renamed and removed, never the
+       last; their public keys are not read.";
+    list credential {
+      key "id";
+      description
+        "A key.";
+      leaf id {
+        type string;
+        description
+          "Its credential id, base64url.";
+      }
+      leaf name {
+        type string {
+          length "1..64";
+        }
+        description
+          "What its user calls it.";
+      }
+      leaf user {
+        type string;
+        config false;
+        description
+          "Whose it is.";
+      }
+      leaf alg {
+        type int32;
+        config false;
+        description
+          "Its COSE algorithm.";
+      }
+      leaf created {
+        type yang:date-and-time;
+        config false;
+        description
+          "When it was registered.";
+      }
+      leaf last-used {
+        type yang:date-and-time;
+        config false;
+        description
+          "When it last signed in.";
+      }
+      leaf sign-count {
+        type uint32;
+        config false;
+        description
+          "Its signature counter.";
+      }
+      leaf-list transports {
+        type string;
+        config false;
+        description
+          "How the browser reaches it.";
+      }
+    }
+  }
+
+  rpc trace-path {
+    description
+      "The path finder: a packet's way from src to dst through the
+       hosts asked, each one's routes and rules; it changes nothing.
+       Operators' and owners'.";
+    input {
+      leaf src {
+        type inet:ip-address-no-zone;
+        mandatory true;
+        description
+          "Its source.";
+      }
+      leaf dst {
+        type inet:ip-address-no-zone;
+        mandatory true;
+        description
+          "Its destination, of the source's family.";
+      }
+      leaf proto {
+        type enumeration {
+          enum tcp;
+          enum udp;
+          enum sctp;
+          enum icmp;
+          enum ip;
+        }
+        description
+          "Its protocol.";
+      }
+      leaf port {
+        type inet:port-number;
+        description
+          "Its destination port.";
+      }
+      list places {
+        description
+          "The hosts asked, a jail of one where named; none, every
+           host.";
+        leaf server {
+          type host-id;
+          description
+            "The host.";
+        }
+        leaf jail {
+          type string;
+          description
+            "A jail of it.";
+        }
+      }
+    }
+    output {
+      anydata result {
+        description
+          "The path, hop by hop.";
+      }
+    }
+  }
+
+  rpc wireguard-keypair {
+    description
+      "A fresh WireGuard key pair and a preshared key for a client of
+       a host's wg interface, said once and kept nowhere.  Operators'
+       and owners'.";
+    output {
+      anydata result {
+        description
+          "The private and public halves, base64, and the preshared
+           key.";
+      }
+    }
+  }
 }

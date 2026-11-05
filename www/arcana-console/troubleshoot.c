@@ -671,6 +671,9 @@ api_troubleshoot_path(struct http_request *req)
 			http_request_sleep(req);
 			return (WEB_RETRY);
 		}
+		if (cyang_bridged(req->path))
+			return (cyang_bridge_raw(req, t->json != NULL ? 200 :
+			    500, t->json));
 		http_response_header(req, "content-type",
 		    "application/json; charset=utf-8");
 		http_response_header(req, "cache-control", "no-store");

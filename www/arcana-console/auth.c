@@ -383,6 +383,17 @@ verify_sig(int alg, const uint8_t *spki, size_t spkilen, const uint8_t *msg,
 	return (ok);
 }
 
+/* credentials.json kept; arcana-console's credentials changed. */
+static int
+creds_save(void)
+{
+	int	rc;
+
+	rc = store_save(CREDENTIALS, creds);
+	cyang_changed("credentials");
+	return (rc);
+}
+
 static ucl_object_t *
 cred_list(void)
 {
@@ -862,7 +873,7 @@ creds_forget_user(const char *user)
 				break;
 			}
 	} while (again);
-	(void)store_save(CREDENTIALS, creds);
+	(void)creds_save();
 }
 
 /* A new session in a cookie only the console can read, opened by the
@@ -1180,7 +1191,7 @@ api_register_finish(struct http_request *req)
 	if (reg_user[0] != '\0' && strcmp(reg_user, ADMIN_USER) != 0)
 		put(c, "user", ucl_object_fromstring(reg_user));
 	ucl_array_append(cred_list(), c);
-	if (store_save(CREDENTIALS, creds) == -1) {
+	if (creds_save() == -1) {
 		/* A key that would be gone after a restart is not one. */
 		ucl_object_unref(ucl_array_delete(cred_list(), c));
 		status = 500;
@@ -1310,7 +1321,7 @@ api_login_finish(struct http_request *req)
 	    ucl_object_fromint(count), "sign_count", 0, true);
 	ucl_object_replace_key((ucl_object_t *)(uintptr_t)c,
 	    ucl_object_fromint(time(NULL)), "last_used", 0, true);
-	(void)store_save(CREDENTIALS, creds);
+	(void)creds_save();
 	session_start(req, ucl_str(c, "name"), NULL, cred_user(c));
 	log_msg(LOG_NOTICE, "login with \"%s\" of %s", ucl_str(c, "name"),
 	    cred_user(c));
@@ -1666,7 +1677,125 @@ api_credential(struct http_request *req)
 		    "register another key before removing the last one"));
 	gone = ucl_array_delete(cred_list(), (ucl_object_t *)(uintptr_t)c);
 	ucl_object_unref(gone);
-	if (store_save(CREDENTIALS, creds) == -1)
+	if (creds_save() == -1)
 		return (reply_error(req, 500, "store", "cannot save"));
 	return (api_credentials(req));
+}
+
+/*
+ * arcana-console's credentials (cyang.c): the keys GET
+ * /api/auth/credentials shows the request's user, their public keys
+ * not among them.
+ */
+ucl_object_t *
+credentials_yang(struct http_request *req)
+{
+	const ucl_object_t	*c, *v;
+	ucl_object_t		*top, *a, *e;
+	ucl_object_iter_t	 it = NULL;
+	const char		*u;
+
+	u = session_user(req);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((c = ucl_object_iterate(cred_list(), &it, true)) != NULL) {
+		if (u != NULL && user_console(u) != CROLE_OWNER && strcmp(
+		    cred_user(c), u) != 0)
+			continue;
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "id", ucl_object_fromstring(ucl_str(c, "id")));
+		if (ucl_str(c, "name") != NULL && ucl_str(c, "name")[0] != '\0')
+			put(e, "name", ucl_object_fromstring(ucl_str(c,
+			    "name")));
+		put(e, "user", ucl_object_fromstring(cred_user(c)));
+		if ((v = ucl_object_lookup(c, "alg")) != NULL)
+			put(e, "alg", ucl_object_copy(v));
+		if ((v = ucl_object_lookup(c, "created")) != NULL)
+			put(e, "created", yang_time((double)ucl_object_toint(v)));
+		if ((v = ucl_object_lookup(c, "last_used")) != NULL)
+			put(e, "last-used", yang_time((double)ucl_object_toint(
+			    v)));
+		if ((v = ucl_object_lookup(c, "sign_count")) != NULL)
+			put(e, "sign-count", ucl_object_copy(v));
+		if ((v = ucl_object_lookup(c, "transports")) != NULL &&
+		    ucl_object_type(v) == UCL_ARRAY && ucl_array_size(v) > 0)
+			put(e, "transports", ucl_object_copy(v));
+		ucl_array_append(a, e);
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	put(top, "credential", a);
+	return (top);
+}
+
+/*
+ * The keys' change from was to now: each renamed or removed by its
+ * user, or by an owner, never the last; none made here (the WebAuthn
+ * ceremony registers one).  0, or the HTTP status and why.
+ */
+int
+credentials_yang_set(struct http_request *req, const ucl_object_t *was,
+    const ucl_object_t *now, char *why, size_t len)
+{
+	const ucl_object_t	*wl, *nl, *e, *o, *c;
+	ucl_object_iter_t	 it;
+	const char		*u, *n;
+	size_t			 gone;
+
+	wl = ucl_object_lookup(was, "credential");
+	nl = ucl_object_lookup(now, "credential");
+	u = session_user(req);
+	gone = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(nl, &it, true)) != NULL)
+		if (cyang_entry(wl, "id", ucl_str(e, "id")) == NULL) {
+			snprintf(why, len, "a key is registered by signing in "
+			    "with it (/api/auth/register)");
+			return (400);
+		}
+	it = NULL;
+	while ((o = ucl_object_iterate(wl, &it, true)) != NULL) {
+		if ((c = cred_find(ucl_str(o, "id"))) == NULL)
+			continue;
+		e = cyang_entry(nl, "id", ucl_str(o, "id"));
+		if (e != NULL && cyang_same(o, e))
+			continue;
+		if (u != NULL && user_console(u) != CROLE_OWNER && strcmp(
+		    cred_user(c), u) != 0) {
+			snprintf(why, len, "another user's key is changed by "
+			    "the owner");
+			return (403);
+		}
+		if (e == NULL)
+			gone++;
+		else if ((n = ucl_str(e, "name")) != NULL && (strlen(n) > 64 ||
+		    strpbrk(n, "\r\n") != NULL)) {
+			snprintf(why, len, "a key's name is one line of 64 at "
+			    "most");
+			return (400);
+		}
+	}
+	if (gone > 0 && gone >= ucl_array_size(cred_list())) {
+		snprintf(why, len, "register another key before removing the "
+		    "last one");
+		return (409);
+	}
+	it = NULL;
+	while ((o = ucl_object_iterate(wl, &it, true)) != NULL) {
+		if ((c = cred_find(ucl_str(o, "id"))) == NULL)
+			continue;
+		if ((e = cyang_entry(nl, "id", ucl_str(o, "id"))) == NULL) {
+			log_msg(LOG_NOTICE, "key \"%s\" of %s removed",
+			    ucl_str(c, "name") != NULL ? ucl_str(c, "name") :
+			    "", cred_user(c));
+			ucl_object_unref(ucl_array_delete(cred_list(),
+			    (ucl_object_t *)(uintptr_t)c));
+		} else if (!cyang_same(o, e))
+			ucl_object_replace_key((ucl_object_t *)(uintptr_t)c,
+			    ucl_object_fromstring(ucl_str(e, "name") != NULL ?
+			    ucl_str(e, "name") : ""), "name", 0, true);
+	}
+	if (creds_save() == -1) {
+		snprintf(why, len, "cannot save");
+		return (500);
+	}
+	return (0);
 }

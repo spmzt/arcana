@@ -338,7 +338,9 @@ user_path_ok(enum crole r, const char *path, bool mutate)
 				    "/api/enrol", "/api/update",
 				    CYANG_DATA "settings", CYANG_DATA "tokens",
 				    CYANG_DATA "users", CYANG_DATA "roles",
-				    CYANG_DATA "groups", CYANG_DATA "enrolment" };
+				    CYANG_DATA "groups", CYANG_DATA "enrolment",
+				    CYANG_DATA "ca", CYANG_DATA "update",
+				    CYANG_DATA "update-notes" };
 	static const char	*operator_up[] = { "/api/sdwan", "/api/feeds",
 				    CYANG_DATA "workflows", CYANG_DATA "runs",
 				    CYANG_DATA "templates",
@@ -348,6 +350,10 @@ user_path_ok(enum crole r, const char *path, bool mutate)
 				    "/restconf/data/ietf-vn:access-point",
 				    "/restconf/data/ietf-vn:virtual-network",
 				    "/restconf/operations/ietf-vn:vn-compute",
+				    "/restconf/operations/arcana-console:"
+				    "trace-path",
+				    "/restconf/operations/arcana-console:"
+				    "wireguard-keypair",
 				    "/api/workflows",
 				    "/api/runs", "/api/templates",
 				    "/api/transfers", "/api/troubleshoot",

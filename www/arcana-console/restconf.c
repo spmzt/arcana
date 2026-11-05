@@ -601,7 +601,7 @@ library_object(void)
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	ucl_array_append(arr, ds);
 	ucl_object_insert_key(lib, arr, "datastore", 0, false);
-	ucl_object_insert_key(lib, ucl_object_fromstring("2026-11-05.7"),
+	ucl_object_insert_key(lib, ucl_object_fromstring("2026-11-05.8"),
 	    "content-id", 0, false);
 	return (lib);
 }
