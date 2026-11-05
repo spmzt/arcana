@@ -1374,6 +1374,109 @@ EOF
 	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 out
 }
 
+atf_test_case yang_sap cleanup
+yang_sap_head()
+{
+	atf_set "descr" "the host as RFC 9408's SAP network: stand-in" \
+	    "interfaces a termination point each, a SAP each that can attach" \
+	    "a service, its status the interface's up or down; served, the" \
+	    "termination points the interfaces and each SAP's status its" \
+	    "interface's oper-status; state alone"
+}
+yang_sap_body()
+{
+	local y="$(atf_get_srcdir)/ysap" s st op
+
+	cat > ifs.json <<'EOF'
+{"host":"edge1","interfaces":[
+{"name":"vtnet0","type":"ethernetCsmacd","oper":"up","driver":"vtnet0","last":"2026-11-05T07:00:00Z","descr":"LAN"},
+{"name":"lo0","type":"softwareLoopback","oper":"up","driver":"lo0","groups":["lo"]},
+{"name":"epair0a","type":"ethernetCsmacd","oper":"up","driver":"epair0","groups":["epair"],"peer-vnet":true},
+{"name":"epair0b","type":"ethernetCsmacd","oper":"lower-layer-down","driver":"epair0","groups":["epair"],"peer-vnet":true,"lne":"r1"},
+{"name":"epair1a","type":"ethernetCsmacd","oper":"dormant","driver":"epair1","groups":["epair"],"peer":"epair1b","peer-vnet":false},
+{"name":"vlan100","type":"l2vlan","oper":"up","driver":"vlan100","groups":["vlan"],"parent":"vtnet0"},
+{"name":"vlan200","type":"l2vlan","oper":"testing","driver":"vlan200","groups":["vlan"],"parent":"lagg0","qinq":true},
+{"name":"lagg0","type":"ieee8023adLag","oper":"up","driver":"lagg0","groups":["lagg"]},
+{"name":"em0","type":"ethernetCsmacd","oper":"up","driver":"em0","aggport":true},
+{"name":"bridge0","type":"bridge","oper":"up","driver":"bridge0","groups":["bridge"],"address":true},
+{"name":"bridge1","type":"bridge","oper":"unknown","driver":"bridge1","groups":["bridge"]},
+{"name":"tap0","type":"ethernetCsmacd","oper":"down","driver":"tap0","groups":["tap"],"bridge-port":true},
+{"name":"gif0","type":"tunnel","oper":"up","driver":"gif0","groups":["gif"]}
+]}
+EOF
+	cat > want <<'EOF'
+network arcana-sap sdwan node edge1
+tp vtnet0
+tp lo0
+tp epair0a
+tp epair0b
+tp epair1a
+tp vlan100
+tp vlan200
+tp lagg0
+tp em0
+tp bridge0
+tp bridge1
+tp tap0
+tp gif0
+sap sdwan vtnet0 if=vtnet0 type=phy encap=untagged-int role=uni children=yes parent=- peer=- status=op-up since=2026-11-05T07:00:00Z descr=LAN
+sap sdwan epair0a if=epair0a type=logical encap=untagged-int role=uni children=yes parent=- peer=epair0b status=op-up since=- descr=-
+sap sdwan epair0b if=epair0b type=logical encap=untagged-int role=uni children=yes parent=- peer=epair0a status=op-down since=- descr=vnet jail r1
+sap sdwan epair1a if=epair1a type=logical encap=untagged-int role=uni children=yes parent=- peer=epair1b status=op-down since=- descr=-
+sap sdwan vlan100 if=vlan100 type=logical encap=dot1q role=uni children=no parent=vtnet0 peer=- status=op-up since=- descr=-
+sap sdwan vlan200 if=vlan200 type=logical encap=qinq role=uni children=no parent=lagg0 peer=- status=op-unknown since=- descr=-
+sap sdwan lagg0 if=lagg0 type=lag encap=lag-int role=uni children=yes parent=- peer=- status=op-up since=- descr=-
+sap sdwan bridge0 if=bridge0 type=irb encap=untagged-int role=uni children=no parent=- peer=- status=op-up since=- descr=-
+sap sdwan bridge1 if=bridge1 type=local-bridge encap=untagged-int role=uni children=no parent=- peer=- status=op-unknown since=- descr=-
+EOF
+	"$y" ifs.json > out || atf_fail "ysap failed"
+	atf_check -o file:want sed '$d' out
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 out
+	# vtnet0 down, epair0b up: their SAPs follow.
+	sed -e '/"vtnet0"/s/"oper":"up"/"oper":"down"/' \
+	    -e '/"epair0b"/s/"oper":"lower-layer-down"/"oper":"up"/' \
+	    ifs.json > flip.json
+	atf_check -o match:'^sap sdwan vtnet0 .* status=op-down ' \
+	    -o match:'^sap sdwan epair0b .* status=op-up ' "$y" flip.json
+
+	# Served: the host's node, a termination point each interface.
+	start_daemon
+	atf_check -o save:nw.json "$JGC" -c "$SOCK" get networks
+	atf_check -o match:'^\{"ietf-network:networks":\{"network":\[\{"network-id":"arcana-sap"' \
+	    -o match:'"ietf-sap-ntw:sap-network":\{"service-type":\["ietf-sap-ntw:sdwan"\]\}' \
+	    -o match:"\"node-id\":\"$(hostname)\"" -o match:'"role":"ietf-sap-ntw:uni"' \
+	    cat nw.json
+	ifconfig -l | tr ' ' '\n' | sort -u > names
+	grep -o '"tp-id":"[^"]*"' nw.json | sed 's/.*:"//; s/"$//' | sort > tps
+	atf_check cmp names tps
+	# Each SAP's status its interface's oper-status, by XPath filters.
+	grep -o '"sap-id":"[^"]*"' nw.json | sed 's/.*:"//; s/"$//' > saps
+	atf_check -o not-match:'^lo0$' cat saps
+	[ -s saps ] || atf_fail "no SAP on this host"
+	for s in $(cat saps); do
+		st=$("$JGC" -c "$SOCK" get -x "/ietf-network:networks/network[network-id='arcana-sap']/node/ietf-sap-ntw:service/sap[sap-id='$s']/sap-status/status" networks |
+		    sed -n 's/.*"status":"ietf-vpn-common:op-\([a-z]*\)".*/\1/p')
+		op=$("$JGC" -c "$SOCK" get -x "/ietf-interfaces:interfaces/interface[name='$s']/oper-status" interfaces |
+		    sed -n 's/.*"oper-status":"\([a-z-]*\)".*/\1/p')
+		case "$op" in
+		up)		[ "$st" = up ] ;;
+		testing|unknown) [ "$st" = unknown ] ;;
+		*)		[ "$st" = down ] ;;
+		esac || atf_fail "$s: oper-status $op, sap-status $st"
+	done
+	# State: running and the candidate have none, and none is written.
+	atf_check -o not-match:'arcana-sap' "$JGC" -c "$SOCK" get -d running \
+	    networks
+	atf_check -o match:'"ietf-yang-library:yang-library"' \
+	    -o match:'"name":"ietf-sap-ntw","namespace":"urn:ietf:params:xml:ns:yang:ietf-sap-ntw","revision":"2023-06-20"' \
+	    -o match:'\{"feature":\["dot1q","qinq","lag-interface"\],"name":"ietf-vpn-common"' \
+	    "$JGC" -c "$SOCK" get yang-library
+}
+yang_sap_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case yang_system
 yang_system_head()
 {
@@ -13964,6 +14067,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_active_route
 	atf_add_test_case yang_jails
 	atf_add_test_case yang_hardware
+	atf_add_test_case yang_sap
 	atf_add_test_case yang_system
 	atf_add_test_case yang_processes
 	atf_add_test_case yang_log

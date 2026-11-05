@@ -5,7 +5,8 @@
 # RFC 8530's logical network elements, their structs and schema tables
 # written by cblink-gen at the build (ymodel.h, ymodel_schema.c); with
 # ARC_YANG_SERVER=yes the server's handler table too (ymodel_server.c),
-# whose handlers the program defines.
+# whose handlers the program defines; but in the console, the host's
+# service attachment points (RFC 9408 over RFC 8345's network).
 #
 #	ARC_YANG_SERVER=	yes	(the agent)
 #	.include "${.CURDIR}/../../share/mk/arcana.yang.mk"
@@ -98,6 +99,14 @@ ARC_YFEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-subscribed-notif-receivers: -F ietf-https-notif-transport: \
 		-F arcana-notif: -F arcana-ra:
 
+# The agent's SAP network (RFC 9408), arcanactl's to read: ietf-vpn-common
+# implemented for its identities, of which a SAP's encapsulation needs
+# three features.  The console's tables have them with 4.6.2.
+.if ${ARC_YANG_CONSOLE:Uno} != "yes"
+ARC_YMODS+=	ietf-vpn-common@2022-02-11 ietf-network@2018-02-26 \
+		ietf-network-topology@2018-02-26 ietf-sap-ntw@2023-06-20
+ARC_YFEATS+=	-F ietf-vpn-common:dot1q,qinq,lag-interface
+.endif
 # The console's own datastore (ARC_YANG_CONSOLE=yes): the services
 # stored as L3NM (RFC 9181, RFC 9182) with Arcana's augments of it,
 # which no agent serves.

@@ -212,6 +212,7 @@ for open sets.
 | `ietf-i2nsf-ike` (RFC 9061) | strongSwan: files in conf.d as the persisted configuration, VICI for state (`list-sas`) and events; identities, PSK, EAP, signatures with the host's own key (private keys never pushed); lifetimes; proposals from IANA ids | refused: `id-null`, per-connection initial-contact, fragmentation MTU, half-open timers; `number-ike-sas/half-open-cookies` absent |
 | `ietf-ipsec-iptfs` (RFC 9348) | only `ipsec-stats` tx/rx packets and octets per SA from the lifetime counters | everything else refused: the kernel has no AGGFRAG/IP-TFS; the configuration augment is not feature-gated, so writes are refused with `operation-not-supported` and the console hides the subtree behind an Arcana capability |
 | `ietf-alarms` (RFC 8632) | shelving as the control's configuration; `purge-alarms` and `compress-alarms` actions | |
+| `ietf-network`, `ietf-network-topology`, `ietf-sap-ntw` (RFC 8345, RFC 9408) | state alone: the host a node of network `arcana-sap`, its interfaces (the vnet jails' with them) termination points, a SAP each that can attach a service (Ethernet, epair, lagg, vlan, bridge; not a lagg's port or a bridge's member, nor a tunnel), `sap-status` from the interface's oper-status, on-change with the interfaces | no configuration (an edit refused); `service-status` the console's; ietf-vpn-common implemented for its identities, features dot1q, qinq, lag-interface |
 | `ietf-yang-library`, `ietf-yang-schema-mount`, `ietf-netconf-acm`, `ietf-subscribed-notifications`, `ietf-yang-push` | per-mount libraries; NACM groups from the certificate's subject or the socket's uid, rule-lists, enforcement at rpc, data-node and notification; on-change by netlink(4) and EVFILT_JAIL events; subtree filters; replay from the event number for job traces and events | `on-change-unsupported` for counters; NACM replaces the per-op `auth` flag (`default-deny-all` on privileged rpcs) |
 | Arcana modules still to write | `arcana-steer` (the CAL, 3.5), `arcana-stamp` (5.1.8), `arcana-dummynet` (the NRP, 7.1), `arcana-cats` (7.4), `arcana-acp` (7.5), `arcana-intent` (7.8) | the served Arcana modules' configuration written through `EDIT`; their arcana.yaml operations retired, the JSON blobs typed (Y-3) |
 
@@ -1928,8 +1929,42 @@ whose first part is served.
   excess in all and as uplinks; check (console_test sdwan_infeasible):
   700 kbit/s of uplinks under 1 Mbit/s committed refused with the
   commit that fits, 10 Mbit/s planned.
-- 4.6.1 A: each agent's node, TPs and SAPs dumped with `sap-status`;
-  check: equals the interface list.
+- 4.6.1 done (agent invidia/ysap.c, yserve.c): each agent serves
+  `/ietf-network:networks/network[network-id='arcana-sap']` (RFC 8345,
+  RFC 9408), operational datastore alone (running has none; an edit is
+  refused): network-types `sap-network`, service type `sap:sdwan`; one
+  node, node-id the host's name (gethostname(3)); a termination point
+  each interface, tp-id its name, the vnet jails' with them (read whole
+  through each jail's helper); a SAP each interface a service can be
+  attached to, a UNI candidate, under one `service` of type sdwan:
+  an Ethernet interface of the hardware `phy`, a cloned one (epair,
+  tap, vxlan: in its cloner's group) `logical`, both `untagged-int`
+  with child SAPs allowed; a lagg `lag`, `lag-int`, child SAPs
+  allowed; a vlan `logical`, `dot1q` (`qinq` with a second tag), its
+  parent the `parent-termination-point`; a bridge `irb` with an
+  address, else `local-bridge`; a lagg's port, a bridge's member, the
+  loopbacks, the tunnels (gif, gre, wg, ipsec: the UCS side), pflog,
+  pfsync and enc no SAP.  Each is role `uni`; sap-id and
+  attachment-interface the interface's name; description the
+  interface's, else "vnet jail <name>"; peer-sap-id an epair end's
+  other end (ietf-if-extensions' peer-interface, or across vnets the
+  listed end of the same driver-name); `sap-status` the interface's
+  oper-status (up `op-up`, testing and unknown `op-unknown`, the rest
+  `op-down`) with its last-change.  `service-status` is left to the
+  console, which holds the L3NM whose vpn-network-access names the
+  interface (4.6.2).  On-change: told with the interfaces and the
+  jails' networks (`yang_changed()`).  ietf-vpn-common implemented by
+  the agent for the identities (features dot1q, qinq, lag-interface);
+  the modules are the agent's and arcanactl's, not yet the console's
+  tables (4.6.2).  Check: agent_test's yang_sap (stand-in interfaces
+  through ysap, a status following its interface down and up; served,
+  the termination points `ifconfig -l`, each SAP's status its
+  interface's oper-status by XPath filters, running empty, the
+  library's features); agent_root_test's yang_sap (an epair's ends,
+  one in a vnet jail, each the other's peer; down and up, the change
+  pushed on-change).  Open: the yang-library's import-only list lacks
+  ietf-vpn-common's own imports (ietf-packet-fields,
+  ietf-routing-types), which have no `.sid` files.
 - 4.6.2 C: the SAP network and the physical network under it; the
   anomaly rules as checks; check: RFC 9408 §5's cases.
 - 4.6.3 C: the Appendix D flow in the planner (free SAP → access id);

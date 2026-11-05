@@ -1183,6 +1183,27 @@ Static routes are added and deleted by jobs that run
 .Xr route 8 .
 The changes are live only.
 .Pp
+The interfaces are also the host's service attachment points, RFC
+9408's network
+.Li arcana-sap
+over RFC 8345's, state alone: the host is its node, each interface,
+the vnet jails' with them, a termination point, and each that a
+service can be attached to a SAP of the SD-WAN: an Ethernet interface
+.Pq Li phy , No or Li logical No when cloned ,
+a
+.Xr lagg 4 ,
+a
+.Xr vlan 4
+on its parent, an
+.Xr if_bridge 4 ;
+not a lagg's port or a bridge's member, nor a tunnel.
+An
+.Xr epair 4
+end's peer is its other end.
+A SAP's status is its interface's
+.Li oper-status ,
+told on change with the interfaces.
+.Pp
 A job of these kinds may ask for safe mode.
 The change is made, and the job waits, in the state
 .Li unconfirmed ,

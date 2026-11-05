@@ -172,6 +172,9 @@ on the wire.
 | 87 300 | 100 | `ietf-tcp@2024-10-10`, RFC 9648 (no IETF range; its identities derive from `ietf-key-chain`'s) | `share/yang/ietf-tcp@2024-10-10.sid` (44 used) |
 | 87 400 | 600 | `arcana-l3nm`, the SD-WAN's augments of L3NM, the console's | `share/yang/arcana-l3nm@2026-11-05.sid` (347 used) |
 | 88 000 | 100 | `arcana-firewall`, its third range (listed first in its file, so that new items go there): the threat feeds' tables, the feed-load and feed-drop actions | `share/yang/arcana-firewall@2026-10-15.sid` (38 used) |
+| 88 100 | 100 | `ietf-network@2018-02-26`, RFC 8345 (no IETF range): the agent's SAP network | `share/yang/ietf-network@2018-02-26.sid` (12 used) |
+| 88 200 | 100 | `ietf-network-topology@2018-02-26`, RFC 8345 (no IETF range): its termination points | `share/yang/ietf-network-topology@2018-02-26.sid` (18 used) |
+| 88 300 | 100 | `ietf-sap-ntw@2023-06-20`, RFC 9408 (no IETF range): the SAPs | `share/yang/ietf-sap-ntw@2023-06-20.sid` (40 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

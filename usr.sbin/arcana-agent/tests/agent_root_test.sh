@@ -3372,6 +3372,75 @@ lne_root_cleanup()
 	cleanup
 }
 
+# An epair's two ends as RFC 9408's SAPs, each the other's peer, one in
+# a vnet jail; the host's end's status following its link, told to an
+# on-change subscription.
+atf_test_case yang_sap cleanup
+yang_sap_head()
+{
+	atf_set "descr" "An epair's ends as SAPs, one a vnet jail's; the" \
+	    "status following the link down and up, on change"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+yang_sap_body()
+{
+	local x
+
+	jls -j sap58 >/dev/null 2>&1 && atf_skip "a jail sap58 is there already"
+	ifconfig epair58a >/dev/null 2>&1 && atf_skip "epair58a is there already"
+	touch mine
+	atf_check -o ignore jail -c name=sap58 vnet persist path=/
+	atf_check -o match:'^epair58a$' ifconfig epair58 create
+	atf_check ifconfig epair58b vnet sap58
+	atf_check jexec sap58 ifconfig epair58b up
+	atf_check ifconfig epair58a up
+	start_daemon
+	x="/ietf-network:networks/network[network-id='arcana-sap']/node/ietf-sap-ntw:service/sap"
+	atf_check -o match:'"sap-id":"epair58a"' \
+	    -o match:'"interface-type":"ietf-sap-ntw:logical"' \
+	    -o match:'"peer-sap-id":\["epair58b"\]' \
+	    -o match:'"status":"ietf-vpn-common:op-up"' \
+	    "$JGC" -c "$SOCK" get -x "$x[sap-id='epair58a']" networks
+	atf_check -o match:'"description":"vnet jail sap58"' \
+	    -o match:'"peer-sap-id":\["epair58a"\]' \
+	    -o match:'"status":"ietf-vpn-common:op-up"' \
+	    "$JGC" -c "$SOCK" get -x "$x[sap-id='epair58b']" networks
+	atf_check -o match:'"tp-id":"epair58b"' "$JGC" -c "$SOCK" get networks
+	# Down: op-down, told as a change of the status alone.
+	"$JGC" -c "$SOCK" subscribe -n 2 -o 0 \
+	    -x "$x[sap-id='epair58a']/sap-status/status" > change.out 2>&1 &
+	echo $! > sub.pid
+	sleep 1.5
+	atf_check ifconfig epair58a down
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		kill -0 "$(cat sub.pid)" 2>/dev/null || break
+		sleep 0.5
+	done
+	atf_check -o match:'^2$' sh -c 'wc -l < change.out | tr -d " "'
+	atf_check -o match:'"ietf-vpn-common:op-up"' head -1 change.out
+	atf_check -o match:'"ietf-yang-push:push-change-update":.*"operation":"replace".*"ietf-vpn-common:op-down"' \
+	    tail -1 change.out
+	# Up again.
+	atf_check ifconfig epair58a up
+	atf_check -o match:'"status":"ietf-vpn-common:op-up"' \
+	    "$JGC" -c "$SOCK" get -x "$x[sap-id='epair58a']/sap-status" networks
+	# The jail's interfaces out before it goes (a vnet torn down with
+	# one in it may panic a debug kernel).
+	atf_check ifconfig epair58a destroy
+	atf_check -o ignore jail -r sap58
+}
+yang_sap_cleanup()
+{
+	[ -f sub.pid ] && kill "$(cat sub.pid)" 2>/dev/null
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	if [ -f mine ]; then
+		ifconfig epair58a destroy >/dev/null 2>&1
+		jail -r sap58 >/dev/null 2>&1
+	fi
+	cleanup
+}
+
 # An epair's side bound to a vnet jail by commits (bind-lne-name, RFC
 # 8530): moved there (SIOCSIFVNET) and kept as the jail's vnet.interface
 # in jail.conf; not confirmed, moved back with its address and the file
@@ -3456,6 +3525,7 @@ lne_bind_cleanup()
 atf_init_test_cases()
 {
 	atf_add_test_case lne_root
+	atf_add_test_case yang_sap
 	atf_add_test_case lne_bind
 	atf_add_test_case commit_fib_route
 	atf_add_test_case commit_fib

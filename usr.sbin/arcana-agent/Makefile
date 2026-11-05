@@ -11,7 +11,7 @@ SRCS+=		admit.c ynacm.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c ke
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwmatch.c pathcheck.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		routes.c rtimes.c scope.c sdwan.c vnet.c wireguard.c feeds.c \
 		yif.c yip.c yni.c yrt.c rcroutes.c rcarcana.c ynetconf.c yifedit.c rtadv.c ylne.c lneroot.c yfw.c yng.c ysd.c \
-		yts.c ywg.c yserve.c yarcana.c ynotif.c ynet.c
+		yts.c ywg.c yserve.c yarcana.c ynotif.c ynet.c ysap.c
 # Luxuria: what is not FreeBSD's own, the plugins.
 SRCS+=		bird.c birdwatch.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdconf.c sdids.c idsconf.c idsfiles.c surules.c smtpd.c speeder.c telegram.c poudriere.c clamav.c \
 		ybird.c ybuilder.c

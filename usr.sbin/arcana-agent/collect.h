@@ -65,6 +65,13 @@ int	yif_rtadv_show(struct ietf_interfaces *data, cbl_yarena *a);
 int	yni_instances(cbl_yarena *a,
 	    const struct ietf_network_instance_network_instances **out);
 
+/* The host as RFC 9408's SAP network: node host, a termination point
+ * each interface of ifs, a SAP each that can attach a service
+ * (invidia/ysap.c). */
+#define	YSAP_NETWORK	"arcana-sap"
+int	ysap_network(const struct ietf_interfaces *ifs, const char *host,
+	    cbl_yarena *a, struct ietf_network *out);
+
 /*
  * Arcana's rc.conf variables in a file of its own, named in
  * rc_conf_files (invidia/rcarcana.c).  rca_open(): it, and the user's
@@ -179,13 +186,15 @@ int	ylne_elements(cbl_yarena *a,
  * (invidia/lneroot.c): lne_get() a GET of the top-level nodes sids
  * there; lne_root() the root of the jail name, NULL where it could not
  * be read; lne_bound_interfaces() the interfaces in the jails put in
- * the host's data, with the jail each is bound to.
+ * the host's data, with the jail each is bound to: their name and type,
+ * or whole, as the jail reads them.
  */
 int	lne_get(int jid, const uint64_t *sids, size_t n, cbl_msg **reply);
 const struct cbl_ynode *lne_root_node(void);
 int	lne_root(cbl_yarena *a, const char *name,
 	    const struct ietf_logical_network_element_logical_network_elements_logical_network_element_root **out);
-int	lne_bound_interfaces(struct ietf_interfaces *data, cbl_yarena *a);
+int	lne_bound_interfaces(struct ietf_interfaces *data, bool whole,
+	    cbl_yarena *a);
 
 /*
  * FreeBSD's FIBs as RFC 8529's network instances, invidia/yni.c: FIB 1

@@ -1,0 +1,116 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-network-topology",
+    "module-revision": "2018-02-26",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-network",
+        "module-revision": "2018-02-26"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "88200",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-network-topology",
+        "sid": "88200"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/ietf-network-topology:link",
+        "sid": "88201"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/ietf-network-topology:link/destination",
+        "sid": "88202"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/ietf-network-topology:link/destination/dest-node",
+        "sid": "88203"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/ietf-network-topology:link/destination/dest-tp",
+        "sid": "88204"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/ietf-network-topology:link/link-id",
+        "sid": "88205"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/ietf-network-topology:link/source",
+        "sid": "88206"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/ietf-network-topology:link/source/source-node",
+        "sid": "88207"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/ietf-network-topology:link/source/source-tp",
+        "sid": "88208"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/ietf-network-topology:link/supporting-link",
+        "sid": "88209"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/ietf-network-topology:link/supporting-link/link-ref",
+        "sid": "88210"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/ietf-network-topology:link/supporting-link/network-ref",
+        "sid": "88211"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-network-topology:termination-point",
+        "sid": "88212"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-network-topology:termination-point/supporting-termination-point",
+        "sid": "88213"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-network-topology:termination-point/supporting-termination-point/network-ref",
+        "sid": "88214"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-network-topology:termination-point/supporting-termination-point/node-ref",
+        "sid": "88215"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-network-topology:termination-point/supporting-termination-point/tp-ref",
+        "sid": "88216"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-network-topology:termination-point/tp-id",
+        "sid": "88217"
+      }
+    ]
+  }
+}

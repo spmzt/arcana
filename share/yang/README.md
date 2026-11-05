@@ -103,9 +103,9 @@ origin.
 | `ietf-network-instance@2019-01-21.yang` | module | RFC 8529 |
 | `ietf-network-state@2018-02-26.yang` | module | RFC 8345 |
 | `ietf-network-topology-state@2018-02-26.yang` | module | RFC 8345 |
-| `ietf-network-topology@2018-02-26.yang` | module | RFC 8345 |
+| `ietf-network-topology@2018-02-26.yang` | module | RFC 8345; the SAP network's termination points, served by the agent |
 | `ietf-network-vpn-pm@2023-03-20.yang` | module | RFC 9375 |
-| `ietf-network@2018-02-26.yang` | module | RFC 8345 |
+| `ietf-network@2018-02-26.yang` | module | RFC 8345; the agent's SAP network, its node the host |
 | `ietf-origin@2018-02-14.yang` | module | RFC 8342 |
 | `ietf-ospf@2022-10-19.yang` | module | RFC 9129 |
 | `ietf-packet-fields@2019-03-04.yang` | module | RFC 8519 |
@@ -115,7 +115,7 @@ origin.
 | `ietf-routing-policy@2021-10-11.yang` | module | RFC 9067 |
 | `ietf-routing-types@2017-12-04.yang` | module | RFC 8294 |
 | `ietf-routing@2018-03-13.yang` | module | RFC 8349 |
-| `ietf-sap-ntw@2023-06-20.yang` | module | RFC 9408 |
+| `ietf-sap-ntw@2023-06-20.yang` | module | RFC 9408 (YangModels/yang standard/ietf/RFC, the same bytes); the host's interfaces that can attach a service, served by the agent (invidia/ysap.c) |
 | `ietf-sid-file@2024-07-31.yang` | module | RFC 9595 |
 | `ietf-syslog@2025-04-30.yang` | module | RFC 9742; syslog.conf(5) and newsyslog.conf(5) read as it (gula/ylog.c) |
 | `ietf-subscribed-notif-receivers@2026-06-30.yang` | module | draft-ietf-netconf-https-notif (YangModels/yang, experimental); receiver instances for configured subscriptions |
@@ -128,7 +128,7 @@ origin.
 | `ietf-tls-common@2024-10-10.yang` | module | RFC 9645 |
 | `ietf-truststore@2024-10-10.yang` | module | RFC 9641 |
 | `ietf-vn@2025-03-27.yang` | module | IANA, RFC 9731 |
-| `ietf-vpn-common@2022-02-11.yang` | module | RFC 9181 (YangModels/yang standard/ietf/RFC, the same bytes); `ietf-l3vpn-ntw`'s import, implemented with it by the console |
+| `ietf-vpn-common@2022-02-11.yang` | module | RFC 9181 (YangModels/yang standard/ietf/RFC, the same bytes); `ietf-l3vpn-ntw`'s import, implemented with it by the console; implemented by the agent for a SAP's identities (features dot1q, qinq, lag-interface) |
 | `ietf-yang-library@2019-01-04.yang` | module | RFC 8525 |
 | `ietf-yang-patch@2017-02-22.yang` | module | RFC 8072 |
 | `ietf-yang-push@2019-09-09.yang` | module | RFC 8641 |
@@ -204,8 +204,8 @@ The `.sid` files of the IETF and IANA modules the agent fills
 `ietf-inet-types`) are Arcana's too: IANA registers their ranges and
 publishes no file, so they are numbered here (SIDS.md). So are those
 of the ones with no IETF range (`ietf-routing`, its address families,
-`ietf-network-instance`, `ietf-logical-network-element`), from
-Arcana's block. A module's file numbers every item of it, whatever
+`ietf-network-instance`, `ietf-logical-network-element`, `ietf-network`,
+`ietf-network-topology`, `ietf-sap-ntw`), from Arcana's block. A module's file numbers every item of it, whatever
 another module deviates:
 `arcana-network-instance` takes `vsi-root` away, its number stays.
 

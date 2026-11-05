@@ -1,0 +1,82 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-network",
+    "module-revision": "2018-02-26",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "88100",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-network",
+        "sid": "88100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks",
+        "sid": "88101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network",
+        "sid": "88102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/network-id",
+        "sid": "88103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/network-types",
+        "sid": "88104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node",
+        "sid": "88105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/node-id",
+        "sid": "88106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/supporting-node",
+        "sid": "88107"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/supporting-node/network-ref",
+        "sid": "88108"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/supporting-node/node-ref",
+        "sid": "88109"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/supporting-network",
+        "sid": "88110"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/supporting-network/network-ref",
+        "sid": "88111"
+      }
+    ]
+  }
+}

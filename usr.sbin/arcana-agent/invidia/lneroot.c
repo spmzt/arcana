@@ -373,10 +373,10 @@ astr(cbl_yarena *a, const char *s)
 /*
  * The interfaces in the vnet jails, put in the host's: each that the
  * host has none of the name of, with its type and the jail it is
- * bound to.
+ * bound to; whole, all the jail reads of it.
  */
 int
-lne_bound_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
+lne_bound_interfaces(struct ietf_interfaces *data, bool whole, cbl_yarena *a)
 {
 	const struct cbl_ynode	*ifs = ynode_named("ietf-interfaces",
 				    "interfaces");
@@ -442,6 +442,8 @@ lne_bound_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
 			if (lne == NULL && (lne = astr(a, name)) == NULL)
 				return (ENOMEM);
 			memset(&v[n], 0, sizeof(v[n]));
+			if (whole)
+				v[n] = *e;
 			v[n].name = e->name;
 			v[n].has_type = e->has_type;
 			v[n].type = e->type;

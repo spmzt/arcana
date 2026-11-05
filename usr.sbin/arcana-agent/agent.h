@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.243.0"
+#define	ARCANA_AGENT_VERSION	"0.244.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -1348,7 +1348,8 @@ int		 yang_step(cbl_conn *, const struct arcana_jobs_step *);
 #define	YANG_ROUTING	4
 #define	YANG_INSTANCES	5
 #define	YANG_LNES	6
-#define	YANG_COUNT	7
+#define	YANG_NETWORKS	7
+#define	YANG_COUNT	8
 void		 yang_changed(int);
 /* A steering choice changed: arcana-steer's steer-changed (fib -1, a
  * policy's; table NULL, a route's). */

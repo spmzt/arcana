@@ -113,7 +113,8 @@ ietf_interfaces_interfaces_get(cbl_req *req, struct ietf_interfaces *data,
 	    (cbl_req_ydatastore(req) == CBL_YDS_RUNNING &&
 	    (what = "running", error = yif_running(data, a)) != 0) ||
 	    /* Those in the vnet jails, each bound to its jail (RFC 8530). */
-	    (what = "the jails'", error = lne_bound_interfaces(data, a)) != 0)
+	    (what = "the jails'",
+	    error = lne_bound_interfaces(data, false, a)) != 0)
 		logmsg(LOG_INFO, "a read of interfaces for a model failed: "
 		    "%s: %s", what, strerror(error));
 	return (error);
@@ -986,6 +987,47 @@ ietf_yang_library_modules_state_get(cbl_req *req, struct ietf_yang_library *data
 	return (0);
 }
 
+/*
+ * RFC 9408's SAP network (ysap.c): the host a node, its interfaces its
+ * termination points and SAPs, the vnet jails' each as its jail reads
+ * it.  State: the operational datastore alone.
+ */
+int
+ietf_network_networks_get(cbl_req *req, struct ietf_network *data,
+    cbl_yarena *a)
+{
+	struct ietf_interfaces	 ifs;
+	char			 host[MAXHOSTNAMELEN], *h;
+	int			 error;
+
+	if (cbl_req_ydatastore(req) != CBL_YDS_OPERATIONAL)
+		return (0);
+	memset(&ifs, 0, sizeof(ifs));
+	if ((error = yif_interfaces(&ifs, NULL, a)) != 0 ||
+	    (error = lne_bound_interfaces(&ifs, true, a)) != 0)
+		return (error);
+	if (gethostname(host, sizeof(host)) != 0)
+		return (errno);
+	host[sizeof(host) - 1] = '\0';
+	if ((h = cbl_yarena_alloc(a, strlen(host) + 1)) == NULL)
+		return (ENOMEM);
+	memcpy(h, host, strlen(host) + 1);
+	return (ysap_network(&ifs, h, a, data));
+}
+
+/* The network is the host's as it is: nothing configured. */
+int
+ietf_network_networks_edit(cbl_req *req, const struct ietf_network *before,
+    const struct ietf_network *after)
+{
+
+	(void)before;
+	(void)after;
+	(void)cbl_req_set_yerr(req, "the SAP network is state: the host's "
+	    "interfaces, changed as interfaces", 0);
+	return (EOPNOTSUPP);
+}
+
 /* RFC 8348's hardware: the chassis, CPUs and disks (superbia/yhw.c). */
 int
 ietf_hardware_hardware_get(cbl_req *req, struct ietf_hardware *data,
@@ -1495,7 +1537,9 @@ yang_lne_failed(const char *ifname, const char *lne, const char *why)
  * trace.c, handlers.c); the interfaces, the routing, the instances and
  * the jails' networks by the events that say they changed
  * (yang_event_changed()), by a commit (cblink tells those itself), and
- * a minute on for what the kernel announces nowhere (hostwatch.c).
+ * a minute on for what the kernel announces nowhere (hostwatch.c); the
+ * SAP network with the interfaces and the jails' networks it is read
+ * from.
  * The rest is read every period.
  */
 static const char *const told_tops[YANG_COUNT][2] = {
@@ -1507,6 +1551,7 @@ static const char *const told_tops[YANG_COUNT][2] = {
 	[YANG_INSTANCES] = { "ietf-network-instance", "network-instances" },
 	[YANG_LNES] = { "ietf-logical-network-element",
 	    "logical-network-elements" },
+	[YANG_NETWORKS] = { "ietf-network", "networks" },
 };
 
 void
@@ -1517,6 +1562,9 @@ yang_changed(int what)
 	if (yctx != NULL && what >= 0 && what < YANG_COUNT &&
 	    (n = ynode_named(told_tops[what][0], told_tops[what][1])) != NULL)
 		cbl_ysub_changed(yctx, n);
+	/* The SAPs are the interfaces, the host's and the jails'. */
+	if (what == YANG_INTERFACES || what == YANG_LNES)
+		yang_changed(YANG_NETWORKS);
 }
 
 /*

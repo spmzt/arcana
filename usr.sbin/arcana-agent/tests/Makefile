@@ -61,6 +61,10 @@ LDADD.ysystem+=	${CBLINK_LIBS} ${UCL_LIBS} \
 PROGS+=		yhw
 SRCS.yhw=	yhw_test.c yhw.c yjson.c ymodel_schema.c
 LDADD.yhw+=	${CBLINK_LIBS} ${UCL_LIBS} -lgeom
+# ysap: interfaces as RFC 9408's SAP network.
+PROGS+=		ysap
+SRCS.ysap=	ysap_test.c ysap.c yjson.c ymodel_schema.c
+LDADD.ysap+=	${CBLINK_LIBS} ${UCL_LIBS}
 # ylog: the log operation's replies as arcana-log has them, and
 # syslog.conf as ietf-syslog.
 PROGS+=		ylog

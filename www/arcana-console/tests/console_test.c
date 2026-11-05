@@ -1820,12 +1820,13 @@ static const char l3nm_fig34[] =
     L3NM_ACCESS("1/1/1.1", "1", "SYNC") ","
     L3NM_ACCESS("1/1/1.2", "2", "DATA") "]}}";
 
-/* A module of the console's own datastore, which no host has. */
+/* A module of the console's own datastore, which no host has; not
+ * ietf-vpn-common, which the agents implement too for RFC 9408's SAPs
+ * (no data nodes of its own). */
 static bool
 own_name(const char *m, size_t n)
 {
-	static const char *const own[] = { "ietf-l3vpn-ntw",
-	    "ietf-vpn-common", "arcana-l3nm" };
+	static const char *const own[] = { "ietf-l3vpn-ntw", "arcana-l3nm" };
 
 	for (size_t i = 0; i < nitems(own); i++)
 		if (strlen(own[i]) == n && strncmp(m, own[i], n) == 0)
