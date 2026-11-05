@@ -1799,8 +1799,11 @@ whose first part is served.
   comes back the same but for the equivalences (the harness's http(),
   so every sdwan case), l3nm_good exports to sdwan_good, a sdwan.json
   imported (l3nm_mef).  Not lossless beyond 4.5.2's list: a member of
-  no model (the document held any before; not now), an empty
-  list or object and none alike, a flow's `any` null as true, an OSPF
+  no model (the document held any before; not now), an empty object
+  and none alike (an empty list is no node: the lists the document
+  always has, as the page writes them, are exported `[]`; one written
+  only where used comes back absent; the import takes `[]` and none
+  alike), a flow's `any` null as true, an OSPF
   area of none the backbone, a PDNS encryption or southbound of one
   either way, a prefix in inet_ntop(3)'s form, and the order of a
   service's end points across its edges (by edge, then as they were).

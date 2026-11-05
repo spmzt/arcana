@@ -14,8 +14,10 @@
  * named lists are the top's augment.  A vpn-service without the
  * augment is no SWVC: the import keeps it, the export leaves it out.
  *
- * What does not come back as it went in: null and absent alike, an
- * empty list and none alike, a list of one where an object may be (a
+ * An empty list is no node of the L3NM: the lists the document always
+ * has (lists_always()) come back [], the others, written where used,
+ * absent.  What else does not come back as it went in: null and absent
+ * alike, a list of one where an object may be (a
  * UNI's BGP or OSPF, an underlay's, a PDNS entry's encryption,
  * southbound), true for a flow's any of null, BGP multihop false as
  * absent, an OSPF area of none as the backbone, the order of a
@@ -139,6 +141,26 @@ put_full(ucl_object_t *o, const char *k, ucl_object_t *v)
 		put(o, k, v);
 	else
 		ucl_object_unref(v);
+}
+
+/*
+ * The lists an object of the document always has, as the page writes
+ * them: [] where the L3NM has none, an empty list being no node.
+ */
+static const char *const top_lists[] = { "ucs", "edges", "swvcs", NULL };
+static const char *const edge_lists[] = { "ucs_end_points", NULL };
+static const char *const sw_lists[] = { "ucs", "reserved_prefixes",
+    "zones", "flows", "policies", "end_points", NULL };
+static const char *const zone_lists[] = { "policies", NULL };
+
+static void
+lists_always(ucl_object_t *d, const char *const *k)
+{
+
+	for (; *k != NULL; k++)
+		if (ucl_object_lookup(d, *k) == NULL)
+			ucl_object_insert_key(d, ucl_object_typed_new(
+			    UCL_ARRAY), *k, 0, false);
 }
 
 /* YANG's empty: [null]. */
@@ -406,6 +428,13 @@ static const struct fm ucsep_m[] = {
 static const struct fm bset_m[] = {
 	F("set", "set", C), F("via", "via", C), FEND
 };
+static void
+edge_exp(const ucl_object_t *y __unused, ucl_object_t *d)
+{
+
+	lists_always(d, edge_lists);
+}
+
 static const struct fm edge_m[] = {
 	F("server", "server", C), F("own_table", "own-table", C),
 	F("host_bird", "host-bird", C), F("transit", "transit", C),
@@ -484,7 +513,8 @@ static const struct fm nlist_m[] = {
 	F("protocols", "protocol", C), F("ports", "port", C), FEND
 };
 static const struct fm top_m[] = {
-	FS("ucs", "ucs", L, ucs_m), FS("edges", "edge", L, edge_m),
+	FS("ucs", "ucs", L, ucs_m),
+	FH("edges", "edge", L, edge_m, NULL, edge_exp),
 	FH("lists", "named-list", L, nlist_m, nlist_imp, nlist_exp),
 	FEND
 };
@@ -513,6 +543,7 @@ zone_exp(const ucl_object_t *y, ucl_object_t *d)
 		puts_(d, "prefixes", "Default");
 	else if (get(y, "prefix") != NULL)
 		put(d, "prefixes", ucl_object_copy(get(y, "prefix")));
+	lists_always(d, zone_lists);
 }
 
 /* A function policy's lists: IPPF's and DPF's entries tuples, PDNS's
@@ -1584,7 +1615,8 @@ service_exp(const ucl_object_t *svc)
 			ucl_array_append(eps, access_exp(acc, gstr(n,
 			    "vpn-node-id")));
 	}
-	put_full(sw, "end_points", eps);
+	put(sw, "end_points", eps);
+	lists_always(sw, sw_lists);
 	return (sw);
 }
 
@@ -1640,7 +1672,8 @@ mef_export(const ucl_object_t *y)
 	    "vpn-service"), &it, true)) != NULL)
 		if (get(sv, SD) != NULL)
 			ucl_array_append(sws, service_exp(sv));
-	put_full(doc, "swvcs", sws);
+	put(doc, "swvcs", sws);
+	lists_always(doc, top_lists);
 	return (doc);
 }
 

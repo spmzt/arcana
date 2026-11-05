@@ -1680,7 +1680,7 @@ tcp_socket(int port)
 /*
  * The SD-WAN document as its L3NM gives it back (l3nm_mef.c): o with
  * what does not come back the same made one way, NULL for absent.  Null,
- * empty lists and objects, multihop false absent; any null true; a UNI's
+ * empty objects, multihop false absent; any null true; a UNI's
  * or an underlay's BGP and OSPF, an encryption and southbound a list; an
  * OSPF area of none the backbone; the end points by edge, the routes
  * IPv4 first.
@@ -1741,10 +1741,9 @@ sdwan_norm(const ucl_object_t *o, const char *key, int depth)
 		while ((v = ucl_object_iterate(o, &it, true)) != NULL)
 			if ((c = sdwan_norm(v, key, depth + 1)) != NULL)
 				ucl_array_append(a, c);
-		if (ucl_array_size(a) == 0) {
-			ucl_object_unref(a);
-			return (NULL);
-		}
+		/* An empty list kept: it comes back [], not absent. */
+		if (ucl_array_size(a) == 0)
+			return (a);
 		if (key != NULL && (strcmp(key, "end_points") == 0 ||
 		    strcmp(key, "routes") == 0)) {
 			n = ucl_object_typed_new(UCL_ARRAY);
@@ -1805,11 +1804,18 @@ sdwan_norm(const ucl_object_t *o, const char *key, int depth)
 	}
 }
 
-/* a and b the same JSON, numbers by value; where, the first difference. */
+/*
+ * a and b the same JSON, numbers by value; where, the first difference.
+ * A list the document always has (l3nm_mef.c's lists_always()) not sent
+ * may come back [].
+ */
 static bool
 sdwan_same(const ucl_object_t *a, const ucl_object_t *b, char *where,
     size_t len)
 {
+	static const char *const always[] = { "ucs", "edges", "swvcs",
+	    "ucs_end_points", "reserved_prefixes", "zones", "flows",
+	    "policies", "end_points", NULL };
 	const ucl_object_t	*x;
 	ucl_object_iter_t	 it;
 	size_t			 i, n;
@@ -1822,12 +1828,19 @@ sdwan_same(const ucl_object_t *a, const ucl_object_t *b, char *where,
 	if (ucl_object_type(a) == UCL_OBJECT && ucl_object_type(b) ==
 	    UCL_OBJECT) {
 		it = NULL;
-		while ((x = ucl_object_iterate(b, &it, true)) != NULL)
-			if (ucl_object_lookup(a, ucl_object_key(x)) == NULL) {
+		while ((x = ucl_object_iterate(b, &it, true)) != NULL) {
+			if (ucl_object_lookup(a, ucl_object_key(x)) != NULL)
+				continue;
+			for (i = 0; always[i] != NULL; i++)
+				if (strcmp(ucl_object_key(x), always[i]) == 0)
+					break;
+			if (always[i] == NULL || ucl_object_type(x) !=
+			    UCL_ARRAY || ucl_array_size(x) != 0) {
 				snprintf(where, len, "%s.%s: not sent", where,
 				    ucl_object_key(x));
 				return (false);
 			}
+		}
 		it = NULL;
 		while ((x = ucl_object_iterate(a, &it, true)) != NULL) {
 			snprintf(sub, sizeof(sub), "%s.%s", where,

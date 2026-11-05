@@ -9843,7 +9843,12 @@ ATF_TC_BODY(l3nm_mef, tc)
 	resp_free(&r);
 	http("GET", "/api/sdwan", NULL, &r);
 	ATF_CHECK_STREQ("2", jstr(&r, "version"));
-	ATF_CHECK(jstr(&r, "swvcs") == NULL);
+	/* None: the document's lists empty, as the page has them. */
+	ATF_CHECK_MSG(ucl_object_type(ucl_object_lookup(r.json, "swvcs")) ==
+	    UCL_ARRAY && ucl_array_size(ucl_object_lookup(r.json, "swvcs")) ==
+	    0 && ucl_array_size(ucl_object_lookup(r.json, "edges")) == 0 &&
+	    ucl_object_type(ucl_object_lookup(r.json, "ucs")) == UCL_ARRAY,
+	    "%s", r.body);
 	resp_free(&r);
 
 	/* A console of before: its sdwan.json, version 7. */
