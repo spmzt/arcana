@@ -1862,10 +1862,31 @@ whose first part is served.
   area of none the backbone, a PDNS encryption or southbound of one
   either way, a prefix in inet_ntop(3)'s form, and the order of a
   service's end points across its edges (by edge, then as they were).
-- 4.5.4 C: the planner reading L3NM: profiles and node overrides
-  resolved, the allocation ledger (FIBs, addresses, RDs, VNIs, table
-  names) persisted; check: the plan of the example equals the MEF
-  planner's.
+- 4.5.4 done (console l3nm_plan.c, sdwan_edge.c): the planner reading
+  L3NM: its input the L3NM kept (l3nm_kept()), no longer the document
+  /api/sdwan serves; each vpn-service's VPN instance profiles resolved
+  for each vpn-node (RFC 9182 7.6.1: the node's active profile, then
+  the node's own local-as and router-id, over the service's; its RD
+  as written, a suffix to its router id, or allocated for rd-auto and
+  rd-auto-suffix; its route targets), a node's AS and IPv4 router id
+  its BGP's (bird_spec()); the augments read in MEF 70.2's terms
+  (l3nm_mef.c's tables, D-4's vocabulary), the services checked as
+  MEF 70.2 says before they are planned.  The allocation ledger the
+  allocations the apply keeps (sdwan-state.json): `fib:VPN`, a table
+  allocated to a service whose profiles name none (the lowest no
+  service, domain or entry has), `fib:VPN/NODE` its table on each node
+  (D-6), `rd:VPN/NODE`, the tunnels' units, VNIs and inner pairs, the
+  loopbacks', the identities' addresses; the ipfw tables named by the
+  service's table (sw<fib>_...); an entry made stays while its owner
+  is there, so a plan after a plan allocates nothing new, and
+  `GET /api/sdwan/ledger` shows it with each node's resolved profile.
+  One table per service still: a node's is the service's (D-6's per
+  node a ledger entry, not yet a number of its own).  Check (console_test
+  l3nm_plan): a node's override in BIRD's AS and router id, its RD
+  allocated, a service with no table given the lowest, plan after plan
+  the same; and every sdwan case's plans and apply replies the same
+  as the document's planner made them, byte for byte (but the random
+  server ids, key-derived digests and an identity's keys).
 - 4.5.5 C: the planner emitting device edits (interfaces, ip,
   routing, NI, LNE, dummynet, bird, probe, steer) instead of
   `sdwan-*` JSON; check: the two-jail lab applies and passes.

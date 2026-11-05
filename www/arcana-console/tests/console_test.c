@@ -11509,6 +11509,121 @@ ATF_TC_BODY(sdwan_loop, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(l3nm_plan, "The planner reads the L3NM (PLAN-SDN-YANG 4.5.4): "
+    "a node's active profile over the service's (its AS, router id and "
+    "an RD it asks to be allocated), a service naming no table given "
+    "one from the ledger, the same plan after plan")
+ATF_TC_BODY(l3nm_plan, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[1024], sa[16], sb[16], want[200];
+	char		doc[12288], t1[12288], fib[16], *first;
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* The service's table on each node, its tables named by it. */
+	http("GET", "/api/sdwan/ledger", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(want, sizeof(want), "\"acme/%s\":1", sa);
+	ATF_CHECK_MSG(strstr(r.body, want) != NULL && strstr(r.body,
+	    "\"tables\":{\"acme\":\"sw1\"}") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* Node a's active profile: its own AS and router id, an RD
+	 * allocated; node b keeps the service's. */
+	snprintf(t1, sizeof(t1), L3NM "/vpn-services/vpn-service=acme/"
+	    "vpn-nodes/vpn-node=%s", sa);
+	snprintf(body, sizeof(body), "{\"ietf-l3vpn-ntw:vpn-node\":[{"
+	    "\"vpn-node-id\":\"%s\",\"active-vpn-instance-profiles\":{"
+	    "\"vpn-instance-profile\":[{\"profile-id\":\"subscriber\","
+	    "\"local-as\":65010,\"router-id\":[{\"address-family\":"
+	    "\"ietf-vpn-common:ipv4\",\"router-id\":\"10.255.0.1\"}],"
+	    "\"rd-auto\":{\"auto\":[null]}}]}}]}", sa);
+	http("PATCH", t1, body, &r);
+	ATF_REQUIRE_MSG(r.status == 204, "%d %s", r.status, r.body);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"as\":65010,\"router_id\":\"10.255.0.1\"")
+	    != NULL && strstr(r.body, "\"as\":64600,\"router_id\":") != NULL,
+	    "%s", r.body);
+	first = strdup(r.body);
+	resp_free(&r);
+	http("GET", "/api/sdwan/ledger", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(want, sizeof(want), "\"rds\":{\"acme/%s\":\"0:65010:1\"}", sa);
+	ATF_CHECK_MSG(strstr(r.body, want) != NULL, "%s", r.body);
+	resp_free(&r);
+	/* The same again: nothing moves between plans. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	ATF_CHECK_STREQ(first, r.body);
+	resp_free(&r);
+	free(first);
+	/* A service naming no table: the lowest no other has. */
+	http("DELETE", L3NM "/vpn-services/vpn-service=acme/"
+	    "arcana-l3nm:sdwan/fib", NULL, &r);
+	resp_free(&r);
+	http("DELETE", L3NM "/vpn-services/vpn-service=acme/"
+	    "vpn-instance-profiles/vpn-instance-profile=subscriber/"
+	    "arcana-l3nm:fib", NULL, &r);
+	resp_free(&r);
+	http("GET", "/api/sdwan/ledger", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE_MSG(jstr(&r, "fibs.acme") != NULL, "%s", r.body);
+	snprintf(fib, sizeof(fib), "%s", jstr(&r, "fibs.acme"));
+	snprintf(want, sizeof(want), "\"tables\":{\"acme\":\"sw%s\"}", fib);
+	ATF_CHECK_MSG(strcmp(fib, "1") == 0 && strstr(r.body, want) != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(want, sizeof(want), "\"swvc\":\"acme\",\"fib\":%s,", fib);
+	ATF_CHECK_MSG(strstr(r.body, want) != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(sdwan_breakout, "Breakout failover: an edge with several breakout "
     "uplinks has a route to each one's gateway, the default by the most "
     "preferred, a probe to each one's beacon, and the agent told to put "
@@ -15245,6 +15360,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_mesh);
 	ATF_TP_ADD_TC(tp, sdwan_host);
 	ATF_TP_ADD_TC(tp, sdwan_loop);
+	ATF_TP_ADD_TC(tp, l3nm_plan);
 	ATF_TP_ADD_TC(tp, sdwan_breakout);
 	ATF_TP_ADD_TC(tp, sdwan_nat64);
 	ATF_TP_ADD_TC(tp, sdwan_sets);

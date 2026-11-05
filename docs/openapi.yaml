@@ -2993,6 +2993,18 @@ paths:
             (edge, ucs_ep, underlay, unit, ifname, inner4, inner6); and
             notes, what the plan leaves out and why.
         "409": { $ref: "#/components/responses/Error" }
+  /api/sdwan/ledger:
+    get:
+      tags: [sdwan]
+      summary: The allocation ledger as a plan of the L3NM has it
+      responses:
+        "200":
+          description: fibs (by VPN and by VPN/node), rds (VPN/node),
+            vnis (by tunnel), addresses (the tunnels' units and inner
+            pairs, the loopbacks', the identities'), tables (each
+            service's ipfw tables' prefix) and nodes (VPN/node, its
+            profiles resolved - as, router_id, rd, rt, fib).
+        "409": { $ref: "#/components/responses/Error" }
   /api/sdwan/apply:
     get:
       tags: [sdwan]

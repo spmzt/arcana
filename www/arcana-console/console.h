@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.353.1"
+#define	ARCW_VERSION		"0.354.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -518,6 +518,11 @@ void		 l3nm_sdwan_migrate(void);
 void		 mef_import(const ucl_object_t *, ucl_object_t *);
 ucl_object_t	*mef_export(const ucl_object_t *);
 bool		 mef_has_sdwan(const ucl_object_t *);
+/* The L3NM kept, l3vpn-ntw's member; the planner's reading of it
+ * (l3nm_plan.c). */
+ucl_object_t	*l3nm_kept(void);
+ucl_object_t	*l3nm_plan_input(const ucl_object_t *, ucl_object_t *,
+		    ucl_object_t *, ucl_object_t *, char *, size_t);
 int		 api_restconf_ds(struct http_request *);
 int		 api_restconf_stream(struct http_request *);
 int		 api_restconf_fleet_stream(struct http_request *);

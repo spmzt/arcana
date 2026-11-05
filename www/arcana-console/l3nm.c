@@ -428,6 +428,23 @@ l3nm_sdwan(void)
 	return (doc);
 }
 
+/* The L3NM kept, its l3vpn-ntw (an empty one where none is). */
+ucl_object_t *
+l3nm_kept(void)
+{
+	ucl_object_t		*o, *y;
+	const ucl_object_t	*v;
+
+	l3nm_sdwan_migrate();
+	pthread_mutex_lock(&l3nm_lock);
+	o = store_load(L3NM_FILE);
+	pthread_mutex_unlock(&l3nm_lock);
+	y = (v = ucl_object_lookup(o, L3NM_MEMBER)) != NULL ?
+	    ucl_object_copy(v) : ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_unref(o);
+	return (y);
+}
+
 /* Document doc kept, as L3NM: 0, or the HTTP status and why (409: not
  * made from version expect, unless that is -1). */
 int

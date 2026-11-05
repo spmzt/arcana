@@ -381,6 +381,8 @@ struct plan {
 	ucl_object_t		*ready;		/* the document deployed, its own */
 	ucl_object_t		*learned;	/* sid/ifname: the host's address */
 	ucl_object_t		*boroutes;	/* sid: the breakout's steered routes */
+	ucl_object_t		*nodes;		/* "VPN/NODE": its own (l3nm_plan.c) */
+	bool			 invalid;	/* not a service to make: why says */
 	char			 why[300];
 };
 /*
@@ -1421,10 +1423,15 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					put(t, "billing", S(str(ux, "billing") !=
 					    NULL ? str(ux, "billing") :
 					    "flat-rate"));
-					/* A geneve's VNI, the same at both. */
+					/* A geneve's VNI, the same at both: the
+					 * ledger's, its first unit when new. */
+					if (ucl_object_lookup(al, "vni") == NULL)
+						put(al, "vni", I(ucl_object_toint(
+						    ucl_array_find_index(
+						    ucl_object_lookup(al, "units"),
+						    0))));
 					put(t, "vni", I(ucl_object_toint(
-					    ucl_array_find_index(ucl_object_lookup(
-					    al, "units"), 0))));
+					    ucl_object_lookup(al, "vni"))));
 					ends = ucl_object_typed_new(UCL_ARRAY);
 					for (int k = 0; k < 2; k++) {
 						const ucl_object_t *u = k == 0 ?
@@ -6021,12 +6028,12 @@ static ucl_object_t *
 bird_spec(struct plan *pl, const ucl_object_t *sw, const char *sid)
 {
 	const ucl_object_t	*ep, *u, *t, *e0, *e1, *me, *far, *v, *cp, *bfd;
-	const ucl_object_t	*rp;
+	const ucl_object_t	*rp, *node;
 	ucl_object_iter_t	 it, tit;
 	ucl_object_t		*spec, *direct, *bo, *ifs, *peers, *pe, *unis;
 	ucl_object_t		*uo, *rej, *sets;
 	const char		*rid;
-	char			 ifbuf[32], l4[64], ifn[32];
+	char			 ifbuf[32], l4[64], ifn[32], nk[300];
 	bool			 mh;
 
 	spec = ucl_object_typed_new(UCL_OBJECT);
@@ -6035,7 +6042,13 @@ bird_spec(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	/* The service's table on this edge; on an own-table edge the
 	 * host's own, the first, which BIRD takes without being told. */
 	put(spec, "table", I(efib(pl, sw, sid)));
-	put(spec, "as", I(ucl_object_lookup(sw, "as") != NULL ?
+	/* The node's AS and router id where its profile says them
+	 * (l3nm_plan.c), else the service's. */
+	snprintf(nk, sizeof(nk), "%s/%s", str(sw, "id"), sid);
+	node = ucl_object_lookup(pl->nodes, nk);
+	put(spec, "as", I(ucl_object_lookup(node, "as") != NULL ?
+	    ucl_object_toint(ucl_object_lookup(node, "as")) :
+	    ucl_object_lookup(sw, "as") != NULL ?
 	    ucl_object_toint(ucl_object_lookup(sw, "as")) : DEFAULT_AS));
 	/* The router id: the edge's first inner IPv4 address in the
 	 * service, else a UNI's provider address. */
@@ -6075,6 +6088,8 @@ bird_spec(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	if (sw_loop(sw) && loop_addr(pl, sw, sid, AF_INET, l4, sizeof(l4)) !=
 	    NULL)
 		rid = l4;
+	if (str(node, "router_id") != NULL)
+		rid = str(node, "router_id");
 	put(spec, "router_id", S(rid != NULL ? rid : "0.0.0.1"));
 	it = NULL;
 	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
@@ -6432,25 +6447,36 @@ probe_target(struct plan *pl, const char *sid, const ucl_object_t *sw,
  * pl->why when it cannot be said.
  */
 static bool
-plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
+plan_build(struct plan *pl, const ucl_object_t *y, const ucl_object_t *st)
 {
-	const ucl_object_t	*sw, *ep, *ep2, *t, *e, *r;
+	const ucl_object_t	*doc, *sw, *ep, *ep2, *t, *e, *r;
 	ucl_object_iter_t	 it, it2, it3, rit;
-	ucl_object_t		*o, *pfx, *args;
+	ucl_object_t		*o, *pfx, *args, *view;
 	char			 n[64], why[200];
 	int64_t			 fib;
 	int			 far;
 
 	memset(pl, 0, sizeof(*pl));
 	pl->notes = ucl_object_typed_new(UCL_ARRAY);
-	/* What is deployed: the services complete (sdwan_ready()). */
-	doc = pl->ready = sdwan_ready(doc, pl->notes);
-	pl->doc = doc;
 	pl->alloc = ucl_object_copy(ucl_object_lookup(st, "alloc"));
+	pl->used = ucl_object_typed_new(UCL_OBJECT);
+	pl->nodes = ucl_object_typed_new(UCL_OBJECT);
+	/* The L3NM read: profiles resolved, the ledger's entries taken. */
+	if ((view = l3nm_plan_input(y, pl->alloc, pl->used, pl->nodes,
+	    pl->why, sizeof(pl->why))) == NULL)
+		return (false);
+	if (!sdwan_valid(view, pl->why, sizeof(pl->why))) {
+		pl->invalid = true;
+		ucl_object_unref(view);
+		return (false);
+	}
+	/* What is deployed: the services complete (sdwan_ready()). */
+	doc = pl->ready = sdwan_ready(view, pl->notes);
+	ucl_object_unref(view);
+	pl->doc = doc;
 	pl->edges = ucl_object_typed_new(UCL_OBJECT);
 	pl->tunnels = ucl_object_typed_new(UCL_ARRAY);
 	pl->lists = lists_kept();
-	pl->used = ucl_object_typed_new(UCL_OBJECT);
 	pl->boroutes = ucl_object_typed_new(UCL_OBJECT);
 	pl->learned = ucl_object_typed_new(UCL_OBJECT);
 	/* The hosts as they are reached now: a UCS end point's address may
@@ -7140,9 +7166,80 @@ plan_free(struct plan *pl)
 		ucl_object_unref(pl->learned);
 	if (pl->boroutes != NULL)
 		ucl_object_unref(pl->boroutes);
+	if (pl->nodes != NULL)
+		ucl_object_unref(pl->nodes);
 	if (pl->ready != NULL)
 		ucl_object_unref(pl->ready);
 	memset(pl, 0, sizeof(*pl));
+}
+
+/* A plan of the L3NM kept. */
+static bool
+plan_kept(struct plan *pl, const ucl_object_t *st)
+{
+	ucl_object_t	*y;
+	bool		 ok;
+
+	y = l3nm_kept();
+	ok = plan_build(pl, y, st);
+	ucl_object_unref(y);
+	return (ok);
+}
+
+/*
+ * The ledger as a plan has it: the tables, RDs, VNIs, addresses and
+ * units each service has, kept and new, and the ipfw tables' names.
+ */
+static ucl_object_t *
+ledger_reply(const struct plan *pl)
+{
+	const ucl_object_t	*a, *t, *sw;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*out, *fibs, *rds, *vnis, *addrs, *tables, *o;
+	const char		*k;
+	char			 b[32];
+
+	out = ucl_object_typed_new(UCL_OBJECT);
+	fibs = ucl_object_typed_new(UCL_OBJECT);
+	rds = ucl_object_typed_new(UCL_OBJECT);
+	vnis = ucl_object_typed_new(UCL_OBJECT);
+	addrs = ucl_object_typed_new(UCL_OBJECT);
+	tables = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((a = ucl_object_iterate(pl->alloc, &it, true)) != NULL) {
+		k = ucl_object_key(a);
+		if (ucl_object_lookup(pl->used, k) == NULL)
+			continue;
+		if (strncmp(k, "fib:", 4) == 0)
+			ucl_object_insert_key(fibs, ucl_object_copy(
+			    ucl_object_lookup(a, "fib")), k + 4, 0, true);
+		else if (strncmp(k, "rd:", 3) == 0)
+			ucl_object_insert_key(rds, ucl_object_copy(
+			    ucl_object_lookup(a, "rd")), k + 3, 0, true);
+		else {
+			o = ucl_object_copy(a);
+			ucl_object_insert_key(addrs, o, k, 0, true);
+		}
+	}
+	it = NULL;
+	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL)
+		if (strcmp(str(t, "kind"), "geneve") == 0)
+			ucl_object_insert_key(vnis, ucl_object_copy(
+			    ucl_object_lookup(t, "vni")), str(t, "id"), 0, true);
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(pl->doc, "swvcs"),
+	    &it, true)) != NULL) {
+		snprintf(b, sizeof(b), "sw%jd", (intmax_t)ucl_object_toint(
+		    ucl_object_lookup(sw, "fib")));
+		ucl_object_insert_key(tables, S(b), str(sw, "id"), 0, true);
+	}
+	put(out, "fibs", fibs);
+	put(out, "rds", rds);
+	put(out, "vnis", vnis);
+	put(out, "addresses", addrs);
+	put(out, "tables", tables);
+	put(out, "nodes", ucl_object_copy(pl->nodes));
+	return (out);
 }
 
 /* What an object is: its jobs as made, and what it raises net.fibs to. */
@@ -8501,7 +8598,7 @@ identities_list(const ucl_object_t *doc, ucl_object_t *st)
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	reads = ucl_object_typed_new(UCL_OBJECT);
 	host_refs();
-	planned = plan_build(&pl, doc, st);
+	planned = plan_kept(&pl, st);
 	now = time(NULL);
 	it = NULL;
 	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
@@ -8822,7 +8919,7 @@ api_sdwan_identities(struct http_request *req)
 	pthread_mutex_unlock(&st_lock);
 	host_refs();
 	conf = NULL;
-	if (plan_build(&pl, doc, st))
+	if (plan_kept(&pl, st))
 		conf = identity_config(&pl, doc, sw, ep, name, priv);
 	plan_free(&pl);
 	ucl_object_unref(st);
@@ -10243,7 +10340,7 @@ apply_now(ucl_object_t *doc, char *why, size_t wlen)
 	pthread_mutex_lock(&st_lock);
 	st = state_load();
 	pthread_mutex_unlock(&st_lock);
-	if (!plan_build(&pl, doc, st)) {
+	if (!plan_kept(&pl, st)) {
 		snprintf(why, wlen, "%s", pl.why);
 		plan_free(&pl);
 		ucl_object_unref(doc);
@@ -10338,7 +10435,7 @@ api_sdwan_edges(struct http_request *req)
 	ucl_object_t		*doc, *st, *chg, *body, *needs;
 	struct plan		 pl;
 	char			 why[300];
-	bool			 apply, fresh;
+	bool			 apply, fresh, invalid;
 	int			 n, status;
 
 	apply = strcmp(req->path, "/api/sdwan/apply") == 0;
@@ -10378,26 +10475,33 @@ api_sdwan_edges(struct http_request *req)
 		return (WEB_OK);
 	if (strcmp(req->path, "/api/sdwan/steer") == 0)
 		return (steer_pin(req));
-	doc = sdwan_load();
-	if (!sdwan_valid(doc, why, sizeof(why))) {
-		ucl_object_unref(doc);
-		return (reply_error(req, 409, "invalid", "the kept document is "
-		    "not one to make: %s", why));
-	}
-	fresh = false;
-	if (apply && (body = read_json(req)) != NULL) {
-		fresh = ucl_flag(body, "fresh");
-		ucl_object_unref(body);
-	}
+	/* The L3NM kept, as the planner reads it (l3nm_plan.c). */
+	doc = l3nm_kept();
 	pthread_mutex_lock(&st_lock);
 	st = state_load();
 	pthread_mutex_unlock(&st_lock);
 	if (!plan_build(&pl, doc, st)) {
 		snprintf(why, sizeof(why), "%s", pl.why);
+		invalid = pl.invalid;
 		plan_free(&pl);
 		ucl_object_unref(doc);
 		ucl_object_unref(st);
+		if (invalid)
+			return (reply_error(req, 409, "invalid", "the kept "
+			    "document is not one to make: %s", why));
 		return (reply_error(req, 409, "unplanned", "%s", why));
+	}
+	if (strcmp(req->path, "/api/sdwan/ledger") == 0) {
+		body = ledger_reply(&pl);
+		plan_free(&pl);
+		ucl_object_unref(doc);
+		ucl_object_unref(st);
+		return (reply_json(req, 200, body));
+	}
+	fresh = false;
+	if (apply && (body = read_json(req)) != NULL) {
+		fresh = ucl_flag(body, "fresh");
+		ucl_object_unref(body);
 	}
 	chg = changes(&pl, st, fresh);
 	if (!apply) {
