@@ -301,6 +301,28 @@ bogon(const struct pfx *p)
 	return (false);
 }
 
+/* Whether a socket address is on the internet: none of the bogons'. */
+bool
+addr_public(const struct sockaddr *sa)
+{
+	struct pfx	p;
+
+	memset(&p, 0, sizeof(p));
+	if (sa->sa_family == AF_INET) {
+		p.af = AF_INET;
+		p.len = 32;
+		memcpy(p.a, &((const struct sockaddr_in *)(const void *)sa)->
+		    sin_addr, 4);
+	} else if (sa->sa_family == AF_INET6) {
+		p.af = AF_INET6;
+		p.len = 128;
+		memcpy(p.a, &((const struct sockaddr_in6 *)(const void *)sa)->
+		    sin6_addr, 16);
+	} else
+		return (false);
+	return (!bogon(&p));
+}
+
 /* ---- What is protected ------------------------------------------- */
 
 static void

@@ -63,6 +63,7 @@ struct send {
 	struct target		 targets[PUSH_MAX];
 	size_t			 ntargets;
 	char			*payload;
+	bool			 owner;		/* sent by an owner: told what was said */
 };
 
 static EVP_PKEY		*vapid;
@@ -187,6 +188,9 @@ connect_to(const char *host)
 		return (-1);
 	fd = -1;
 	for (ai = res; ai != NULL; ai = ai->ai_next) {
+		/* A push service is on the internet: nothing only we reach. */
+		if (!addr_public(ai->ai_addr))
+			continue;
 		if ((fd = socket(ai->ai_family, ai->ai_socktype | SOCK_CLOEXEC,
 		    ai->ai_protocol)) == -1)
 			continue;
@@ -662,7 +666,7 @@ api_push_send(struct http_request *req)
 				put(one, "service", ucl_object_fromstring(host));
 			put(one, "status", ucl_object_fromint(
 			    s->targets[i].status));
-			if (s->targets[i].said[0] != '\0')
+			if (s->owner && s->targets[i].said[0] != '\0')
 				put(one, "said", ucl_object_fromstring(
 				    s->targets[i].said));
 			ucl_array_append(res, one);
@@ -693,6 +697,8 @@ api_push_send(struct http_request *req)
 		except = "";
 	user = owner_of(req);
 	s = xcalloc(1, sizeof(*s));
+	s->owner = session_user(req) != NULL && user_console(
+	    session_user(req)) == CROLE_OWNER;
 	msg = ucl_object_typed_new(UCL_OBJECT);
 	put(msg, "title", ucl_object_fromlstring(title, strnlen(title, 120)));
 	put(msg, "body", ucl_object_fromlstring(text, strnlen(text, 600)));
