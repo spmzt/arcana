@@ -1,0 +1,207 @@
+module arcana-sdwan-underlay {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-sdwan-underlay";
+  prefix arcsu;
+
+  import ietf-vn {
+    prefix vn;
+    reference
+      "RFC 9731: A YANG Data Model for Virtual Network (VN)
+       Operations";
+  }
+  import ietf-te-types {
+    prefix te-types;
+    reference
+      "RFC 8776: Common YANG Data Types for Traffic Engineering";
+  }
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import arcana-steer {
+    prefix arcst;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The console's: what RFC 9731's VN view of an SD-WAN service (MEF
+     70.2, Mplify 119) has beyond ietf-vn.  Two metric identities for
+     te-types' path-metric-bounds, loss and delay variation, which RFC
+     8776 has none of; a VN's bounds, the thresholds its tunnels are
+     held to (arcana-l3nm's tca); and a VN member's underlay, the
+     tunnels between its two edges as the console's plan makes them:
+     each one's encapsulation, outer addresses, FIBs, the DSCP its
+     probes go by, whether IPsec carries it, its BFD and whether the
+     steering (arcana-steer) uses it.";
+
+  revision 2026-11-05 {
+    description
+      "Initial revision.";
+  }
+
+  identity path-metric-loss {
+    base te-types:path-metric-type;
+    description
+      "The packet loss ratio (Mplify 119 §11.4, RFC 7680), in
+       millionths: a ratio of 0.05 is 50000.";
+  }
+
+  identity path-metric-delay-variation {
+    base te-types:path-metric-type;
+    description
+      "The one-way delay variation (IPDV, RFC 5481), in microseconds,
+       as RFC 8776's delay metrics are.";
+  }
+
+  augment "/vn:virtual-network/vn:vn" {
+    description
+      "The thresholds the VN's tunnels are held to: arcana-l3nm's tca,
+       its delay a path-metric-delay-average bound, its ipdv a
+       path-metric-delay-variation one and its loss a path-metric-loss
+       one.";
+    uses te-types:generic-path-metric-bounds;
+  }
+
+  grouping end {
+    description
+      "A tunnel's end.";
+    leaf edge {
+      type string;
+      description
+        "The edge: its vpn-node-id.";
+    }
+    leaf ucs-end-point {
+      type string;
+      description
+        "The UCS End Point it leaves by.";
+    }
+    leaf outer-address {
+      type inet:ip-address-no-zone;
+      description
+        "The underlay address its outer packets have.";
+    }
+    leaf outer-fib {
+      type uint16;
+      description
+        "The FIB its outer packets go by (tunnelfib), where the UCS
+         End Point has one of its own.";
+    }
+    leaf interface {
+      type string;
+      description
+        "The tunnel's interface there.";
+    }
+    leaf inner-ipv4 {
+      type inet:ipv4-address-no-zone;
+      description
+        "Its inner IPv4 address, BFD's and the probes' there.";
+    }
+    leaf inner-ipv6 {
+      type inet:ipv6-address-no-zone;
+      description
+        "Its inner IPv6 address.";
+    }
+  }
+
+  augment "/vn:virtual-network/vn:vn/vn:vn-member/vn:underlay" {
+    description
+      "The tunnels between the member's two edges.";
+    container sdwan {
+      config false;
+      description
+        "As the console's plan has them.";
+      list tunnel {
+        key "id";
+        description
+          "A tunnel (a TVC, Mplify 119) over one UCS.";
+        leaf id {
+          type string;
+          description
+            "Its id, the probes' and the steering's candidate's.";
+        }
+        leaf ucs {
+          type string;
+          description
+            "The UCS it goes over.";
+        }
+        leaf encapsulation {
+          type string;
+          description
+            "Its kind: gre(4), gif(4), wg(4), geneve, uswe, as the
+             UCS says.";
+        }
+        leaf fib {
+          type uint16;
+          description
+            "The service's FIB its inner side is in.";
+        }
+        leaf vni {
+          type uint32;
+          description
+            "A geneve tunnel's VNI.";
+        }
+        leaf ipsec {
+          type boolean;
+          description
+            "Carried by IPsec (an SA pair between its outer
+             addresses, by strongSwan).";
+        }
+        leaf encrypted {
+          type boolean;
+          description
+            "Encrypted, by IPsec or its own kind's.";
+        }
+        leaf backup {
+          type boolean;
+          description
+            "Used only when no other is up.";
+        }
+        leaf dscp {
+          type inet:dscp;
+          description
+            "The DSCP its probes go by.";
+        }
+        container bfd {
+          presence "BFD watches it.";
+          description
+            "The BFD session between its inner addresses.";
+          leaf interval {
+            type uint32;
+            units "milliseconds";
+            description
+              "Its interval.";
+          }
+          leaf multiplier {
+            type uint8;
+            description
+              "Its multiplier.";
+          }
+        }
+        container src {
+          description
+            "Its end at the member's source.";
+          uses end;
+        }
+        container dest {
+          description
+            "Its end at the member's destination.";
+          uses end;
+        }
+        leaf state {
+          type arcst:far-state;
+          description
+            "As the steering at either end sees its far end.";
+        }
+        leaf selected {
+          type boolean;
+          description
+            "In use by the steering at either end.";
+        }
+      }
+    }
+  }
+}

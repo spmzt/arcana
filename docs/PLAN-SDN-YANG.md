@@ -2107,11 +2107,33 @@ whose first part is served.
   members; a member by key; an access added to the L3NM two members
   more and a new entity-tag; spokes and admin-down none and `down`;
   PUT, POST, PATCH and DELETE of the view refused, the L3NM as it was.
-  Left: `oper-status` and `if-selected` from `arcana-steer` (the
-  agents' state, not the L3NM), 4.7.2, 4.7.3.
+  `oper-status` with 4.7.2; `if-selected` left out: a member's
+  alternatives are its tunnels, not other APs (RFC 9731's multi-src
+  and multi-dest), each one's `selected` in the underlay.
 - 4.7.2 C: `path-metric-bounds` with Arcana metric identities for
   loss and delay variation; the `arcana-sdwan-underlay` augment;
   check: the TCA thresholds round-trip.
+  Done (console 0.361.0, vn.c, module `arcana-sdwan-underlay` at
+  91 700): identities `path-metric-loss` (millionths) and
+  `path-metric-delay-variation` (microseconds, as RFC 8776's delays)
+  on `te-types:path-metric-type`; a VN's `path-metric-bounds` (an
+  augment of `vn`) its service's arcana-l3nm tca, delay as
+  `path-metric-delay-average`; a member's `underlay` augmented with
+  the tunnels the plan makes between its two edges
+  (`sdwan_plan_tunnels()`, none where the plan fails): id, UCS,
+  encapsulation, FIB, VNI, IPsec, encrypted, backup, the probes' DSCP,
+  BFD's interval and multiplier, each end's edge, UCS End Point, outer
+  address and FIB, interface and inner addresses; and, where the
+  steering at either end is read (`arcana-steer:steering/state`
+  through the fleet mount, a host without the module leaving it out),
+  the far end's state and whether it is in use.  A member's
+  `oper-status` up where one of its tunnels is up, down where all
+  are, else unknown; the VN's the same of its members.  Check
+  (console_test l3nm_vn_tca): l3nm_good's 30 ms and 0.05 as 30000 and
+  50000; 12.345 ms, 2.5 ms and 0.000125 as 12345, 2500 and 125, each
+  back the value kept; none without a TCA.  sdwan_apply: hq to branch
+  by the plan's tunnels, the GRE one's ends and IPsec, selected by the
+  steering, the member's oper-status.
 - 4.7.3 C: `vn-compute` as the Check over per-edge feasibility rpcs;
   check: an infeasible member reported with `error-info`.
 - 4.8.1 P: the page's fetch layer on RESTCONF JSON (or CBOR

@@ -33,6 +33,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -10554,6 +10555,95 @@ ATF_TC_BODY(l3nm_vn, tc)
 	resp_free(&r);
 }
 
+/*
+ * A VN's path-metric-bounds (PLAN-SDN-YANG 4.7.2): its service's TCA,
+ * delay and delay variation in microseconds, loss in millionths; the
+ * thresholds back from them the TCA's as kept.
+ */
+#define	VN_BOUND(i, what) "ietf-vn:virtual-network.vn.0.arcana-sdwan-"	\
+	"underlay:path-metric-bounds.path-metric-bound." #i "." what
+
+CONSOLE_TC(l3nm_vn_tca, "a VN's path-metric-bounds its service's TCA "
+    "thresholds, round-trip")
+ATF_TC_BODY(l3nm_vn_tca, tc)
+{
+	static const struct {
+		const char	*tca;		/* as the L3NM keeps it */
+		const char	*metric;
+		const char	*bound;
+		double		 scale;
+	} want[] = {
+		{ "12.345", "ietf-te-types:path-metric-delay-average", "12345",
+		    1e3 },
+		{ "2.5", "arcana-sdwan-underlay:path-metric-delay-variation",
+		    "2500", 1e3 },
+		{ "0.000125", "arcana-sdwan-underlay:path-metric-loss", "125",
+		    1e6 },
+	};
+	struct authn	 a;
+	struct resp	 r;
+	char		 path[160];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("PUT", L3NM, l3nm_good, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	/* l3nm_good's: delay 30 ms, loss 0.05. */
+	http("GET", VN_VN, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ietf-te-types:path-metric-delay-average", jstr(&r,
+	    VN_BOUND(0, "metric-type")));
+	ATF_CHECK_STREQ("30000", jstr(&r, VN_BOUND(0, "upper-bound")));
+	ATF_CHECK_STREQ("arcana-sdwan-underlay:path-metric-loss", jstr(&r,
+	    VN_BOUND(1, "metric-type")));
+	ATF_CHECK_STREQ("50000", jstr(&r, VN_BOUND(1, "upper-bound")));
+	ATF_CHECK(jstr(&r, VN_BOUND(2, "metric-type")) == NULL);
+	resp_free(&r);
+	/* Changed in the L3NM: each in the VN, and each bound back in the
+	 * TCA's units the value kept. */
+	http("PATCH", L3NM "/vpn-services/vpn-service=acme", "{\"ietf-l3vpn-"
+	    "ntw:vpn-service\":[{\"vpn-id\":\"acme\",\"arcana-l3nm:sdwan\":{"
+	    "\"tca\":{\"delay\":\"12.345\",\"ipdv\":\"2.5\",\"loss\":"
+	    "\"0.000125\"}}}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", VN_VN "/vn=acme/arcana-sdwan-underlay:path-metric-bounds",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	for (size_t i = 0; i < nitems(want); i++) {
+		snprintf(path, sizeof(path), "arcana-sdwan-underlay:"
+		    "path-metric-bounds.path-metric-bound.%zu.metric-type", i);
+		ATF_CHECK_STREQ(want[i].metric, jstr(&r, path));
+		snprintf(path, sizeof(path), "arcana-sdwan-underlay:"
+		    "path-metric-bounds.path-metric-bound.%zu.upper-bound", i);
+		ATF_CHECK_STREQ(want[i].bound, jstr(&r, path));
+		ATF_CHECK_MSG(jstr(&r, path) != NULL && fabs(strtod(jstr(&r,
+		    path), NULL) / want[i].scale - strtod(want[i].tca, NULL)) <
+		    1e-9, "%s back is not %s", want[i].bound, want[i].tca);
+	}
+	resp_free(&r);
+	http("GET", L3NM "/vpn-services/vpn-service=acme/arcana-l3nm:sdwan/tca",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	for (size_t i = 0; i < nitems(want); i++) {
+		snprintf(path, sizeof(path), "arcana-l3nm:tca.%s", i == 0 ?
+		    "delay" : i == 1 ? "ipdv" : "loss");
+		ATF_CHECK_MSG(jstr(&r, path) != NULL && strtod(jstr(&r, path),
+		    NULL) == strtod(want[i].tca, NULL), "%s: %s", path, r.body);
+	}
+	resp_free(&r);
+	/* No TCA, no bounds. */
+	http("DELETE", L3NM "/vpn-services/vpn-service=acme/arcana-l3nm:sdwan/"
+	    "tca", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", VN_VN, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, VN_BOUND(0, "metric-type")) == NULL);
+	resp_free(&r);
+}
+
 CONSOLE_TC(l3nm_mef, "the SD-WAN document a view of the L3NM: l3nm_good "
     "exported is sdwan_good; sdwan.json imported once at start")
 ATF_TC_BODY(l3nm_mef, tc)
@@ -14013,6 +14103,52 @@ ATF_TC_BODY(sdwan_apply, tc)
 		ATF_CHECK(system("grep -q 'steering-pinned' data/audit.log") ==
 		    0 || system("grep -rq 'steering-pinned' data") == 0);
 	}
+	/*
+	 * The VN view's underlay (PLAN-SDN-YANG 4.7.2): hq to branch by the
+	 * plan's two tunnels, each with its ends; the steering read through
+	 * the fleet mount, the one in use selected, the member's
+	 * oper-status what the probes say.
+	 */
+	{
+		char	tp[200], u[128];
+		int	k, inet = -1;
+
+		snprintf(tp, sizeof(tp), "/restconf/data/ietf-vn:virtual-network/"
+		    "vn=acme/vn-member=%s%%3Ahq~%s%%3Abranch", sa, sb);
+		http("GET", tp, NULL, &r);
+		EXPECT(&r, 200);
+		for (k = 0; k < 2; k++) {
+			snprintf(u, sizeof(u), "ietf-vn:vn-member.0.underlay."
+			    "arcana-sdwan-underlay:sdwan.tunnel.%d.", k);
+			snprintf(tp, sizeof(tp), "%sid", u);
+			if (jstr(&r, tp) != NULL && strcmp(jstr(&r, tp),
+			    "acme/a-inet-b-inet") == 0)
+				inet = k;
+		}
+		ATF_REQUIRE_MSG(inet >= 0, "%s", r.body);
+		snprintf(u, sizeof(u), "ietf-vn:vn-member.0.underlay."
+		    "arcana-sdwan-underlay:sdwan.tunnel.%d.", inet);
+		snprintf(tp, sizeof(tp), "%sencapsulation", u);
+		ATF_CHECK_STREQ("gre", jstr(&r, tp));
+		snprintf(tp, sizeof(tp), "%sipsec", u);
+		ATF_CHECK_STREQ("true", jstr(&r, tp));
+		snprintf(tp, sizeof(tp), "%ssrc.edge", u);
+		ATF_CHECK_STREQ(sa, jstr(&r, tp));
+		snprintf(tp, sizeof(tp), "%ssrc.outer-address", u);
+		ATF_CHECK_STREQ("192.0.2.1", jstr(&r, tp));
+		snprintf(tp, sizeof(tp), "%sdest.edge", u);
+		ATF_CHECK_STREQ(sb, jstr(&r, tp));
+		snprintf(tp, sizeof(tp), "%sdest.inner-ipv4", u);
+		ATF_CHECK(jstr(&r, tp) != NULL);
+		snprintf(tp, sizeof(tp), "%sselected", u);
+		ATF_CHECK_STREQ("true", jstr(&r, tp));
+		snprintf(tp, sizeof(tp), "%sstate", u);
+		ATF_CHECK_MSG(jstr(&r, tp) != NULL, "%s", r.body);
+		ATF_CHECK_MSG(jstr(&r, "ietf-vn:vn-member.0.oper-status") !=
+		    NULL, "%s", r.body);
+		ATF_CHECK(jstr(&r, "ietf-vn:vn-member.0.if-selected") == NULL);
+		resp_free(&r);
+	}
 	/* Again: nothing to do. */
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
@@ -16272,6 +16408,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, l3nm_sdwan);
 	ATF_TP_ADD_TC(tp, l3nm_mef);
 	ATF_TP_ADD_TC(tp, l3nm_vn);
+	ATF_TP_ADD_TC(tp, l3nm_vn_tca);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_sync);
 	ATF_TP_ADD_TC(tp, server_readdress);

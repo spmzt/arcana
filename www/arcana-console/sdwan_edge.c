@@ -11527,3 +11527,23 @@ api_sdwan_edges(struct http_request *req)
 	put(body, "steps", I(n));
 	return (reply_json(req, 200, body));
 }
+
+/*
+ * The tunnels a plan of L3NM y makes, both ends each (the VN view's
+ * underlay, vn.c); NULL where it plans none.
+ */
+ucl_object_t *
+sdwan_plan_tunnels(const ucl_object_t *y)
+{
+	struct plan	 pl;
+	ucl_object_t	*st, *t = NULL;
+
+	pthread_mutex_lock(&st_lock);
+	st = state_load();
+	pthread_mutex_unlock(&st_lock);
+	if (plan_build(&pl, y, st))
+		t = ucl_object_copy(pl.tunnels);
+	plan_free(&pl);
+	ucl_object_unref(st);
+	return (t);
+}

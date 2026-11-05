@@ -541,6 +541,8 @@ library_object(void)
 		    "urn:ietf:params:xml:ns:yang:ietf-network-topology" },
 		{ "ietf-sap-ntw", "2023-06-20",
 		    "urn:ietf:params:xml:ns:yang:ietf-sap-ntw" },
+		{ "arcana-sdwan-underlay", "2026-11-05",
+		    "urn:arcana:yang:arcana-sdwan-underlay" },
 	};
 	/* What they import alone, for its identities and types. */
 	static const char *const imps[][3] = {
@@ -595,7 +597,7 @@ library_object(void)
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	ucl_array_append(arr, ds);
 	ucl_object_insert_key(lib, arr, "datastore", 0, false);
-	ucl_object_insert_key(lib, ucl_object_fromstring("2026-11-05.2"),
+	ucl_object_insert_key(lib, ucl_object_fromstring("2026-11-05.3"),
 	    "content-id", 0, false);
 	return (lib);
 }

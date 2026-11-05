@@ -1,0 +1,229 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-sdwan-underlay",
+    "module-revision": "2026-11-05",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-vn",
+        "module-revision": "2025-03-27"
+      },
+      {
+        "module-name": "ietf-te-types",
+        "module-revision": "2020-06-10"
+      },
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "arcana-steer",
+        "module-revision": "2026-11-04"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "91700",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-sdwan-underlay",
+        "sid": "91700"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-metric-delay-variation",
+        "sid": "91701"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-metric-loss",
+        "sid": "91702"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/arcana-sdwan-underlay:path-metric-bounds",
+        "sid": "91703"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/arcana-sdwan-underlay:path-metric-bounds/path-metric-bound",
+        "sid": "91704"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/arcana-sdwan-underlay:path-metric-bounds/path-metric-bound/metric-type",
+        "sid": "91705"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/arcana-sdwan-underlay:path-metric-bounds/path-metric-bound/upper-bound",
+        "sid": "91706"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan",
+        "sid": "91707"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel",
+        "sid": "91708"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/backup",
+        "sid": "91709"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/bfd",
+        "sid": "91710"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/bfd/interval",
+        "sid": "91711"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/bfd/multiplier",
+        "sid": "91712"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/dest",
+        "sid": "91713"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/dest/edge",
+        "sid": "91714"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/dest/inner-ipv4",
+        "sid": "91715"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/dest/inner-ipv6",
+        "sid": "91716"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/dest/interface",
+        "sid": "91717"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/dest/outer-address",
+        "sid": "91718"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/dest/outer-fib",
+        "sid": "91719"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/dest/ucs-end-point",
+        "sid": "91720"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/dscp",
+        "sid": "91721"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/encapsulation",
+        "sid": "91722"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/encrypted",
+        "sid": "91723"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/fib",
+        "sid": "91724"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/id",
+        "sid": "91725"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/ipsec",
+        "sid": "91726"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/selected",
+        "sid": "91727"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/src",
+        "sid": "91728"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/src/edge",
+        "sid": "91729"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/src/inner-ipv4",
+        "sid": "91730"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/src/inner-ipv6",
+        "sid": "91731"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/src/interface",
+        "sid": "91732"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/src/outer-address",
+        "sid": "91733"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/src/outer-fib",
+        "sid": "91734"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/src/ucs-end-point",
+        "sid": "91735"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/state",
+        "sid": "91736"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/ucs",
+        "sid": "91737"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay/arcana-sdwan-underlay:sdwan/tunnel/vni",
+        "sid": "91738"
+      }
+    ]
+  }
+}

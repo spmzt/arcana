@@ -178,6 +178,7 @@ on the wire.
 | 89 000 | 300 | `ietf-te-types@2020-06-10`, RFC 8776 (no IETF range; `ietf-vn`'s types and identities, the console's) | `share/yang/ietf-te-types@2020-06-10.sid` (187 used) |
 | 89 300 | 2 000 | `ietf-te-topology@2020-08-06`, RFC 8795 (no IETF range): the targets of `ietf-vn`'s leafrefs, implemented by the console and holding nothing | `share/yang/ietf-te-topology@2020-08-06.sid` (1 726 used) |
 | 91 300 | 400 | `ietf-vn@2025-03-27`, RFC 9731 (no IETF range): the services' VN view, the console's | `share/yang/ietf-vn@2025-03-27.sid` (259 used) |
+| 91 700 | 100 | `arcana-sdwan-underlay`, the VN view's bounds and underlay, the console's | `share/yang/arcana-sdwan-underlay@2026-11-05.sid` (39 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,
