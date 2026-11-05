@@ -50,6 +50,24 @@ fi
 
 command="%%PREFIX%%/sbin/arcana-agent"
 pidfile="/var/run/arcana-agent.pid"
+start_precmd="arcana_agent_precmd"
+
+# Arcana's own file is read only where rc_conf_files names it: its
+# listeners missed would leave the agent on the local socket alone.
+arcana_agent_precmd()
+{
+	local _f _l
+
+	_f="%%PREFIX%%/etc/rc.conf.d/arcana"
+	[ -z "${arcana_agent_listen}" ] && [ -r "${_f}" ] || return 0
+	_l=$(sysrc -inf "${_f}" arcana_agent_listen)
+	[ -n "${_l}" ] || return 0
+	warn "${_f} sets arcana_agent_listen=\"${_l}\" but" \
+	    "rc_conf_files (${rc_conf_files}) does not name it:" \
+	    "listening on ${arcana_agent_socket} alone.  Add it:" \
+	    "sysrc rc_conf_files+=\" ${_f}\""
+	return 0
+}
 
 command_args="-l unix:${arcana_agent_socket}"
 if [ -n "${arcana_agent_group}" ]; then
