@@ -1232,15 +1232,33 @@ servers_yang_set(struct http_request *req, const ucl_object_t *was,
 		if ((o = cyang_entry(wl, "id", id)) != NULL && cyang_same(o, e))
 			continue;
 		if (o == NULL) {
-			if (server_find(id) != NULL) {
-				snprintf(why, len, "%s is another host's id", id);
-				return (409);
+			/* The schema's pattern, kept here too: ids name files. */
+			if (id == NULL || strlen(id) != 8 || strspn(id,
+			    "0123456789abcdef") != 8) {
+				snprintf(why, len, "a host's id is 8 lowercase "
+				    "hex digits");
+				return (400);
 			}
+			/* Who may add first: no id told to one who may not. */
 			if (u != NULL && !user_path_ok(user_console(u),
 			    "/api/servers", true)) {
 				snprintf(why, len, "a host is added by an "
 				    "operator or an owner of this console");
 				return (403);
+			}
+			if (server_find(id) != NULL) {
+				snprintf(why, len, "%s is another host's id", id);
+				return (409);
+			}
+			/*
+			 * An id a role names is that role's: a host made with
+			 * it would be given whoever holds the role.
+			 */
+			if (roles_name_host(id)) {
+				snprintf(why, len, "a role names host %s still: "
+				    "take it out of the role, or choose another "
+				    "id", id);
+				return (409);
 			}
 			nnew++;
 		} else if (!host_role_ok(req, id, true, true)) {

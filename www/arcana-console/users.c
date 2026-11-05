@@ -607,6 +607,21 @@ users_init(void)
 		(void)store_save(USERS_FILE, udoc);
 }
 
+/* Whether a role names host sid itself, not by "*". */
+bool
+roles_name_host(const char *sid)
+{
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((r = ucl_object_iterate(list_of("roles"), &it, true)) != NULL)
+		if (ucl_object_lookup(ucl_object_lookup(r, "hosts"), sid) !=
+		    NULL)
+			return (true);
+	return (false);
+}
+
 /* How many users have the role. */
 static int
 role_users(const char *role)

@@ -18057,6 +18057,67 @@ ATF_TC_BODY(cyang_hosts, tc)
 	    "\"0000abce\",\"name\":\"d\",\"uri\":\"ftp://x\"}]}", &r);
 	EXPECT(&r, 400);
 	resp_free(&r);
+	/* An id not 8 lowercase hex digits refused: ids name files. */
+	http("POST", CC "hosts", "{\"arcana-console:host\":[{\"id\":"
+	    "\"../../x\",\"name\":\"e\",\"uri\":\"tcp://192.0.2.9:4310\"}]}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", CC "hosts", "{\"arcana-console:host\":[{\"id\":"
+	    "\"0000ABCF\",\"name\":\"e\",\"uri\":\"tcp://192.0.2.9:4310\"}]}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/*
+	 * An id a role still names is refused: a host made with it would
+	 * be given whoever holds the role.  A member is refused alike
+	 * whether the id is a host's or not: no id told.
+	 */
+	{
+		struct authn	m;
+		char		inv[128], keep[sizeof(cookie)], hp[160];
+
+		http("PUT", "/api/roles/stale", "{\"console\":\"operator\","
+		    "\"hosts\":{\"deadbeef\":\"admin\"}}", &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		http("POST", CC "hosts", "{\"arcana-console:host\":[{\"id\":"
+		    "\"deadbeef\",\"name\":\"s\",\"uri\":\"tcp://192.0.2.10:"
+		    "4310\"}]}", &r);
+		ATF_CHECK_MSG(r.status == 409 && strstr(r.body, "a role names")
+		    != NULL, "%d %s", r.status, r.body);
+		resp_free(&r);
+		http("PUT", "/api/roles/plain", "{\"console\":\"member\","
+		    "\"hosts\":{}}", &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		http("PUT", "/api/users/mia", "{\"roles\":[\"plain\"]}", &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		http("POST", "/api/users/mia/invite", NULL, &r);
+		EXPECT(&r, 200);
+		snprintf(inv, sizeof(inv), "%s", jstr(&r, "token"));
+		resp_free(&r);
+		memcpy(keep, cookie, sizeof(keep));
+		cookie[0] = '\0';
+		authn_new(&m, -7);
+		do_register(&m, inv, &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		snprintf(body, sizeof(body), "{\"arcana-console:host\":[{\"id\":"
+		    "\"%s\",\"name\":\"z\",\"uri\":\"tcp://192.0.2.11:4310\"}]}",
+		    sa);
+		snprintf(hp, sizeof(hp), CC "hosts/host=%s", sa);
+		http("PUT", hp, body, &r);
+		EXPECT(&r, 403);
+		resp_free(&r);
+		http("PUT", CC "hosts/host=0badf00d", "{\"arcana-console:host\":"
+		    "[{\"id\":\"0badf00d\",\"name\":\"z\",\"uri\":\"tcp://"
+		    "192.0.2.12:4310\"}]}", &r);
+		EXPECT(&r, 403);
+		resp_free(&r);
+		memcpy(cookie, keep, sizeof(cookie));
+	}
 	http("GET", "/api/servers", NULL, &r);
 	ATF_CHECK_STREQ("c", jstr(&r, "servers.1.name"));
 	ATF_CHECK(jstr(&r, "servers.2.name") == NULL);

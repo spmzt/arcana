@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.369.0"
+#define	ARCW_VERSION		"0.369.2"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -281,6 +281,7 @@ void		 users_init(void);
 bool		 user_name_ok(const char *);
 bool		 user_exists(const char *);
 enum crole	 user_console(const char *);
+bool		 roles_name_host(const char *);
 enum role	 user_host(const char *, const char *);
 const char	*user_tenant(const char *);
 const char	*role_name(enum role);
