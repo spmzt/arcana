@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-l3nm",
     "module-revision": "2026-11-05",
-    "sid-file-version": 0,
+    "sid-file-version": 1,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -16,6 +16,18 @@
       {
         "module-name": "arcana-steer",
         "module-revision": "2026-11-04"
+      },
+      {
+        "module-name": "ietf-vpn-common",
+        "module-revision": "2022-02-11"
+      },
+      {
+        "module-name": "ietf-network",
+        "module-revision": "2018-02-26"
+      },
+      {
+        "module-name": "ietf-sap-ntw",
+        "module-revision": "2023-06-20"
       }
     ],
     "assignment-range": [
@@ -1759,6 +1771,56 @@
         "namespace": "data",
         "identifier": "/ietf-l3vpn-ntw:l3vpn-ntw/vpn-services/vpn-service/vpn-nodes/vpn-node/vpn-network-accesses/vpn-network-access/routing-protocols/routing-protocol/static/cascaded-lan-prefixes/ipv6-lan-prefixes/arcana-l3nm:distance",
         "sid": "87746"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "sap-anomaly",
+        "sid": "87747"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "sap-down-service-up",
+        "sid": "87748"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "service-down-oper-up",
+        "sid": "87749"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-sap-ntw:service/sap/arcana-l3nm:anomaly",
+        "sid": "87750"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-sap-ntw:service/sap/arcana-l3nm:attachment",
+        "sid": "87751"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-sap-ntw:service/sap/arcana-l3nm:attachment/access-id",
+        "sid": "87752"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-sap-ntw:service/sap/arcana-l3nm:attachment/made",
+        "sid": "87753"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-sap-ntw:service/sap/arcana-l3nm:attachment/vpn-id",
+        "sid": "87754"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-sap-ntw:service/sap/arcana-l3nm:attachment/vpn-node-id",
+        "sid": "87755"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-network:networks/network/node/ietf-sap-ntw:service/sap/arcana-l3nm:free",
+        "sid": "87756"
       }
     ]
   }

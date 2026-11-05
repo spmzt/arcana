@@ -2018,8 +2018,8 @@ whose first part is served.
   interface (4.6.2).  On-change: told with the interfaces and the
   jails' networks (`yang_changed()`).  ietf-vpn-common implemented by
   the agent for the identities (features dot1q, qinq, lag-interface);
-  the modules are the agent's and arcanactl's, not yet the console's
-  tables (4.6.2).  Check: agent_test's yang_sap (stand-in interfaces
+  the modules are the agent's and arcanactl's, the console's tables'
+  too since 4.6.2.  Check: agent_test's yang_sap (stand-in interfaces
   through ysap, a status following its interface down and up; served,
   the termination points `ifconfig -l`, each SAP's status its
   interface's oper-status by XPath filters, running empty, the
@@ -2028,8 +2028,38 @@ whose first part is served.
   pushed on-change).  Open: the yang-library's import-only list lacks
   ietf-vpn-common's own imports (ietf-packet-fields,
   ietf-routing-types), which have no `.sid` files.
-- 4.6.2 C: the SAP network and the physical network under it; the
-  anomaly rules as checks; check: RFC 9408 §5's cases.
+- 4.6.2 done (console sapnet.c, console 0.360.0): the SAP modules
+  (ietf-network, ietf-network-topology, ietf-sap-ntw, ietf-vpn-common)
+  in the console's tables too (share/mk/arcana.yang.mk); ietf-vpn-common
+  no longer the console's alone (l3nm_module()): a host's view keeps its
+  identities, and drift passes over ietf-network, an agent's state alone.
+  `/restconf/data/ietf-network:networks` (and `/network=<id>`) on the
+  console, read on a task through the fleet mount, the user's hosts
+  alone: network `arcana-physical`, a node each host (node-id the host's
+  id, the L3NM's ne-id), its interfaces termination points, an epair's
+  two ends a link; over it `arcana-sap`, the same nodes (supporting-node,
+  supporting-termination-point) with each agent's SAPs.  A host not
+  read, or whose agent has no SAP network (a release before 4.6.1), is
+  left out, logged; each host's node is checked against the schema
+  before it is merged, the whole after.  service-status is the
+  console's, of the L3NM where the user may read it: an access names a
+  SAP by its interface-id (else its id the sap-id) at the vpn-node whose
+  ne-id is the SAP's node; admin-status the access's, else its node's,
+  its service's, admin-up where none says, admin-down where none names
+  the SAP; oper-status op-up where the last apply made the UNI
+  (sdwan_applied(): `uni:<access id>` at the edge) and the SAP is up.
+  arcana-l3nm augments the SAP (SIDs 87747-87756): `attachment` (vpn-id,
+  access-id, vpn-node-id, made), `free` (a UNI, up, named by none, no
+  anomaly) and `anomaly`, RFC 9408 section 5's rules as checks:
+  `sap-down-service-up` (admin-up at a SAP down, its parent's status
+  overriding its own) and `service-down-oper-up` (admin-down where the
+  UNI is made and the SAP up).  Check (console_test sapnet): two agents'
+  nodes merged over the physical network; an up UNI free on both; an
+  L3NM access naming it on one host shows the service (admin-up,
+  op-down, not made) and is no longer free, the same interface of the
+  other host free still; an access at a SAP down the anomaly; the
+  service admin-down, no anomaly; an agent 0.236.0 (ARCANA_OLD_AGENT)
+  left out with the 404 logged.
 - 4.6.3 C: the Appendix D flow in the planner (free SAP → access id);
   check: a service placed on a free SAP.
 - 4.7.1 C: `ietf-vn` view: access points and VNAPs from UNIs, members

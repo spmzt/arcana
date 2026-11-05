@@ -22,6 +22,9 @@
  *	/restconf/data/ietf-l3vpn-ntw:l3vpn-ntw[/<api-path>]
  *					the services as L3NM (RFC 9182),
  *					the console's own (l3nm.c)
+ *	/restconf/data/ietf-network:networks
+ *					the fleet's SAPs (RFC 9408), each
+ *					host's node merged (sapnet.c)
  *
  * A host's path is made an XPath filter of the agent's GET, the node
  * then taken from the RFC 7951 JSON that comes back.  Of the query
@@ -523,6 +526,12 @@ library_object(void)
 		{ "ietf-l3vpn-ntw", "2022-02-14",
 		    "urn:ietf:params:xml:ns:yang:ietf-l3vpn-ntw" },
 		{ "arcana-l3nm", "2026-11-05", "urn:arcana:yang:arcana-l3nm" },
+		{ "ietf-network", "2018-02-26",
+		    "urn:ietf:params:xml:ns:yang:ietf-network" },
+		{ "ietf-network-topology", "2018-02-26",
+		    "urn:ietf:params:xml:ns:yang:ietf-network-topology" },
+		{ "ietf-sap-ntw", "2023-06-20",
+		    "urn:ietf:params:xml:ns:yang:ietf-sap-ntw" },
 	};
 	/* What they import alone, for its identities and types. */
 	static const char *const imps[][3] = {
@@ -577,7 +586,7 @@ library_object(void)
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	ucl_array_append(arr, ds);
 	ucl_object_insert_key(lib, arr, "datastore", 0, false);
-	ucl_object_insert_key(lib, ucl_object_fromstring("2026-11-05"),
+	ucl_object_insert_key(lib, ucl_object_fromstring("2026-11-05.1"),
 	    "content-id", 0, false);
 	return (lib);
 }

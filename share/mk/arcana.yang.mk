@@ -5,8 +5,7 @@
 # RFC 8530's logical network elements, their structs and schema tables
 # written by cblink-gen at the build (ymodel.h, ymodel_schema.c); with
 # ARC_YANG_SERVER=yes the server's handler table too (ymodel_server.c),
-# whose handlers the program defines; but in the console, the host's
-# service attachment points (RFC 9408 over RFC 8345's network).
+# whose handlers the program defines.
 #
 #	ARC_YANG_SERVER=	yes	(the agent)
 #	.include "${.CURDIR}/../../share/mk/arcana.yang.mk"
@@ -58,7 +57,9 @@ ARC_YMODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		arcana-system@2026-10-29 arcana-netstore@2026-10-29 \
 		arcana-suricata@2026-10-29 arcana-smtpd@2026-10-29 \
 		arcana-speeder@2026-10-29 arcana-stream@2026-10-29 \
-		arcana-network@2026-10-29 arcana-steer@2026-11-04
+		arcana-network@2026-10-29 arcana-steer@2026-11-04 \
+		ietf-vpn-common@2022-02-11 ietf-network@2018-02-26 \
+		ietf-network-topology@2018-02-26 ietf-sap-ntw@2023-06-20
 # Modules only imported whose identities are used: their .sid files
 # alone (a VLAN tag's types, the PHY types, the port algorithms; the
 # routing protocols', whose identities name a route's origin).
@@ -99,20 +100,17 @@ ARC_YFEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-subscribed-notif-receivers: -F ietf-https-notif-transport: \
 		-F arcana-notif: -F arcana-ra:
 
-# The agent's SAP network (RFC 9408), arcanactl's to read: ietf-vpn-common
-# implemented for its identities, of which a SAP's encapsulation needs
-# three features.  The console's tables have them with 4.6.2.
+# The SAP network (RFC 9408): each agent's node, the console's network of
+# them.  ietf-vpn-common is the agent's for its identities, of which a
+# SAP's encapsulation needs three features.
 .if ${ARC_YANG_CONSOLE:Uno} != "yes"
-ARC_YMODS+=	ietf-vpn-common@2022-02-11 ietf-network@2018-02-26 \
-		ietf-network-topology@2018-02-26 ietf-sap-ntw@2023-06-20
 ARC_YFEATS+=	-F ietf-vpn-common:dot1q,qinq,lag-interface
 .endif
 # The console's own datastore (ARC_YANG_CONSOLE=yes): the services
-# stored as L3NM (RFC 9181, RFC 9182) with Arcana's augments of it,
-# which no agent serves.
+# stored as L3NM (RFC 9181, RFC 9182) with Arcana's augments of it and
+# of the SAPs, which no agent serves.
 .if ${ARC_YANG_CONSOLE:Uno} == "yes"
-ARC_YMODS+=	ietf-vpn-common@2022-02-11 ietf-l3vpn-ntw@2022-02-14 \
-		arcana-l3nm@2026-11-05
+ARC_YMODS+=	ietf-l3vpn-ntw@2022-02-14 arcana-l3nm@2026-11-05
 ARC_YIMPORTS+=	ietf-key-chain@2017-06-15 ietf-tcp@2024-10-10
 ARC_YFEATS+=	-F ietf-vpn-common:* -F ietf-l3vpn-ntw:*
 .endif

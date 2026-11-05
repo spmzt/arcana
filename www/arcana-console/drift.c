@@ -206,9 +206,11 @@ drift_read(cbl_conn *conn, ucl_object_t **out, char *err, size_t errlen)
 
 	*out = NULL;
 	/* The top-level nodes that are configuration: what running has;
-	 * none of the console's own datastore. */
+	 * none of the console's own datastore, nor the SAP network, which
+	 * an agent has as state alone (RFC 9408, its running none). */
 	for (uint32_t i = 0; i < ymodel_schema.nmod; i++)
 		for (uint32_t k = 0; !l3nm_module(ymodel_schema.mod[i]) &&
+		    strcmp(ymodel_schema.mod[i]->name, "ietf-network") != 0 &&
 		    k < ymodel_schema.mod[i]->ntop; k++) {
 			const struct cbl_ynode *t = ymodel_schema.mod[i]->top[k];
 

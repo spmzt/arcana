@@ -9651,6 +9651,228 @@ ATF_TC_BODY(restconf_revisions, tc)
 	resp_free(&r);
 }
 
+#define	SAPNET	"/restconf/data/ietf-network:networks"
+
+/* The body of r parsed; NULL: not JSON. */
+static ucl_object_t *
+body_of(const struct resp *r)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o = NULL;
+
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+	if (r->body != NULL && ucl_parser_add_string(p, r->body, 0))
+		o = ucl_parser_get_object(p);
+	ucl_parser_free(p);
+	return (o);
+}
+
+/* The entry of list l whose member k is v; NULL: none. */
+static const ucl_object_t *
+keyed(const ucl_object_t *l, const char *k, const char *v)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	const char		*s;
+
+	while ((e = ucl_object_iterate(l, &it, true)) != NULL)
+		if ((s = ucl_object_tostring(ucl_object_lookup(e, k))) !=
+		    NULL && strcmp(s, v) == 0)
+			return (e);
+	return (NULL);
+}
+
+/* Node id of network nw of networks top. */
+static const ucl_object_t *
+sn_node(const ucl_object_t *top, const char *nw, const char *id)
+{
+
+	return (keyed(ucl_object_lookup(keyed(ucl_object_lookup_path(top,
+	    "ietf-network:networks.network"), "network-id", nw), "node"),
+	    "node-id", id));
+}
+
+/* SAP id of node nd. */
+static const ucl_object_t *
+sn_sap(const ucl_object_t *nd, const char *id)
+{
+
+	return (keyed(ucl_object_lookup(ucl_array_find_index(
+	    ucl_object_lookup(nd, "ietf-sap-ntw:service"), 0), "sap"),
+	    "sap-id", id));
+}
+
+/* A SAP of node nd whose status is st, free or not as said (-1: either):
+ * its id in buf; NULL: none. */
+static const char *
+sn_find(const ucl_object_t *nd, const char *st, int free_, char *buf,
+    size_t len)
+{
+	const ucl_object_t	*s;
+	ucl_object_iter_t	 it = NULL;
+
+	while ((s = ucl_object_iterate(ucl_object_lookup(ucl_array_find_index(
+	    ucl_object_lookup(nd, "ietf-sap-ntw:service"), 0), "sap"), &it,
+	    true)) != NULL) {
+		if (strcmp(ucl_object_tostring_forced(ucl_object_lookup_path(s,
+		    "sap-status.status")), st) != 0)
+			continue;
+		if (free_ != -1 && ucl_object_toboolean(ucl_object_lookup(s,
+		    "arcana-l3nm:free")) != (free_ == 1))
+			continue;
+		snprintf(buf, len, "%s", ucl_object_tostring(
+		    ucl_object_lookup(s, "sap-id")));
+		return (buf);
+	}
+	return (NULL);
+}
+
+/*
+ * The fleet's SAP network (PLAN-SDN-YANG 4.6.2, RFC 9408): two agents'
+ * nodes merged, a node each, over the physical network; a SAP an L3NM
+ * access names shows its service and is no longer free, the same SAP of
+ * the other host free; a service at a SAP that is down an anomaly; an
+ * agent of a release before 4.6.1 (ARCANA_OLD_AGENT) left out.
+ */
+CONSOLE_TC(sapnet, "The fleet's SAP network: two hosts' nodes merged, a SAP "
+    "an L3NM access names showing its service, an anomaly, an agent "
+    "without SAPs left out")
+ATF_TC_BODY(sapnet, tc)
+{
+	struct authn		 a;
+	struct resp		 r;
+	ucl_object_t		*top;
+	const ucl_object_t	*n1, *n2, *s;
+	char			 cwd[MAXPATHLEN], jgd[MAXPATHLEN];
+	char			 uri[MAXPATHLEN + 8], id1[16], id2[16], ido[16];
+	char			 up[64], down[64], body[1024];
+	const char		*old;
+	bool			 has_down;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(jgd, sizeof(jgd), "%s", locate(tc,
+	    "../../../usr.sbin/arcana-agent/arcana-agent", "arcana-agent",
+	    "/usr/local/sbin/arcana-agent"));
+	snprintf(uri, sizeof(uri), "unix:%s/jgd.sock", cwd);
+	host_add("one", uri, 0, id1, sizeof(id1));
+	snprintf(uri, sizeof(uri), "unix:%s/two.sock", cwd);
+	(void)agent_spawn(jgd, uri, NULL, "installed-two");
+	wait_for("two.sock");
+	host_add("two", uri, 1, id2, sizeof(id2));
+	ido[0] = '\0';
+	if ((old = old_agent(tc)) != NULL) {
+		snprintf(uri, sizeof(uri), "unix:%s/old.sock", cwd);
+		ATF_REQUIRE(rename("arcana-agent2.pid", "arcana-agent3.pid") ==
+		    0);
+		(void)agent_spawn(old, uri, NULL, "installed-old");
+		wait_for("old.sock");
+		host_add("old", uri, 2, ido, sizeof(ido));
+	}
+
+	/* Both nodes, each over its physical node; the older's none. */
+	http("GET", SAPNET, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE((top = body_of(&r)) != NULL);
+	n1 = sn_node(top, "arcana-sap", id1);
+	n2 = sn_node(top, "arcana-sap", id2);
+	ATF_REQUIRE_MSG(n1 != NULL && n2 != NULL, "%s", r.body);
+	ATF_CHECK(sn_node(top, "arcana-physical", id1) != NULL);
+	ATF_CHECK(sn_node(top, "arcana-physical", id2) != NULL);
+	ATF_CHECK_STREQ("arcana-physical", ucl_object_tostring(
+	    ucl_object_lookup_path(keyed(ucl_object_lookup_path(top,
+	    "ietf-network:networks.network"), "network-id", "arcana-sap"),
+	    "supporting-network.0.network-ref")));
+	ATF_CHECK_STREQ(id1, ucl_object_tostring(ucl_object_lookup_path(n1,
+	    "supporting-node.0.node-ref")));
+	if (ido[0] != '\0')
+		ATF_CHECK_MSG(sn_node(top, "arcana-sap", ido) == NULL &&
+		    sn_node(top, "arcana-physical", ido) == NULL, "%s",
+		    r.body);
+	/* An up UNI free on both; no access names any yet. */
+	ATF_REQUIRE_MSG(sn_find(n1, "ietf-vpn-common:op-up", 1, up,
+	    sizeof(up)) != NULL, "no free SAP up: %s", r.body);
+	ATF_CHECK(sn_sap(n2, up) != NULL);
+	ATF_CHECK_STREQ("ietf-vpn-common:admin-down", ucl_object_tostring(
+	    ucl_object_lookup_path(sn_sap(n1, up),
+	    "service-status.admin-status.status")));
+	has_down = sn_find(n1, "ietf-vpn-common:op-down", -1, down,
+	    sizeof(down)) != NULL;
+	ucl_object_unref(top);
+	resp_free(&r);
+
+	/* A service at it on host one, and at a SAP that is down. */
+	snprintf(body, sizeof(body), "{\"ietf-l3vpn-ntw:vpn-services\":"
+	    "{\"vpn-service\":[{\"vpn-id\":\"s1\",\"vpn-nodes\":{\"vpn-node\":"
+	    "[{\"vpn-node-id\":\"%s\",\"ne-id\":\"%s\",\"vpn-network-accesses\":"
+	    "{\"vpn-network-access\":[{\"id\":\"a1\",\"interface-id\":\"%s\"}"
+	    "%s%s%s]}}]}}]}}", id1, id1, up, has_down ? ",{\"id\":\"a2\","
+	    "\"interface-id\":\"" : "", has_down ? down : "", has_down ? "\"}" :
+	    "");
+	http("POST", L3NM, body, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("GET", SAPNET, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE((top = body_of(&r)) != NULL);
+	s = sn_sap(sn_node(top, "arcana-sap", id1), up);
+	ATF_REQUIRE_MSG(s != NULL, "%s", r.body);
+	ATF_CHECK_STREQ("s1", ucl_object_tostring(ucl_object_lookup_path(s,
+	    "arcana-l3nm:attachment.0.vpn-id")));
+	ATF_CHECK_STREQ("a1", ucl_object_tostring(ucl_object_lookup_path(s,
+	    "arcana-l3nm:attachment.0.access-id")));
+	ATF_CHECK(!ucl_object_toboolean(ucl_object_lookup_path(s,
+	    "arcana-l3nm:attachment.0.made")));
+	ATF_CHECK_STREQ("ietf-vpn-common:admin-up", ucl_object_tostring(
+	    ucl_object_lookup_path(s, "service-status.admin-status.status")));
+	ATF_CHECK_STREQ("ietf-vpn-common:op-down", ucl_object_tostring(
+	    ucl_object_lookup_path(s, "service-status.oper-status.status")));
+	ATF_CHECK(!ucl_object_toboolean(ucl_object_lookup(s,
+	    "arcana-l3nm:free")));
+	ATF_CHECK(ucl_object_lookup(s, "arcana-l3nm:anomaly") == NULL);
+	/* The same interface of the other host: free still. */
+	s = sn_sap(sn_node(top, "arcana-sap", id2), up);
+	ATF_CHECK(s != NULL && ucl_object_toboolean(ucl_object_lookup(s,
+	    "arcana-l3nm:free")) && ucl_object_lookup(s,
+	    "arcana-l3nm:attachment") == NULL);
+	if (has_down) {
+		s = sn_sap(sn_node(top, "arcana-sap", id1), down);
+		ATF_CHECK_STREQ("arcana-l3nm:sap-down-service-up",
+		    ucl_object_tostring(ucl_object_lookup_path(s,
+		    "arcana-l3nm:anomaly.0")));
+		ATF_CHECK(!ucl_object_toboolean(ucl_object_lookup(s,
+		    "arcana-l3nm:free")));
+	}
+	ucl_object_unref(top);
+	resp_free(&r);
+
+	/* Administratively down: no anomaly, nothing made. */
+	http("PATCH", L3NM "/vpn-services/vpn-service=s1", "{\"ietf-l3vpn-ntw:"
+	    "vpn-service\":[{\"vpn-id\":\"s1\",\"status\":{\"admin-status\":"
+	    "{\"status\":\"ietf-vpn-common:admin-down\"}}}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", SAPNET "/network=arcana-sap", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE((top = body_of(&r)) != NULL);
+	s = sn_sap(keyed(ucl_object_lookup(ucl_array_find_index(
+	    ucl_object_lookup(top, "ietf-network:network"), 0), "node"),
+	    "node-id", id1), has_down ? down : up);
+	ATF_CHECK_MSG(s != NULL && ucl_object_lookup(s,
+	    "arcana-l3nm:anomaly") == NULL, "%s", r.body);
+	ATF_CHECK_STREQ("ietf-vpn-common:admin-down", ucl_object_tostring(
+	    ucl_object_lookup_path(s, "service-status.admin-status.status")));
+	ucl_object_unref(top);
+	resp_free(&r);
+	http("GET", SAPNET "/network=nowhere", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("POST", SAPNET, "{}", &r);
+	EXPECT(&r, 405);
+	resp_free(&r);
+}
+
 CONSOLE_TC(enrol, "The console's own CA, a host's certificate renewed, the CA changed for another and for an intermediate across the hosts, and a host joining with "
     "arcana-enrol(8)")
 ATF_TC_BODY(enrol, tc)
@@ -15888,6 +16110,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, mtls);
 	ATF_TP_ADD_TC(tp, agent_update_bridge);
 	ATF_TP_ADD_TC(tp, restconf_revisions);
+	ATF_TP_ADD_TC(tp, sapnet);
 	ATF_TP_ADD_TC(tp, enrol);
 	ATF_TP_ADD_TC(tp, tls_ec);
 	return (atf_no_error());

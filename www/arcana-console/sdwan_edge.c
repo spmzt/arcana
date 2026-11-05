@@ -268,6 +268,20 @@ state_load(void)
 	return (st);
 }
 
+/* What the last apply made, each edge's objects by key: a copy. */
+ucl_object_t *
+sdwan_applied(void)
+{
+	ucl_object_t	*st, *a;
+
+	pthread_mutex_lock(&st_lock);
+	st = state_load();
+	pthread_mutex_unlock(&st_lock);
+	a = ucl_object_copy(ucl_object_lookup(st, "applied"));
+	ucl_object_unref(st);
+	return (a);
+}
+
 static void
 state_save(const ucl_object_t *st)
 {

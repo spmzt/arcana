@@ -1668,6 +1668,7 @@ stop(void)
 	for (int i = 0; i < njailed && i < (int)nitems(jailed); i++)
 		terminate(jailed[i]);
 	terminate("arcana-agent2.pid");
+	terminate("arcana-agent3.pid");
 	terminate("console.pid");
 	terminate("arcana-agent.pid");
 }

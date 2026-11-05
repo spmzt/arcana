@@ -16,6 +16,23 @@ module arcana-l3nm {
   import arcana-steer {
     prefix arcst;
   }
+  import ietf-vpn-common {
+    prefix vpn-common;
+    reference
+      "RFC 9181: A Common YANG Data Model for Layer 2 and Layer 3
+       VPNs";
+  }
+  import ietf-network {
+    prefix nw;
+    reference
+      "RFC 8345: A YANG Data Model for Network Topologies";
+  }
+  import ietf-sap-ntw {
+    prefix sap;
+    reference
+      "RFC 9408: A YANG Network Data Model for Service Attachment
+       Points (SAPs)";
+  }
 
   organization
     "Arcana";
@@ -42,7 +59,10 @@ module arcana-l3nm {
      the UNI are L3NM's routing-protocols, what they have beyond
      L3NM's here.  The steering's criteria are the policies' (MEF 70.2
      Tables 5 and 6): what arcana-steer's candidates are chosen by on
-     each edge.";
+     each edge.  Of the console's SAP network (RFC 9408, each host a
+     node), what each SAP has of the L3NM: the accesses that name it,
+     whether it is free for a new one, and the anomalies RFC 9408
+     section 5 compares its service-status with its sap-status for.";
 
   revision 2026-11-05 {
     description
@@ -2352,5 +2372,74 @@ module arcana-l3nm {
     description
       "OSPF at the UNI beyond L3NM's (§11.6.3).";
     uses ospf-extra;
+  }
+  identity sap-anomaly {
+    description
+      "What RFC 9408 section 5 compares a SAP's service-status with
+       its sap-status for.";
+  }
+
+  identity sap-down-service-up {
+    base sap-anomaly;
+    description
+      "A service administratively up at a SAP that is down, by its own
+       sap-status or its parent termination point's, which overrides
+       it.";
+  }
+
+  identity service-down-oper-up {
+    base sap-anomaly;
+    description
+      "A service administratively down at a SAP where it is
+       operationally up: the edge has its UNI made and the SAP is
+       up.";
+  }
+
+  augment "/nw:networks/nw:network/nw:node/sap:service/sap:sap" {
+    description
+      "What the console's L3NM has at a SAP: an access names it by its
+       interface-id, the SAP's attachment-interface, at the vpn-node
+       whose ne-id is the SAP's node (RFC 9408 Appendix D).";
+    leaf free {
+      type boolean;
+      config false;
+      description
+        "Free for a new attachment: a UNI, up, no access names it and
+         it has no anomaly.";
+    }
+    list attachment {
+      key "vpn-id access-id";
+      config false;
+      description
+        "An access that names the SAP.";
+      leaf vpn-id {
+        type vpn-common:vpn-id;
+        description
+          "Its vpn-service.";
+      }
+      leaf access-id {
+        type vpn-common:vpn-id;
+        description
+          "The vpn-network-access.";
+      }
+      leaf vpn-node-id {
+        type vpn-common:vpn-id;
+        description
+          "Its vpn-node, the edge.";
+      }
+      leaf made {
+        type boolean;
+        description
+          "The edge has its UNI made, by the last apply.";
+      }
+    }
+    leaf-list anomaly {
+      type identityref {
+        base sap-anomaly;
+      }
+      config false;
+      description
+        "Each anomaly the SAP has.";
+    }
   }
 }

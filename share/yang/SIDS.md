@@ -170,7 +170,7 @@ on the wire.
 | 86 400 | 800 | `ietf-l3vpn-ntw@2022-02-14`, RFC 9182 (no IETF range): the services as the console stores them | `share/yang/ietf-l3vpn-ntw@2022-02-14.sid` (622 used) |
 | 87 200 | 100 | `ietf-key-chain@2017-06-15`, RFC 8177 (no IETF range; imported by `ietf-l3vpn-ntw`, its identities used) | `share/yang/ietf-key-chain@2017-06-15.sid` (56 used) |
 | 87 300 | 100 | `ietf-tcp@2024-10-10`, RFC 9648 (no IETF range; its identities derive from `ietf-key-chain`'s) | `share/yang/ietf-tcp@2024-10-10.sid` (44 used) |
-| 87 400 | 600 | `arcana-l3nm`, the SD-WAN's augments of L3NM, the console's | `share/yang/arcana-l3nm@2026-11-05.sid` (347 used) |
+| 87 400 | 600 | `arcana-l3nm`, the SD-WAN's augments of L3NM and of its SAPs, the console's | `share/yang/arcana-l3nm@2026-11-05.sid` (357 used) |
 | 88 000 | 100 | `arcana-firewall`, its third range (listed first in its file, so that new items go there): the threat feeds' tables, the feed-load and feed-drop actions | `share/yang/arcana-firewall@2026-10-15.sid` (38 used) |
 | 88 100 | 100 | `ietf-network@2018-02-26`, RFC 8345 (no IETF range): the agent's SAP network | `share/yang/ietf-network@2018-02-26.sid` (12 used) |
 | 88 200 | 100 | `ietf-network-topology@2018-02-26`, RFC 8345 (no IETF range): its termination points | `share/yang/ietf-network-topology@2018-02-26.sid` (18 used) |

@@ -25,6 +25,8 @@ const struct route routes[] = {
 	    HTTP_METHOD_GET },
 	{ "/restconf/yang-library-version", api_restconf_ylv, NULL,
 	    HTTP_METHOD_GET },
+	{ "^/restconf/data/ietf-network:networks(/.*)?$", api_sapnet,
+	    api_sapnet_free, HTTP_METHOD_GET | HTTP_METHOD_OPTIONS },
 	{ "^/restconf/data(/.*)?$", api_restconf_data, api_call_free,
 	    HTTP_METHOD_GET | HTTP_METHOD_POST | HTTP_METHOD_PUT |
 	    HTTP_METHOD_PATCH | HTTP_METHOD_DELETE | HTTP_METHOD_OPTIONS },
