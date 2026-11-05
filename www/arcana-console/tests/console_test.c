@@ -12417,6 +12417,137 @@ ATF_TC_BODY(sdwan_loop, tc)
 	resp_free(&r);
 }
 
+/*
+ * vn-compute (PLAN-SDN-YANG 4.7.3, RFC 9731 4.3.1): each member asked
+ * for checked against the VN view, the plan's tunnels and what the
+ * edges measure; the infeasible ones down with error-info.
+ */
+#define	VNC	"/restconf/operations/ietf-vn:vn-compute"
+#define	VNC_M(id, s, d, pc) "{\"id\":\"" id "\",\"src\":{\"ap\":\"%s" s	\
+	"\"},\"dest\":{\"ap\":\"%s" d "\"}" pc "}"
+#define	VNC_PC(m, v) ",\"path-constraints\":{\"path-metric-bounds\":{"	\
+	"\"path-metric-bound\":[{\"metric-type\":\"" m "\",\"upper-bound\":" \
+	"\"" v "\"}]}}"
+
+CONSOLE_TC(l3nm_vn_compute, "vn-compute: a member the plan's tunnels "
+    "carry up, an unmeasured bound unknown, the infeasible down with "
+    "error-info")
+ATF_TC_BODY(l3nm_vn_compute, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[2048], sa[16], sb[16], p[64], ver[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+	};
+	static const struct {
+		const char	*status;
+		const char	*reason;	/* NULL: no error-info */
+	} want[] = {
+		{ "up", NULL },
+		{ "unknown", NULL },
+		{ "down", "ietf-vn:vn-computation-error-no-resource" },
+		{ "down", "ietf-vn:vn-computation-ap-unknown" },
+		{ "down", "ietf-vn:vn-computation-error-path-not-found" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(ver, sizeof(ver), "%s", jstr(&r, "version"));
+	resp_free(&r);
+	http("GET", "/restconf/operations", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "\"ietf-vn:vn-compute\"") != NULL);
+	resp_free(&r);
+	http("POST", VNC, "{\"vn-member-list\":[]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* hq to branch: up; bounded by delay, which nothing has measured:
+	 * unknown; by a TE metric no edge measures; from no AP; between
+	 * two accesses of one node. */
+	snprintf(body, sizeof(body), "{\"ietf-vn:input\":{\"vn-member-list\":["
+	    VNC_M("1", ":vtnet2", ":vtnet2", "") ","
+	    VNC_M("2", ":vtnet2", ":vtnet2", VNC_PC("ietf-te-types:"
+	    "path-metric-delay-average", "30000")) ","
+	    VNC_M("3", ":vtnet2", ":vtnet2", VNC_PC("ietf-te-types:"
+	    "path-metric-te", "10")) ","
+	    VNC_M("4", ":nope", ":vtnet2", "") ","
+	    VNC_M("5", ":vtnet2", ":wg5", "") "]}}",
+	    sa, sb, sa, sb, sa, sb, sa, sb, sa, sa);
+	http("POST", VNC, body, &r);
+	EXPECT(&r, 200);
+	for (i = 0; i < nitems(want); i++) {
+		snprintf(p, sizeof(p), "ietf-vn:output.vn-member-list.%zu.id",
+		    i);
+		ATF_CHECK_MSG(jstr(&r, p) != NULL && (size_t)atoi(jstr(&r, p))
+		    == i + 1, "%s", r.body);
+		snprintf(p, sizeof(p), "ietf-vn:output.vn-member-list.%zu."
+		    "compute-status", i);
+		ATF_CHECK_STREQ_MSG(want[i].status, jstr(&r, p), "%zu: %s",
+		    i + 1, r.body);
+		snprintf(p, sizeof(p), "ietf-vn:output.vn-member-list.%zu."
+		    "error-info.error-reason", i);
+		if (want[i].reason == NULL)
+			ATF_CHECK(jstr(&r, p) == NULL);
+		else
+			ATF_CHECK_STREQ_MSG(want[i].reason, jstr(&r, p),
+			    "%zu: %s", i + 1, r.body);
+		snprintf(p, sizeof(p), "ietf-vn:output.vn-member-list.%zu."
+		    "error-info.error-description", i);
+		ATF_CHECK(want[i].reason == NULL || jstr(&r, p) != NULL);
+	}
+	ATF_CHECK_STREQ("acme:hq", jstr(&r, "ietf-vn:output.vn-member-list.0."
+	    "src.vn-ap-id"));
+	resp_free(&r);
+	/* Nothing made: the L3NM as it was. */
+	http("GET", "/api/sdwan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(ver, jstr(&r, "version"));
+	resp_free(&r);
+}
+
 CONSOLE_TC(l3nm_plan, "The planner reads the L3NM (PLAN-SDN-YANG 4.5.4): "
     "a node's active profile over the service's (its AS, router id and "
     "an RD it asks to be allocated), a service naming no table given "
@@ -16409,6 +16540,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, l3nm_mef);
 	ATF_TP_ADD_TC(tp, l3nm_vn);
 	ATF_TP_ADD_TC(tp, l3nm_vn_tca);
+	ATF_TP_ADD_TC(tp, l3nm_vn_compute);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_sync);
 	ATF_TP_ADD_TC(tp, server_readdress);

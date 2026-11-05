@@ -33,6 +33,15 @@
  * if-selected is left out: a member has no multi-source or
  * multi-destination alternatives, its tunnels being its alternatives,
  * each one's selected in the underlay.
+ *
+ *	/restconf/operations/ietf-vn:vn-compute
+ *
+ * RFC 9731's VN compute as the console's check, nothing made: each
+ * member asked for found in the view (its APs, VNAPs and the member
+ * between them), the plan's tunnels between its edges, and its bounds
+ * (its own, else the input's) against what the steering at either end
+ * last measured of them; infeasible, compute-status down with
+ * error-info's reason and why; unmeasured, unknown.
  */
 
 #include <sys/param.h>
@@ -42,10 +51,12 @@
 #include <arpa/inet.h>
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <cblink.h>
 #include <cbl_schema.h>
@@ -564,23 +575,22 @@ vn_of(struct vctx *x, const ucl_object_t *s, ucl_object_t *aps)
  * ietf-vn:access-point and ietf-vn:virtual-network, where there is a
  * service.
  */
-ucl_object_t *
-vn_view(const ucl_object_t *y)
+static ucl_object_t *
+view_make(const ucl_object_t *y, struct vctx *x)
 {
 	const ucl_object_t	*s, *e;
 	ucl_object_iter_t	 it = NULL;
 	ucl_object_t		*top, *aps, *vns, *arr, *o, *vn;
-	struct vctx		 x;
 
-	x.tunnels = ucl_object_lookup_path(y, "vpn-services.vpn-service") !=
+	x->tunnels = ucl_object_lookup_path(y, "vpn-services.vpn-service") !=
 	    NULL ? sdwan_plan_tunnels(y) : NULL;
-	x.steer = ucl_object_typed_new(UCL_OBJECT);
+	x->steer = ucl_object_typed_new(UCL_OBJECT);
 	top = ucl_object_typed_new(UCL_OBJECT);
 	aps = ucl_object_typed_new(UCL_OBJECT);
 	vns = ucl_object_typed_new(UCL_ARRAY);
 	while ((s = ucl_object_iterate(ucl_object_lookup_path(y,
 	    "vpn-services.vpn-service"), &it, true)) != NULL)
-		if ((vn = vn_of(&x, s, aps)) != NULL)
+		if ((vn = vn_of(x, s, aps)) != NULL)
 			ucl_array_append(vns, vn);
 	if (ucl_array_size(vns) > 0) {
 		arr = ucl_object_typed_new(UCL_ARRAY);
@@ -596,9 +606,26 @@ vn_view(const ucl_object_t *y)
 	} else
 		ucl_object_unref(vns);
 	ucl_object_unref(aps);
-	if (x.tunnels != NULL)
-		ucl_object_unref(x.tunnels);
-	ucl_object_unref(x.steer);
+	return (top);
+}
+
+static void
+view_done(struct vctx *x)
+{
+
+	if (x->tunnels != NULL)
+		ucl_object_unref(x->tunnels);
+	ucl_object_unref(x->steer);
+}
+
+ucl_object_t *
+vn_view(const ucl_object_t *y)
+{
+	struct vctx	 x;
+	ucl_object_t	*top;
+
+	top = view_make(y, &x);
+	view_done(&x);
 	return (top);
 }
 
@@ -731,4 +758,355 @@ api_vn(struct http_request *req)
 	free(json);
 	restconf_free(r);
 	return (WEB_OK);
+}
+
+/* ---- vn-compute (RFC 9731 section 4.3.1) ------------------------------ */
+
+#define	BOUND_MAX	8
+
+/* A bound of path-metric-bounds, as the TCA's leaf has it. */
+struct bound {
+	const char	*leaf;		/* delay, ipdv, loss; NULL: unmeasured */
+	const char	*metric;
+	double		 max;
+};
+
+/* Entry key=id of list arr; NULL: none. */
+static const ucl_object_t *
+entry(const ucl_object_t *arr, const char *key, const char *id)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	const char		*s;
+
+	while (id != NULL && (e = ucl_object_iterate(arr, &it, true)) != NULL)
+		if ((s = ucl_str(e, key)) != NULL && strcmp(s, id) == 0)
+			return (e);
+	return (NULL);
+}
+
+/* The bounds of path-constraints pc into b; their count, -1 bad. */
+static int
+bounds_in(const ucl_object_t *pc, struct bound *b)
+{
+	const ucl_object_t	*e, *u;
+	ucl_object_iter_t	 it = NULL;
+	const char		*m;
+	double			 d;
+	char			*end;
+	int			 n = 0;
+
+	while ((e = ucl_object_iterate(ucl_object_lookup_path(pc,
+	    "path-metric-bounds.path-metric-bound"), &it, true)) != NULL) {
+		if ((m = ucl_str(e, "metric-type")) == NULL || n == BOUND_MAX)
+			return (-1);
+		u = ucl_object_lookup(e, "upper-bound");
+		if (u == NULL)
+			d = 0;
+		else if (ucl_object_type(u) == UCL_STRING) {
+			d = strtod(ucl_object_tostring(u), &end);
+			if (*end != '\0' || d < 0)
+				return (-1);
+		} else if (ucl_object_type(u) == UCL_INT &&
+		    ucl_object_toint(u) >= 0)
+			d = (double)ucl_object_toint(u);
+		else
+			return (-1);
+		if (d == 0)
+			continue;	/* unbounded */
+		b[n].metric = m;
+		if (!vn_bound_tca(m, (uint64_t)d, &b[n].leaf, &b[n].max))
+			b[n].leaf = NULL;
+		n++;
+	}
+	return (n);
+}
+
+/*
+ * Tunnel id's last sample of leaf at edge, as its steering's candidate
+ * has it: the worse of what *got has and it (NAN: none yet).
+ */
+static void
+sample_at(struct vctx *x, const char *edge, const char *id, const char *leaf,
+    double *got)
+{
+	const ucl_object_t	*pols, *pol, *c;
+	ucl_object_iter_t	 it = NULL, ct;
+	const char		*s;
+	double			 d;
+
+	if (edge == NULL || (pols = steer_at(x, edge)) == NULL)
+		return;
+	while ((pol = ucl_object_iterate(pols, &it, true)) != NULL) {
+		ct = NULL;
+		while ((c = ucl_object_iterate(ucl_object_lookup(pol,
+		    "candidate"), &ct, true)) != NULL)
+			if ((s = ucl_str(c, "id")) != NULL && strcmp(s, id) ==
+			    0 && num_of(ucl_object_lookup(c, leaf), &d) &&
+			    (isnan(*got) || d > *got))
+				*got = d;
+	}
+}
+
+static void	fail_info(ucl_object_t *, const char *, const char *, ...)
+		    __printflike(3, 4);
+
+/* Member m infeasible: compute-status down, error-info why. */
+static void
+fail_info(ucl_object_t *m, const char *reason, const char *fmt, ...)
+{
+	ucl_object_t	*ei;
+	va_list		 ap;
+	struct tm	 tm;
+	time_t		 now;
+	char		 why[512], ts[32];
+
+	va_start(ap, fmt);
+	vsnprintf(why, sizeof(why), fmt, ap);
+	va_end(ap);
+	now = time(NULL);
+	gmtime_r(&now, &tm);
+	strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", &tm);
+	ei = ucl_object_typed_new(UCL_OBJECT);
+	put_str(ei, "error-description", why);
+	put_str(ei, "error-timestamp", ts);
+	put_str(ei, "error-reason", reason);
+	put_str(m, "compute-status", "down");
+	ucl_object_insert_key(m, ei, "error-info", 0, false);
+}
+
+/* AP ap's VNAP: vnap where named, else its only one; NULL: neither. */
+static const ucl_object_t *
+vnap_of(const ucl_object_t *ap, const char *vnap)
+{
+	const ucl_object_t	*l;
+
+	l = ucl_object_lookup(ap, "vn-ap");
+	if (vnap != NULL)
+		return (entry(l, "id", vnap));
+	return (ucl_array_size(l) == 1 ? ucl_array_find_index(l, 0) : NULL);
+}
+
+static ucl_object_t *
+end_out(const char *ap, const char *vnap)
+{
+	ucl_object_t	*e;
+
+	e = ucl_object_typed_new(UCL_OBJECT);
+	if (ap != NULL)
+		put_str(e, "ap", ap);
+	if (vnap != NULL)
+		put_str(e, "vn-ap-id", vnap);
+	return (e);
+}
+
+/* The view's member of vn between VNAPs a and b, either way. */
+static const ucl_object_t *
+member_between(const ucl_object_t *vn, const char *a, const char *b)
+{
+	const ucl_object_t	*t;
+	ucl_object_iter_t	 it = NULL;
+	const char		*s, *d;
+
+	while ((t = ucl_object_iterate(ucl_object_lookup(vn, "vn-member"),
+	    &it, true)) != NULL) {
+		s = ucl_object_tostring(ucl_object_lookup_path(t,
+		    "src.vn-ap-id"));
+		d = ucl_object_tostring(ucl_object_lookup_path(t,
+		    "dest.vn-ap-id"));
+		if (s != NULL && d != NULL && ((strcmp(s, a) == 0 &&
+		    strcmp(d, b) == 0) || (strcmp(d, a) == 0 &&
+		    strcmp(s, b) == 0)))
+			return (t);
+	}
+	return (NULL);
+}
+
+/*
+ * Input member in computed against view top: its APs and VNAPs known,
+ * a member of the view between them, the plan's tunnels between their
+ * edges, and the bounds (its own, else the input's vb) met by one of
+ * them as the steering at either end last measured it.
+ */
+static ucl_object_t *
+compute_one(struct vctx *x, const ucl_object_t *top, const ucl_object_t *in,
+    const struct bound *vb, int nvb)
+{
+	const ucl_object_t	*aps, *sap, *dap, *svn, *dvn, *vn, *mm, *t;
+	ucl_object_iter_t	 it = NULL;
+	struct bound		 b[BOUND_MAX];
+	ucl_object_t		*m;
+	const char		*sa, *da, *vid, *tid;
+	char			 why[400];
+	double			 got;
+	size_t			 len;
+	int			 nb, unmeasured = 0, ntun = 0;
+	bool			 fits = false;
+
+	m = ucl_object_typed_new(UCL_OBJECT);
+	put_str(m, "id", ucl_str(in, "id"));
+	sa = ucl_object_tostring(ucl_object_lookup_path(in, "src.ap"));
+	da = ucl_object_tostring(ucl_object_lookup_path(in, "dest.ap"));
+	aps = ucl_object_lookup_path(top, "ietf-vn:" VN_AP ".ap");
+	sap = entry(aps, "id", sa);
+	dap = entry(aps, "id", da);
+	svn = vnap_of(sap, ucl_object_tostring(ucl_object_lookup_path(in,
+	    "src.vn-ap-id")));
+	dvn = vnap_of(dap, ucl_object_tostring(ucl_object_lookup_path(in,
+	    "dest.vn-ap-id")));
+	ucl_object_insert_key(m, end_out(sa, ucl_str(svn, "id")), "src", 0,
+	    false);
+	ucl_object_insert_key(m, end_out(da, ucl_str(dvn, "id")), "dest", 0,
+	    false);
+	if (sap == NULL || dap == NULL) {
+		fail_info(m, "ietf-vn:vn-computation-ap-unknown", "no AP %s",
+		    sap == NULL ? (sa != NULL ? sa : "as its source") :
+		    (da != NULL ? da : "as its destination"));
+		return (m);
+	}
+	if (svn == NULL || dvn == NULL) {
+		fail_info(m, "ietf-vn:vn-computation-ap-unknown", "AP %s has "
+		    "no such VNAP, or several: name one", svn == NULL ? sa :
+		    da);
+		return (m);
+	}
+	if ((vid = ucl_str(svn, "vn")) == NULL || ucl_str(dvn, "vn") == NULL ||
+	    strcmp(vid, ucl_str(dvn, "vn")) != 0) {
+		fail_info(m, "ietf-vn:vn-computation-error-path-not-found",
+		    "%s and %s are of two VNs", ucl_str(svn, "id"),
+		    ucl_str(dvn, "id"));
+		return (m);
+	}
+	vn = entry(ucl_object_lookup_path(top, "ietf-vn:" VN_VN ".vn"), "id",
+	    vid);
+	if ((mm = member_between(vn, ucl_str(svn, "id"), ucl_str(dvn,
+	    "id"))) == NULL) {
+		fail_info(m, "ietf-vn:vn-computation-error-path-not-found",
+		    "VN %s has no member between %s and %s: they are on one "
+		    "node, or two spokes", vid, ucl_str(svn, "id"),
+		    ucl_str(dvn, "id"));
+		return (m);
+	}
+	if ((nb = bounds_in(ucl_object_lookup(in, "path-constraints"), b)) <=
+	    0 && nvb > 0) {
+		memcpy(b, vb, sizeof(*b) * (size_t)nvb);
+		nb = nvb;
+	}
+	for (int i = 0; i < nb; i++)
+		if (b[i].leaf == NULL) {
+			fail_info(m, "ietf-vn:vn-computation-error-no-resource",
+			    "no edge measures %s", b[i].metric);
+			return (m);
+		}
+	why[0] = '\0';
+	while (!fits && (t = ucl_object_iterate(ucl_object_lookup_path(mm,
+	    "underlay.arcana-sdwan-underlay:sdwan.tunnel"), &it, true)) !=
+	    NULL) {
+		if ((tid = ucl_str(t, "id")) == NULL)
+			continue;
+		ntun++;
+		fits = true;
+		for (int i = 0; i < nb; i++) {
+			got = NAN;
+			sample_at(x, ucl_object_tostring(ucl_object_lookup_path(
+			    t, "src.edge")), tid, b[i].leaf, &got);
+			sample_at(x, ucl_object_tostring(ucl_object_lookup_path(
+			    t, "dest.edge")), tid, b[i].leaf, &got);
+			if (isnan(got)) {
+				unmeasured++;
+				fits = false;
+				break;
+			}
+			if (got > b[i].max) {
+				len = strlen(why);
+				snprintf(why + len, sizeof(why) - len, "%s%s's "
+				    "%s %g over %g", len > 0 ? "; " : "", tid,
+				    b[i].leaf, got, b[i].max);
+				fits = false;
+			}
+		}
+	}
+	if (ntun == 0)
+		fail_info(m, "ietf-vn:vn-computation-error-path-not-found",
+		    "the plan makes no tunnel between %s and %s", sa, da);
+	else if (fits)
+		put_str(m, "compute-status", "up");
+	else if (unmeasured > 0)
+		put_str(m, "compute-status", "unknown");
+	else
+		fail_info(m, "ietf-vn:vn-computation-error-no-resource",
+		    "no tunnel within the bounds: %s", why);
+	return (m);
+}
+
+/*
+ * /restconf/operations (RFC 8040 section 3.3.2): GET, the console's
+ * operations; POST ietf-vn:vn-compute, each member of its input
+ * computed against the VN view (vn_view()'s), nothing made.
+ */
+int
+api_restconf_operations(struct http_request *req)
+{
+	struct bound		 vb[BOUND_MAX], mb[BOUND_MAX];
+	struct vctx		 x;
+	const ucl_object_t	*in, *e;
+	ucl_object_iter_t	 it = NULL;
+	ucl_object_t		*body, *y, *top, *list, *o;
+	int			 nvb;
+
+	if (!guard(req, false))
+		return (WEB_OK);
+	if (strcmp(req->path, "/restconf/operations") == 0) {
+		if (req->method != HTTP_METHOD_GET)
+			return (restconf_error(req, 405, "the operations are "
+			    "read"));
+		list = ucl_object_typed_new(UCL_ARRAY);
+		ucl_array_append(list, ucl_object_typed_new(UCL_NULL));
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, list, "ietf-vn:vn-compute", 0, false);
+		top = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(top, o, "ietf-restconf:operations", 0,
+		    false);
+		return (restconf_reply(req, top));
+	}
+	if (strcmp(req->path, "/restconf/operations/ietf-vn:vn-compute") != 0)
+		return (restconf_error(req, 404, "no such operation"));
+	if (req->method != HTTP_METHOD_POST)
+		return (restconf_error(req, 405, "an operation is POSTed"));
+	body = read_json(req);
+	in = ucl_object_lookup(body, "ietf-vn:input");
+	if (body == NULL || ucl_object_type(body) != UCL_OBJECT || in == NULL ||
+	    ucl_object_type(in) != UCL_OBJECT) {
+		ucl_object_unref(body);
+		return (restconf_error_tag(req, 400, "malformed-message",
+		    "the body is {\"ietf-vn:input\": {...}}"));
+	}
+	nvb = bounds_in(ucl_object_lookup(in, "path-constraints"), vb);
+	while (nvb >= 0 && (e = ucl_object_iterate(ucl_object_lookup(in,
+	    "vn-member-list"), &it, true)) != NULL)
+		if (ucl_str(e, "id") == NULL || bounds_in(ucl_object_lookup(e,
+		    "path-constraints"), mb) < 0)
+			nvb = -1;
+	if (nvb < 0) {
+		ucl_object_unref(body);
+		return (restconf_error(req, 400, "each vn-member-list entry "
+		    "has an id; each path-metric-bound a metric-type and an "
+		    "upper-bound"));
+	}
+	y = l3nm_kept();
+	top = view_make(y, &x);
+	ucl_object_unref(y);
+	list = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(in, "vn-member-list"),
+	    &it, true)) != NULL)
+		ucl_array_append(list, compute_one(&x, top, e, vb, nvb));
+	ucl_object_unref(top);
+	view_done(&x);
+	ucl_object_unref(body);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(o, list, "vn-member-list", 0, false);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, o, "ietf-vn:output", 0, false);
+	return (restconf_reply(req, top));
 }

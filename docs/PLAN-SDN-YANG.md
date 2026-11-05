@@ -2136,6 +2136,25 @@ whose first part is served.
   steering, the member's oper-status.
 - 4.7.3 C: `vn-compute` as the Check over per-edge feasibility rpcs;
   check: an infeasible member reported with `error-info`.
+  Done (console 0.362.0, vn.c): `POST
+  /restconf/operations/ietf-vn:vn-compute` (and `GET
+  /restconf/operations` listing it), nothing made: each member asked
+  for found in the VN view (its APs, its VNAPs, named or an AP's only
+  one, of one VN, and the view's member between them), the plan's
+  tunnels between its edges, and its `path-metric-bounds` (its own,
+  else the input's) against the last samples the steering at either
+  end has of each tunnel (`arcana-steer`'s candidate delay, ipdv and
+  loss, read through the fleet mount: the per-edge reads; the worse of
+  the two ends).  A tunnel within every bound: `up`; one unmeasured:
+  `unknown`; else `down` with `error-info` (description, timestamp and
+  RFC 9731's reason: `vn-computation-ap-unknown`, `-path-not-found`
+  for two VNs, no member or no tunnel, `-no-resource` for bounds no
+  tunnel meets, naming each excess, or a metric no edge measures).
+  Not checked: `te-bandwidth`, `cos`, optimizations and disjointness,
+  which no edge measures.  Check (console_test l3nm_vn_compute): hq to
+  branch over the planned tunnels up; bounded by an unmeasured delay
+  unknown; by `path-metric-te`, from no AP and between two accesses of
+  one node each down with its reason; the L3NM's version unchanged.
 - 4.8.1 P: the page's fetch layer on RESTCONF JSON (or CBOR
   pass-through); check: the browser test.
 - 4.8.2 P: SSE subscriptions replace the page's polling; check:

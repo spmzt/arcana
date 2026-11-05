@@ -28,6 +28,8 @@
  *	/restconf/data/ietf-vn:access-point, virtual-network[/<api-path>]
  *					their VN view (RFC 9731), read
  *					alone (vn.c)
+ *	/restconf/operations[/ietf-vn:vn-compute]
+ *					the VN compute, nothing made (vn.c)
  *
  * A host's path is made an XPath filter of the agent's GET, the node
  * then taken from the RFC 7951 JSON that comes back.  Of the query

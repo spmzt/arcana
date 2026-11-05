@@ -30,6 +30,8 @@ const struct route routes[] = {
 	{ "^/restconf/data(/.*)?$", api_restconf_data, api_call_free,
 	    HTTP_METHOD_GET | HTTP_METHOD_POST | HTTP_METHOD_PUT |
 	    HTTP_METHOD_PATCH | HTTP_METHOD_DELETE | HTTP_METHOD_OPTIONS },
+	{ "^/restconf/operations(/.*)?$", api_restconf_operations, NULL,
+	    HTTP_METHOD_GET | HTTP_METHOD_POST },
 	{ "^/restconf/ds/.*$", api_restconf_ds, api_call_free,
 	    HTTP_METHOD_GET | HTTP_METHOD_POST | HTTP_METHOD_PUT |
 	    HTTP_METHOD_PATCH | HTTP_METHOD_DELETE | HTTP_METHOD_OPTIONS },
