@@ -17108,6 +17108,877 @@ ATF_TC_BODY(cyang_workflows, tc)
 	resp_free(&r);
 }
 
+/* A host the stand-in agent answers for, named name: its id into sid. */
+static void
+cc_host(const char *name, const char *sock, char *sid, size_t len)
+{
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64], k[64];
+	int		 i;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"%s\",\"uri\":\"unix:%s/%s\"}",
+	    name, cwd, sock);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	sid[0] = '\0';
+	for (i = 0; i < 8; i++) {
+		snprintf(k, sizeof(k), "servers.%d.name", i);
+		if (jstr(&r, k) != NULL && strcmp(jstr(&r, k), name) == 0) {
+			snprintf(k, sizeof(k), "servers.%d.id", i);
+			snprintf(sid, len, "%s", jstr(&r, k));
+		}
+	}
+	ATF_REQUIRE(sid[0] != '\0');
+	resp_free(&r);
+}
+
+/* A user of the console signed in with key k, made with the roles of
+ * json and invited by the owner, the owner's session given up. */
+static void
+cc_user(struct authn *k, const char *name, const char *roles, int which)
+{
+	struct resp	 r;
+	char		 path[96], invite[80];
+
+	snprintf(path, sizeof(path), "/api/users/%s", name);
+	http("PUT", path, roles, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/users/%s/invite", name);
+	http("POST", path, NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	authn_new(k, which);
+	do_register(k, invite, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(name, jstr(&r, "user"));
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_templates, "arcana-console's templates: kept and changed "
+    "through /api's check, read as /api's, forgotten; operators', not "
+    "members'")
+ATF_TC_BODY(cyang_templates, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		e1[64], hdr[96];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("PUT", CC "templates/template=edge", "{\"arcana-console:template\":"
+	    "[{\"name\":\"edge\",\"description\":\"an edge\",\"file\":[{"
+	    "\"path\":\"/etc/rc.conf\",\"mode\":\"0644\",\"owner\":\"root\","
+	    "\"group\":\"wheel\",\"text\":\"hostname=\\\"{{hostname}}\\\"\\n"
+	    "ifconfig_lo1=\\\"inet {{address}}/32\\\"\\n\"}],\"package\":[{"
+	    "\"name\":\"bird3\",\"origin\":\"net/bird3\"}],\"facts\":"
+	    "\"{\\\"arch\\\":\\\"amd64\\\"}\",\"variable\":[{\"name\":"
+	    "\"address\",\"description\":\"its loopback\",\"default\":"
+	    "\"192.0.2.10\"}]}]}", &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	/* What /api says of it. */
+	http("GET", "/api/templates/edge", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("an edge", jstr(&r, "description"));
+	ATF_CHECK_STREQ("/etc/rc.conf", jstr(&r, "files.0.path"));
+	ATF_CHECK_STREQ("net/bird3", jstr(&r, "packages.0.origin"));
+	ATF_CHECK_STREQ("amd64", jstr(&r, "facts.arch"));
+	ATF_CHECK_STREQ("192.0.2.10", jstr(&r, "variables.address.default"));
+	ATF_CHECK_STREQ("hostname", jstr(&r, "placeholders.0"));
+	resp_free(&r);
+	http("GET", CC "templates/template=edge", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("hostname", jstr(&r,
+	    "arcana-console:template.0.placeholder.0"));
+	ATF_CHECK_STREQ("address", jstr(&r,
+	    "arcana-console:template.0.placeholder.1"));
+	ATF_CHECK(jstr(&r, "arcana-console:template.0.updated") != NULL);
+	ATF_CHECK_STREQ("{\"arch\":\"amd64\"}", jstr(&r,
+	    "arcana-console:template.0.facts"));
+	ATF_REQUIRE(resp_header(&r, "etag", e1, sizeof(e1)) != NULL);
+	resp_free(&r);
+	/* Changed by /api: read here, the old entity-tag refused. */
+	http("PUT", "/api/templates/core", "{\"files\":[{\"path\":\"/etc/motd\","
+	    "\"mode\":\"0644\",\"owner\":\"root\",\"group\":\"wheel\","
+	    "\"text\":\"core\\n\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* A key with "/" is not named in a path (libwebsockets decodes
+	 * it): the entry whole. */
+	http("GET", CC "templates/template=core", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("/etc/motd", jstr(&r,
+	    "arcana-console:template.0.file.0.path"));
+	ATF_CHECK_STREQ("core\n", jstr(&r,
+	    "arcana-console:template.0.file.0.text"));
+	resp_free(&r);
+	snprintf(hdr, sizeof(hdr), "If-Match: %s\r\n", e1);
+	http_with("PATCH", CC "templates", hdr, "{\"arcana-console:templates\":"
+	    "{\"template\":[{\"name\":\"edge\",\"description\":\"x\"}]}}", &r);
+	EXPECT(&r, 412);
+	resp_free(&r);
+	/* A PATCH: /api's then. */
+	http("PATCH", CC "templates/template=edge", "{\"arcana-console:"
+	    "template\":[{\"name\":\"edge\",\"description\":\"the edge\"}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/templates", NULL, &r);
+	ATF_CHECK_STREQ("the edge", jstr(&r, "templates.1.description"));
+	ATF_CHECK_STREQ("1", jstr(&r, "templates.1.packages"));
+	resp_free(&r);
+	/* /api's check: a path that climbs, facts no object; nothing
+	 * kept. */
+	http("PUT", CC "templates/template=bad", "{\"arcana-console:template\":"
+	    "[{\"name\":\"bad\",\"file\":[{\"path\":\"/etc/../root/x\","
+	    "\"mode\":\"0644\",\"owner\":\"root\",\"group\":\"wheel\","
+	    "\"text\":\"\"}]}]}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "without ..") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("PATCH", CC "templates/template=edge", "{\"arcana-console:"
+	    "template\":[{\"name\":\"edge\",\"facts\":\"[1]\"}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("GET", "/api/templates/bad", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	/* Forgotten. */
+	http("DELETE", CC "templates/template=core", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/templates/core", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	/* A member: neither reads nor changes them. */
+	cc_member(&b);
+	http("GET", CC "templates", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("DELETE", CC "templates/template=edge", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", "/restconf/data", NULL, &r);
+	ATF_CHECK(jstr(&r, "arcana-console:templates") == NULL);
+	ATF_CHECK(jstr(&r, "arcana-console:prefix-lists") != NULL);
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_labels, "arcana-console's labels: set, changed and taken "
+    "away as /api's, a bad one refused, a host's set by whom may change it")
+ATF_TC_BODY(cyang_labels, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		sid[16], path[160], body[300];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	cc_host("a", "jgd.sock", sid, sizeof(sid));
+	snprintf(path, sizeof(path), CC "labels/label=%s,vtnet0", sid);
+	snprintf(body, sizeof(body), "{\"arcana-console:label\":[{\"host\":"
+	    "\"%s\",\"interface\":\"vtnet0\",\"text\":\"uplink A\"}]}", sid);
+	http("PUT", path, body, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("GET", "/api/labels", NULL, &r);
+	snprintf(body, sizeof(body), "labels.%s/vtnet0", sid);
+	ATF_CHECK_STREQ("uplink A", jstr(&r, body));
+	resp_free(&r);
+	/* /api's set read here. */
+	snprintf(body, sizeof(body), "/api/labels/%s/vtnet1", sid);
+	http("PUT", body, "{\"label\":\"uplink B\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", CC "labels", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(sid, jstr(&r, "arcana-console:labels.label.1.host"));
+	ATF_CHECK_STREQ("vtnet1", jstr(&r,
+	    "arcana-console:labels.label.1.interface"));
+	ATF_CHECK_STREQ("uplink B", jstr(&r,
+	    "arcana-console:labels.label.1.text"));
+	resp_free(&r);
+	/* A control character refused, as /api refuses it. */
+	snprintf(body, sizeof(body), "%s/text", path);
+	http("PUT", body, "{\"arcana-console:text\":\"a\\tb\"}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "no control") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("PUT", body, "{\"arcana-console:text\":\"uplink C\"}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/labels", NULL, &r);
+	snprintf(body, sizeof(body), "labels.%s/vtnet0", sid);
+	ATF_CHECK_STREQ("uplink C", jstr(&r, body));
+	resp_free(&r);
+	/* A viewer of the host reads them, changes none. */
+	cc_member(&b);
+	http("GET", CC "labels", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("uplink C", jstr(&r,
+	    "arcana-console:labels.label.0.text"));
+	resp_free(&r);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	cookie[0] = '\0';
+	do_login(&a, 1, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/labels", NULL, &r);
+	snprintf(body, sizeof(body), "labels.%s/vtnet0", sid);
+	ATF_CHECK(jstr(&r, body) == NULL);
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_pfxlists, "arcana-console's prefix lists: kept and taken "
+    "away as /api's, a prefix with host bits refused; members read them")
+ATF_TC_BODY(cyang_pfxlists, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("POST", CC "prefix-lists", "{\"arcana-console:prefix-list\":[{"
+	    "\"name\":\"branches\",\"description\":\"the branches\",\"prefix\":"
+	    "[\"10.1.8.0/22\",\"2001:db8:9::/48\"]}]}", &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("GET", "/api/prefix-lists", NULL, &r);
+	ATF_CHECK_STREQ("the branches", jstr(&r, "lists.branches.description"));
+	ATF_CHECK_STREQ("2001:db8:9::/48", jstr(&r,
+	    "lists.branches.prefixes.1"));
+	resp_free(&r);
+	http("PUT", "/api/prefix-lists/hq", "{\"prefixes\":[]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", CC "prefix-lists/prefix-list=hq", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("hq", jstr(&r, "arcana-console:prefix-list.0.name"));
+	resp_free(&r);
+	http("PATCH", CC "prefix-lists/prefix-list=branches", "{\"arcana-"
+	    "console:prefix-list\":[{\"name\":\"branches\",\"prefix\":["
+	    "\"10.1.8.1/22\"]}]}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "no host bits") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("PUT", CC "prefix-lists/prefix-list=branches", "{\"arcana-"
+	    "console:prefix-list\":[{\"name\":\"branches\",\"description\":"
+	    "\"the branches\",\"prefix\":[\"192.0.2.0/24\"]}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/prefix-lists", NULL, &r);
+	ATF_CHECK_STREQ("192.0.2.0/24", jstr(&r, "lists.branches.prefixes.0"));
+	ATF_CHECK(jstr(&r, "lists.branches.prefixes.1") == NULL);
+	ATF_CHECK_STREQ("the branches", jstr(&r, "lists.branches.description"));
+	resp_free(&r);
+	/* A member reads them and changes none. */
+	cc_member(&b);
+	http("GET", CC "prefix-lists", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("branches", jstr(&r,
+	    "arcana-console:prefix-lists.prefix-list.0.name"));
+	resp_free(&r);
+	http("DELETE", CC "prefix-lists/prefix-list=hq", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	cookie[0] = '\0';
+	do_login(&a, 1, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("DELETE", CC "prefix-lists/prefix-list=hq", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/prefix-lists", NULL, &r);
+	ATF_CHECK(jstr(&r, "lists.hq") == NULL);
+	ATF_CHECK(jstr(&r, "lists.branches") != NULL);
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_transfers, "arcana-console's transfers: read as /api's, "
+    "begun and stopped by their actions, both hosts the user's to change")
+ATF_TC_BODY(cyang_transfers, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		sa[16], body[400];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	cc_host("a", "jgd.sock", sa, sizeof(sa));
+	/* One the console's restart did not cut: running. */
+	put("data/transfers.json", "{\"transfers\":[{\"id\":77,\"from\":"
+	    "\"0000aaaa\",\"snapshot\":\"tank/a@1\",\"recursive\":false,"
+	    "\"to\":\"0000bbbb\",\"dataset\":\"tank/b\",\"state\":\"running\","
+	    "\"bytes\":4096,\"started\":1700000000},{\"id\":78,\"from\":"
+	    "\"0000aaaa\",\"snapshot\":\"tank/a@2\",\"to\":\"0000bbbb\","
+	    "\"dataset\":\"tank/b\",\"state\":\"failed\",\"error\":\"gone\","
+	    "\"bytes\":0,\"started\":1700000000,\"ended\":1700000060}]}");
+	http("GET", CC "transfers", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("77", jstr(&r,
+	    "arcana-console:transfers.transfer.0.id"));
+	ATF_CHECK_STREQ("running", jstr(&r,
+	    "arcana-console:transfers.transfer.0.state"));
+	ATF_CHECK_STREQ("4096", jstr(&r,
+	    "arcana-console:transfers.transfer.0.bytes"));
+	ATF_CHECK_STREQ("2023-11-14T22:13:20Z", jstr(&r,
+	    "arcana-console:transfers.transfer.0.started"));
+	ATF_CHECK_STREQ("gone", jstr(&r,
+	    "arcana-console:transfers.transfer.1.error"));
+	resp_free(&r);
+	/* Not changed but by its actions. */
+	http("PUT", CC "transfers", "{\"arcana-console:transfers\":{}}", &r);
+	EXPECT(&r, 405);
+	resp_free(&r);
+	/* Begun: a host that is none, one host twice, a bad snapshot. */
+	snprintf(body, sizeof(body), "{\"arcana-console:input\":{\"from\":"
+	    "\"%s\",\"snapshot\":\"tank/a@1\",\"to\":\"0000cccc\",\"dataset\":"
+	    "\"tank/b\"}}", sa);
+	http("POST", CC "transfers/start", body, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"arcana-console:input\":{\"from\":"
+	    "\"%s\",\"snapshot\":\"tank/a@1\",\"to\":\"%s\",\"dataset\":"
+	    "\"tank/b\"}}", sa, sa);
+	http("POST", CC "transfers/start", body, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "two hosts") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	/* Stopped: the mark /api reads; one that runs not, refused. */
+	http("POST", CC "transfers/transfer=78/stop", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("POST", CC "transfers/transfer=77/stop", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/transfers", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "transfers.0.cancel"));
+	resp_free(&r);
+	http("GET", CC "transfers/transfer=77/cancel", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "arcana-console:cancel"));
+	resp_free(&r);
+	/* A member: none of it. */
+	cc_member(&b);
+	http("GET", CC "transfers", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"arcana-console:input\":{\"from\":"
+	    "\"%s\",\"snapshot\":\"tank/a@1\",\"to\":\"%s\",\"dataset\":"
+	    "\"tank/b\"}}", sa, sa);
+	http("POST", CC "transfers/start", body, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_push, "arcana-console's push: each user's own "
+    "subscriptions, their keys never read and kept when left out, a "
+    "message sent to the user's own devices alone")
+ATF_TC_BODY(cyang_push, tc)
+{
+	/* A P-256 point and 16 bytes, as a browser gives them. */
+	static const char key[] = "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcx"
+	    "aOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
+	static const char auth[] = "BTBZMqHH6r4Tts7J_aSIgg";
+	struct authn	a, b;
+	struct resp	r;
+	char		body[1024], token[80], *doc;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("GET", CC "push", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_EQ(87, strlen(jstr(&r, "arcana-console:push.public-key")));
+	resp_free(&r);
+	/* Made: two devices, one without its keys refused. */
+	snprintf(body, sizeof(body), "{\"arcana-console:subscription\":[{"
+	    "\"endpoint\":\"https://localhost/a\",\"name\":\"Phone\","
+	    "\"p256dh\":\"%s\",\"auth\":\"%s\"}]}", key, auth);
+	http("POST", CC "push", body, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"arcana-console:subscription\":[{"
+	    "\"endpoint\":\"https://localhost/b\",\"name\":\"Laptop\","
+	    "\"p256dh\":\"%s\",\"auth\":\"%s\"}]}", key, auth);
+	http("POST", CC "push", body, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("POST", CC "push", "{\"arcana-console:subscription\":[{"
+	    "\"endpoint\":\"https://localhost/c\"}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"arcana-console:subscription\":[{"
+	    "\"endpoint\":\"https://localhost/d\",\"p256dh\":\"AAAA\","
+	    "\"auth\":\"%s\"}]}", auth);
+	http("POST", CC "push", body, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "P-256") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	/* Read: /api's, the keys nowhere. */
+	http("GET", "/api/push", NULL, &r);
+	ATF_CHECK_STREQ("Phone", jstr(&r, "devices.0.name"));
+	ATF_CHECK_STREQ("Laptop", jstr(&r, "devices.1.name"));
+	ATF_CHECK(jstr(&r, "devices.2.name") == NULL);
+	resp_free(&r);
+	http("GET", CC "push", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("https://localhost/a", jstr(&r,
+	    "arcana-console:push.subscription.0.endpoint"));
+	ATF_CHECK_STREQ("localhost", jstr(&r,
+	    "arcana-console:push.subscription.0.service"));
+	ATF_CHECK(jstr(&r, "arcana-console:push.subscription.0.added") !=
+	    NULL);
+	ATF_CHECK(strstr(r.body, key) == NULL && strstr(r.body, auth) == NULL);
+	resp_free(&r);
+	http("GET", "/restconf/data", NULL, &r);
+	ATF_CHECK(strstr(r.body, key) == NULL && strstr(r.body, auth) == NULL);
+	resp_free(&r);
+	/* A PUT of what was read: the keys kept, a name changed. */
+	http("GET", CC "push?content=config", NULL, &r);
+	EXPECT(&r, 200);
+	doc = strdup(r.body);
+	resp_free(&r);
+	http("PUT", CC "push", doc, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	free(doc);
+	http("PATCH", CC "push", "{\"arcana-console:push\":{\"subscription\":"
+	    "[{\"endpoint\":\"https://localhost/b\",\"name\":\"Desk\"}]}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'BTBZMqHH6r4Tts7J_aSIgg' data/push.json") ==
+	    0);
+	/* Sent to b, the other: nothing listens there, so it fails, and
+	 * says so; its keys there to be used. */
+	http("POST", CC "push/send", "{\"arcana-console:input\":{\"title\":"
+	    "\"t\",\"body\":\"b\",\"except\":\"https://localhost/a\"}}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("0", jstr(&r, "arcana-console:output.sent"));
+	ATF_CHECK_STREQ("1", jstr(&r, "arcana-console:output.failed"));
+	ATF_CHECK_STREQ("localhost", jstr(&r,
+	    "arcana-console:output.result.0.service"));
+	resp_free(&r);
+	/* Another user: sees none of these, makes and removes their own,
+	 * neither reads nor removes the owner's, nor sends to them. */
+	cc_member(&b);
+	http("GET", CC "push", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "localhost/a") == NULL);
+	ATF_CHECK(jstr(&r, "arcana-console:push.subscription.0") == NULL);
+	resp_free(&r);
+	http("GET", "/api/push", NULL, &r);
+	ATF_CHECK(jstr(&r, "devices.0.name") == NULL);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"arcana-console:subscription\":[{"
+	    "\"endpoint\":\"https://localhost/e\",\"name\":\"Bob's\","
+	    "\"p256dh\":\"%s\",\"auth\":\"%s\"}]}", key, auth);
+	http("POST", CC "push", body, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("PATCH", CC "push", "{\"arcana-console:push\":{\"subscription\":"
+	    "[{\"endpoint\":\"https://localhost/a\",\"name\":\"mine\"}]}}",
+	    &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "p256dh and auth") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", "/api/push/unsubscribe", "{\"endpoint\":"
+	    "\"https://localhost/a\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("1", jstr(&r, "devices"));
+	resp_free(&r);
+	http("POST", CC "push/send", "{\"arcana-console:input\":{}}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("1", jstr(&r, "arcana-console:output.failed"));
+	resp_free(&r);
+	http("PUT", CC "push", "{\"arcana-console:push\":{}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/push", NULL, &r);
+	ATF_CHECK(jstr(&r, "devices.0") == NULL);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'localhost/a' data/push.json && "
+	    "grep -q 'localhost/b' data/push.json && "
+	    "! grep -q 'localhost/e' data/push.json") == 0);
+	/* A token reads none of it. */
+	cookie[0] = '\0';
+	do_login(&a, 1, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", CC "tokens/create", "{\"arcana-console:input\":{"
+	    "\"name\":\"w\",\"kind\":\"write\"}}", &r);
+	EXPECT(&r, 200);
+	snprintf(token, sizeof(token), "%s", jstr(&r,
+	    "arcana-console:output.token"));
+	resp_free(&r);
+	http_bearer("GET", CC "push", token, NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http_bearer("GET", "/restconf/data", token, NULL, &r);
+	ATF_CHECK(jstr(&r, "arcana-console:push") == NULL);
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_settings_actions, "arcana-console's settings: the mail "
+    "test as an action, /api's answer and refusal")
+ATF_TC_BODY(cyang_settings_actions, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("POST", CC "settings/mail-test", NULL, &r);
+	EXPECT(&r, 502);
+	ATF_CHECK(strstr(r.body, "no address to mail to") != NULL);
+	ATF_CHECK(strstr(r.body, "ietf-restconf:errors") != NULL);
+	resp_free(&r);
+	http("PATCH", CC "settings", "{\"arcana-console:settings\":{"
+	    "\"mail-to\":\"ops@example.org\"}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("POST", CC "settings/mail-test", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ops@example.org", jstr(&r,
+	    "arcana-console:output.to"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -qx 'To: ops@example.org' mail.out") == 0);
+	cc_member(&b);
+	http("POST", CC "settings/mail-test", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+}
+
+/* The feed's dropped entries read through RESTCONF: is entry there with
+ * a reason or detail that has why? */
+static bool
+cc_dropped(const struct resp *r, const char *base, const char *entry,
+    const char *why)
+{
+	char	k[160];
+	int	i;
+
+	for (i = 0; i < 50; i++) {
+		snprintf(k, sizeof(k), "%s.dropped.%d.entry", base, i);
+		if (jstr(r, k) == NULL)
+			return (false);
+		if (strcmp(jstr(r, k), entry) != 0)
+			continue;
+		snprintf(k, sizeof(k), "%s.dropped.%d.reason", base, i);
+		if (strstr(jstr(r, k), why) != NULL)
+			return (true);
+		snprintf(k, sizeof(k), "%s.dropped.%d.detail", base, i);
+		return (jstr(r, k) != NULL && strstr(jstr(r, k), why) != NULL);
+	}
+	return (false);
+}
+
+#define	CF	CC "threat-feeds/feed="
+#define	CFL	"arcana-console:feed.0.last-fetch"
+
+CONSOLE_TC_LONG(cyang_feeds, "arcana-console's threat feeds: kept, "
+    "fetched and previewed as /api's, every protection of /api's held: an "
+    "address of the internet alone, a URL of one's own an owner's, a "
+    "change needing the feed's hosts the user's, hosts and protected "
+    "addresses the reader may not read only counted")
+ATF_TC_BODY(cyang_feeds, tc)
+{
+	struct authn	a, b, c;
+	struct resp	r;
+	char		body[1024], sa[16], sn[16], sg[16], k[128], *doc;
+	int		port, i;
+
+	port = feeds_server(tc);
+	start(tc, 0, NULL);
+	enrol(&a);
+	cc_host("a", "jgd.sock", sa, sizeof(sa));
+	cc_host("gone", "none.sock", sg, sizeof(sg));
+	http("POST", "/api/servers", "{\"name\":\"far\",\"uri\":\"tcp://"
+	    "192.0.2.77:4310\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/servers", "{\"name\":\"near\",\"uri\":\"tcp://"
+	    "100.64.0.5:4310\"}", &r);
+	EXPECT(&r, 200);
+	sn[0] = '\0';
+	for (i = 0; i < 4; i++) {
+		snprintf(k, sizeof(k), "servers.%d.name", i);
+		if (jstr(&r, k) != NULL && strcmp(jstr(&r, k), "near") == 0) {
+			snprintf(k, sizeof(k), "servers.%d.id", i);
+			snprintf(sn, sizeof(sn), "%s", jstr(&r, k));
+		}
+	}
+	ATF_REQUIRE(sn[0] != '\0');
+	resp_free(&r);
+	put("data/signins.json", "{\"alice\":{\"addr\":\"203.0.113.9\","
+	    "\"at\":1}}");
+
+	/* An address of the internet alone: loopback, private space, a
+	 * cloud's metadata refused here as by /api. */
+	{
+		static const char *const priv[] = { "127.0.0.1", "10.0.0.1",
+		    "169.254.169.254", "[::1]" };
+
+		for (i = 0; i < 4; i++) {
+			snprintf(body, sizeof(body), "{\"arcana-console:feed\":[{"
+			    "\"id\":\"x\",\"url\":\"http://%s:%d/drop_v4.json\"}]}",
+			    priv[i], port);
+			http("PUT", CF "x", body, &r);
+			ATF_CHECK_MSG(r.status == 400 && strstr(r.body,
+			    "is a private or reserved address") != NULL, "%s: %s",
+			    priv[i], r.body);
+			resp_free(&r);
+		}
+	}
+	http("GET", "/api/feeds", NULL, &r);
+	ATF_CHECK(jstr(&r, "feeds.0.id") == NULL);
+	resp_free(&r);
+	/* Nor by a URL changed in place. */
+	http("POST", CC "threat-feeds", "{\"arcana-console:feed\":[{\"id\":"
+	    "\"spamhaus-drop-v4\",\"preset\":\"spamhaus-drop-v4\"}]}", &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"arcana-console:url\":\"http://"
+	    "169.254.169.254:%d/x\"}", port);
+	http("PUT", CF "spamhaus-drop-v4/url", body, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "private or reserved")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/feeds/spamhaus-drop-v4", NULL, &r);
+	ATF_CHECK_STREQ("https://www.spamhaus.org/drop/drop_v4.json", jstr(&r,
+	    "url"));
+	ATF_CHECK_STREQ("feed_spamhaus_drop_v4", jstr(&r, "table"));
+	ATF_CHECK_STREQ("12", jstr(&r, "interval"));
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"feeds_allow_private\":"
+	    "\"127.0.0.1/32\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+
+	/* The presets, as /api's. */
+	http("GET", CC "threat-feeds/preset=dshield", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("dshield", jstr(&r, "arcana-console:preset.0.format"));
+	ATF_CHECK(jstr(&r, "arcana-console:preset.0.terms-url") != NULL);
+	resp_free(&r);
+
+	/* A list of one's own, on host a: fetched, kept, read as /api
+	 * reads it. */
+	snprintf(body, sizeof(body), "{\"arcana-console:feed\":[{\"id\":"
+	    "\"local\",\"name\":\"Local\",\"url\":\"http://127.0.0.1:%d/"
+	    "local.txt\",\"format\":\"plain\",\"interval\":1,\"enabled\":true,"
+	    "\"host\":[\"%s\"]}]}", port, sa);
+	http("PUT", CF "local", body, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	feed_wait("local", "fetched_at", NULL, &r);
+	ATF_CHECK_STREQ("feed_local", jstr(&r, "table"));
+	resp_free(&r);
+	http("GET", CF "local", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("2", jstr(&r, "arcana-console:feed.0.count"));
+	ATF_CHECK_STREQ("1", jstr(&r, "arcana-console:feed.0.covered"));
+	ATF_CHECK_STREQ("5", jstr(&r, "arcana-console:feed.0.dropped-count"));
+	ATF_CHECK_STREQ("8.8.8.0/24", jstr(&r, "arcana-console:feed.0.sample.0"));
+	ATF_CHECK_STREQ(sa, jstr(&r, "arcana-console:feed.0.host.0"));
+	ATF_CHECK_MSG(cc_dropped(&r, CFL, "192.0.2.0/24", "host far's") &&
+	    cc_dropped(&r, CFL, "203.0.113.0/24", "alice's last sign-in"),
+	    "%s", r.body);
+	ATF_CHECK(jstr(&r, CFL ".protected-hidden") == NULL);
+	resp_free(&r);
+	snprintf(k, sizeof(k), CF "local/delivered=%s", sa);
+	for (i = 0; i < 300; i++) {
+		http("GET", k, NULL, &r);
+		if (jstr(&r, "arcana-console:delivered.0.at") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	if (i == 300)
+		http("GET", k, NULL, &r);
+	ATF_CHECK_MSG(jstr(&r, "arcana-console:delivered.0.count") != NULL &&
+	    strcmp(jstr(&r, "arcana-console:delivered.0.count"), "2") == 0 &&
+	    jstr(&r, "arcana-console:delivered.0.table") != NULL,
+	    "%d %s", r.status, r.body);
+	resp_free(&r);
+	/* Fetched and previewed by their actions. */
+	ATF_REQUIRE(system(": > ipfw.log") == 0);
+	http("POST", CF "local/preview", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	snprintf(k, sizeof(k), "preview.hosts.%s.count", sa);
+	feed_wait("local", k, "2", &r);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'swap' ipfw.log") != 0);
+	http("GET", CF "local/last-preview", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(sa, jstr(&r, "arcana-console:last-preview.host.0.host"));
+	ATF_CHECK_STREQ("2", jstr(&r, "arcana-console:last-preview.count"));
+	resp_free(&r);
+	http("POST", CF "local/fetch", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("POST", CF "nosuch/fetch", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	/* Changed by a PATCH: /api reads it. */
+	http("PATCH", CF "local", "{\"arcana-console:feed\":[{\"id\":\"local\","
+	    "\"interval\":2}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/feeds/local", NULL, &r);
+	ATF_CHECK_STREQ("2", jstr(&r, "interval"));
+	ATF_CHECK_STREQ("true", jstr(&r, "enabled"));
+	resp_free(&r);
+	/* A list of chosen addresses on no host, and one on host gone. */
+	snprintf(body, sizeof(body), "{\"arcana-console:feed\":[{\"id\":"
+	    "\"oracle\",\"url\":\"http://127.0.0.1:%d/oracle.txt\","
+	    "\"enabled\":true}]}", port);
+	http("PUT", CF "oracle", body, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"arcana-console:feed\":[{\"id\":"
+	    "\"seen\",\"url\":\"http://127.0.0.1:%d/drop_v4.json\",\"format\":"
+	    "\"spamhaus-json\",\"enabled\":true,\"host\":[\"%s\"]}]}", port, sg);
+	http("PUT", CF "seen", body, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	feed_wait("oracle", "fetched_at", NULL, &r);
+	resp_free(&r);
+	snprintf(k, sizeof(k), "delivered.%s.error", sg);
+	feed_wait("seen", k, NULL, &r);
+	resp_free(&r);
+	http("GET", CF "seen", NULL, &r);
+	ATF_CHECK_STREQ(sg, jstr(&r, "arcana-console:feed.0.host.0"));
+	ATF_CHECK_STREQ("gone", jstr(&r,
+	    "arcana-console:feed.0.delivered.0.name"));
+	resp_free(&r);
+
+	/* An operator who views hosts a and near. */
+	snprintf(body, sizeof(body), "{\"console\":\"operator\",\"hosts\":"
+	    "{\"%s\":\"viewer\",\"%s\":\"viewer\"}}", sa, sn);
+	http("PUT", "/api/roles/a-viewer-op", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	cc_user(&c, "carol", "{\"roles\":[\"a-viewer-op\"]}", -7);
+	/* What it may not read of a host only counted: host gone's id,
+	 * name and error nowhere; the protected addresses not its hosts'
+	 * nowhere. */
+	http("GET", CC "threat-feeds", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, sg) == NULL && strstr(r.body,
+	    "\"gone\"") == NULL && strstr(r.body, "none.sock") == NULL &&
+	    strstr(r.body, "192.0.2.77") == NULL && strstr(r.body,
+	    "203.0.113.9") == NULL && strstr(r.body, "alice") == NULL &&
+	    strstr(r.body, "host far") == NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", CF "seen", NULL, &r);
+	ATF_CHECK_STREQ("1", jstr(&r, "arcana-console:feed.0.hosts-hidden"));
+	ATF_CHECK_STREQ("1", jstr(&r, "arcana-console:feed.0.delivered-hidden"));
+	ATF_CHECK(jstr(&r, "arcana-console:feed.0.host.0") == NULL);
+	resp_free(&r);
+	http("GET", CF "oracle", NULL, &r);
+	ATF_CHECK_STREQ("2", jstr(&r,
+	    "arcana-console:feed.0.last-fetch.protected-hidden"));
+	ATF_CHECK_MSG(cc_dropped(&r, CFL, "100.64.0.5/32", "host near's"),
+	    "%s", r.body);
+	resp_free(&r);
+	http("GET", "/restconf/data", NULL, &r);
+	ATF_CHECK(strstr(r.body, sg) == NULL && strstr(r.body, "192.0.2.77") ==
+	    NULL);
+	resp_free(&r);
+	/* What it read put back whole changes nothing: no host it may not
+	 * read is taken off a feed. */
+	http("GET", CC "threat-feeds?content=config", NULL, &r);
+	EXPECT(&r, 200);
+	doc = strdup(r.body);
+	resp_free(&r);
+	http("PUT", CC "threat-feeds", doc, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	free(doc);
+	cookie[0] = '\0';
+	do_login(&a, 1, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/feeds/seen", NULL, &r);
+	ATF_CHECK_STREQ(sg, jstr(&r, "hosts.0"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	do_login(&c, 1, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* A change of a feed on a host it may not change: refused, the
+	 * feed as it was. */
+	http("PATCH", CF "local", "{\"arcana-console:feed\":[{\"id\":\"local\","
+	    "\"enabled\":false}]}", &r);
+	ATF_CHECK_MSG(r.status == 403 && strstr(r.body, "host a is not one") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("DELETE", CF "local", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("POST", CF "local/fetch", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", "/api/feeds/local", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "enabled"));
+	resp_free(&r);
+	/* Nor a host it may not change added. */
+	snprintf(body, sizeof(body), "{\"arcana-console:feed\":[{\"id\":"
+	    "\"oracle\",\"host\":[\"%s\"]}]}", sa);
+	http("PATCH", CF "oracle", body, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "not one you may "
+	    "change") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* A URL of one's own: an owner's to make, change and preview; the
+	 * operator disables it, and uses a preset. */
+	snprintf(body, sizeof(body), "{\"arcana-console:feed\":[{\"id\":"
+	    "\"carols\",\"url\":\"http://127.0.0.1:%d/drop_v4.json\"}]}", port);
+	http("PUT", CF "carols", body, &r);
+	ATF_CHECK_MSG(r.status == 403 && strstr(r.body, "console owner") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"arcana-console:url\":\"http://"
+	    "127.0.0.1:%d/local.txt\"}", port);
+	http("PUT", CF "oracle/url", body, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("POST", CF "oracle/preview", NULL, &r);
+	ATF_CHECK_MSG(r.status == 403 && strstr(r.body, "previewed by a "
+	    "console owner") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PATCH", CF "oracle", "{\"arcana-console:feed\":[{\"id\":"
+	    "\"oracle\",\"enabled\":false}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/feeds/oracle", NULL, &r);
+	ATF_CHECK_STREQ("false", jstr(&r, "enabled"));
+	resp_free(&r);
+	http("POST", CC "threat-feeds", "{\"arcana-console:feed\":[{\"id\":"
+	    "\"dshield\",\"preset\":\"dshield\"}]}", &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	/* A member: none of it. */
+	cookie[0] = '\0';
+	do_login(&a, 2, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	cc_user(&b, "dave", "{\"roles\":[\"viewer\"]}", -8);
+	http("GET", CC "threat-feeds", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("POST", CF "dshield/fetch", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, feeds);
@@ -17164,6 +18035,13 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, cyang_users);
 	ATF_TP_ADD_TC(tp, cyang_enrolment);
 	ATF_TP_ADD_TC(tp, cyang_workflows);
+	ATF_TP_ADD_TC(tp, cyang_templates);
+	ATF_TP_ADD_TC(tp, cyang_labels);
+	ATF_TP_ADD_TC(tp, cyang_pfxlists);
+	ATF_TP_ADD_TC(tp, cyang_transfers);
+	ATF_TP_ADD_TC(tp, cyang_push);
+	ATF_TP_ADD_TC(tp, cyang_settings_actions);
+	ATF_TP_ADD_TC(tp, cyang_feeds);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_sync);
 	ATF_TP_ADD_TC(tp, server_readdress);

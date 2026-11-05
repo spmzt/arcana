@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-console",
     "module-revision": "2026-11-05",
-    "sid-file-version": 0,
+    "sid-file-version": 1,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -18,6 +18,10 @@
       {
         "entry-point": "91800",
         "size": "300"
+      },
+      {
+        "entry-point": "92100",
+        "size": "200"
       }
     ],
     "item": [
@@ -1065,6 +1069,926 @@
         "namespace": "data",
         "identifier": "/arcana-console:workflows/workflow/on/match/number",
         "sid": "92008"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:labels",
+        "sid": "92009"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:labels/label",
+        "sid": "92010"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:labels/label/host",
+        "sid": "92011"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:labels/label/interface",
+        "sid": "92012"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:labels/label/text",
+        "sid": "92013"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:prefix-lists",
+        "sid": "92014"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:prefix-lists/prefix-list",
+        "sid": "92015"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:prefix-lists/prefix-list/description",
+        "sid": "92016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:prefix-lists/prefix-list/name",
+        "sid": "92017"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:prefix-lists/prefix-list/prefix",
+        "sid": "92018"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push",
+        "sid": "92019"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/public-key",
+        "sid": "92020"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send",
+        "sid": "92021"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/input",
+        "sid": "92022"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/input/body",
+        "sid": "92023"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/input/except",
+        "sid": "92024"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/input/title",
+        "sid": "92025"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/output",
+        "sid": "92026"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/output/failed",
+        "sid": "92027"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/output/gone",
+        "sid": "92028"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/output/result",
+        "sid": "92029"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/output/result/index",
+        "sid": "92030"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/output/result/said",
+        "sid": "92031"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/output/result/service",
+        "sid": "92032"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/output/result/status",
+        "sid": "92033"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/send/output/sent",
+        "sid": "92034"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/subscription",
+        "sid": "92035"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/subscription/added",
+        "sid": "92036"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/subscription/auth",
+        "sid": "92037"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/subscription/endpoint",
+        "sid": "92038"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/subscription/name",
+        "sid": "92039"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/subscription/p256dh",
+        "sid": "92040"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:push/subscription/service",
+        "sid": "92041"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-test",
+        "sid": "92042"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-test/input",
+        "sid": "92043"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-test/output",
+        "sid": "92044"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-test/output/to",
+        "sid": "92045"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-test",
+        "sid": "92046"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-test/input",
+        "sid": "92047"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-test/output",
+        "sid": "92048"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-test/output/to",
+        "sid": "92049"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates",
+        "sid": "92050"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template",
+        "sid": "92051"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/description",
+        "sid": "92052"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/facts",
+        "sid": "92053"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/file",
+        "sid": "92054"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/file/group",
+        "sid": "92055"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/file/mode",
+        "sid": "92056"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/file/owner",
+        "sid": "92057"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/file/path",
+        "sid": "92058"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/file/text",
+        "sid": "92059"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/from",
+        "sid": "92060"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/name",
+        "sid": "92061"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/package",
+        "sid": "92062"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/package/name",
+        "sid": "92063"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/package/origin",
+        "sid": "92064"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/package/version",
+        "sid": "92065"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/placeholder",
+        "sid": "92066"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/updated",
+        "sid": "92067"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/variable",
+        "sid": "92068"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/variable/default",
+        "sid": "92069"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/variable/description",
+        "sid": "92070"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:templates/template/variable/name",
+        "sid": "92071"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds",
+        "sid": "92072"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed",
+        "sid": "92073"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/alarm",
+        "sid": "92074"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/alarm/since",
+        "sid": "92075"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/alarm/text",
+        "sid": "92076"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/bogons",
+        "sid": "92077"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/changed-at",
+        "sid": "92078"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/count",
+        "sid": "92079"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/covered",
+        "sid": "92080"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered",
+        "sid": "92081"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered-hidden",
+        "sid": "92082"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered/added",
+        "sid": "92083"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered/at",
+        "sid": "92084"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered/count",
+        "sid": "92085"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered/error",
+        "sid": "92086"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered/host",
+        "sid": "92087"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered/left-out",
+        "sid": "92088"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered/name",
+        "sid": "92089"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered/removed",
+        "sid": "92090"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered/set",
+        "sid": "92091"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered/table",
+        "sid": "92092"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/delivered/tried-at",
+        "sid": "92093"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/dropped-count",
+        "sid": "92094"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/enabled",
+        "sid": "92095"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/error",
+        "sid": "92096"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/event",
+        "sid": "92097"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/event/at",
+        "sid": "92098"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/event/count",
+        "sid": "92099"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/event/index",
+        "sid": "92100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/event/was",
+        "sid": "92101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/failures",
+        "sid": "92102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/fetch",
+        "sid": "92103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/fetch/input",
+        "sid": "92104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/fetch/output",
+        "sid": "92105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/fetched-at",
+        "sid": "92106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/format",
+        "sid": "92107"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/host",
+        "sid": "92108"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/hosts-hidden",
+        "sid": "92109"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/id",
+        "sid": "92110"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/interval",
+        "sid": "92111"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-fetch",
+        "sid": "92112"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-fetch/dropped",
+        "sid": "92113"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-fetch/dropped/detail",
+        "sid": "92114"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-fetch/dropped/entry",
+        "sid": "92115"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-fetch/dropped/index",
+        "sid": "92116"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-fetch/dropped/reason",
+        "sid": "92117"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-fetch/protected-hidden",
+        "sid": "92118"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview",
+        "sid": "92119"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/at",
+        "sid": "92120"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/count",
+        "sid": "92121"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/covered",
+        "sid": "92122"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/dropped",
+        "sid": "92123"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/dropped-count",
+        "sid": "92124"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/dropped/detail",
+        "sid": "92125"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/dropped/entry",
+        "sid": "92126"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/dropped/index",
+        "sid": "92127"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/dropped/reason",
+        "sid": "92128"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/error",
+        "sid": "92129"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host",
+        "sid": "92130"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host/added",
+        "sid": "92131"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host/at",
+        "sid": "92132"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host/count",
+        "sid": "92133"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host/error",
+        "sid": "92134"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host/host",
+        "sid": "92135"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host/left-out",
+        "sid": "92136"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host/name",
+        "sid": "92137"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host/removed",
+        "sid": "92138"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host/set",
+        "sid": "92139"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host/table",
+        "sid": "92140"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/host/tried-at",
+        "sid": "92141"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/hosts-hidden",
+        "sid": "92142"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/last-preview/protected-hidden",
+        "sid": "92143"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/name",
+        "sid": "92144"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/preset",
+        "sid": "92145"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/preview",
+        "sid": "92146"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/preview/input",
+        "sid": "92147"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/preview/output",
+        "sid": "92148"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/sample",
+        "sid": "92149"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/table",
+        "sid": "92150"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/tried-at",
+        "sid": "92151"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/feed/url",
+        "sid": "92152"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/floor",
+        "sid": "92153"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/max-entries",
+        "sid": "92154"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/preset",
+        "sid": "92155"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/preset/bogons",
+        "sid": "92156"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/preset/format",
+        "sid": "92157"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/preset/id",
+        "sid": "92158"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/preset/interval",
+        "sid": "92159"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/preset/name",
+        "sid": "92160"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/preset/terms",
+        "sid": "92161"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/preset/terms-url",
+        "sid": "92162"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/preset/url",
+        "sid": "92163"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:threat-feeds/preset/what",
+        "sid": "92164"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers",
+        "sid": "92165"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/start",
+        "sid": "92166"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/start/input",
+        "sid": "92167"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/start/input/dataset",
+        "sid": "92168"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/start/input/from",
+        "sid": "92169"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/start/input/recursive",
+        "sid": "92170"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/start/input/since",
+        "sid": "92171"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/start/input/snapshot",
+        "sid": "92172"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/start/input/to",
+        "sid": "92173"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/start/output",
+        "sid": "92174"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/start/output/id",
+        "sid": "92175"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer",
+        "sid": "92176"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/bytes",
+        "sid": "92177"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/cancel",
+        "sid": "92178"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/dataset",
+        "sid": "92179"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/ended",
+        "sid": "92180"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/error",
+        "sid": "92181"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/from",
+        "sid": "92182"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/id",
+        "sid": "92183"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/recursive",
+        "sid": "92184"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/since",
+        "sid": "92185"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/snapshot",
+        "sid": "92186"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/started",
+        "sid": "92187"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/state",
+        "sid": "92188"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/stop",
+        "sid": "92189"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/stop/input",
+        "sid": "92190"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/stop/output",
+        "sid": "92191"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:transfers/transfer/to",
+        "sid": "92192"
       }
     ]
   }

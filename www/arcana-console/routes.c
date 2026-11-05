@@ -27,6 +27,13 @@ const struct route routes[] = {
 	    HTTP_METHOD_GET },
 	{ "^/restconf/data/ietf-network:networks(/.*)?$", api_sapnet,
 	    api_sapnet_free, HTTP_METHOD_GET | HTTP_METHOD_OPTIONS },
+	/* arcana-console's actions that wait on a task. */
+	{ CYANG_DATA "settings/mail-test", api_mail_test, NULL,
+	    HTTP_METHOD_POST },
+	{ CYANG_DATA "settings/telegram-test", api_telegram_test,
+	    api_telegram_test_free, HTTP_METHOD_POST },
+	{ CYANG_DATA "push/send", api_push_send, api_push_free,
+	    HTTP_METHOD_POST },
 	{ "^/restconf/data(/.*)?$", api_restconf_data, api_call_free,
 	    HTTP_METHOD_GET | HTTP_METHOD_POST | HTTP_METHOD_PUT |
 	    HTTP_METHOD_PATCH | HTTP_METHOD_DELETE | HTTP_METHOD_OPTIONS },

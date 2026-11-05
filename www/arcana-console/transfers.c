@@ -22,7 +22,9 @@
  * outlives the request.  What each has done is kept in transfers.json,
  * written as it goes, so that every worker lists them and one that
  * the console's restart cut is said to be; a stop asked of another
- * worker is a mark in that file, which the thread looks for.
+ * worker is a mark in that file, which the thread looks for.  The
+ * same as arcana-console's transfers (cyang.c), begun and stopped by
+ * its actions.
  */
 
 #include <sys/param.h>
@@ -157,6 +159,7 @@ xf_record(const struct relay *r, int state, const char *error, time_t ended,
 	(void)store_save(XF_FILE, top);
 	ucl_object_unref(top);
 	pthread_mutex_unlock(&xf_lock);
+	cyang_changed("transfers");
 }
 
 /* The callbacks, on the loop that runs the shared connections. */
@@ -516,106 +519,113 @@ name_ok(const char *s, bool snap)
 	return (true);
 }
 
+/* The stop of transfer n asked: 0, or the HTTP status and why. */
 int
-api_transfers(struct http_request *req)
+transfers_yang_stop(uint32_t n, char *why, size_t len)
 {
-	ucl_object_t		*body, *top, *o;
+	ucl_object_t		*top, *o, *e;
+	ucl_object_iter_t	 it;
+
+	pthread_mutex_lock(&xf_lock);
+	top = store_load(XF_FILE);
+	o = NULL;
+	it = NULL;
+	while (top != NULL && (e = (ucl_object_t *)(uintptr_t)
+	    ucl_object_iterate(ucl_object_lookup(top, "transfers"), &it,
+	    true)) != NULL)
+		if ((uint32_t)ucl_object_toint(ucl_object_lookup(e, "id")) == n)
+			o = e;
+	if (o == NULL || strcmp(ucl_object_tostring_forced(
+	    ucl_object_lookup(o, "state")), "running") != 0) {
+		pthread_mutex_unlock(&xf_lock);
+		if (top != NULL)
+			ucl_object_unref(top);
+		snprintf(why, len, "no such transfer running");
+		return (404);
+	}
+	/* A mark the transfer's thread looks for. */
+	put(o, "cancel", ucl_object_frombool(true));
+	(void)store_save(XF_FILE, top);
+	pthread_mutex_unlock(&xf_lock);
+	ucl_object_unref(top);
+	cyang_changed("transfers");
+	return (0);
+}
+
+/* May the request's user change host sid: 0, or the HTTP status and
+ * why, as host_allowed() says it. */
+static int
+host_ok(struct http_request *req, const char *sid, char *why, size_t len)
+{
+	enum role	r;
+
+	if (host_role_ok(req, sid, true, false))
+		return (0);
+	r = user_host(session_user(req), sid);
+	if (r == ROLE_NONE) {
+		snprintf(why, len, "no such server");
+		return (404);
+	}
+	snprintf(why, len, "a %s of this host may not change it",
+	    role_name(r));
+	return (403);
+}
+
+/*
+ * A transfer begun, as in (from, snapshot, since, recursive, to,
+ * dataset) says, both hosts the request's user's to change; its id into
+ * *idp.  0, or the HTTP status and why.
+ */
+int
+transfers_yang_start(struct http_request *req, const ucl_object_t *in,
+    uint32_t *idp, char *why, size_t len)
+{
 	const struct server	*fs, *ts;
 	struct relay		*r;
-	const char		*from, *to, *snap, *since, *ds, *id;
+	const char		*from, *to, *snap, *since, *ds;
 	pthread_t		 tid;
-	uint32_t		 n;
+	int			 rc;
 
-	if (req->method == HTTP_METHOD_GET) {
-		if (!guard(req, false))
-			return (WEB_OK);
-		pthread_mutex_lock(&xf_lock);
-		top = store_load(XF_FILE);
-		pthread_mutex_unlock(&xf_lock);
-		if (top == NULL)
-			top = ucl_object_typed_new(UCL_OBJECT);
-		if (ucl_object_lookup(top, "transfers") == NULL)
-			put(top, "transfers", ucl_object_typed_new(UCL_ARRAY));
-		return (reply_json(req, 200, top));
-	}
-	if (!guard(req, true))
-		return (WEB_OK);
-	if (req->method == HTTP_METHOD_DELETE) {
-		/* A stop: a mark the transfer's thread looks for. */
-		id = strrchr(req->path, '/') + 1;
-		n = (uint32_t)strtoul(id, NULL, 10);
-		pthread_mutex_lock(&xf_lock);
-		top = store_load(XF_FILE);
-		o = NULL;
-		if (top != NULL) {
-			ucl_object_iter_t	 it = NULL;
-			ucl_object_t		*e;
-
-			while ((e = (ucl_object_t *)(uintptr_t)
-			    ucl_object_iterate(ucl_object_lookup(top,
-			    "transfers"), &it, true)) != NULL)
-				if ((uint32_t)ucl_object_toint(
-				    ucl_object_lookup(e, "id")) == n)
-					o = e;
-		}
-		if (o == NULL || strcmp(ucl_object_tostring_forced(
-		    ucl_object_lookup(o, "state")), "running") != 0) {
-			pthread_mutex_unlock(&xf_lock);
-			if (top != NULL)
-				ucl_object_unref(top);
-			return (reply_error(req, 404, "not-found", "no such "
-			    "transfer running"));
-		}
-		put(o, "cancel", ucl_object_frombool(true));
-		(void)store_save(XF_FILE, top);
-		pthread_mutex_unlock(&xf_lock);
-		ucl_object_unref(top);
-		top = ucl_object_typed_new(UCL_OBJECT);
-		put(top, "ok", ucl_object_frombool(true));
-		return (reply_json(req, 200, top));
-	}
-	if ((body = read_json(req)) == NULL)
-		return (reply_error(req, 400, "invalid", "a JSON object"));
-	from = ucl_str(body, "from");
-	to = ucl_str(body, "to");
-	snap = ucl_str(body, "snapshot");
-	since = ucl_str(body, "since");
-	ds = ucl_str(body, "dataset");
+	from = ucl_str(in, "from");
+	to = ucl_str(in, "to");
+	snap = ucl_str(in, "snapshot");
+	since = ucl_str(in, "since");
+	ds = ucl_str(in, "dataset");
 	if (from == NULL || to == NULL || server_find(from) == NULL ||
 	    server_find(to) == NULL) {
-		ucl_object_unref(body);
-		return (reply_error(req, 404, "not_found", "no such server"));
+		snprintf(why, len, "no such server");
+		return (404);
 	}
 	/* Both hosts the user's to change (users.c). */
-	if (!host_allowed(req, from, true, false) || !host_allowed(req, to,
-	    true, false)) {
-		ucl_object_unref(body);
-		return (WEB_OK);
-	}
+	if ((rc = host_ok(req, from, why, len)) != 0 || (rc = host_ok(req, to,
+	    why, len)) != 0)
+		return (rc);
 	if (strcmp(from, to) == 0) {
-		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "two hosts: on one, "
-		    "replicate the snapshot"));
+		snprintf(why, len, "two hosts: on one, replicate the snapshot");
+		return (400);
 	}
 	if (!name_ok(snap, true) || (since != NULL && since[0] != '\0' &&
 	    !name_ok(since, true)) || !name_ok(ds, false) || strchr(ds, '/') ==
 	    NULL) {
-		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "a snapshot, "
-		    "dataset@name, and a dataset under a pool to receive it"));
+		snprintf(why, len, "a snapshot, dataset@name, and a dataset "
+		    "under a pool to receive it");
+		return (400);
 	}
 	pthread_mutex_lock(&xf_lock);
 	if (xf_running >= XF_RUNNING_MAX) {
 		pthread_mutex_unlock(&xf_lock);
-		ucl_object_unref(body);
-		return (reply_error(req, 409, "busy", "%d transfers at most, "
-		    "at once", XF_RUNNING_MAX));
+		snprintf(why, len, "%d transfers at most, at once",
+		    XF_RUNNING_MAX);
+		return (409);
 	}
 	xf_running++;
 	pthread_mutex_unlock(&xf_lock);
 	if ((r = calloc(1, sizeof(*r))) == NULL) {
-		ucl_object_unref(body);
-		return (reply_error(req, 500, "memory", "out of memory"));
+		pthread_mutex_lock(&xf_lock);
+		xf_running--;
+		pthread_mutex_unlock(&xf_lock);
+		snprintf(why, len, "out of memory");
+		return (500);
 	}
 	pthread_mutex_init(&r->lock, NULL);
 	pthread_cond_init(&r->wake, NULL);
@@ -637,22 +647,116 @@ api_transfers(struct http_request *req)
 	snprintf(r->snapshot, sizeof(r->snapshot), "%s", snap);
 	snprintf(r->since, sizeof(r->since), "%s", since != NULL ? since : "");
 	snprintf(r->dataset, sizeof(r->dataset), "%s", ds);
-	r->recursive = ucl_flag(body, "recursive");
+	r->recursive = ucl_flag(in, "recursive");
 	r->started = time(NULL);
-	ucl_object_unref(body);
 	xf_record(r, XF_RUNNING, NULL, 0, NULL);
-	n = r->id;
+	*idp = r->id;
 	if (hosts_thread(&tid, xf_run, r) != 0) {
 		xf_record(r, XF_FAILED, "no thread for it", time(NULL), NULL);
 		pthread_mutex_lock(&xf_lock);
 		xf_running--;
 		pthread_mutex_unlock(&xf_lock);
 		free(r);
-		return (reply_error(req, 500, "thread", "no thread for it"));
+		snprintf(why, len, "no thread for it");
+		return (500);
 	}
 	(void)pthread_detach(tid);
+	return (0);
+}
+
+/*
+ * POST /api/transfers: one begun; GET: each; DELETE /api/transfers/<id>:
+ * one running stopped.
+ */
+int
+api_transfers(struct http_request *req)
+{
+	ucl_object_t		*body, *top;
+	const char		*id;
+	char			 why[160];
+	uint32_t		 n;
+	int			 rc;
+
+	if (req->method == HTTP_METHOD_GET) {
+		if (!guard(req, false))
+			return (WEB_OK);
+		pthread_mutex_lock(&xf_lock);
+		top = store_load(XF_FILE);
+		pthread_mutex_unlock(&xf_lock);
+		if (top == NULL)
+			top = ucl_object_typed_new(UCL_OBJECT);
+		if (ucl_object_lookup(top, "transfers") == NULL)
+			put(top, "transfers", ucl_object_typed_new(UCL_ARRAY));
+		return (reply_json(req, 200, top));
+	}
+	if (!guard(req, true))
+		return (WEB_OK);
+	if (req->method == HTTP_METHOD_DELETE) {
+		id = strrchr(req->path, '/') + 1;
+		n = (uint32_t)strtoul(id, NULL, 10);
+		if ((rc = transfers_yang_stop(n, why, sizeof(why))) != 0)
+			return (reply_error(req, rc, "not-found", "%s", why));
+		top = ucl_object_typed_new(UCL_OBJECT);
+		put(top, "ok", ucl_object_frombool(true));
+		return (reply_json(req, 200, top));
+	}
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "invalid", "a JSON object"));
+	rc = transfers_yang_start(req, body, &n, why, sizeof(why));
+	ucl_object_unref(body);
+	if (rc != 0)
+		return (reply_error(req, rc, rc == 404 ? "not_found" : rc ==
+		    403 ? "role" : rc == 409 ? "busy" : rc == 400 ? "invalid" :
+		    "thread", "%s", why));
 	top = ucl_object_typed_new(UCL_OBJECT);
 	put(top, "id", ucl_object_fromint(n));
 	put(top, "state", ucl_object_fromstring("running"));
 	return (reply_json(req, 200, top));
+}
+
+/* ---- arcana-console's transfers (cyang.c) ---------------------------- */
+
+/* arcana-console:transfers's value: each, its times RFC 6991's. */
+ucl_object_t *
+transfers_yang(void)
+{
+	static const char *const keep[] = { "from", "snapshot", "since",
+	    "to", "dataset", "state", "error", NULL };
+	ucl_object_t		*top, *arr, *e, *o;
+	const ucl_object_t	*t, *v;
+	ucl_object_iter_t	 it;
+	size_t			 k;
+
+	pthread_mutex_lock(&xf_lock);
+	top = store_load(XF_FILE);
+	pthread_mutex_unlock(&xf_lock);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while (top != NULL && (t = ucl_object_iterate(ucl_object_lookup(top,
+	    "transfers"), &it, true)) != NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "id", ucl_object_fromint(ucl_object_toint(
+		    ucl_object_lookup(t, "id"))));
+		for (k = 0; keep[k] != NULL; k++)
+			if (ucl_str(t, keep[k]) != NULL && ucl_str(t,
+			    keep[k])[0] != '\0')
+				put(e, keep[k], ucl_object_fromstring(ucl_str(t,
+				    keep[k])));
+		put(e, "recursive", ucl_object_frombool(ucl_flag(t,
+		    "recursive")));
+		put(e, "bytes", ucl_object_fromint(ucl_object_toint(
+		    ucl_object_lookup(t, "bytes"))));
+		if ((v = ucl_object_lookup(t, "started")) != NULL)
+			put(e, "started", yang_time((double)ucl_object_toint(v)));
+		if ((v = ucl_object_lookup(t, "ended")) != NULL)
+			put(e, "ended", yang_time((double)ucl_object_toint(v)));
+		if (ucl_flag(t, "cancel"))
+			put(e, "cancel", ucl_object_frombool(true));
+		ucl_array_append(arr, e);
+	}
+	if (top != NULL)
+		ucl_object_unref(top);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "transfer", arr);
+	return (o);
 }

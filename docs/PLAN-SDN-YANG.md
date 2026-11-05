@@ -1804,10 +1804,42 @@ whose first part is served.
   console_test's
   cyang_settings (GET and PUT of a setting as /api's, a member refused,
   a secret in no GET, If-Match), cyang_tokens, cyang_users,
-  cyang_enrolment, cyang_workflows.  Open: the console's other stores
-  (templates, labels, prefix lists, threat feeds, transfers, the Web
-  Push subscriptions) are /api's alone, to join the module before
-  4.4.2 removes /api.
+  cyang_enrolment, cyang_workflows.
+- 4.4.1 the other stores done (console 0.366.0, arcana-console's
+  second range 92100-92299): `templates`, `labels`, `prefix-lists`,
+  `threat-feeds`, `transfers` and `push` in the same way, through the
+  setters split out of /api's handlers (template_keep(), labels_apply(),
+  pfx_apply(), feed_put(), transfers_yang_start(), sub_add()), every
+  change checked before any is kept.  Who may is /api's: templates,
+  feeds and transfers operators' and owners'; labels and prefix lists
+  everyone's to read, a label changed by whom may change its host, a
+  list by operators; push everyone's, each user's own subscriptions
+  alone (push.json now says whose; a message goes to the sender's own
+  devices, so push/send is no longer an owner's alone).  The threat
+  feeds keep every protection /api has, the view made from
+  feed_json()'s: a URL of one's own an owner's to make, change and
+  preview; a change needs the feed's hosts, those it was sent to too,
+  the user's to change; an address of the internet alone, checked on
+  any URL written; hosts and protected addresses the reader may not
+  read only counted; what an operator read and puts back changes
+  nothing.  A subscription's keys are written alone, kept when left
+  out.  The actions: feed/fetch, feed/preview, transfers/start,
+  transfer/stop, push/send, settings/mail-test, settings/telegram-test
+  (the last three on routes of their own: they wait on a task).
+  Check: console_test's cyang_templates, cyang_labels, cyang_pfxlists,
+  cyang_feeds, cyang_transfers, cyang_push, cyang_settings_actions.  A
+  key with `/` (a template's file, a subscription's endpoint, a
+  prefix) is named in no path: libwebsockets decodes the path before
+  RESTCONF cuts it; such entries are changed through their parent.
+  Open, /api's alone still: the hosts' registry (servers.json: add,
+  rename, remove), the console's update check and notes, its cluster,
+  its CA, its plugins and their stores, a user's own security keys,
+  the SD-WAN's lists, identities, ledger, steering pins, rekey, plan
+  and apply, its records (audit, SEN, SAN, record, their CSV), the
+  path finder, the WireGuard key pair, and the per-host routes the
+  console answers itself (drift, watch, subscription,
+  notifications, move, tls, transport switch, NACM sync, agent build
+  and update, config apply and export, capture, IDS pcap).
 - 4.4.2 C: the WebAuthn ceremonies, logout, `assetlinks.json`, enrol
   and health moved beside `/restconf`; `/api` removed; check: the
   console tests rewritten.

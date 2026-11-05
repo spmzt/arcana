@@ -3596,7 +3596,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
   /api/push:
     get:
-      summary: The key browsers subscribe to Web Push with, and the devices
+      summary: The key browsers subscribe to Web Push with, and the user's own devices
       responses:
         "200":
           description: public_key (base64url, P-256) and devices
@@ -3619,7 +3619,7 @@ paths:
 
   /api/push/subscribe:
     post:
-      summary: Have this browser told of tasks that end elsewhere
+      summary: Have this browser told of the user's tasks that end elsewhere
       requestBody:
         required: true
         content:
@@ -3634,7 +3634,7 @@ paths:
                 name: { type: string }
       responses:
         "200":
-          description: The number of devices now.
+          description: The number of the user's devices now.
           content:
             application/json:
               schema:
@@ -3647,7 +3647,7 @@ paths:
 
   /api/push/unsubscribe:
     post:
-      summary: Stop telling a device
+      summary: Stop telling one of the user's devices
       requestBody:
         required: true
         content:
@@ -3670,7 +3670,7 @@ paths:
 
   /api/push/send:
     post:
-      summary: Tell every device but the one that asks
+      summary: Tell every device of the user's but the one that asks
       requestBody:
         required: true
         content:

@@ -73,10 +73,11 @@ bool
 token_readable(const char *path)
 {
 
-	/* arcana-console's settings and enrolment as /api's. */
+	/* arcana-console's settings, enrolment and push as /api's. */
 	if (strncmp(path, CYANG_DATA "settings", sizeof(CYANG_DATA) + 7) ==
 	    0 || strncmp(path, CYANG_DATA "enrolment", sizeof(CYANG_DATA) +
-	    8) == 0)
+	    8) == 0 || strncmp(path, CYANG_DATA "push", sizeof(CYANG_DATA) +
+	    3) == 0)
 		return (false);
 	if (strcmp(path, "/restconf") == 0 || strncmp(path, "/restconf/",
 	    10) == 0)

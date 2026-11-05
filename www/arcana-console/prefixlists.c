@@ -11,7 +11,8 @@
  * data directory, {"lists": {name: {"description", "prefixes": [...]}}},
  * under prefix-lists.lock while it is changed.  GET /api/prefix-lists
  * gives them all; PUT /api/prefix-lists/<name> keeps one, DELETE takes
- * it away.
+ * it away.  The same as arcana-console's prefix-lists (cyang.c),
+ * through pfx_apply().
  */
 
 #include <sys/param.h>
@@ -202,13 +203,84 @@ api_prefix_lists(struct http_request *req)
 	return (reply_json(req, 200, all_load()));
 }
 
+/*
+ * The lists changed as set says, {name: list, or null to take it away},
+ * each checked before any is kept; the lists then into *allp when asked.
+ * 0, or the HTTP status and why.
+ */
+static int
+pfx_apply(const ucl_object_t *set, ucl_object_t **allp, char *why,
+    size_t len)
+{
+	ucl_object_t		*all, *lists, *l;
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	const char		*e;
+	int			 fd, rc;
+
+	it = NULL;
+	while ((v = ucl_object_iterate(set, &it, true)) != NULL) {
+		if (!name_ok(ucl_object_key(v))) {
+			snprintf(why, len, "a list is named by letters, digits, "
+			    "_ and -, 32 at most");
+			return (400);
+		}
+		if (ucl_object_type(v) != UCL_NULL && (e = check(v)) != NULL) {
+			snprintf(why, len, "%s", e);
+			return (400);
+		}
+	}
+	fd = lock_take();
+	all = all_load();
+	lists = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all, "lists");
+	it = NULL;
+	while ((v = ucl_object_iterate(set, &it, true)) != NULL) {
+		if (ucl_object_type(v) == UCL_NULL) {
+			(void)ucl_object_delete_key(lists, ucl_object_key(v));
+			continue;
+		}
+		if (ucl_object_lookup(lists, ucl_object_key(v)) == NULL &&
+		    obj_len(lists) >= PFX_LISTS_MAX) {
+			lock_give(fd);
+			ucl_object_unref(all);
+			snprintf(why, len, "%d lists at most", PFX_LISTS_MAX);
+			return (400);
+		}
+		l = ucl_object_typed_new(UCL_OBJECT);
+		if (ucl_str(v, "description") != NULL)
+			put(l, "description", ucl_object_fromstring(ucl_str(v,
+			    "description")));
+		put(l, "prefixes", ucl_object_copy(ucl_object_lookup(v,
+		    "prefixes")));
+		put(lists, ucl_object_key(v), l);
+	}
+	rc = store_save(PFX_FILE, all);
+	lock_give(fd);
+	if (rc != 0) {
+		ucl_object_unref(all);
+		snprintf(why, len, "the prefix lists could not be written");
+		return (500);
+	}
+	it = NULL;
+	while ((v = ucl_object_iterate(set, &it, true)) != NULL)
+		log_msg(LOG_NOTICE, "prefix list %s %s", ucl_object_key(v),
+		    ucl_object_type(v) != UCL_NULL ? "kept" : "taken away");
+	cyang_changed("prefix-lists");
+	if (allp != NULL)
+		*allp = all;
+	else
+		ucl_object_unref(all);
+	return (0);
+}
+
 /* PUT or DELETE /api/prefix-lists/<name>. */
 int
 api_prefix_list(struct http_request *req)
 {
-	ucl_object_t	*body, *all, *lists, *l;
-	const char	*name, *e;
-	int		 fd, rc;
+	ucl_object_t	*body, *all, *set;
+	const char	*name;
+	char		 why[128];
+	int		 rc;
 
 	name = req->path + strlen("/api/prefix-lists/");
 	if (!name_ok(name))
@@ -219,47 +291,88 @@ api_prefix_list(struct http_request *req)
 	if (!guard(req, true))
 		return (WEB_OK);
 	body = NULL;
-	if (req->method == HTTP_METHOD_PUT) {
-		if ((body = read_json(req)) == NULL)
-			return (reply_error(req, 400, "invalid", "a list, as "
-			    "{\"description\", \"prefixes\": [...]}"));
-		if ((e = check(body)) != NULL) {
-			ucl_object_unref(body);
-			return (reply_error(req, 400, "invalid", "%s", e));
-		}
-	}
-	fd = lock_take();
-	all = all_load();
-	lists = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all, "lists");
-	if (body == NULL)
-		(void)ucl_object_delete_key(lists, name);
-	else {
-		if (ucl_object_lookup(lists, name) == NULL && obj_len(lists) >=
-		    PFX_LISTS_MAX) {
-			lock_give(fd);
-			ucl_object_unref(all);
-			ucl_object_unref(body);
-			return (reply_error(req, 400, "invalid", "%d lists at "
-			    "most", PFX_LISTS_MAX));
-		}
-		l = ucl_object_typed_new(UCL_OBJECT);
-		if (ucl_str(body, "description") != NULL)
-			put(l, "description", ucl_object_fromstring(ucl_str(body,
-			    "description")));
-		put(l, "prefixes", ucl_object_copy(ucl_object_lookup(body,
-		    "prefixes")));
-		put(lists, name, l);
-	}
-	rc = store_save(PFX_FILE, all);
-	lock_give(fd);
-	if (body != NULL)
-		ucl_object_unref(body);
-	if (rc != 0) {
-		ucl_object_unref(all);
-		return (reply_error(req, 500, "store", "the prefix lists could "
-		    "not be written"));
-	}
-	log_msg(LOG_NOTICE, "prefix list %s %s", name, req->method ==
-	    HTTP_METHOD_PUT ? "kept" : "taken away");
+	if (req->method == HTTP_METHOD_PUT && (body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "invalid", "a list, as "
+		    "{\"description\", \"prefixes\": [...]}"));
+	set = ucl_object_typed_new(UCL_OBJECT);
+	put(set, name, body != NULL ? body : ucl_object_typed_new(UCL_NULL));
+	rc = pfx_apply(set, &all, why, sizeof(why));
+	ucl_object_unref(set);
+	if (rc != 0)
+		return (reply_error(req, rc, rc == 400 ? "invalid" : "store",
+		    "%s", why));
 	return (reply_json(req, 200, all));
+}
+
+/* ---- arcana-console's prefix lists (cyang.c) ------------------------- */
+
+/* arcana-console:prefix-lists's value. */
+ucl_object_t *
+pfxlists_yang(void)
+{
+	ucl_object_t		*all, *arr, *e, *o;
+	const ucl_object_t	*l, *p;
+	ucl_object_iter_t	 it;
+
+	all = all_load();
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((l = ucl_object_iterate(ucl_object_lookup(all, "lists"), &it,
+	    true)) != NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "name", ucl_object_fromstring(ucl_object_key(l)));
+		if (ucl_str(l, "description") != NULL)
+			put(e, "description", ucl_object_fromstring(ucl_str(l,
+			    "description")));
+		if ((p = ucl_object_lookup(l, "prefixes")) != NULL &&
+		    ucl_array_size(p) > 0)
+			put(e, "prefix", ucl_object_copy(p));
+		ucl_array_append(arr, e);
+	}
+	ucl_object_unref(all);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "prefix-list", arr);
+	return (o);
+}
+
+/*
+ * The lists changed from was to now, kept by pfx_apply() at once: 0, or
+ * the HTTP status and why.
+ */
+int
+pfxlists_yang_set(const ucl_object_t *was, const ucl_object_t *now,
+    char *why, size_t len)
+{
+	ucl_object_t		*set, *l;
+	const ucl_object_t	*e, *o, *p;
+	ucl_object_iter_t	 it;
+	int			 rc;
+
+	set = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(now, "prefix-list"),
+	    &it, true)) != NULL) {
+		o = cyang_entry(ucl_object_lookup(was, "prefix-list"), "name",
+		    ucl_str(e, "name"));
+		if (o != NULL && cyang_same(o, e))
+			continue;
+		l = ucl_object_typed_new(UCL_OBJECT);
+		if (ucl_str(e, "description") != NULL)
+			put(l, "description", ucl_object_fromstring(ucl_str(e,
+			    "description")));
+		put(l, "prefixes", (p = ucl_object_lookup(e, "prefix")) !=
+		    NULL ? ucl_object_copy(p) : ucl_object_typed_new(
+		    UCL_ARRAY));
+		put(set, ucl_str(e, "name"), l);
+	}
+	it = NULL;
+	while ((o = ucl_object_iterate(ucl_object_lookup(was, "prefix-list"),
+	    &it, true)) != NULL)
+		if (cyang_entry(ucl_object_lookup(now, "prefix-list"), "name",
+		    ucl_str(o, "name")) == NULL)
+			put(set, ucl_str(o, "name"), ucl_object_typed_new(
+			    UCL_NULL));
+	rc = set->len > 0 ? pfx_apply(set, NULL, why, len) : 0;
+	ucl_object_unref(set);
+	return (rc);
 }

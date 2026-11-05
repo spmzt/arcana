@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.365.0"
+#define	ARCW_VERSION		"0.366.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -543,7 +543,8 @@ int		 api_restconf_operations(struct http_request *);
  * cyang.c: the console's own configuration and state as arcana-console,
  * from the files the stores keep, changed through their setters.  Each
  * store's view and change of it: its file's (settings.c, tokens.c,
- * users.c, pki.c, workflows.c).  cyang_changed(): a part's entity-tag
+ * users.c, pki.c, workflows.c, templates.c, labels.c, prefixlists.c,
+ * feeds.c, transfers.c, push.c).  cyang_changed(): a part's entity-tag
  * changed, by either way of changing it.
  */
 #define	CYANG_DATA	"/restconf/data/arcana-console:"
@@ -582,6 +583,31 @@ ucl_object_t	*runs_yang(uint32_t);
 int		 runs_yang_mark(uint32_t, const char *, const char *, char *,
 		    size_t);
 int		 runs_yang_clear(const char *, const char *);
+int		 cyang_output(struct http_request *, ucl_object_t *);
+const ucl_object_t *cyang_entry(const ucl_object_t *, const char *,
+		    const char *);
+bool		 cyang_same(const ucl_object_t *, const ucl_object_t *);
+ucl_object_t	*templates_yang(void);
+int		 templates_yang_set(struct http_request *, const ucl_object_t *,
+		    const ucl_object_t *, char *, size_t);
+ucl_object_t	*labels_yang(void);
+int		 labels_yang_set(struct http_request *, const ucl_object_t *,
+		    const ucl_object_t *, char *, size_t);
+ucl_object_t	*pfxlists_yang(void);
+int		 pfxlists_yang_set(const ucl_object_t *, const ucl_object_t *,
+		    char *, size_t);
+ucl_object_t	*feeds_yang(struct http_request *);
+int		 feeds_yang_set(struct http_request *, const ucl_object_t *,
+		    const ucl_object_t *, char *, size_t);
+int		 feeds_yang_ask(struct http_request *, const char *,
+		    const char *, char *, size_t);
+ucl_object_t	*transfers_yang(void);
+int		 transfers_yang_start(struct http_request *,
+		    const ucl_object_t *, uint32_t *, char *, size_t);
+int		 transfers_yang_stop(uint32_t, char *, size_t);
+ucl_object_t	*push_yang(struct http_request *);
+int		 push_yang_set(struct http_request *, const ucl_object_t *,
+		    const ucl_object_t *, char *, size_t);
 /* The tunnels a plan of an L3NM makes (sdwan_edge.c). */
 ucl_object_t	*sdwan_plan_tunnels(const ucl_object_t *);
 int		 api_restconf_ds(struct http_request *);

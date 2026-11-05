@@ -16,6 +16,14 @@
  *	/restconf/data/arcana-console:enrolment		owners
  *	/restconf/data/arcana-console:workflows		operators and owners
  *	/restconf/data/arcana-console:runs		operators and owners
+ *	/restconf/data/arcana-console:templates		operators and owners
+ *	/restconf/data/arcana-console:labels		everyone; a label set
+ *							by whom may change its host
+ *	/restconf/data/arcana-console:prefix-lists	everyone; changed by
+ *							operators and owners
+ *	/restconf/data/arcana-console:threat-feeds	operators and owners
+ *	/restconf/data/arcana-console:transfers		operators and owners
+ *	/restconf/data/arcana-console:push		everyone, their own
  *
  * No second store: a request reads the files the stores keep, each
  * store's view of itself made into a tree (settings_yang() and the
@@ -67,6 +75,12 @@ static const struct part {
 	{ "enrolment", false, false },
 	{ "workflows", false, true },
 	{ "runs", false, false },
+	{ "templates", false, true },
+	{ "labels", false, true },
+	{ "prefix-lists", false, true },
+	{ "threat-feeds", false, true },
+	{ "transfers", false, false },
+	{ "push", false, true },
 };
 
 static void
@@ -136,6 +150,37 @@ cyang_changed(const char *part)
 	restconf_own_changed(uri);
 }
 
+/* The entry of list whose leaf key is value; NULL: none. */
+const ucl_object_t *
+cyang_entry(const ucl_object_t *list, const char *key, const char *value)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	const char		*v;
+
+	while ((e = ucl_object_iterate(list, &it, true)) != NULL)
+		if ((v = ucl_str(e, key)) != NULL && strcmp(v, value) == 0)
+			return (e);
+	return (NULL);
+}
+
+/* Whether a and b say the same: an entry left as it was. */
+bool
+cyang_same(const ucl_object_t *a, const ucl_object_t *b)
+{
+	unsigned char	*x, *y;
+	bool		 same;
+
+	if (a == NULL || b == NULL)
+		return (a == b);
+	x = ucl_object_emit(a, UCL_EMIT_JSON_COMPACT);
+	y = ucl_object_emit(b, UCL_EMIT_JSON_COMPACT);
+	same = x != NULL && y != NULL && strcmp((char *)x, (char *)y) == 0;
+	free(x);
+	free(y);
+	return (same);
+}
+
 /* What guard() would let the request do at path, without a reply. */
 static bool
 may(struct http_request *req, const char *path, bool mutate)
@@ -160,9 +205,10 @@ may(struct http_request *req, const char *path, bool mutate)
 	    user_path_ok(user_console(u), path, mutate));
 }
 
-/* Part p's value as its store has it; run one with its traces. */
+/* Part p's value as its store has it, as the request may see it; run one
+ * with its traces. */
 static ucl_object_t *
-value_of(const struct part *p, uint32_t one)
+value_of(struct http_request *req, const struct part *p, uint32_t one)
 {
 	ucl_object_t	*o;
 
@@ -180,6 +226,18 @@ value_of(const struct part *p, uint32_t one)
 		return (workflows_yang());
 	if (strcmp(p->name, "runs") == 0)
 		return (runs_yang(one));
+	if (strcmp(p->name, "templates") == 0)
+		return (templates_yang());
+	if (strcmp(p->name, "labels") == 0)
+		return (labels_yang());
+	if (strcmp(p->name, "prefix-lists") == 0)
+		return (pfxlists_yang());
+	if (strcmp(p->name, "threat-feeds") == 0)
+		return (feeds_yang(req));
+	if (strcmp(p->name, "transfers") == 0)
+		return (transfers_yang());
+	if (strcmp(p->name, "push") == 0)
+		return (push_yang(req));
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put(o, "enabled", ucl_object_frombool(enrol_enabled()));
 	return (o);
@@ -196,7 +254,7 @@ cyang_into(struct http_request *req, ucl_object_t *top)
 		if (!may(req, path, false))
 			continue;
 		snprintf(key, sizeof(key), MODULE ":%s", parts[i].name);
-		put(top, key, value_of(&parts[i], 0));
+		put(top, key, value_of(req, &parts[i], 0));
 	}
 }
 
@@ -222,8 +280,8 @@ top_named(const char *name)
  * NULL and why: a store's view not of the module.
  */
 static cbl_dtree *
-tree_of(const struct part *p, uint32_t one, ucl_object_t **doc,
-    cbl_yarena *a, char *why, size_t len)
+tree_of(struct http_request *req, const struct part *p, uint32_t one,
+    ucl_object_t **doc, cbl_yarena *a, char *why, size_t len)
 {
 	const struct cbl_ynode	*n;
 	const ucl_object_t	*v;
@@ -233,7 +291,8 @@ tree_of(const struct part *p, uint32_t one, ucl_object_t **doc,
 	*doc = ucl_object_typed_new(UCL_OBJECT);
 	for (size_t i = 0; i < nitems(parts); i++)
 		if (&parts[i] == p || (p->trio && parts[i].trio))
-			put(*doc, parts[i].name, value_of(&parts[i], one));
+			put(*doc, parts[i].name, value_of(req, &parts[i],
+			    one));
 	if ((t = cbl_dtree_new(&ymodel_schema)) == NULL) {
 		snprintf(why, len, "out of memory");
 		return (NULL);
@@ -323,6 +382,24 @@ keep(struct http_request *req, const struct part *p, const ucl_object_t *was,
 		    len));
 	if (p->trio)
 		return (users_yang_set(was, now, session_who(req), why, len));
+	if (strcmp(p->name, "templates") == 0)
+		return (templates_yang_set(req, ucl_object_lookup(was,
+		    "templates"), ucl_object_lookup(now, "templates"), why,
+		    len));
+	if (strcmp(p->name, "labels") == 0)
+		return (labels_yang_set(req, ucl_object_lookup(was, "labels"),
+		    ucl_object_lookup(now, "labels"), why, len));
+	if (strcmp(p->name, "prefix-lists") == 0)
+		return (pfxlists_yang_set(ucl_object_lookup(was,
+		    "prefix-lists"), ucl_object_lookup(now, "prefix-lists"), why,
+		    len));
+	if (strcmp(p->name, "threat-feeds") == 0)
+		return (feeds_yang_set(req, ucl_object_lookup(was,
+		    "threat-feeds"), ucl_object_lookup(now, "threat-feeds"), why,
+		    len));
+	if (strcmp(p->name, "push") == 0)
+		return (push_yang_set(req, ucl_object_lookup(was, "push"),
+		    ucl_object_lookup(now, "push"), why, len));
 	snprintf(why, len, "%s is not configuration", p->name);
 	return (405);
 }
@@ -351,8 +428,8 @@ action_at(const char *path, const char *part, const char *list,
 }
 
 /* An action's reply: its output, or none. */
-static int
-output(struct http_request *req, ucl_object_t *out)
+int
+cyang_output(struct http_request *req, ucl_object_t *out)
 {
 	ucl_object_t	*top;
 
@@ -390,7 +467,14 @@ action(struct http_request *req)
 	    sizeof(key)) &&
 	    !action_at(req->path, "runs", "run", "approve", key,
 	    sizeof(key)) &&
-	    !action_at(req->path, "runs", "run", "stop", key, sizeof(key)))
+	    !action_at(req->path, "runs", "run", "stop", key, sizeof(key)) &&
+	    strcmp(req->path, CYANG_DATA "transfers/start") != 0 &&
+	    !action_at(req->path, "transfers", "transfer", "stop", key,
+	    sizeof(key)) &&
+	    !action_at(req->path, "threat-feeds", "feed", "fetch", key,
+	    sizeof(key)) &&
+	    !action_at(req->path, "threat-feeds", "feed", "preview", key,
+	    sizeof(key)))
 		return (-1);
 	if (!guard(req, true))
 		return (WEB_OK);
@@ -446,6 +530,22 @@ action(struct http_request *req)
 			put(out, "expires", yang_time((double)exp));
 			explicit_bzero(token, sizeof(token));
 		}
+	} else if (strcmp(req->path, CYANG_DATA "transfers/start") == 0) {
+		if ((rc = transfers_yang_start(req, in, &n, why,
+		    sizeof(why))) == 0) {
+			out = ucl_object_typed_new(UCL_OBJECT);
+			put(out, "id", ucl_object_fromint(n));
+		}
+	} else if (action_at(req->path, "transfers", "transfer", "stop", key,
+	    sizeof(key))) {
+		rc = transfers_yang_stop((uint32_t)strtoul(key, NULL, 10), why,
+		    sizeof(why));
+	} else if (action_at(req->path, "threat-feeds", "feed", "fetch", key,
+	    sizeof(key))) {
+		rc = feeds_yang_ask(req, key, "fetch", why, sizeof(why));
+	} else if (action_at(req->path, "threat-feeds", "feed", "preview", key,
+	    sizeof(key))) {
+		rc = feeds_yang_ask(req, key, "preview", why, sizeof(why));
 	} else if (action_at(req->path, "workflows", "workflow", "run", key,
 	    sizeof(key))) {
 		if ((rc = workflows_yang_run(req, key, in, &n, why,
@@ -467,7 +567,7 @@ action(struct http_request *req)
 	ucl_object_unref(body);
 	if (rc != 0)
 		return (restconf_error(req, rc, why));
-	return (output(req, out));
+	return (cyang_output(req, out));
 }
 
 static int
@@ -501,7 +601,8 @@ api_cyang(struct http_request *req)
 	if ((p = part_of(req->path)) == NULL)
 		return (restconf_error(req, 404, "no such resource: "
 		    MODULE "'s are settings, tokens, users, roles, groups, "
-		    "enrolment, workflows and runs"));
+		    "enrolment, workflows, runs, templates, labels, "
+		    "prefix-lists, threat-feeds, transfers and push"));
 	if (req->method == HTTP_METHOD_POST && (st = action(req)) != -1)
 		return (st);
 	if (!guard(req, req->method != HTTP_METHOD_GET))
@@ -543,7 +644,7 @@ api_cyang(struct http_request *req)
 		restconf_free(r);
 		return (restconf_error(req, 500, "out of memory"));
 	}
-	if ((t = tree_of(p, one, &doc, a, err, sizeof(err))) == NULL) {
+	if ((t = tree_of(req, p, one, &doc, a, err, sizeof(err))) == NULL) {
 		log_msg(LOG_ERR, "%s:%s: %s", MODULE, p->name, err);
 		ucl_object_unref(doc);
 		cbl_yarena_free(a);

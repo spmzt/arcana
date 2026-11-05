@@ -15,7 +15,9 @@
  * (VAPID), in vapid.pem, both in the data directory.  A message is
  * encrypted for each subscription (webpush.c) and posted to its
  * address over HTTPS, from a task thread.  A push service that says a
- * subscription is gone has it dropped.
+ * subscription is gone has it dropped.  Each subscription is its
+ * user's: a user reads, changes and is sent to their own alone, by
+ * /api or as arcana-console's push (cyang.c).
  */
 
 #include <sys/types.h>
@@ -40,6 +42,7 @@
 #include <openssl/ssl.h>
 
 #include "console.h"
+#include "restconf.h"
 #include "webpush.h"
 
 #define	PUSH_FILE	"push.json"
@@ -348,9 +351,44 @@ api_push_free(struct http_request *req)
 		send_free(s);
 }
 
-/* Remove the subscription with this address; true if there was one. */
+/* Whose a subscription made by the request is: its user, "" for none. */
+static const char *
+owner_of(struct http_request *req)
+{
+	const char	*u;
+
+	return ((u = session_user(req)) != NULL ? u : "");
+}
+
+/* Whether subscription e is user's. */
 static bool
-sub_remove(const char *endpoint)
+mine(const ucl_object_t *e, const char *user)
+{
+	const char	*u;
+
+	return (strcmp((u = ucl_str(e, "user")) != NULL ? u : "", user) == 0);
+}
+
+/* The subscriptions of user. */
+static size_t
+count_of(const char *user)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	size_t			 n = 0;
+
+	while ((e = ucl_object_iterate(sub_list(), &it, true)) != NULL)
+		if (mine(e, user))
+			n++;
+	return (n);
+}
+
+/*
+ * Remove the subscription with this address, user's alone when user is
+ * not NULL; true if there was one.
+ */
+static bool
+sub_remove(const char *endpoint, const char *user)
 {
 	const ucl_object_t	*e;
 	const char		*s;
@@ -363,7 +401,8 @@ sub_remove(const char *endpoint)
 	it = NULL;
 	while ((e = ucl_object_iterate(sub_list(), &it, true)) != NULL) {
 		s = ucl_str(e, "endpoint");
-		if (s != NULL && strcmp(s, endpoint) == 0)
+		if (s != NULL && strcmp(s, endpoint) == 0 && (user == NULL ||
+		    mine(e, user)))
 			found = true;
 		else
 			ucl_array_append(keep, ucl_object_ref(
@@ -377,8 +416,91 @@ sub_remove(const char *endpoint)
 }
 
 /*
- * GET /api/push: the key browsers subscribe with, and the devices that
- * have, by the name they gave and the push service they are at.
+ * A subscription's keys checked: p256dh a P-256 public key, auth 16
+ * bytes.  NULL, or what is wrong.
+ */
+static const char *
+keys_bad(const char *p256dh, const char *auth)
+{
+	uint8_t	*raw;
+	size_t	 len;
+
+	if (p256dh == NULL || (raw = wp_unb64url(p256dh, &len)) == NULL ||
+	    len != 65 || raw[0] != 0x04) {
+		if (p256dh != NULL)
+			free(raw);
+		return ("p256dh is not a P-256 public key");
+	}
+	free(raw);
+	if (auth == NULL || (raw = wp_unb64url(auth, &len)) == NULL ||
+	    len != 16) {
+		free(raw);
+		return ("auth is not 16 bytes");
+	}
+	free(raw);
+	return (NULL);
+}
+
+/*
+ * The subscription of user at endpoint made, or made again (the same
+ * browser replaces what it had); not kept until push_save().  0, or the
+ * HTTP status and why.
+ */
+static int
+sub_add(const char *user, const char *endpoint, const char *p256dh,
+    const char *auth, const char *name, int64_t added, char *why,
+    size_t len)
+{
+	ucl_object_t	*e;
+	const char	*bad, *path;
+	char		 host[256];
+
+	if (endpoint == NULL || strlen(endpoint) > 1024 ||
+	    !endpoint_parse(endpoint, host, sizeof(host), &path)) {
+		snprintf(why, len, "the address of a push service is "
+		    "https://host/path");
+		return (400);
+	}
+	if ((bad = keys_bad(p256dh, auth)) != NULL) {
+		snprintf(why, len, "%s", bad);
+		return (400);
+	}
+	(void)sub_remove(endpoint, NULL);
+	if (ucl_array_size(sub_list()) >= PUSH_MAX) {
+		snprintf(why, len, "%d devices are subscribed already; remove "
+		    "one in Settings", PUSH_MAX);
+		return (409);
+	}
+	if (name == NULL)
+		name = "a browser";
+	e = ucl_object_typed_new(UCL_OBJECT);
+	put(e, "endpoint", ucl_object_fromstring(endpoint));
+	put(e, "p256dh", ucl_object_fromstring(p256dh));
+	put(e, "auth", ucl_object_fromstring(auth));
+	put(e, "name", ucl_object_fromlstring(name, strnlen(name, 80)));
+	put(e, "added", ucl_object_fromint(added));
+	put(e, "user", ucl_object_fromstring(user));
+	ucl_array_append(sub_list(), e);
+	return (0);
+}
+
+/* push.json written: 0, or 500 and why. */
+static int
+push_save(char *why, size_t len)
+{
+
+	if (store_save(PUSH_FILE, subs) == -1) {
+		snprintf(why, len, "cannot write %s", PUSH_FILE);
+		return (500);
+	}
+	cyang_changed("push");
+	return (0);
+}
+
+/*
+ * GET /api/push: the key browsers subscribe with, and the devices of the
+ * request's user that have, by the name they gave and the push service
+ * they are at.
  */
 int
 api_push(struct http_request *req)
@@ -386,16 +508,19 @@ api_push(struct http_request *req)
 	const ucl_object_t	*e, *v;
 	ucl_object_t		*o, *a, *d;
 	ucl_object_iter_t	 it;
-	const char		*path;
+	const char		*path, *user;
 	char			 host[256];
 
 	if (!guard(req, false))
 		return (WEB_OK);
+	user = owner_of(req);
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put(o, "public_key", ucl_object_fromstring(vapid_pub));
 	a = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
 	while ((e = ucl_object_iterate(sub_list(), &it, true)) != NULL) {
+		if (!mine(e, user))
+			continue;
 		d = ucl_object_typed_new(UCL_OBJECT);
 		if ((v = ucl_object_lookup(e, "name")) != NULL)
 			put(d, "name", ucl_object_fromstring(
@@ -417,79 +542,49 @@ api_push(struct http_request *req)
 
 /*
  * POST /api/push/subscribe {"endpoint", "p256dh", "auth", "name"}: this
- * browser is to be told.  POST /api/push/unsubscribe {"endpoint"}: no
- * longer.
+ * browser is to be told, as the request's user.  POST
+ * /api/push/unsubscribe {"endpoint"}: no longer, the user's own alone.
  */
 int
 api_push_subscribe(struct http_request *req)
 {
-	ucl_object_t		*body, *e;
-	const char		*endpoint, *p256dh, *auth, *name, *path;
-	char			 host[256];
-	uint8_t			*raw;
-	size_t			 len;
-	bool			 remove;
+	ucl_object_t	*body;
+	const char	*endpoint, *path;
+	char		 host[256], why[160];
+	int		 rc;
 
 	if (!guard(req, true))
 		return (WEB_OK);
-	remove = strstr(req->path, "unsubscribe") != NULL;
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON body is "
 		    "needed"));
 	endpoint = ucl_str(body, "endpoint");
-	if (endpoint == NULL || strlen(endpoint) > 1024 ||
-	    !endpoint_parse(endpoint, host, sizeof(host), &path)) {
-		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "the address of a "
-		    "push service is https://host/path"));
-	}
-	if (remove) {
-		(void)sub_remove(endpoint);
-		(void)store_save(PUSH_FILE, subs);
+	if (strstr(req->path, "unsubscribe") != NULL) {
+		if (endpoint == NULL || strlen(endpoint) > 1024 ||
+		    !endpoint_parse(endpoint, host, sizeof(host), &path)) {
+			ucl_object_unref(body);
+			return (reply_error(req, 400, "invalid", "the address "
+			    "of a push service is https://host/path"));
+		}
+		if (sub_remove(endpoint, owner_of(req)))
+			(void)push_save(why, sizeof(why));
 		ucl_object_unref(body);
 		return (api_push_list(req));
 	}
-	p256dh = ucl_str(body, "p256dh");
-	auth = ucl_str(body, "auth");
-	if ((name = ucl_str(body, "name")) == NULL)
-		name = "a browser";
-	/* The keys have to be what they are said to be. */
-	if (p256dh == NULL || (raw = wp_unb64url(p256dh, &len)) == NULL ||
-	    len != 65 || raw[0] != 0x04) {
-		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "p256dh is not a "
-		    "P-256 public key"));
-	}
-	free(raw);
-	if (auth == NULL || (raw = wp_unb64url(auth, &len)) == NULL ||
-	    len != 16) {
-		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "auth is not 16 "
-		    "bytes"));
-	}
-	free(raw);
-	/* The same browser again replaces what it had. */
-	(void)sub_remove(endpoint);
-	if (ucl_array_size(sub_list()) >= PUSH_MAX) {
-		ucl_object_unref(body);
-		return (reply_error(req, 409, "full", "%d devices are "
-		    "subscribed already; remove one in Settings", PUSH_MAX));
-	}
-	e = ucl_object_typed_new(UCL_OBJECT);
-	put(e, "endpoint", ucl_object_fromstring(endpoint));
-	put(e, "p256dh", ucl_object_fromstring(p256dh));
-	put(e, "auth", ucl_object_fromstring(auth));
-	put(e, "name", ucl_object_fromlstring(name, strnlen(name, 80)));
-	put(e, "added", ucl_object_fromint(time(NULL)));
-	ucl_array_append(sub_list(), e);
+	rc = sub_add(owner_of(req), endpoint, ucl_str(body, "p256dh"),
+	    ucl_str(body, "auth"), ucl_str(body, "name"), time(NULL), why,
+	    sizeof(why));
 	ucl_object_unref(body);
-	if (store_save(PUSH_FILE, subs) == -1)
-		return (reply_error(req, 500, "io", "cannot write %s",
-		    PUSH_FILE));
+	if (rc == 0)
+		rc = push_save(why, sizeof(why));
+	if (rc != 0)
+		return (reply_error(req, rc, rc == 400 ? "invalid" : rc == 409 ?
+		    "full" : "io", "%s", why));
 	return (api_push_list(req));
 }
 
-/* The devices as they are now, for those who changed them. */
+/* The request's user's devices as they are now, for those who changed
+ * them. */
 int
 api_push_list(struct http_request *req)
 {
@@ -497,29 +592,32 @@ api_push_list(struct http_request *req)
 
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put(o, "ok", ucl_object_frombool(true));
-	put(o, "devices", ucl_object_fromint((int64_t)ucl_array_size(
-	    sub_list())));
+	put(o, "devices", ucl_object_fromint((int64_t)count_of(
+	    owner_of(req))));
 	return (reply_json(req, 200, o));
 }
 
 /*
- * POST /api/push/send {"title", "body", "except"}: tell every device
- * but the one at the address "except", which is the one that asks.
+ * POST /api/push/send {"title", "body", "except"}, or arcana-console's
+ * push/send action: tell every device of the request's user but the one
+ * at the address "except", which is the one that asks.
  */
 int
 api_push_send(struct http_request *req)
 {
 	ucl_object_t		*body, *o, *msg, *res, *one;
-	const ucl_object_t	*e;
+	const ucl_object_t	*e, *in;
 	ucl_object_iter_t	 it;
 	struct send		*s;
 	struct target		*tg;
 	const char		*title, *text, *except, *ep, *k, *a, *path;
+	const char		*user;
 	char			 host[256];
 	size_t			 i, len;
 	int			 sent, gone;
-	bool			 changed;
+	bool			 changed, yang;
 
+	yang = cyang_path(req->path);
 	if (req->hdlr_extra != NULL) {
 		s = req->hdlr_extra;
 		if (task_state(&s->task) != TASK_STATE_FINISHED) {
@@ -536,13 +634,18 @@ api_push_send(struct http_request *req)
 			else if (s->targets[i].status == 404 ||
 			    s->targets[i].status == 410) {
 				gone++;
-				changed |= sub_remove(s->targets[i].endpoint);
+				changed |= sub_remove(s->targets[i].endpoint,
+				    NULL);
 			}
 		}
-		if (changed)
-			(void)store_save(PUSH_FILE, subs);
+		if (changed) {
+			char	why[64];
+
+			(void)push_save(why, sizeof(why));
+		}
 		o = ucl_object_typed_new(UCL_OBJECT);
-		put(o, "ok", ucl_object_frombool(true));
+		if (!yang)
+			put(o, "ok", ucl_object_frombool(true));
 		put(o, "sent", ucl_object_fromint(sent));
 		put(o, "gone", ucl_object_fromint(gone));
 		put(o, "failed", ucl_object_fromint((int64_t)s->ntargets -
@@ -551,6 +654,9 @@ api_push_send(struct http_request *req)
 		res = ucl_object_typed_new(UCL_ARRAY);
 		for (i = 0; i < s->ntargets; i++) {
 			one = ucl_object_typed_new(UCL_OBJECT);
+			if (yang)
+				put(one, "index", ucl_object_fromint(
+				    (int64_t)i));
 			if (endpoint_parse(s->targets[i].endpoint, host,
 			    sizeof(host), &path))
 				put(one, "service", ucl_object_fromstring(host));
@@ -561,21 +667,31 @@ api_push_send(struct http_request *req)
 				    s->targets[i].said));
 			ucl_array_append(res, one);
 		}
-		put(o, "results", res);
+		put(o, yang ? "result" : "results", res);
 		send_free(s);
-		return (reply_json(req, 200, o));
+		return (yang ? cyang_output(req, o) : reply_json(req, 200, o));
 	}
 	if (!guard(req, true))
 		return (WEB_OK);
-	if ((body = read_json(req)) == NULL)
+	body = read_json(req);
+	if (yang && req->http_body != NULL && req->http_body->length > 0 &&
+	    (body == NULL || (body->len > 0 && ucl_object_lookup(body,
+	    "arcana-console:input") == NULL))) {
+		ucl_object_unref(body);
+		return (restconf_error_tag(req, 400, "malformed-message",
+		    "an action's body is {\"arcana-console:input\": {...}}"));
+	}
+	if (!yang && body == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON body is "
 		    "needed"));
-	if ((title = ucl_str(body, "title")) == NULL)
+	in = yang ? ucl_object_lookup(body, "arcana-console:input") : body;
+	if ((title = ucl_str(in, "title")) == NULL)
 		title = "Arcana";
-	if ((text = ucl_str(body, "body")) == NULL)
+	if ((text = ucl_str(in, "body")) == NULL)
 		text = "";
-	if ((except = ucl_str(body, "except")) == NULL)
+	if ((except = ucl_str(in, "except")) == NULL)
 		except = "";
+	user = owner_of(req);
 	s = xcalloc(1, sizeof(*s));
 	msg = ucl_object_typed_new(UCL_OBJECT);
 	put(msg, "title", ucl_object_fromlstring(title, strnlen(title, 120)));
@@ -589,7 +705,7 @@ api_push_send(struct http_request *req)
 		k = ucl_str(e, "p256dh");
 		a = ucl_str(e, "auth");
 		if (ep == NULL || k == NULL || a == NULL || strcmp(ep,
-		    except) == 0)
+		    except) == 0 || !mine(e, user))
 			continue;
 		tg = &s->targets[s->ntargets];
 		tg->endpoint = strdup(ep);
@@ -609,13 +725,144 @@ api_push_send(struct http_request *req)
 		send_free(s);
 		free(s);
 		o = ucl_object_typed_new(UCL_OBJECT);
-		put(o, "ok", ucl_object_frombool(true));
+		if (!yang)
+			put(o, "ok", ucl_object_frombool(true));
 		put(o, "sent", ucl_object_fromint(0));
-		return (reply_json(req, 200, o));
+		return (yang ? cyang_output(req, o) : reply_json(req, 200, o));
 	}
 	req->hdlr_extra = s;
 	task_create(&s->task, send_run);
 	task_bind_request(&s->task, req);
 	task_run(&s->task);
 	return (WEB_RETRY);
+}
+
+/* ---- arcana-console's push (cyang.c) --------------------------------- */
+
+/* arcana-console:push's value: the key, the request's user's devices,
+ * never their keys. */
+ucl_object_t *
+push_yang(struct http_request *req)
+{
+	const ucl_object_t	*e, *v;
+	ucl_object_t		*o, *a, *d;
+	ucl_object_iter_t	 it;
+	const char		*path, *user;
+	char			 host[256];
+
+	user = owner_of(req);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	if (vapid_pub != NULL)
+		put(o, "public-key", ucl_object_fromstring(vapid_pub));
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(sub_list(), &it, true)) != NULL) {
+		if (!mine(e, user) || ucl_str(e, "endpoint") == NULL)
+			continue;
+		d = ucl_object_typed_new(UCL_OBJECT);
+		put(d, "endpoint", ucl_object_fromstring(ucl_str(e,
+		    "endpoint")));
+		if (ucl_str(e, "name") != NULL)
+			put(d, "name", ucl_object_fromstring(ucl_str(e,
+			    "name")));
+		if (endpoint_parse(ucl_str(e, "endpoint"), host, sizeof(host),
+		    &path))
+			put(d, "service", ucl_object_fromstring(host));
+		if ((v = ucl_object_lookup(e, "added")) != NULL)
+			put(d, "added", yang_time((double)ucl_object_toint(v)));
+		ucl_array_append(a, d);
+	}
+	put(o, "subscription", a);
+	return (o);
+}
+
+/* user's subscription at endpoint, as kept; NULL: none. */
+static const ucl_object_t *
+sub_of(const char *endpoint, const char *user)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+
+	while ((e = ucl_object_iterate(sub_list(), &it, true)) != NULL)
+		if (ucl_str(e, "endpoint") != NULL && strcmp(ucl_str(e,
+		    "endpoint"), endpoint) == 0 && mine(e, user))
+			return (e);
+	return (NULL);
+}
+
+/*
+ * The request's user's subscriptions changed from was to now: one made
+ * needs its keys; one changed keeps those it had unless given others;
+ * one left out removed.  All checked before push.json is written.  0,
+ * or the HTTP status and why.
+ */
+int
+push_yang_set(struct http_request *req, const ucl_object_t *was,
+    const ucl_object_t *now, char *why, size_t len)
+{
+	const ucl_object_t	*e, *o, *k;
+	ucl_object_t		*keep;
+	ucl_object_iter_t	 it;
+	const char		*user, *ep, *p256dh, *auth;
+	int64_t			 added;
+	int			 rc;
+
+	user = owner_of(req);
+	/* What was, to go back to when a change is refused. */
+	keep = ucl_object_copy(subs);
+	rc = 0;
+	it = NULL;
+	while (rc == 0 && (o = ucl_object_iterate(ucl_object_lookup(was,
+	    "subscription"), &it, true)) != NULL)
+		if (cyang_entry(ucl_object_lookup(now, "subscription"),
+		    "endpoint", ucl_str(o, "endpoint")) == NULL)
+			(void)sub_remove(ucl_str(o, "endpoint"), user);
+	it = NULL;
+	while (rc == 0 && (e = ucl_object_iterate(ucl_object_lookup(now,
+	    "subscription"), &it, true)) != NULL) {
+		ep = ucl_str(e, "endpoint");
+		o = cyang_entry(ucl_object_lookup(was, "subscription"),
+		    "endpoint", ep);
+		if (o != NULL && cyang_same(o, e))
+			continue;
+		p256dh = ucl_str(e, "p256dh");
+		auth = ucl_str(e, "auth");
+		added = time(NULL);
+		/* Its keys and when it was made, as they were, unless
+		 * given anew. */
+		if (o != NULL && (k = sub_of(ep, user)) != NULL) {
+			if (p256dh == NULL)
+				p256dh = ucl_str(k, "p256dh");
+			if (auth == NULL)
+				auth = ucl_str(k, "auth");
+			added = ucl_object_toint(ucl_object_lookup(k, "added"));
+		}
+		if (p256dh == NULL || auth == NULL) {
+			snprintf(why, len, "a subscription is made with its "
+			    "p256dh and auth");
+			rc = 400;
+			break;
+		}
+		/* sub_add() replaces it: the strings copied first. */
+		{
+			char	*kp = strdup(p256dh), *ka = strdup(auth);
+
+			rc = kp != NULL && ka != NULL ? sub_add(user, ep, kp, ka,
+			    ucl_str(e, "name"), added, why, len) : 500;
+			if (kp != NULL)
+				explicit_bzero(kp, strlen(kp));
+			if (ka != NULL)
+				explicit_bzero(ka, strlen(ka));
+			free(kp);
+			free(ka);
+		}
+	}
+	if (rc == 0)
+		rc = push_save(why, len);
+	if (rc != 0) {
+		ucl_object_unref(subs);
+		subs = keep;
+	} else
+		ucl_object_unref(keep);
+	return (rc);
 }

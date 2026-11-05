@@ -47,6 +47,7 @@
 #include <ucl.h>
 
 #include "console.h"
+#include "restconf.h"
 
 #define	MAIL_LOCK	"mail.lock"
 #define	MAIL_HOUR_MAX	20
@@ -1024,7 +1025,8 @@ mail_init(void)
 		(void)pthread_detach(tid);
 }
 
-/* POST /api/settings/mail-test: a mail to say mail goes out. */
+/* POST /api/settings/mail-test, or arcana-console's settings/mail-test
+ * action: a mail to say mail goes out. */
 int
 api_mail_test(struct http_request *req)
 {
@@ -1043,10 +1045,13 @@ api_mail_test(struct http_request *req)
 	mc_free(&mc);
 	err[0] = '\0';
 	if (mail_send("Arcana: a test", body, err, sizeof(err)) != 0)
-		return (reply_error(req, 502, "not-sent", "%s", err));
+		return (cyang_path(req->path) ? restconf_error(req, 502, err) :
+		    reply_error(req, 502, "not-sent", "%s", err));
 	o = ucl_object_typed_new(UCL_OBJECT);
-	ucl_object_insert_key(o, ucl_object_frombool(true), "ok", 0, false);
 	ucl_object_insert_key(o, ucl_object_fromstring(to), "to", 0, false);
+	if (cyang_path(req->path))
+		return (cyang_output(req, o));
+	ucl_object_insert_key(o, ucl_object_frombool(true), "ok", 0, false);
 	return (reply_json(req, 200, o));
 }
 
@@ -1089,12 +1094,16 @@ api_telegram_test(struct http_request *req)
 			return (WEB_RETRY);
 		}
 		if (tt->rc != 0)
-			return (reply_error(req, 502, "not-sent", "%s", tt->err));
+			return (cyang_path(req->path) ? restconf_error(req, 502,
+			    tt->err) : reply_error(req, 502, "not-sent", "%s",
+			    tt->err));
 		o = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(o, ucl_object_frombool(true), "ok", 0,
-		    false);
 		ucl_object_insert_key(o, ucl_object_fromstring(tt->chats), "to",
 		    0, false);
+		if (cyang_path(req->path))
+			return (cyang_output(req, o));
+		ucl_object_insert_key(o, ucl_object_frombool(true), "ok", 0,
+		    false);
 		return (reply_json(req, 200, o));
 	}
 	if (!guard(req, true))

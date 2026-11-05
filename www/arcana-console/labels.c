@@ -11,7 +11,8 @@
  * the data directory, {"labels": {"server/interface": "text"}}, under
  * labels.lock while it is changed; GET /api/labels gives them all,
  * PUT /api/labels/<server>/<interface> {"label": "text"} sets one,
- * an empty text takes it away.
+ * an empty text takes it away.  The same as arcana-console's labels
+ * (cyang.c), through labels_apply().
  */
 
 #include <sys/param.h>
@@ -140,15 +141,75 @@ api_labels(struct http_request *req)
 	return (reply_json(req, 200, all));
 }
 
+/*
+ * The labels changed as set says, {"server/interface": "text"}, an empty
+ * text taking one away, each checked before any is kept; the labels
+ * then into *allp when asked.  0, or the HTTP status and why.
+ */
+static int
+labels_apply(const ucl_object_t *set, ucl_object_t **allp, char *why,
+    size_t len)
+{
+	ucl_object_t		*all, *labels;
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	const char		*label;
+	int			 fd, rc;
+
+	it = NULL;
+	while ((v = ucl_object_iterate(set, &it, true)) != NULL)
+		if (!label_ok(ucl_object_tostring(v))) {
+			snprintf(why, len, "a label is text of %d characters at "
+			    "most, no control characters", LABEL_MAX);
+			return (400);
+		}
+	fd = lock_take();
+	all = all_load();
+	labels = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all, "labels");
+	it = NULL;
+	while ((v = ucl_object_iterate(set, &it, true)) != NULL) {
+		label = ucl_object_tostring(v);
+		if (label[0] == '\0') {
+			(void)ucl_object_delete_key(labels, ucl_object_key(v));
+			continue;
+		}
+		if (ucl_object_lookup(labels, ucl_object_key(v)) == NULL &&
+		    obj_len(labels) >= LABELS_MAX) {
+			lock_give(fd);
+			ucl_object_unref(all);
+			snprintf(why, len, "%d labels at most", LABELS_MAX);
+			return (400);
+		}
+		put(labels, ucl_object_key(v), ucl_object_fromstring(label));
+	}
+	rc = store_save(LABELS_FILE, all);
+	lock_give(fd);
+	if (rc != 0) {
+		ucl_object_unref(all);
+		snprintf(why, len, "the labels could not be written");
+		return (500);
+	}
+	it = NULL;
+	while ((v = ucl_object_iterate(set, &it, true)) != NULL)
+		log_msg(LOG_NOTICE, "label of %s %s", ucl_object_key(v),
+		    ucl_object_tostring(v)[0] != '\0' ? "set" : "taken away");
+	cyang_changed("labels");
+	if (allp != NULL)
+		*allp = all;
+	else
+		ucl_object_unref(all);
+	return (0);
+}
+
 /* PUT /api/labels/<server>/<interface> {"label": "text"}. */
 int
 api_label(struct http_request *req)
 {
-	ucl_object_t	*body, *all, *labels;
+	ucl_object_t	*body, *all, *set;
 	const char	*p, *label;
-	char		 sid[17], ifname[17], key[40];
+	char		 sid[17], ifname[17], key[40], why[128];
 	size_t		 n;
-	int		 fd, rc;
+	int		 rc;
 
 	if (req->method != HTTP_METHOD_PUT)
 		return (reply_error(req, 405, "method", "PUT"));
@@ -167,38 +228,116 @@ api_label(struct http_request *req)
 		return (reply_error(req, 400, "invalid", "{\"label\": \"text\"}; "
 		    "empty to take it away"));
 	label = ucl_str(body, "label");
-	if (!label_ok(label != NULL ? label : "")) {
-		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "a label is text of %d "
-		    "characters at most, no control characters", LABEL_MAX));
-	}
 	snprintf(key, sizeof(key), "%s/%s", sid, ifname);
-	fd = lock_take();
-	all = all_load();
-	labels = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all, "labels");
-	if (label == NULL || label[0] == '\0')
-		(void)ucl_object_delete_key(labels, key);
-	else {
-		if (ucl_object_lookup(labels, key) == NULL &&
-		    obj_len(labels) >= LABELS_MAX) {
-			lock_give(fd);
-			ucl_object_unref(all);
-			ucl_object_unref(body);
-			return (reply_error(req, 400, "invalid", "%d labels at "
-			    "most", LABELS_MAX));
-		}
-		put(labels, key, ucl_object_fromstring(label));
-	}
-	rc = store_save(LABELS_FILE, all);
-	lock_give(fd);
-	if (rc != 0) {
-		ucl_object_unref(all);
-		ucl_object_unref(body);
-		return (reply_error(req, 500, "store", "the labels could not be "
-		    "written"));
-	}
-	log_msg(LOG_NOTICE, "label of %s %s", key, label != NULL && label[0] !=
-	    '\0' ? "set" : "taken away");
+	set = ucl_object_typed_new(UCL_OBJECT);
+	put(set, key, ucl_object_fromstring(label != NULL ? label : ""));
 	ucl_object_unref(body);
+	rc = labels_apply(set, &all, why, sizeof(why));
+	ucl_object_unref(set);
+	if (rc != 0)
+		return (reply_error(req, rc, rc == 400 ? "invalid" : "store",
+		    "%s", why));
 	return (reply_json(req, 200, all));
+}
+
+/* ---- arcana-console's labels (cyang.c) ------------------------------- */
+
+/* arcana-console:labels's value: each label by its host and interface. */
+ucl_object_t *
+labels_yang(void)
+{
+	ucl_object_t		*all, *arr, *e, *o;
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	const char		*k;
+	size_t			 n;
+
+	all = all_load();
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(all, "labels"), &it,
+	    true)) != NULL) {
+		k = ucl_object_key(v);
+		if (ucl_object_type(v) != UCL_STRING || (n = strcspn(k, "/")) ==
+		    0 || k[n] != '/' || k[n + 1] == '\0')
+			continue;
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "host", ucl_object_fromlstring(k, n));
+		put(e, "interface", ucl_object_fromstring(k + n + 1));
+		put(e, "text", ucl_object_fromstring(ucl_object_tostring(v)));
+		ucl_array_append(arr, e);
+	}
+	ucl_object_unref(all);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "label", arr);
+	return (o);
+}
+
+/* The label of e, changed into set, if the request may change its host:
+ * 0, or the HTTP status and why. */
+static int
+label_change(struct http_request *req, ucl_object_t *set,
+    const ucl_object_t *e, const char *text, char *why, size_t len)
+{
+	const char	*sid;
+	char		 key[40];
+
+	sid = ucl_str(e, "host");
+	if (!host_role_ok(req, sid, true, false)) {
+		snprintf(why, len, "host %s is not one you may change", sid);
+		return (user_host(session_user(req), sid) == ROLE_NONE ? 404 :
+		    403);
+	}
+	snprintf(key, sizeof(key), "%s/%s", sid, ucl_str(e, "interface"));
+	put(set, key, ucl_object_fromstring(text));
+	return (0);
+}
+
+/*
+ * The labels changed from was to now, each of a host the request may
+ * change, kept by labels_apply() at once.  0, or the HTTP status and
+ * why.
+ */
+int
+labels_yang_set(struct http_request *req, const ucl_object_t *was,
+    const ucl_object_t *now, char *why, size_t len)
+{
+	ucl_object_t		*set;
+	const ucl_object_t	*e, *o, *l;
+	ucl_object_iter_t	 it, oit;
+	int			 rc;
+
+	set = ucl_object_typed_new(UCL_OBJECT);
+	rc = 0;
+	it = NULL;
+	while (rc == 0 && (e = ucl_object_iterate(ucl_object_lookup(now,
+	    "label"), &it, true)) != NULL) {
+		oit = NULL;
+		while ((o = ucl_object_iterate(ucl_object_lookup(was, "label"),
+		    &oit, true)) != NULL)
+			if (strcmp(ucl_str(o, "host"), ucl_str(e, "host")) == 0 &&
+			    strcmp(ucl_str(o, "interface"), ucl_str(e,
+			    "interface")) == 0)
+				break;
+		if (o == NULL || !cyang_same(o, e))
+			rc = label_change(req, set, e, ucl_str(e, "text"), why,
+			    len);
+	}
+	it = NULL;
+	while (rc == 0 && (o = ucl_object_iterate(ucl_object_lookup(was,
+	    "label"), &it, true)) != NULL) {
+		oit = NULL;
+		while ((l = ucl_object_iterate(ucl_object_lookup(now, "label"),
+		    &oit, true)) != NULL)
+			if (strcmp(ucl_str(o, "host"), ucl_str(l, "host")) == 0 &&
+			    strcmp(ucl_str(o, "interface"), ucl_str(l,
+			    "interface")) == 0)
+				break;
+		if (l == NULL)
+			rc = label_change(req, set, o, "", why, len);
+	}
+	if (rc == 0 && set->len > 0)
+		rc = labels_apply(set, NULL, why, len);
+	ucl_object_unref(set);
+	return (rc);
 }

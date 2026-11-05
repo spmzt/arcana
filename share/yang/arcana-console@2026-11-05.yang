@@ -21,13 +21,20 @@ module arcana-console {
   description
     "The console's own configuration and state, served by its RESTCONF
      from the files it keeps in its data directory (settings.json,
-     tokens.json, users.json, workflows.json, runs.json): its settings,
-     API tokens, users, roles and groups (its RBAC), the enrolment of
-     hosts by token, the workflows and their runs.  No agent serves it.
+     tokens.json, users.json, workflows.json, runs.json and the
+     others): its settings, API tokens, users, roles and groups (its
+     RBAC), the enrolment of hosts by token, the workflows and their
+     runs, the fleet's templates, interface labels, prefix lists,
+     threat feeds and snapshot transfers, and the Web Push
+     subscriptions.  No agent serves it.
 
-     Who may: the console's owners, but for the workflows and runs,
-     which its operators may too.  A secret (a token's value, a bot's
-     token, a directory's password) is never read: it is set, and
+     Who may: the console's owners, but for the workflows, runs,
+     templates, threat feeds and transfers, which its operators may
+     too, and the labels, prefix lists and Web Push subscriptions,
+     which every user reads (a label set by whom may change its host,
+     a prefix list changed by operators, a subscription its user's
+     alone).  A secret (a token's value, a bot's token, a directory's
+     password, a subscription's keys) is never read: it is set, and
      whether it is set is what is said.  A value made by the console
      (a token, an invitation, an enrolment token) is the output of an
      action, said once.  Times are the console's clock, UTC.";
@@ -372,6 +379,30 @@ module arcana-console {
         description
           "The certificates for the agents: the console's own CA, or
            web.conf's file.";
+      }
+    }
+    action mail-test {
+      description
+        "A mail to say mail goes out, by sendmail(8) on the console's
+         host, to whom the settings name.";
+      output {
+        leaf to {
+          type string;
+          description
+            "Whom it was sent to.";
+        }
+      }
+    }
+    action telegram-test {
+      description
+        "A message to say Telegram reaches the chats, sent by the host
+         the settings name.";
+      output {
+        leaf to {
+          type string;
+          description
+            "The chats it was sent to.";
+        }
       }
     }
   }
@@ -1322,6 +1353,906 @@ module arcana-console {
           type uint32;
           description
             "How many.";
+        }
+      }
+    }
+  }
+
+  /* The fleet's tools: templates, labels, prefix lists, threat feeds,
+     transfers */
+
+  container templates {
+    description
+      "Configuration templates: a host's setup kept under a name, for
+       other hosts to be made the same (templates.json).  A file's text
+       has {{name}} where each host has a value of its own; a host's
+       config is given one with its values.  A template carries no
+       secret: a key is a host's own.";
+    list template {
+      key "name";
+      description
+        "A template.";
+      leaf name {
+        type string {
+          length "1..64";
+          pattern '[A-Za-z0-9_][A-Za-z0-9._-]*';
+        }
+        description
+          "Its name.";
+      }
+      leaf description {
+        type string {
+          length "0..512";
+        }
+        description
+          "What it is.";
+      }
+      leaf from {
+        type string;
+        description
+          "The host it was made from.";
+      }
+      list file {
+        key "path";
+        ordered-by user;
+        description
+          "A file it writes, 1 to 512 of them.";
+        leaf path {
+          type string {
+            length "1..255";
+          }
+          description
+            "Where, absolute, with no '..'.";
+        }
+        leaf mode {
+          type string {
+            pattern '[0-7]{3,4}';
+          }
+          mandatory true;
+          description
+            "Its mode, in octal.";
+        }
+        leaf owner {
+          type string;
+          mandatory true;
+          description
+            "Its owner.";
+        }
+        leaf group {
+          type string;
+          mandatory true;
+          description
+            "Its group.";
+        }
+        leaf text {
+          type string;
+          mandatory true;
+          description
+            "Its text, 1 MB at most, {{name}} for a host's value.";
+        }
+      }
+      list package {
+        key "name";
+        ordered-by user;
+        description
+          "A package put there by hand, as config-export says it.";
+        leaf name {
+          type string;
+          description
+            "Its name.";
+        }
+        leaf origin {
+          type string;
+          description
+            "Its port's origin.";
+        }
+        leaf version {
+          type string;
+          description
+            "Its version when the template was made.";
+        }
+      }
+      leaf facts {
+        type string;
+        description
+          "The hardware it needs, config-export's facts, as RFC 8259's
+           JSON.";
+      }
+      list variable {
+        key "name";
+        description
+          "A placeholder said.";
+        leaf name {
+          type string {
+            pattern '[A-Za-z_][A-Za-z0-9_]{0,31}';
+          }
+          description
+            "As in {{name}}.";
+        }
+        leaf description {
+          type string;
+          description
+            "What it is.";
+        }
+        leaf default {
+          type string;
+          description
+            "Its value when a host is given none.";
+        }
+      }
+      leaf-list placeholder {
+        type string;
+        config false;
+        description
+          "The placeholders its files have.";
+      }
+      leaf updated {
+        type yang:date-and-time;
+        config false;
+        description
+          "When it was last kept.";
+      }
+    }
+  }
+
+  container labels {
+    description
+      "Labels on interfaces: a tag of the console's own for an
+       interface of a host, kept here, not on the host, so that it
+       names the link whatever the interface's description says
+       (labels.json).  Set by whom may change the host.";
+    list label {
+      key "host interface";
+      description
+        "A label.";
+      leaf host {
+        type string {
+          pattern '[0-9a-f]{1,16}';
+        }
+        description
+          "The host's id.";
+      }
+      leaf interface {
+        type string {
+          length "1..15";
+        }
+        description
+          "The interface's name.";
+      }
+      leaf text {
+        type string {
+          length "1..64";
+        }
+        mandatory true;
+        description
+          "The label, no control characters.";
+      }
+    }
+  }
+
+  container prefix-lists {
+    description
+      "Named lists of IPv4 and IPv6 prefixes, kept once and used on any
+       host: an ipfw table filled from one, a BIRD set, an SD-WAN
+       zone's or list's prefixes (prefix-lists.json).  Read by every
+       user, changed by operators and owners.";
+    list prefix-list {
+      key "name";
+      description
+        "A list.";
+      leaf name {
+        type string {
+          length "1..32";
+          pattern '[A-Za-z0-9_-]+';
+        }
+        description
+          "Its name.";
+      }
+      leaf description {
+        type string {
+          length "0..200";
+        }
+        description
+          "What it is, no control characters.";
+      }
+      leaf-list prefix {
+        type inet:ip-prefix;
+        ordered-by user;
+        description
+          "A prefix with no host bits, 8192 at most.";
+      }
+    }
+  }
+
+  typedef feed-format {
+    type enumeration {
+      enum plain {
+        description
+          "An address or prefix a line, # and ; comments.";
+      }
+      enum spamhaus-json {
+        description
+          "Spamhaus DROP's JSON lines.";
+      }
+      enum dshield {
+        description
+          "DShield's block list.";
+      }
+    }
+    description
+      "How a feed's text is read.";
+  }
+
+  grouping feed-host {
+    description
+      "What a host was sent of a feed, or a preview's dry run there.";
+    leaf host {
+      type string;
+      description
+        "The host's id.";
+    }
+    leaf name {
+      type string;
+      description
+        "Its name.";
+    }
+    leaf table {
+      type string;
+      description
+        "The ipfw table.";
+    }
+    leaf at {
+      type yang:date-and-time;
+      description
+        "When it took the entries.";
+    }
+    leaf tried-at {
+      type yang:date-and-time;
+      description
+        "When it was last sent them.";
+    }
+    leaf count {
+      type uint32;
+      description
+        "The table's entries.";
+    }
+    leaf added {
+      type uint32;
+      description
+        "Those added.";
+    }
+    leaf removed {
+      type uint32;
+      description
+        "Those removed.";
+    }
+    leaf set {
+      type uint32;
+      description
+        "The table's set.";
+    }
+    leaf left-out {
+      type uint32;
+      description
+        "Entries the host left out.";
+    }
+    leaf error {
+      type string;
+      description
+        "Why it was not sent.";
+    }
+  }
+
+  grouping feed-dropped {
+    description
+      "The entries dropped, as the reader may see them: one that covers
+       an address no feed may cut off is listed only when it is a
+       host's the reader may read; any other only counted.";
+    list dropped {
+      key "index";
+      description
+        "An entry dropped, the first 500.";
+      leaf index {
+        type uint32;
+        description
+          "Its place.";
+      }
+      leaf entry {
+        type string;
+        description
+          "The entry, or the line that was none.";
+      }
+      leaf reason {
+        type string;
+        description
+          "Why.";
+      }
+      leaf detail {
+        type string;
+        description
+          "Which address it covers, and whose.";
+      }
+    }
+    leaf protected-hidden {
+      type uint32;
+      description
+        "Entries dropped that cover an address the reader may not be
+         told of.";
+    }
+  }
+
+  container threat-feeds {
+    description
+      "Threat feeds: lists of abusers' prefixes the console fetches
+       from the internet, once for the fleet, and keeps on the hosts
+       chosen as ipfw(8) tables (feeds.json, feeds-state.json).  A feed
+       is fetched only from an address of the internet, checked when
+       its URL is set and at each fetch and redirect.  Operators and
+       owners; a feed from a URL of one's own is made, changed and
+       previewed by an owner alone, an operator enabling, disabling
+       or choosing its hosts.  A change of a feed needs the hosts it
+       is on, and was sent to, the user's to change.  A host the
+       reader may not read is only counted.";
+    leaf floor {
+      type uint16;
+      units "hours";
+      config false;
+      description
+        "The least interval.";
+    }
+    leaf max-entries {
+      type uint32;
+      config false;
+      description
+        "The most entries a feed may have.";
+    }
+    list preset {
+      key "id";
+      config false;
+      description
+        "A source offered, off until a feed of it is made.";
+      leaf id {
+        type string;
+        description
+          "Its id, the feed's.";
+      }
+      leaf name {
+        type string;
+        description
+          "Its name.";
+      }
+      leaf url {
+        type string;
+        description
+          "Where it is.";
+      }
+      leaf format {
+        type feed-format;
+        description
+          "How it is read.";
+      }
+      leaf what {
+        type string;
+        description
+          "What it lists.";
+      }
+      leaf terms {
+        type string;
+        description
+          "Its terms of use.";
+      }
+      leaf terms-url {
+        type string;
+        description
+          "Where they are.";
+      }
+      leaf interval {
+        type uint16;
+        units "hours";
+        description
+          "The interval its terms ask for at least.";
+      }
+      leaf bogons {
+        type boolean;
+        description
+          "It lists private and reserved space on purpose.";
+      }
+    }
+    list feed {
+      key "id";
+      description
+        "A feed, 32 at most.";
+      leaf id {
+        type string {
+          pattern '[a-z0-9-]{1,24}';
+        }
+        description
+          "Its id; a preset's for one of it.";
+      }
+      leaf name {
+        type string {
+          length "1..80";
+        }
+        description
+          "Its name; left out, its preset's or its id.";
+      }
+      leaf url {
+        type string {
+          length "1..500";
+        }
+        description
+          "Where it is fetched, https or http; left out, its preset's.";
+      }
+      leaf format {
+        type feed-format;
+        description
+          "How it is read; left out, its preset's or plain.";
+      }
+      leaf interval {
+        type uint16 {
+          range "1..720";
+        }
+        units "hours";
+        description
+          "How often it is fetched; left out, its preset's or 6.";
+      }
+      leaf enabled {
+        type boolean;
+        default "false";
+        description
+          "Fetched and kept on its hosts.";
+      }
+      leaf table {
+        type string {
+          length "1..48";
+        }
+        description
+          "The ipfw table it fills; left out, feed_ and its id.";
+      }
+      leaf bogons {
+        type boolean;
+        description
+          "It lists private and reserved space on purpose: kept.";
+      }
+      leaf preset {
+        type string;
+        description
+          "The preset it is of.";
+      }
+      leaf-list host {
+        type string;
+        description
+          "The hosts it is kept on, each the user's to change.";
+      }
+      leaf hosts-hidden {
+        type uint32;
+        config false;
+        description
+          "Its hosts the reader may not read.";
+      }
+      leaf fetched-at {
+        type yang:date-and-time;
+        config false;
+        description
+          "When it was last fetched.";
+      }
+      leaf tried-at {
+        type yang:date-and-time;
+        config false;
+        description
+          "When it was last tried.";
+      }
+      leaf changed-at {
+        type yang:date-and-time;
+        config false;
+        description
+          "When its entries last changed.";
+      }
+      leaf count {
+        type uint32;
+        config false;
+        description
+          "Its entries.";
+      }
+      leaf dropped-count {
+        type uint32;
+        config false;
+        description
+          "The entries dropped.";
+      }
+      leaf covered {
+        type uint32;
+        config false;
+        description
+          "The entries another covers, left out.";
+      }
+      leaf failures {
+        type uint32;
+        config false;
+        description
+          "Fetches failed in a row.";
+      }
+      leaf error {
+        type string;
+        config false;
+        description
+          "Why the last fetch failed.";
+      }
+      container alarm {
+        config false;
+        presence "An alarm is raised.";
+        description
+          "Raised after three failures in a row, cleared when it is
+           fetched again.";
+        leaf since {
+          type yang:date-and-time;
+          description
+            "Since when.";
+        }
+        leaf text {
+          type string;
+          description
+            "Why.";
+        }
+      }
+      list delivered {
+        key "host";
+        config false;
+        description
+          "What each host it was sent to has.";
+        uses feed-host;
+      }
+      leaf delivered-hidden {
+        type uint32;
+        config false;
+        description
+          "Hosts it was sent to that the reader may not read.";
+      }
+      container last-fetch {
+        config false;
+        description
+          "What the last fetch dropped.";
+        uses feed-dropped;
+      }
+      list event {
+        key "index";
+        config false;
+        description
+          "Its entries changed, the last 30.";
+        leaf index {
+          type uint32;
+          description
+            "Its place.";
+        }
+        leaf at {
+          type yang:date-and-time;
+          description
+            "When.";
+        }
+        leaf count {
+          type uint32;
+          description
+            "The entries then.";
+        }
+        leaf was {
+          type uint32;
+          description
+            "The entries before.";
+        }
+      }
+      container last-preview {
+        config false;
+        presence "A preview was asked.";
+        description
+          "The last preview: fetched whole, each host's dry run, nothing
+           kept.";
+        leaf at {
+          type yang:date-and-time;
+          description
+            "When.";
+        }
+        leaf error {
+          type string;
+          description
+            "Why it failed.";
+        }
+        leaf count {
+          type uint32;
+          description
+            "The entries it would have.";
+        }
+        leaf dropped-count {
+          type uint32;
+          description
+            "The entries it would drop.";
+        }
+        leaf covered {
+          type uint32;
+          description
+            "The entries another covers.";
+        }
+        uses feed-dropped;
+        list host {
+          key "host";
+          description
+            "A host's dry run.";
+          uses feed-host;
+        }
+        leaf hosts-hidden {
+          type uint32;
+          description
+            "Hosts the reader may not read.";
+        }
+      }
+      leaf-list sample {
+        type string;
+        config false;
+        description
+          "Its first 200 entries.";
+      }
+      action fetch {
+        description
+          "Fetched now, and sent to its hosts that lack it.";
+      }
+      action preview {
+        description
+          "Fetched whole and each host's dry run asked; nothing kept.
+           A feed from a URL of one's own, an owner's alone.";
+      }
+    }
+  }
+
+  container transfers {
+    config false;
+    description
+      "Snapshots sent from one host to another, the console carrying
+       the bytes (transfers.json, the last 32).";
+    list transfer {
+      key "id";
+      description
+        "A transfer.";
+      leaf id {
+        type uint32;
+        description
+          "Its id.";
+      }
+      leaf from {
+        type string;
+        description
+          "The sending host's id.";
+      }
+      leaf snapshot {
+        type string;
+        description
+          "The snapshot sent.";
+      }
+      leaf since {
+        type string;
+        description
+          "The snapshot it is sent from, incrementally.";
+      }
+      leaf recursive {
+        type boolean;
+        description
+          "Its descendants' too.";
+      }
+      leaf to {
+        type string;
+        description
+          "The receiving host's id.";
+      }
+      leaf dataset {
+        type string;
+        description
+          "The dataset it is received as.";
+      }
+      leaf state {
+        type enumeration {
+          enum running;
+          enum done;
+          enum failed;
+          enum cancelled;
+          enum interrupted;
+        }
+        description
+          "Where it is; interrupted, cut by the console's restart.";
+      }
+      leaf bytes {
+        type uint64;
+        description
+          "The bytes carried.";
+      }
+      leaf error {
+        type string;
+        description
+          "Why it failed.";
+      }
+      leaf started {
+        type yang:date-and-time;
+        description
+          "When it began.";
+      }
+      leaf ended {
+        type yang:date-and-time;
+        description
+          "When it ended.";
+      }
+      leaf cancel {
+        type boolean;
+        description
+          "A stop was asked.";
+      }
+      action stop {
+        description
+          "A transfer that runs stopped.";
+      }
+    }
+    action start {
+      description
+        "A snapshot sent; both hosts the user's to change.";
+      input {
+        leaf from {
+          type string;
+          mandatory true;
+          description
+            "The sending host's id.";
+        }
+        leaf snapshot {
+          type string;
+          mandatory true;
+          description
+            "dataset@name.";
+        }
+        leaf since {
+          type string;
+          description
+            "dataset@name, for an incremental stream.";
+        }
+        leaf recursive {
+          type boolean;
+          default "false";
+          description
+            "Its descendants' too.";
+        }
+        leaf to {
+          type string;
+          mandatory true;
+          description
+            "The receiving host's id.";
+        }
+        leaf dataset {
+          type string;
+          mandatory true;
+          description
+            "A dataset under a pool to receive it as.";
+        }
+      }
+      output {
+        leaf id {
+          type uint32;
+          description
+            "Its id.";
+        }
+      }
+    }
+  }
+
+  /* Web Push */
+
+  container push {
+    description
+      "The devices told by Web Push of what ends in another (push.json),
+       each user's own: a user reads and changes only the subscriptions
+       made in their name.  A subscription's keys are written alone,
+       never read: left out of a change, they stay.";
+    leaf public-key {
+      type string;
+      config false;
+      description
+        "The console's VAPID key, base64url, for a browser to
+         subscribe with.";
+    }
+    list subscription {
+      key "endpoint";
+      description
+        "A device, 16 at most of all users'.";
+      leaf endpoint {
+        type string {
+          length "1..1024";
+        }
+        description
+          "Its push service's address, https://host/path.";
+      }
+      leaf name {
+        type string {
+          length "0..80";
+        }
+        description
+          "What the device is.";
+      }
+      leaf p256dh {
+        type string;
+        description
+          "Its P-256 public key, base64url: write-only.";
+      }
+      leaf auth {
+        type string;
+        description
+          "Its 16-byte secret, base64url: write-only.";
+      }
+      leaf service {
+        type string;
+        config false;
+        description
+          "The push service's host.";
+      }
+      leaf added {
+        type yang:date-and-time;
+        config false;
+        description
+          "When it was made.";
+      }
+    }
+    action send {
+      description
+        "A message to the user's devices but the one at except.";
+      input {
+        leaf title {
+          type string;
+          description
+            "Its title, 120 at most; left out, Arcana.";
+        }
+        leaf body {
+          type string;
+          description
+            "Its text, 600 at most.";
+        }
+        leaf except {
+          type string;
+          description
+            "The endpoint of the device that sends it.";
+        }
+      }
+      output {
+        leaf sent {
+          type uint32;
+          description
+            "Taken by their push service.";
+        }
+        leaf gone {
+          type uint32;
+          description
+            "Devices gone, forgotten.";
+        }
+        leaf failed {
+          type uint32;
+          description
+            "Not taken.";
+        }
+        list result {
+          key "index";
+          description
+            "What each push service said.";
+          leaf index {
+            type uint32;
+            description
+              "Its place.";
+          }
+          leaf service {
+            type string;
+            description
+              "The push service.";
+          }
+          leaf status {
+            type int32;
+            description
+              "Its HTTP status; -1, no answer.";
+          }
+          leaf said {
+            type string;
+            description
+              "What it said, when it refused.";
+          }
         }
       }
     }

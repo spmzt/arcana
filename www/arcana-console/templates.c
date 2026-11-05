@@ -31,6 +31,8 @@
  * GET /api/templates lists them, GET, PUT and DELETE
  * /api/templates/<name> read, keep and forget one.  Kept in
  * templates.json, under flock(2): workers change it one at a time.
+ * The same as arcana-console's templates (cyang.c), through
+ * template_keep() and template_forget().
  */
 
 #include <sys/param.h>
@@ -423,15 +425,101 @@ api_templates(struct http_request *req)
 	return (reply_json(req, 200, top));
 }
 
+/*
+ * Template name kept as body says, checked first; dry, checked alone.
+ * 0, or the HTTP status and why.
+ */
+static int
+template_keep(const char *name, const ucl_object_t *body, const char *who,
+    bool dry, char *why, size_t len)
+{
+	ucl_object_t	*all, *t, *tmpls;
+	const char	*e;
+	char		 w[300];
+	int		 fd, rc;
+
+	if (!template_name_ok(name)) {
+		snprintf(why, len, "a template is named with letters, digits, "
+		    ". _ and -");
+		return (400);
+	}
+	if ((e = check(body, w, sizeof(w))) != NULL) {
+		snprintf(why, len, "%s", e);
+		return (400);
+	}
+	fd = lock_take();
+	all = all_load();
+	tmpls = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all, "templates");
+	if (ucl_object_lookup(tmpls, name) == NULL && obj_len(tmpls) >=
+	    TEMPLATES_MAX) {
+		ucl_object_unref(all);
+		lock_give(fd);
+		snprintf(why, len, "%d templates at most", TEMPLATES_MAX);
+		return (400);
+	}
+	if (dry) {
+		ucl_object_unref(all);
+		lock_give(fd);
+		return (0);
+	}
+	/* What the server says of it, not the body. */
+	t = ucl_object_copy(body);
+	(void)ucl_object_delete_key(t, "name");
+	(void)ucl_object_delete_key(t, "placeholders");
+	put(t, "updated", ucl_object_fromint(time(NULL)));
+	(void)ucl_object_delete_key(tmpls, name);
+	ucl_object_insert_key(tmpls, t, name, 0, true);
+	rc = store_save(TEMPLATES_FILE, all);
+	ucl_object_unref(all);
+	lock_give(fd);
+	if (rc != 0) {
+		snprintf(why, len, "the template was not kept");
+		return (500);
+	}
+	log_msg(LOG_NOTICE, "template %s kept by %s", name, who != NULL ? who :
+	    "?");
+	cyang_changed("templates");
+	return (0);
+}
+
+/* Template name forgotten: 0, or the HTTP status and why. */
+static int
+template_forget(const char *name, const char *who, char *why, size_t len)
+{
+	ucl_object_t	*all, *tmpls;
+	int		 fd, rc;
+
+	fd = lock_take();
+	all = all_load();
+	tmpls = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all, "templates");
+	if (ucl_object_lookup(tmpls, name) == NULL) {
+		ucl_object_unref(all);
+		lock_give(fd);
+		snprintf(why, len, "no template %s", name);
+		return (404);
+	}
+	(void)ucl_object_delete_key(tmpls, name);
+	rc = store_save(TEMPLATES_FILE, all);
+	ucl_object_unref(all);
+	lock_give(fd);
+	if (rc != 0) {
+		snprintf(why, len, "not forgotten");
+		return (500);
+	}
+	log_msg(LOG_NOTICE, "template %s forgotten by %s", name, who != NULL ?
+	    who : "?");
+	cyang_changed("templates");
+	return (0);
+}
+
 /* GET, PUT, DELETE /api/templates/<name>. */
 int
 api_template(struct http_request *req)
 {
-	ucl_object_t		*all, *t, *body, *top;
-	ucl_object_t		*tmpls;
-	const char		*name, *e;
+	ucl_object_t		*t, *body, *top;
+	const char		*name;
 	char			 why[300];
-	int			 fd, rc;
+	int			 rc;
 
 	name = req->path + strlen("/api/templates/");
 	if (!template_name_ok(name))
@@ -453,64 +541,216 @@ api_template(struct http_request *req)
 		if ((body = read_json(req)) == NULL)
 			return (reply_error(req, 400, "invalid", "a template, "
 			    "a JSON object"));
-		if ((e = check(body, why, sizeof(why))) != NULL) {
-			ucl_object_unref(body);
-			return (reply_error(req, 400, "invalid", "%s", e));
-		}
-		/* What the server says of it, not the body. */
-		(void)ucl_object_delete_key(body, "name");
-		(void)ucl_object_delete_key(body, "placeholders");
-		put(body, "updated", ucl_object_fromint(time(NULL)));
-		fd = lock_take();
-		all = all_load();
-		tmpls = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all,
-		    "templates");
-		if (ucl_object_lookup(tmpls, name) == NULL &&
-		    obj_len(tmpls) >= TEMPLATES_MAX) {
-			ucl_object_unref(all);
-			ucl_object_unref(body);
-			lock_give(fd);
-			return (reply_error(req, 400, "invalid", "%d templates "
-			    "at most", TEMPLATES_MAX));
-		}
-		(void)ucl_object_delete_key(tmpls, name);
-		ucl_object_insert_key(tmpls, body, name, 0, true);
-		rc = store_save(TEMPLATES_FILE, all);
-		ucl_object_unref(all);
-		lock_give(fd);
+		rc = template_keep(name, body, session_who(req), false, why,
+		    sizeof(why));
+		ucl_object_unref(body);
 		if (rc != 0)
-			return (reply_error(req, 500, "store", "the template "
-			    "was not kept"));
-		log_msg(LOG_NOTICE, "template %s kept by %s", name,
-		    session_who(req) != NULL ? session_who(req) : "?");
+			return (reply_error(req, rc, rc == 400 ? "invalid" :
+			    "store", "%s", why));
 		top = ucl_object_typed_new(UCL_OBJECT);
 		put(top, "ok", ucl_object_frombool(true));
 		return (reply_json(req, 200, top));
 	case HTTP_METHOD_DELETE:
 		if (!guard(req, true))
 			return (WEB_OK);
-		fd = lock_take();
-		all = all_load();
-		tmpls = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all,
-		    "templates");
-		if (ucl_object_lookup(tmpls, name) == NULL) {
-			ucl_object_unref(all);
-			lock_give(fd);
-			return (reply_error(req, 404, "not_found", "no template "
-			    "%s", name));
-		}
-		(void)ucl_object_delete_key(tmpls, name);
-		rc = store_save(TEMPLATES_FILE, all);
-		ucl_object_unref(all);
-		lock_give(fd);
-		if (rc != 0)
-			return (reply_error(req, 500, "store", "not forgotten"));
-		log_msg(LOG_NOTICE, "template %s forgotten by %s", name,
-		    session_who(req) != NULL ? session_who(req) : "?");
+		if ((rc = template_forget(name, session_who(req), why,
+		    sizeof(why))) != 0)
+			return (reply_error(req, rc, rc == 404 ? "not_found" :
+			    "store", "%s", why));
 		top = ucl_object_typed_new(UCL_OBJECT);
 		put(top, "ok", ucl_object_frombool(true));
 		return (reply_json(req, 200, top));
 	default:
 		return (reply_error(req, 405, "method", "GET, PUT or DELETE"));
 	}
+}
+
+/* ---- arcana-console's templates (cyang.c) ---------------------------- */
+
+static const char *const fkeys[] = { "path", "mode", "owner", "group",
+    "text", NULL };
+static const char *const pkeys[] = { "name", "origin", "version", NULL };
+static const char *const vkeys[] = { "description", "default", NULL };
+
+/* Of o, the keys named copied into to, those it has as text. */
+static void
+strings(ucl_object_t *to, const ucl_object_t *o, const char *const *keys)
+{
+
+	for (; *keys != NULL; keys++)
+		if (str(o, *keys) != NULL)
+			put(to, *keys, ucl_object_fromstring(str(o, *keys)));
+}
+
+/* Each element of list, its keys copied, into an array. */
+static ucl_object_t *
+each(const ucl_object_t *list, const char *const *keys)
+{
+	ucl_object_t		*a, *x;
+	const ucl_object_t	*f;
+	ucl_object_iter_t	 it = NULL;
+
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((f = ucl_object_iterate(list, &it, true)) != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		strings(x, f, keys);
+		ucl_array_append(a, x);
+	}
+	return (a);
+}
+
+/* arcana-console:templates's value: each template whole. */
+ucl_object_t *
+templates_yang(void)
+{
+	ucl_object_t		*all, *arr, *e, *a, *x, *o;
+	const ucl_object_t	*t, *f, *v;
+	ucl_object_iter_t	 it, fit;
+	unsigned char		*json;
+
+	all = all_load();
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((t = ucl_object_iterate(ucl_object_lookup(all, "templates"),
+	    &it, true)) != NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "name", ucl_object_fromstring(ucl_object_key(t)));
+		if (str(t, "description") != NULL)
+			put(e, "description", ucl_object_fromstring(str(t,
+			    "description")));
+		if (str(t, "from") != NULL)
+			put(e, "from", ucl_object_fromstring(str(t, "from")));
+		put(e, "file", each(ucl_object_lookup(t, "files"), fkeys));
+		put(e, "package", each(ucl_object_lookup(t, "packages"), pkeys));
+		if ((v = ucl_object_lookup(t, "facts")) != NULL &&
+		    (json = ucl_object_emit(v, UCL_EMIT_JSON_COMPACT)) != NULL) {
+			put(e, "facts", ucl_object_fromstring((char *)json));
+			free(json);
+		}
+		a = ucl_object_typed_new(UCL_ARRAY);
+		fit = NULL;
+		while ((f = ucl_object_iterate(ucl_object_lookup(t,
+		    "variables"), &fit, true)) != NULL) {
+			x = ucl_object_typed_new(UCL_OBJECT);
+			put(x, "name", ucl_object_fromstring(ucl_object_key(f)));
+			strings(x, f, vkeys);
+			ucl_array_append(a, x);
+		}
+		put(e, "variable", a);
+		if (ucl_array_size((o = placeholders(t))) > 0)
+			put(e, "placeholder", o);
+		else
+			ucl_object_unref(o);
+		if (ucl_object_lookup(t, "updated") != NULL)
+			put(e, "updated", yang_time((double)ucl_object_toint(
+			    ucl_object_lookup(t, "updated"))));
+		ucl_array_append(arr, e);
+	}
+	ucl_object_unref(all);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "template", arr);
+	return (o);
+}
+
+/* A template's entry y as /api's body; NULL and why: its facts are no
+ * JSON object. */
+static ucl_object_t *
+body_of(const ucl_object_t *y, char *why, size_t len)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*b, *a, *x, *facts;
+	const ucl_object_t	*f;
+	ucl_object_iter_t	 it;
+	const char		*s;
+
+	b = ucl_object_typed_new(UCL_OBJECT);
+	if (str(y, "description") != NULL)
+		put(b, "description", ucl_object_fromstring(str(y,
+		    "description")));
+	if (str(y, "from") != NULL)
+		put(b, "from", ucl_object_fromstring(str(y, "from")));
+	put(b, "files", each(ucl_object_lookup(y, "file"), fkeys));
+	if (ucl_object_lookup(y, "package") != NULL)
+		put(b, "packages", each(ucl_object_lookup(y, "package"), pkeys));
+	if ((s = str(y, "facts")) != NULL) {
+		facts = NULL;
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		if (ucl_parser_add_string(p, s, strlen(s)))
+			facts = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+		if (facts == NULL || ucl_object_type(facts) != UCL_OBJECT) {
+			if (facts != NULL)
+				ucl_object_unref(facts);
+			ucl_object_unref(b);
+			snprintf(why, len, "its facts are a JSON object, as "
+			    "config-export's");
+			return (NULL);
+		}
+		put(b, "facts", facts);
+	}
+	if (ucl_object_lookup(y, "variable") != NULL) {
+		a = ucl_object_typed_new(UCL_OBJECT);
+		it = NULL;
+		while ((f = ucl_object_iterate(ucl_object_lookup(y, "variable"),
+		    &it, true)) != NULL) {
+			x = ucl_object_typed_new(UCL_OBJECT);
+			strings(x, f, vkeys);
+			put(a, str(f, "name"), x);
+		}
+		put(b, "variables", a);
+	}
+	return (b);
+}
+
+/*
+ * The templates changed from was to now, through template_keep() and
+ * template_forget(): every change checked before any is kept.  0, or the
+ * HTTP status and why.
+ */
+int
+templates_yang_set(struct http_request *req, const ucl_object_t *was,
+    const ucl_object_t *now, char *why, size_t len)
+{
+	const ucl_object_t	*t, *o;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*b;
+	const char		*name;
+	char			 w[300];
+	int			 rc, pass;
+
+	for (pass = 0; pass < 2; pass++) {
+		it = NULL;
+		while ((t = ucl_object_iterate(ucl_object_lookup(now,
+		    "template"), &it, true)) != NULL) {
+			name = str(t, "name");
+			o = cyang_entry(ucl_object_lookup(was, "template"),
+			    "name", name);
+			if (o != NULL && cyang_same(o, t))
+				continue;
+			if ((b = body_of(t, w, sizeof(w))) == NULL)
+				rc = 400;
+			else {
+				rc = template_keep(name, b, session_who(req),
+				    pass == 0, w, sizeof(w));
+				ucl_object_unref(b);
+			}
+			if (rc != 0) {
+				snprintf(why, len, "template %s: %s", name, w);
+				return (rc);
+			}
+		}
+		if (pass == 0)
+			continue;
+		it = NULL;
+		while ((t = ucl_object_iterate(ucl_object_lookup(was,
+		    "template"), &it, true)) != NULL) {
+			name = str(t, "name");
+			if (cyang_entry(ucl_object_lookup(now, "template"),
+			    "name", name) == NULL && (rc = template_forget(name,
+			    session_who(req), why, len)) != 0)
+				return (rc);
+		}
+	}
+	return (0);
 }

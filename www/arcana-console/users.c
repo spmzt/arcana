@@ -323,8 +323,8 @@ user_host(const char *name, const char *sid)
 
 /*
  * May a user of this console role take the path: the console's own
- * (settings, tokens, CA, users, roles, enrolment, update, push) for
- * the owner alone; the fleet's tools (SD-WAN, workflows, templates,
+ * (settings, tokens, CA, users, roles, enrolment, update) for the owner
+ * alone; the fleet's tools (SD-WAN, workflows, templates,
  * transfers, the path finder, adding a host, keeping prefix lists) for
  * an operator too; the rest for everyone, the hosts' routes checked
  * by host besides.
@@ -335,12 +335,15 @@ user_path_ok(enum crole r, const char *path, bool mutate)
 	static const char	*owner_only[] = { "/api/settings", "/api/tokens",
 				    "/api/ca", "/api/users", "/api/roles",
 				    "/api/groups",
-				    "/api/enrol", "/api/update", "/api/push/send",
+				    "/api/enrol", "/api/update",
 				    CYANG_DATA "settings", CYANG_DATA "tokens",
 				    CYANG_DATA "users", CYANG_DATA "roles",
 				    CYANG_DATA "groups", CYANG_DATA "enrolment" };
 	static const char	*operator_up[] = { "/api/sdwan", "/api/feeds",
 				    CYANG_DATA "workflows", CYANG_DATA "runs",
+				    CYANG_DATA "templates",
+				    CYANG_DATA "threat-feeds",
+				    CYANG_DATA "transfers",
 				    "/restconf/data/ietf-l3vpn-ntw:l3vpn-ntw",
 				    "/restconf/data/ietf-vn:access-point",
 				    "/restconf/data/ietf-vn:virtual-network",
@@ -370,7 +373,8 @@ user_path_ok(enum crole r, const char *path, bool mutate)
 			return (false);
 	}
 	if (mutate && (strcmp(path, "/api/servers") == 0 || strncmp(path,
-	    "/api/prefix-lists", 17) == 0))
+	    "/api/prefix-lists", 17) == 0 || strncmp(path, CYANG_DATA
+	    "prefix-lists", sizeof(CYANG_DATA) + 11) == 0))
 		return (false);
 	return (true);
 }

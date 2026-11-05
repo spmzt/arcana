@@ -30,7 +30,10 @@
  * feeds-asks.json: a fetch now, or a preview, every host's dry run.  A
  * feed failing FEED_FAILS times raises an alarm, by mail and Telegram
  * as Settings say, and its recovery clears it; an update with other
- * entries is an event of the feed's.
+ * entries is an event of the feed's.  The same as arcana-console's
+ * threat-feeds (cyang.c), its view made of feed_json()'s and its
+ * changes through feed_put() and feed_remove(), every protection
+ * held.
  */
 
 #include <sys/param.h>
@@ -1833,6 +1836,7 @@ feeds_tick(bool due)
 		fd = lock_take();
 		(void)store_save(FEEDS_STATE, state);
 		lock_give(fd);
+		cyang_changed("threat-feeds");
 	}
 	ucl_object_unref(doc);
 	ucl_object_unref(state);
@@ -2282,6 +2286,200 @@ feed_denied(struct http_request *req, const char *id)
 }
 
 /*
+ * Feed id kept as body says, as the request's user may: every host it
+ * is on and was sent to the user's to change, its hosts too, a URL of
+ * one's own an owner's (an operator enables, disables or chooses the
+ * hosts of such a feed), the URL an address of the internet; fetched at
+ * once when enabled.  Dry, checked alone.  The feed kept into *keptp
+ * when asked.  0, or the HTTP status and why.
+ */
+static int
+feed_put(struct http_request *req, const char *id, const ucl_object_t *body,
+    bool dry, ucl_object_t **keptp, char *err, size_t errlen)
+{
+	ucl_object_t		*doc, *f, *arr;
+	const ucl_object_t	*e, *was;
+	ucl_object_iter_t	 it;
+	const char		*who;
+	int			 fd;
+
+	if (!id_ok(id)) {
+		snprintf(err, errlen, "a feed is named by lower-case letters, "
+		    "digits and -, 24 at most");
+		return (400);
+	}
+	/* What changes the feed changes its hosts' tables: each of them,
+	 * those it was sent to too, the user's to change. */
+	if ((who = feed_denied(req, id)) != NULL) {
+		snprintf(err, errlen, "host %s is not one you may change, and "
+		    "the feed's table is on it", who);
+		return (403);
+	}
+	if (body == NULL || ucl_object_type(body) != UCL_OBJECT) {
+		snprintf(err, errlen, "a feed, as {\"name\", \"url\", "
+		    "\"format\", \"interval\", \"enabled\", \"hosts\", "
+		    "\"table\"}, or {\"preset\"}");
+		return (400);
+	}
+	fd = lock_take();
+	doc = doc_load(FEEDS_FILE, "feeds", UCL_ARRAY);
+	was = feed_by(doc, id);
+	if (was == NULL && ucl_array_size(ucl_object_lookup(doc, "feeds")) >=
+	    FEEDS_MAX) {
+		lock_give(fd);
+		ucl_object_unref(doc);
+		snprintf(err, errlen, "%d feeds at most", FEEDS_MAX);
+		return (400);
+	}
+	if ((f = feed_check(req, id, body, doc, err, errlen)) == NULL) {
+		lock_give(fd);
+		ucl_object_unref(doc);
+		return (400);
+	}
+	/* A URL of one's own: a console owner's to set and to change; an
+	 * operator enables such a feed, disables it, chooses its hosts. */
+	if (!is_owner(req) && feed_custom(f)) {
+		static const char *const keys[] = { "name", "url", "format",
+		    "bogons", "table", "interval" };
+		size_t	 k;
+		bool	 same = was != NULL && feed_custom(was);
+
+		for (k = 0; same && k < nitems(keys); k++)
+			same = same_key(was, f, keys[k]);
+		if (!same) {
+			lock_give(fd);
+			ucl_object_unref(doc);
+			ucl_object_unref(f);
+			snprintf(err, errlen, "a feed from a URL of one's own is "
+			    "made and changed by a console owner alone: an "
+			    "operator uses the presets, and enables, disables or "
+			    "chooses the hosts of such a feed");
+			return (403);
+		}
+	}
+	if (dry) {
+		lock_give(fd);
+		ucl_object_unref(doc);
+		ucl_object_unref(f);
+		return (0);
+	}
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(doc, "feeds"), &it,
+	    true)) != NULL)
+		ucl_array_append(arr, strcmp(str(e, "id"), id) == 0 ?
+		    ucl_object_ref(f) : ucl_object_ref(e));
+	if (was == NULL)
+		ucl_array_append(arr, ucl_object_ref(f));
+	put(doc, "feeds", arr);
+	if (store_save(FEEDS_FILE, doc) != 0) {
+		lock_give(fd);
+		ucl_object_unref(doc);
+		ucl_object_unref(f);
+		snprintf(err, errlen, "the feeds could not be written");
+		return (500);
+	}
+	lock_give(fd);
+	audit_add(was == NULL ? "feed-added" : "feed-changed", "Administer",
+	    id, FEEDS_FILE, "the console", session_user(req), "threat feed %s "
+	    "%s: %s, every %jd h, %s, "
+	    "table %s on %u hosts", id, was == NULL ? "added" : "changed",
+	    str(f, "url"), (intmax_t)num(f, "interval"), ucl_flag(f, "enabled") ?
+	    "enabled" : "disabled", str(f, "table"), ucl_array_size(
+	    ucl_object_lookup(f, "hosts")));
+	ask(id, ucl_flag(f, "enabled") ? "fetch" : "unload");
+	ucl_object_unref(doc);
+	cyang_changed("threat-feeds");
+	if (keptp != NULL)
+		*keptp = f;
+	else
+		ucl_object_unref(f);
+	return (0);
+}
+
+/* Feed id taken away, its tables given up, as the request's user may;
+ * dry, checked alone.  0, or the HTTP status and why. */
+static int
+feed_remove(struct http_request *req, const char *id, bool dry, char *err,
+    size_t errlen)
+{
+	ucl_object_t		*doc, *arr;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*who;
+	int			 fd;
+
+	if ((who = feed_denied(req, id)) != NULL) {
+		snprintf(err, errlen, "host %s is not one you may change, and "
+		    "the feed's table is on it", who);
+		return (403);
+	}
+	if (dry)
+		return (0);
+	fd = lock_take();
+	doc = doc_load(FEEDS_FILE, "feeds", UCL_ARRAY);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(doc, "feeds"),
+	    &it, true)) != NULL)
+		if (strcmp(str(e, "id"), id) != 0)
+			ucl_array_append(arr, ucl_object_ref(e));
+	put(doc, "feeds", arr);
+	(void)store_save(FEEDS_FILE, doc);
+	lock_give(fd);
+	ucl_object_unref(doc);
+	audit_add("feed-removed", "Administer", id, FEEDS_FILE,
+	    "the console", session_user(req), "threat feed %s removed; "
+	    "its tables given up", id);
+	ask(id, "unload");
+	cyang_changed("threat-feeds");
+	return (0);
+}
+
+/*
+ * Feed id fetched now or previewed (verb), as the request's user may: a
+ * feed from a URL of one's own previewed by an owner alone.  0, or the
+ * HTTP status and why.
+ */
+int
+feeds_yang_ask(struct http_request *req, const char *id, const char *verb,
+    char *err, size_t errlen)
+{
+	ucl_object_t		*doc;
+	const ucl_object_t	*e;
+	const char		*who;
+	int			 fd;
+	bool			 custom;
+
+	if (!id_ok(id)) {
+		snprintf(err, errlen, "no such feed");
+		return (404);
+	}
+	if ((who = feed_denied(req, id)) != NULL) {
+		snprintf(err, errlen, "host %s is not one you may change, and "
+		    "the feed's table is on it", who);
+		return (403);
+	}
+	fd = lock_take();
+	doc = doc_load(FEEDS_FILE, "feeds", UCL_ARRAY);
+	lock_give(fd);
+	e = feed_by(doc, id);
+	custom = e != NULL && feed_custom(e);
+	ucl_object_unref(doc);
+	if (e == NULL) {
+		snprintf(err, errlen, "no such feed");
+		return (404);
+	}
+	if (strcmp(verb, "preview") == 0 && custom && !is_owner(req)) {
+		snprintf(err, errlen, "a feed from a URL of one's own is "
+		    "previewed by a console owner alone");
+		return (403);
+	}
+	ask(id, verb);
+	return (0);
+}
+
+/*
  * GET /api/feeds/<id>: the feed whole, with what it dropped, its events
  * and its hosts; PUT keeps it (fetched at once when enabled), DELETE
  * takes it away (its tables given up); POST .../fetch fetches it now,
@@ -2290,15 +2488,12 @@ feed_denied(struct http_request *req, const char *id)
 int
 api_feed(struct http_request *req)
 {
-	ucl_object_t		*doc, *state, *body, *f, *arr, *out;
-	const ucl_object_t	*e, *was;
-	ucl_object_iter_t	 it;
-	const char		*p, *verb;
+	ucl_object_t		*doc, *state, *body, *f, *out;
+	const ucl_object_t	*e;
+	const char		*p, *verb, *who;
 	char			 id[32], err[300];
-	const char		*who;
 	size_t			 n;
-	int			 fd;
-	bool			 custom;
+	int			 fd, rc;
 
 	p = req->path + strlen("/api/feeds/");
 	n = strcspn(p, "/");
@@ -2329,49 +2524,24 @@ api_feed(struct http_request *req)
 	}
 	if (!guard(req, true))
 		return (WEB_OK);
-	/* What changes the feed changes its hosts' tables: each of them,
-	 * those it was sent to too, the user's to change. */
-	if ((who = feed_denied(req, id)) != NULL)
-		return (reply_error(req, 403, "role", "host %s is not one you "
-		    "may change, and the feed's table is on it", who));
 	if (req->method == HTTP_METHOD_POST && verb != NULL &&
 	    (strcmp(verb, "fetch") == 0 || strcmp(verb, "preview") == 0)) {
-		fd = lock_take();
-		doc = doc_load(FEEDS_FILE, "feeds", UCL_ARRAY);
-		lock_give(fd);
-		e = feed_by(doc, id);
-		custom = e != NULL && feed_custom(e);
-		ucl_object_unref(doc);
-		if (e == NULL)
-			return (reply_error(req, 404, "not_found", "no such "
-			    "feed"));
-		if (strcmp(verb, "preview") == 0 && custom && !is_owner(req))
-			return (reply_error(req, 403, "role", "a feed from a URL "
-			    "of one's own is previewed by a console owner alone"));
-		ask(id, verb);
+		if ((rc = feeds_yang_ask(req, id, verb, err, sizeof(err))) != 0)
+			return (reply_error(req, rc, rc == 404 ? "not_found" :
+			    "role", "%s", err));
 		out = ucl_object_typed_new(UCL_OBJECT);
 		put(out, "asked", S(verb));
 		return (reply_json(req, 202, out));
 	}
-	if (verb != NULL)
+	if (verb != NULL) {
+		if ((who = feed_denied(req, id)) != NULL)
+			return (reply_error(req, 403, "role", "host %s is not one "
+			    "you may change, and the feed's table is on it", who));
 		return (reply_error(req, 404, "not_found", "fetch or preview"));
+	}
 	if (req->method == HTTP_METHOD_DELETE) {
-		fd = lock_take();
-		doc = doc_load(FEEDS_FILE, "feeds", UCL_ARRAY);
-		arr = ucl_object_typed_new(UCL_ARRAY);
-		it = NULL;
-		while ((e = ucl_object_iterate(ucl_object_lookup(doc, "feeds"),
-		    &it, true)) != NULL)
-			if (strcmp(str(e, "id"), id) != 0)
-				ucl_array_append(arr, ucl_object_ref(e));
-		put(doc, "feeds", arr);
-		(void)store_save(FEEDS_FILE, doc);
-		lock_give(fd);
-		ucl_object_unref(doc);
-		audit_add("feed-removed", "Administer", id, FEEDS_FILE,
-		    "the console", session_user(req), "threat feed %s removed; "
-		    "its tables given up", id);
-		ask(id, "unload");
+		if ((rc = feed_remove(req, id, false, err, sizeof(err))) != 0)
+			return (reply_error(req, rc, "role", "%s", err));
 		out = ucl_object_typed_new(UCL_OBJECT);
 		put(out, "removed", B(true));
 		return (reply_json(req, 200, out));
@@ -2379,79 +2549,294 @@ api_feed(struct http_request *req)
 	if (req->method != HTTP_METHOD_PUT)
 		return (reply_error(req, 405, "method", "GET, PUT, DELETE or "
 		    "POST"));
-	if ((body = read_json(req)) == NULL || ucl_object_type(body) !=
-	    UCL_OBJECT) {
-		if (body != NULL)
-			ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "a feed, as {\"name\", "
-		    "\"url\", \"format\", \"interval\", \"enabled\", \"hosts\", "
-		    "\"table\"}, or {\"preset\"}"));
-	}
-	fd = lock_take();
-	doc = doc_load(FEEDS_FILE, "feeds", UCL_ARRAY);
-	was = feed_by(doc, id);
-	if (was == NULL && ucl_array_size(ucl_object_lookup(doc, "feeds")) >=
-	    FEEDS_MAX) {
-		lock_give(fd);
-		ucl_object_unref(doc);
+	body = read_json(req);
+	rc = feed_put(req, id, body, false, &f, err, sizeof(err));
+	if (body != NULL)
 		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "%d feeds at most",
-		    FEEDS_MAX));
-	}
-	if ((f = feed_check(req, id, body, doc, err, sizeof(err))) == NULL) {
-		lock_give(fd);
-		ucl_object_unref(doc);
-		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "%s", err));
-	}
-	ucl_object_unref(body);
-	/* A URL of one's own: a console owner's to set and to change; an
-	 * operator enables such a feed, disables it, chooses its hosts. */
-	if (!is_owner(req) && feed_custom(f)) {
-		static const char *const keys[] = { "name", "url", "format",
-		    "bogons", "table", "interval" };
-		size_t	 k;
-		bool	 same = was != NULL && feed_custom(was);
-
-		for (k = 0; same && k < nitems(keys); k++)
-			same = same_key(was, f, keys[k]);
-		if (!same) {
-			lock_give(fd);
-			ucl_object_unref(doc);
-			ucl_object_unref(f);
-			return (reply_error(req, 403, "role", "a feed from a URL "
-			    "of one's own is made and changed by a console owner "
-			    "alone: an operator uses the presets, and enables, "
-			    "disables or chooses the hosts of such a feed"));
-		}
-	}
-	arr = ucl_object_typed_new(UCL_ARRAY);
-	it = NULL;
-	while ((e = ucl_object_iterate(ucl_object_lookup(doc, "feeds"), &it,
-	    true)) != NULL)
-		ucl_array_append(arr, strcmp(str(e, "id"), id) == 0 ?
-		    ucl_object_ref(f) : ucl_object_ref(e));
-	if (was == NULL)
-		ucl_array_append(arr, ucl_object_ref(f));
-	put(doc, "feeds", arr);
-	if (store_save(FEEDS_FILE, doc) != 0) {
-		lock_give(fd);
-		ucl_object_unref(doc);
-		ucl_object_unref(f);
-		return (reply_error(req, 500, "store", "the feeds could not be "
-		    "written"));
-	}
-	lock_give(fd);
-	audit_add(was == NULL ? "feed-added" : "feed-changed", "Administer",
-	    id, FEEDS_FILE, "the console", session_user(req), "threat feed %s "
-	    "%s: %s, every %jd h, %s, "
-	    "table %s on %u hosts", id, was == NULL ? "added" : "changed",
-	    str(f, "url"), (intmax_t)num(f, "interval"), ucl_flag(f, "enabled") ?
-	    "enabled" : "disabled", str(f, "table"), ucl_array_size(
-	    ucl_object_lookup(f, "hosts")));
-	ask(id, ucl_flag(f, "enabled") ? "fetch" : "unload");
+	if (rc != 0)
+		return (reply_error(req, rc, rc == 403 ? "role" : rc == 400 ?
+		    "invalid" : "store", "%s", err));
 	out = ucl_object_typed_new(UCL_OBJECT);
 	put(out, "feed", f);
-	ucl_object_unref(doc);
 	return (reply_json(req, 200, out));
+}
+
+/* ---- arcana-console's threat feeds (cyang.c) ------------------------- */
+
+/* Of o, the numbers named copied into to under their leaves' names. */
+static void
+numbers(ucl_object_t *to, const ucl_object_t *o, const char *const *keys)
+{
+
+	for (; keys[0] != NULL; keys += 2)
+		if (ucl_object_lookup(o, keys[0]) != NULL)
+			put(to, keys[1], I(num(o, keys[0])));
+}
+
+/* Of o, the times (seconds since the epoch) named copied into to. */
+static void
+times(ucl_object_t *to, const ucl_object_t *o, const char *const *keys)
+{
+
+	for (; keys[0] != NULL; keys += 2)
+		if (ucl_object_lookup(o, keys[0]) != NULL)
+			put(to, keys[1], yang_time((double)num(o, keys[0])));
+}
+
+/* feed_json()'s hosts, {id: what it was sent}, as feed-host entries. */
+static ucl_object_t *
+yhosts(const ucl_object_t *hosts)
+{
+	static const char *const nums[] = { "count", "count", "added",
+	    "added", "removed", "removed", "set", "set", "left_out",
+	    "left-out", NULL };
+	static const char *const ts[] = { "at", "at", "tried_at", "tried-at",
+	    NULL };
+	ucl_object_t		*arr, *x;
+	const ucl_object_t	*h;
+	ucl_object_iter_t	 it = NULL;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	while ((h = ucl_object_iterate(hosts, &it, true)) != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		put(x, "host", S(ucl_object_key(h)));
+		if (str(h, "name") != NULL)
+			put(x, "name", S(str(h, "name")));
+		if (str(h, "table") != NULL)
+			put(x, "table", S(str(h, "table")));
+		times(x, h, ts);
+		numbers(x, h, nums);
+		if (str(h, "error") != NULL)
+			put(x, "error", S(str(h, "error")));
+		ucl_array_append(arr, x);
+	}
+	return (arr);
+}
+
+/* feed_json()'s dropped entries and hidden count into to. */
+static void
+ydropped(ucl_object_t *to, const ucl_object_t *o)
+{
+	ucl_object_t		*arr, *x;
+	const ucl_object_t	*d;
+	ucl_object_iter_t	 it = NULL;
+	int64_t			 i = 0;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	while ((d = ucl_object_iterate(ucl_object_lookup(o, "dropped"), &it,
+	    true)) != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		put(x, "index", I(i++));
+		if (str(d, "entry") != NULL)
+			put(x, "entry", S(str(d, "entry")));
+		if (str(d, "reason") != NULL)
+			put(x, "reason", S(str(d, "reason")));
+		if (str(d, "detail") != NULL)
+			put(x, "detail", S(str(d, "detail")));
+		ucl_array_append(arr, x);
+	}
+	put(to, "dropped", arr);
+	if (ucl_object_lookup(o, "protected_hidden") != NULL)
+		put(to, "protected-hidden", I(num(o, "protected_hidden")));
+}
+
+/*
+ * A feed as arcana-console has it, from feed_json()'s whole view, so
+ * that what the reader may not see of a host is left out here as there.
+ */
+static ucl_object_t *
+feed_yang(const ucl_object_t *j)
+{
+	static const char *const cfg_s[] = { "id", "name", "url", "format",
+	    "table", "preset", NULL };
+	static const char *const nums[] = { "interval", "interval",
+	    "hosts_hidden", "hosts-hidden", "count", "count", "dropped_count",
+	    "dropped-count", "covered", "covered", "failures", "failures",
+	    "delivered_hidden", "delivered-hidden", NULL };
+	static const char *const ts[] = { "fetched_at", "fetched-at",
+	    "tried_at", "tried-at", "changed_at", "changed-at", NULL };
+	static const char *const pnums[] = { "count", "count",
+	    "dropped_count", "dropped-count", "covered", "covered",
+	    "hosts_hidden", "hosts-hidden", NULL };
+	ucl_object_t		*o, *x, *arr;
+	const ucl_object_t	*v, *e;
+	ucl_object_iter_t	 it;
+	int64_t			 i;
+	size_t			 k;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	for (k = 0; cfg_s[k] != NULL; k++)
+		if (str(j, cfg_s[k]) != NULL)
+			put(o, cfg_s[k], S(str(j, cfg_s[k])));
+	put(o, "enabled", B(ucl_flag(j, "enabled")));
+	if (ucl_object_lookup(j, "bogons") != NULL)
+		put(o, "bogons", B(ucl_flag(j, "bogons")));
+	if (ucl_array_size(ucl_object_lookup(j, "hosts")) > 0)
+		put(o, "host", ucl_object_copy(ucl_object_lookup(j, "hosts")));
+	numbers(o, j, nums);
+	times(o, j, ts);
+	if (str(j, "error") != NULL)
+		put(o, "error", S(str(j, "error")));
+	if ((v = ucl_object_lookup(j, "alarm")) != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		if (ucl_object_lookup(v, "since") != NULL)
+			put(x, "since", yang_time((double)num(v, "since")));
+		if (str(v, "text") != NULL)
+			put(x, "text", S(str(v, "text")));
+		put(o, "alarm", x);
+	}
+	put(o, "delivered", yhosts(ucl_object_lookup(j, "delivered")));
+	x = ucl_object_typed_new(UCL_OBJECT);
+	ydropped(x, j);
+	put(o, "last-fetch", x);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	i = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(j, "events"), &it,
+	    true)) != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		put(x, "index", I(i++));
+		if (ucl_object_lookup(e, "at") != NULL)
+			put(x, "at", yang_time((double)num(e, "at")));
+		put(x, "count", I(num(e, "count")));
+		put(x, "was", I(num(e, "was")));
+		ucl_array_append(arr, x);
+	}
+	put(o, "event", arr);
+	if ((v = ucl_object_lookup(j, "preview")) != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		if (ucl_object_lookup(v, "at") != NULL)
+			put(x, "at", yang_time((double)num(v, "at")));
+		if (str(v, "error") != NULL)
+			put(x, "error", S(str(v, "error")));
+		numbers(x, v, pnums);
+		ydropped(x, v);
+		put(x, "host", yhosts(ucl_object_lookup(v, "hosts")));
+		put(o, "last-preview", x);
+	}
+	if (ucl_array_size(ucl_object_lookup(j, "sample")) > 0)
+		put(o, "sample", ucl_object_copy(ucl_object_lookup(j,
+		    "sample")));
+	return (o);
+}
+
+/* arcana-console:threat-feeds's value, as the request may see it. */
+ucl_object_t *
+feeds_yang(struct http_request *req)
+{
+	ucl_object_t		*doc, *state, *out, *arr, *j, *p;
+	const ucl_object_t	*f, *e;
+	ucl_object_iter_t	 it;
+	int			 fd;
+
+	fd = lock_take();
+	doc = doc_load(FEEDS_FILE, "feeds", UCL_ARRAY);
+	state = doc_load(FEEDS_STATE, NULL, UCL_OBJECT);
+	lock_give(fd);
+	out = ucl_object_typed_new(UCL_OBJECT);
+	put(out, "floor", I(FEED_FLOOR_H));
+	put(out, "max-entries", I(FEED_MAX));
+	arr = presets_json();
+	it = NULL;
+	while ((e = ucl_object_iterate(arr, &it, true)) != NULL) {
+		p = (ucl_object_t *)(uintptr_t)e;
+		put(p, "terms-url", ucl_object_copy(ucl_object_lookup(p,
+		    "terms_url")));
+		(void)ucl_object_delete_key(p, "terms_url");
+	}
+	put(out, "preset", arr);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((f = ucl_object_iterate(ucl_object_lookup(doc, "feeds"), &it,
+	    true)) != NULL) {
+		j = feed_json(req, f, ucl_object_lookup(state, str(f, "id")),
+		    true);
+		ucl_array_append(arr, feed_yang(j));
+		ucl_object_unref(j);
+	}
+	put(out, "feed", arr);
+	ucl_object_unref(doc);
+	ucl_object_unref(state);
+	return (out);
+}
+
+/* A feed's entry y as /api's PUT body. */
+static ucl_object_t *
+feed_body(const ucl_object_t *y)
+{
+	static const char *const keys[] = { "name", "url", "format",
+	    "table", "preset", NULL };
+	ucl_object_t		*b;
+	const ucl_object_t	*v;
+	size_t			 k;
+
+	b = ucl_object_typed_new(UCL_OBJECT);
+	for (k = 0; keys[k] != NULL; k++)
+		if (str(y, keys[k]) != NULL)
+			put(b, keys[k], S(str(y, keys[k])));
+	if ((v = ucl_object_lookup(y, "interval")) != NULL)
+		put(b, "interval", I(ucl_object_toint(v)));
+	put(b, "enabled", B(ucl_flag(y, "enabled")));
+	if (ucl_object_lookup(y, "bogons") != NULL)
+		put(b, "bogons", B(ucl_flag(y, "bogons")));
+	put(b, "hosts", (v = ucl_object_lookup(y, "host")) != NULL ?
+	    ucl_object_copy(v) : ucl_object_typed_new(UCL_ARRAY));
+	return (b);
+}
+
+/*
+ * The feeds changed from was to now, through feed_put() and
+ * feed_remove(), every protection of /api's: every change checked
+ * before any is kept.  0, or the HTTP status and why.
+ */
+int
+feeds_yang_set(struct http_request *req, const ucl_object_t *was,
+    const ucl_object_t *now, char *why, size_t len)
+{
+	const ucl_object_t	*f, *o;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*b;
+	const char		*id;
+	char			 w[300];
+	int			 rc, pass;
+
+	for (pass = 0; pass < 2; pass++) {
+		it = NULL;
+		while ((o = ucl_object_iterate(ucl_object_lookup(was, "feed"),
+		    &it, true)) != NULL) {
+			id = str(o, "id");
+			if (cyang_entry(ucl_object_lookup(now, "feed"), "id",
+			    id) == NULL && (rc = feed_remove(req, id, pass == 0,
+			    w, sizeof(w))) != 0) {
+				snprintf(why, len, "feed %s: %s", id, w);
+				return (rc);
+			}
+		}
+		it = NULL;
+		while ((f = ucl_object_iterate(ucl_object_lookup(now, "feed"),
+		    &it, true)) != NULL) {
+			id = str(f, "id");
+			o = cyang_entry(ucl_object_lookup(was, "feed"), "id", id);
+			b = feed_body(f);
+			/* By what /api is given: a default left out or said
+			 * is the same. */
+			if (o != NULL) {
+				ucl_object_t	*a = feed_body(o);
+				bool		 same = cyang_same(a, b);
+
+				ucl_object_unref(a);
+				if (same) {
+					ucl_object_unref(b);
+					continue;
+				}
+			}
+			rc = feed_put(req, id, b, pass == 0, NULL, w, sizeof(w));
+			ucl_object_unref(b);
+			if (rc != 0) {
+				snprintf(why, len, "feed %s: %s", id, w);
+				return (rc);
+			}
+		}
+	}
+	return (0);
 }
