@@ -9139,7 +9139,7 @@ api_sdwan_lists(struct http_request *req)
 	char			 why[200];
 	bool			 fetch;
 
-	fetch = strcmp(req->path, "/api/sdwan/lists/fetch") == 0;
+	fetch = path_is(req, "/api/sdwan/lists/fetch", "sdwan/fetch-lists");
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
 			return (WEB_OK);
@@ -9588,7 +9588,7 @@ api_sdwan_identities(struct http_request *req)
 	const ucl_object_t	*sw, *ep, *r, *e, *g;
 	ucl_object_iter_t	 it;
 	struct plan		 pl;
-	char			 where[300], rzone[64];
+	char			 where[300], rzone[64], rsw[80], rep[80], rnm[80];
 	char			 why[300], priv[64], pub[64], *v, *swvc, *epid;
 	char			*name, *conf;
 	const char		*zone, *group;
@@ -9610,11 +9610,27 @@ api_sdwan_identities(struct http_request *req)
 	}
 	if (!guard(req, true))
 		return (WEB_OK);
-	if (req->method == HTTP_METHOD_DELETE) {
+	/* Revoked: /api's DELETE ?swvc=&end_point=&name=, or
+	 * arcana-console's revoke-identity, its input. */
+	if (req->method == HTTP_METHOD_DELETE || path_is(req, "",
+	    "sdwan/revoke-identity")) {
 		swvc = epid = name = NULL;
-		(void)http_argument_get_string(req, "swvc", &swvc);
-		(void)http_argument_get_string(req, "end_point", &epid);
-		(void)http_argument_get_string(req, "name", &name);
+		if (req->method == HTTP_METHOD_DELETE) {
+			(void)http_argument_get_string(req, "swvc", &swvc);
+			(void)http_argument_get_string(req, "end_point", &epid);
+			(void)http_argument_get_string(req, "name", &name);
+		} else if ((body = read_json(req)) != NULL) {
+			snprintf(rsw, sizeof(rsw), "%s", str(body, "swvc") !=
+			    NULL ? str(body, "swvc") : "");
+			snprintf(rep, sizeof(rep), "%s", str(body, "end_point") !=
+			    NULL ? str(body, "end_point") : "");
+			snprintf(rnm, sizeof(rnm), "%s", str(body, "name") !=
+			    NULL ? str(body, "name") : "");
+			ucl_object_unref(body);
+			swvc = rsw;
+			epid = rep;
+			name = rnm;
+		}
 		doc = sdwan_load();
 		if ((r = remote_of(doc, swvc, epid, &sw, &ep)) == NULL) {
 			ucl_object_unref(doc);
@@ -9877,7 +9893,7 @@ api_sdwan_record(struct http_request *req)
 
 	if (!guard(req, false))
 		return (WEB_OK);
-	csv = strstr(req->path, ".csv") != NULL;
+	csv = want_csv(req);
 	swvc = policy = since = only = NULL;
 	want[0] = '\0';
 	if (http_argument_get_string(req, "swvc", &v))
@@ -11414,11 +11430,12 @@ api_sdwan_edges(struct http_request *req)
 	bool			 apply, fresh, invalid;
 	int			 n, status;
 
-	apply = strcmp(req->path, "/api/sdwan/apply") == 0;
+	apply = path_is(req, "/api/sdwan/apply", "sdwan/apply") ||
+	    path_is(req, "", "sdwan/apply-state");
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
 			return (WEB_OK);
-		if (strcmp(req->path, "/api/sdwan/steer") == 0) {
+		if (path_is(req, "/api/sdwan/steer", "sdwan/steering")) {
 			pthread_mutex_lock(&st_lock);
 			st = state_load();
 			pthread_mutex_unlock(&st_lock);
@@ -11449,7 +11466,7 @@ api_sdwan_edges(struct http_request *req)
 		}
 	} else if (!guard(req, true))
 		return (WEB_OK);
-	if (strcmp(req->path, "/api/sdwan/steer") == 0)
+	if (path_is(req, "/api/sdwan/steer", "sdwan/pin"))
 		return (steer_pin(req));
 	/* The L3NM kept, as the planner reads it (l3nm_plan.c). */
 	doc = l3nm_kept();
@@ -11467,7 +11484,7 @@ api_sdwan_edges(struct http_request *req)
 			    "document is not one to make: %s", why));
 		return (reply_error(req, 409, "unplanned", "%s", why));
 	}
-	if (strcmp(req->path, "/api/sdwan/ledger") == 0) {
+	if (path_is(req, "/api/sdwan/ledger", "sdwan/ledger")) {
 		body = ledger_reply(&pl);
 		plan_free(&pl);
 		ucl_object_unref(doc);

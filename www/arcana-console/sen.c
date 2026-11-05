@@ -754,7 +754,7 @@ notices_api(struct http_request *req, const char *file,
 	q = NULL;
 	(void)http_argument_get_string(req, "q", &q);
 	events = notices_read(file, q, &count);
-	if (strstr(req->path, ".csv") == NULL) {
+	if (!want_csv(req)) {
 		out = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(out, ucl_object_fromint(count), "count", 0,
 		    false);

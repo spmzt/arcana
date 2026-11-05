@@ -255,6 +255,31 @@ server_capture(struct http_request *req, char *sid, size_t len)
 	return (strspn(sid, "0123456789abcdef") == strlen(sid));
 }
 
+/* Whether the request is the route api, or cy below arcana-console's
+ * data. */
+bool
+path_is(const struct http_request *req, const char *api, const char *cy)
+{
+	size_t	n = sizeof(CYANG_DATA) - 1;
+
+	return (strcmp(req->path, api) == 0 || (cy != NULL &&
+	    strncmp(req->path, CYANG_DATA, n) == 0 && strcmp(req->path + n,
+	    cy) == 0));
+}
+
+/* A record as CSV: /api's .csv, or text/csv in Accept at
+ * arcana-console's path. */
+bool
+want_csv(struct http_request *req)
+{
+	const char	*v;
+
+	if (strstr(req->path, ".csv") != NULL)
+		return (true);
+	return (cyang_path(req->path) && http_request_header(req, "accept",
+	    &v) && strstr(v, "text/csv") != NULL);
+}
+
 /* Path segment idx of path, as capture() takes it of a request's. */
 bool
 capture_path(const char *path, int idx, char *buf, size_t len)

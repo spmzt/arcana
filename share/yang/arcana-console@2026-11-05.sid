@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-console",
     "module-revision": "2026-11-05",
-    "sid-file-version": 2,
+    "sid-file-version": 3,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -22,6 +22,10 @@
       {
         "entry-point": "92100",
         "size": "200"
+      },
+      {
+        "entry-point": "92300",
+        "size": "300"
       }
     ],
     "item": [
@@ -2449,6 +2453,341 @@
         "namespace": "data",
         "identifier": "/arcana-console:hosts/local-agent",
         "sid": "92284"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan",
+        "sid": "92285"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/apply",
+        "sid": "92286"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/apply-state",
+        "sid": "92287"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/apply/input",
+        "sid": "92288"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/apply/input/accept",
+        "sid": "92289"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/apply/input/fresh",
+        "sid": "92290"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/apply/output",
+        "sid": "92291"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/apply/output/result",
+        "sid": "92292"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/attach",
+        "sid": "92293"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/attach/input",
+        "sid": "92294"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/attach/input/access",
+        "sid": "92295"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/attach/input/sap-id",
+        "sid": "92296"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/attach/input/vpn-id",
+        "sid": "92297"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/attach/input/vpn-node-id",
+        "sid": "92298"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/attach/output",
+        "sid": "92299"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/attach/output/result",
+        "sid": "92300"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/audit",
+        "sid": "92301"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/check",
+        "sid": "92302"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/check/input",
+        "sid": "92303"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/check/input/document",
+        "sid": "92304"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/check/output",
+        "sid": "92305"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/check/output/result",
+        "sid": "92306"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/document",
+        "sid": "92307"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/fetch-lists",
+        "sid": "92308"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/fetch-lists/input",
+        "sid": "92309"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/fetch-lists/input/name",
+        "sid": "92310"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/fetch-lists/output",
+        "sid": "92311"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/fetch-lists/output/result",
+        "sid": "92312"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/identities",
+        "sid": "92313"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/issue-identity",
+        "sid": "92314"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/issue-identity/input",
+        "sid": "92315"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/issue-identity/input/end-point",
+        "sid": "92316"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/issue-identity/input/group",
+        "sid": "92317"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/issue-identity/input/name",
+        "sid": "92318"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/issue-identity/input/swvc",
+        "sid": "92319"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/issue-identity/input/user",
+        "sid": "92320"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/issue-identity/input/zone",
+        "sid": "92321"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/issue-identity/output",
+        "sid": "92322"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/issue-identity/output/result",
+        "sid": "92323"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/ledger",
+        "sid": "92324"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/lists",
+        "sid": "92325"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/pin",
+        "sid": "92326"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/pin/input",
+        "sid": "92327"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/pin/input/candidate",
+        "sid": "92328"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/pin/input/edge",
+        "sid": "92329"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/pin/input/prefix",
+        "sid": "92330"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/pin/input/table",
+        "sid": "92331"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/pin/output",
+        "sid": "92332"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/pin/output/result",
+        "sid": "92333"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/plan",
+        "sid": "92334"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/record",
+        "sid": "92335"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/rekey",
+        "sid": "92336"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/rekey/input",
+        "sid": "92337"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/rekey/input/tunnel",
+        "sid": "92338"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/rekey/output",
+        "sid": "92339"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/rekey/output/result",
+        "sid": "92340"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/rekeys",
+        "sid": "92341"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/revoke-identity",
+        "sid": "92342"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/revoke-identity/input",
+        "sid": "92343"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/revoke-identity/input/end-point",
+        "sid": "92344"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/revoke-identity/input/name",
+        "sid": "92345"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/revoke-identity/input/swvc",
+        "sid": "92346"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/revoke-identity/output",
+        "sid": "92347"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/revoke-identity/output/result",
+        "sid": "92348"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/san",
+        "sid": "92349"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/sen",
+        "sid": "92350"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:sdwan/steering",
+        "sid": "92351"
       }
     ]
   }

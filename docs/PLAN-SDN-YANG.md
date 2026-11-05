@@ -1833,9 +1833,7 @@ whose first part is served.
   RESTCONF cuts it; such entries are changed through their parent.
   Open, /api's alone still: the console's update check and notes, its
   cluster, its CA, its plugins and their stores, a user's own security
-  keys, the SD-WAN's lists, identities, ledger, steering pins, rekey,
-  plan and apply, its records (audit, SEN, SAN, record, their CSV),
-  the path finder, the WireGuard key pair.
+  keys, the path finder, the WireGuard key pair.
 - 4.4.1 the hosts done (console 0.367.0): `arcana-console:hosts`, the
   registry (servers.json) as a typed list keyed by the host's id
   (name, uri, peer-name, tenant, safe-wait, pkg-repos; local,
@@ -1872,6 +1870,32 @@ whose first part is served.
   member reading and refused every change) and cyang_host_verbs (each
   read and verb the same status as /api's, an /api body refused as
   input, an unknown host 404, a viewer refused the admins' verbs).
+- 4.4.1 the SD-WAN's verbs done (console 0.368.0, arcana-console's
+  third SID range 92300-92599): `arcana-console:sdwan`, operators' and
+  owners' as /api/sdwan.  Decided: a container of the module's, not
+  actions augmenting `ietf-l3vpn-ntw`: the plan, the ledger, the
+  apply and the records are the console's of every service at once,
+  and an action on the L3NM would sit on a node RFC 9182 keeps as
+  configuration.  Read: `document` (the MEF 70.2 document, written
+  whole too: /api/sdwan's PUT, version-checked, the L3NM its store),
+  `plan`, `ledger`, `apply-state`, `steering` (pins sent and what the
+  edges chose), `rekeys`, `lists` (written whole: the feeds and the
+  interval), `identities`, `audit`, `sen`, `san`, `record` (their
+  query parameters /api's: q; swvc, policy, since, edge).  The CSV
+  decided: `Accept: text/csv` on the record's GET, /api's .csv bytes
+  and file name, rather than an action's string or a resource beside.
+  Actions: `check` (the document as input), `apply` (fresh, the
+  warnings accepted), `pin`, `rekey`, `fetch-lists`,
+  `issue-identity` (the private key in its output, once),
+  `revoke-identity` (/api's DELETE with a query, an input here),
+  `attach`.  Every check is the handler's: 409 where the services make
+  no plan or the kept document is not one to make, an apply running,
+  the plan's needs unmet; 400 where a warning is not accepted.
+  Check: console_test's cyang_sdwan (each read the same document as
+  /api's, before and after a document is kept; the check, a broken
+  one refused; a stale PUT 409; an apply accepting nothing, an unknown
+  tunnel, edge, identity, service refused as /api; the lists kept and
+  a bad interval refused; a record as CSV; a member refused).
 - 4.4.2 C: the WebAuthn ceremonies, logout, `assetlinks.json`, enrol
   and health moved beside `/restconf`; `/api` removed; check: the
   console tests rewritten.

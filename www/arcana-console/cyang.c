@@ -28,6 +28,7 @@
  *							they have a role on;
  *							added by operators,
  *							changed by admins
+ *	/restconf/data/arcana-console:sdwan/...		operators and owners
  *
  * What the console makes rather than keeps (a host's drift, its
  * subscription, a bundle) and its verbs on it are /api's handlers
@@ -133,6 +134,28 @@ static const struct bridge {
 	{ H "capture", "result", NULL, true },
 	{ H "subscription-token", "result", NULL, true },
 #undef	H
+#define	S	"data/arcana-console:sdwan/"
+	{ S "document", NULL, NULL, false },
+	{ S "plan", NULL, NULL, false },
+	{ S "ledger", NULL, NULL, false },
+	{ S "apply-state", NULL, NULL, false },
+	{ S "steering", NULL, NULL, false },
+	{ S "rekeys", NULL, NULL, false },
+	{ S "lists", NULL, NULL, false },
+	{ S "identities", NULL, NULL, false },
+	{ S "audit", NULL, NULL, false },
+	{ S "sen", NULL, NULL, false },
+	{ S "san", NULL, NULL, false },
+	{ S "record", NULL, NULL, false },
+	{ S "check", "result", "document", false },
+	{ S "apply", "result", NULL, false },
+	{ S "pin", "result", NULL, false },
+	{ S "rekey", "result", NULL, false },
+	{ S "fetch-lists", "result", NULL, false },
+	{ S "issue-identity", "result", NULL, true },
+	{ S "revoke-identity", "result", NULL, true },
+	{ S "attach", "result", NULL, false },
+#undef	S
 };
 
 /* Whether path is pattern pat, each * a key (no /). */

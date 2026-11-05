@@ -343,7 +343,7 @@ user_path_ok(enum crole r, const char *path, bool mutate)
 				    CYANG_DATA "workflows", CYANG_DATA "runs",
 				    CYANG_DATA "templates",
 				    CYANG_DATA "threat-feeds",
-				    CYANG_DATA "transfers",
+				    CYANG_DATA "transfers", CYANG_DATA "sdwan",
 				    "/restconf/data/ietf-l3vpn-ntw:l3vpn-ntw",
 				    "/restconf/data/ietf-vn:access-point",
 				    "/restconf/data/ietf-vn:virtual-network",

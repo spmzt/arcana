@@ -3937,7 +3937,8 @@ api_sdwan(struct http_request *req)
 		ucl_object_unref(body);
 		return (reply_error(req, 400, "invalid", "%s", c.why));
 	}
-	if (strcmp(req->path, "/api/sdwan") != 0) {
+	/* A check (/api/sdwan/check, arcana-console's sdwan/check). */
+	if (!path_is(req, "/api/sdwan", "sdwan/document")) {
 		ucl_object_unref(body);
 		o = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(o, ucl_object_frombool(true), "ok", 0,

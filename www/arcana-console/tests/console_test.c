@@ -18178,6 +18178,166 @@ ATF_TC_BODY(cyang_host_verbs, tc)
 #undef	SAME
 }
 
+/* GET of /api's api and arcana-console's cc: node's value is /api's
+ * document. */
+static void
+cc_eq(const char *api, const char *cc, const char *node)
+{
+	struct resp		 r, s;
+	const ucl_object_t	*v;
+	unsigned char		*x, *y;
+	char			 key[96];
+
+	http("GET", api, NULL, &r);
+	http("GET", cc, NULL, &s);
+	ATF_CHECK_MSG(r.status == s.status, "%s: %d, /api's %d: %s", cc,
+	    s.status, r.status, s.body);
+	if (r.status == 200 && s.status == 200) {
+		snprintf(key, sizeof(key), "arcana-console:%s", node);
+		v = ucl_object_lookup(s.json, key);
+		x = ucl_object_emit(r.json, UCL_EMIT_JSON_COMPACT);
+		y = v != NULL ? ucl_object_emit(v, UCL_EMIT_JSON_COMPACT) : NULL;
+		ATF_CHECK_MSG(y != NULL && strcmp((char *)x, (char *)y) == 0,
+		    "%s: %s, /api's %s", cc, y != NULL ? (char *)y : "none",
+		    (char *)x);
+		free(x);
+		free(y);
+	}
+	resp_free(&r);
+	resp_free(&s);
+}
+
+/* {"arcana-console:input": {"document": doc}} */
+static char *
+cc_doc_input(const char *doc)
+{
+	char	*s;
+
+	ATF_REQUIRE(asprintf(&s, "{\"arcana-console:input\":{\"document\":%s}}",
+	    doc) != -1);
+	return (s);
+}
+
+CONSOLE_TC_LONG(cyang_sdwan, "arcana-console's sdwan: the document, plan, "
+    "ledger, apply, steering, rekeys, lists, identities and records at "
+    "their RESTCONF paths as /api's, the plan's refusals held, a member "
+    "refused")
+ATF_TC_BODY(cyang_sdwan, tc)
+{
+	struct authn	 a, b;
+	struct resp	 r;
+	char		 sa[16], sb[16], doc[8192], t1[8192], body[8448];
+	char		*in;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	cc_host("a", "jgd.sock", sa, sizeof(sa));
+	cc_host("b", "./jgd.sock", sb, sizeof(sb));
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	cc_eq("/api/sdwan", CC "sdwan/document", "document");
+	/* Nothing to plan yet: /api's refusal. */
+	cc_same("GET", "/api/sdwan/plan", NULL, CC "sdwan/plan", NULL);
+	cc_same("GET", "/api/sdwan/ledger", NULL, CC "sdwan/ledger", NULL);
+	/* Checked, a broken one refused as /api refuses it. */
+	in = cc_doc_input(doc);
+	http("POST", CC "sdwan/check", in, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "arcana-console:output.result.ok"));
+	resp_free(&r);
+	free(in);
+	ATF_REQUIRE(swap_in(doc, "\"fib\":1", "\"fib\":0", t1, sizeof(t1)));
+	in = cc_doc_input(t1);
+	cc_same("POST", "/api/sdwan/check", t1, CC "sdwan/check", in);
+	free(in);
+	/* Kept, as version 1; again from version 0, too old. */
+	snprintf(body, sizeof(body), "{\"arcana-console:document\":%s}", doc);
+	http("PUT", CC "sdwan/document", body, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/sdwan", NULL, &r);
+	ATF_CHECK_STREQ("1", jstr(&r, "version"));
+	resp_free(&r);
+	http("PUT", CC "sdwan/document", body, &r);
+	EXPECT(&r, 409);
+	ATF_CHECK(strstr(r.body, "ietf-restconf:errors") != NULL);
+	resp_free(&r);
+	cc_eq("/api/sdwan", CC "sdwan/document", "document");
+	cc_eq("/api/sdwan/plan", CC "sdwan/plan", "plan");
+	cc_eq("/api/sdwan/ledger", CC "sdwan/ledger", "ledger");
+	cc_eq("/api/sdwan/apply", CC "sdwan/apply-state", "apply-state");
+	cc_eq("/api/sdwan/steer", CC "sdwan/steering", "steering");
+	cc_eq("/api/sdwan/rekey", CC "sdwan/rekeys", "rekeys");
+	cc_eq("/api/sdwan/identities", CC "sdwan/identities", "identities");
+	cc_eq("/api/sdwan/audit", CC "sdwan/audit", "audit");
+	cc_eq("/api/sdwan/sen", CC "sdwan/sen", "sen");
+	cc_eq("/api/sdwan/san", CC "sdwan/san", "san");
+	cc_eq("/api/sdwan/audit?q=policies", CC "sdwan/audit?q=policies",
+	    "audit");
+	/* A record as CSV, by Accept. */
+	http_with("GET", CC "sdwan/audit", "Accept: text/csv\r\n", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.head, "text/csv") != NULL);
+	resp_free(&r);
+	/* An apply not accepting the plan's warnings: /api's refusal. */
+	cc_same("POST", "/api/sdwan/apply", "{}", CC "sdwan/apply",
+	    "{\"arcana-console:input\":{}}");
+	cc_same("POST", "/api/sdwan/rekey", "{\"tunnel\":\"acme/none\"}",
+	    CC "sdwan/rekey", "{\"arcana-console:input\":{\"tunnel\":"
+	    "\"acme/none\"}}");
+	cc_same("POST", "/api/sdwan/steer", "{\"edge\":\"none\",\"table\":"
+	    "\"t\",\"prefix\":\"10.0.0.0/8\"}", CC "sdwan/pin",
+	    "{\"arcana-console:input\":{\"edge\":\"none\",\"table\":\"t\","
+	    "\"prefix\":\"10.0.0.0/8\"}}");
+	http("DELETE", "/api/sdwan/identities?swvc=x&end_point=y&name=z",
+	    NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("POST", CC "sdwan/revoke-identity", "{\"arcana-console:input\":{"
+	    "\"swvc\":\"x\",\"end-point\":\"y\",\"name\":\"z\"}}", &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	cc_same("POST", "/api/sdwan/identities", "{\"swvc\":\"x\","
+	    "\"end_point\":\"y\",\"name\":\"\"}", CC "sdwan/issue-identity",
+	    "{\"arcana-console:input\":{\"swvc\":\"x\",\"end-point\":\"y\","
+	    "\"name\":\"\"}}");
+	cc_same("POST", "/api/sdwan/attach", "{\"vpn-id\":\"none\","
+	    "\"vpn-node-id\":\"x\"}", CC "sdwan/attach",
+	    "{\"arcana-console:input\":{\"vpn-id\":\"none\",\"vpn-node-id\":"
+	    "\"x\"}}");
+	/* The lists: kept as /api's, a bad interval refused. */
+	http("PUT", CC "sdwan/lists", "{\"arcana-console:lists\":{\"interval\":"
+	    "2,\"feeds\":[{\"name\":\"l1\",\"text\":\"10.0.0.0/8\"}]}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/sdwan/lists", NULL, &r);
+	ATF_CHECK_STREQ("2", jstr(&r, "interval"));
+	ATF_CHECK_STREQ("l1", jstr(&r, "feeds.0.name"));
+	resp_free(&r);
+	cc_eq("/api/sdwan/lists", CC "sdwan/lists", "lists");
+	cc_same("PUT", "/api/sdwan/lists", "{\"interval\":0}", CC "sdwan/lists",
+	    "{\"arcana-console:lists\":{\"interval\":0}}");
+	http("POST", CC "sdwan/fetch-lists", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r,
+	    "arcana-console:output.result.fetched"));
+	resp_free(&r);
+	/* A member: none of it. */
+	cc_member(&b);
+	http("GET", CC "sdwan/plan", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("POST", CC "sdwan/apply", "{\"arcana-console:input\":{}}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", CC "sdwan/audit", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, feeds);
@@ -18301,5 +18461,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, tls_ec);
 	ATF_TP_ADD_TC(tp, cyang_hosts);
 	ATF_TP_ADD_TC(tp, cyang_host_verbs);
+	ATF_TP_ADD_TC(tp, cyang_sdwan);
 	return (atf_no_error());
 }

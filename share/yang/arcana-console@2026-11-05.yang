@@ -2705,4 +2705,324 @@ module arcana-console {
       }
     }
   }
+
+  /* The SD-WAN's verbs */
+
+  container sdwan {
+    description
+      "What the console makes of the services (ietf-l3vpn-ntw, the
+       console's) for the edges, and its verbs on them: the plan, the
+       allocation ledger, the apply, the steering pins, the IPsec key
+       rotation, the named lists, the remote end points' identities,
+       the records (MEF 118.1's audit trail, MEF 138's SENs and SANs,
+       the security policies' record), a service's access attached to
+       a free SAP (RFC 9408 Appendix D).  Operators' and owners'.
+       Each node is read at its own path, a document of the console's
+       (anydata, its members /api's, openapi.yaml); a record's is
+       text/csv where Accept asks for it.  A refusal is /api's: 409
+       where the services make no plan, an apply runs or a warning is
+       not accepted.";
+    anydata document {
+      description
+        "The services as a MEF 70.2 document (the L3NM kept, made
+         one); written whole, checked first as MEF 70.2 says, kept as
+         the L3NM if made from the version kept.";
+    }
+    anydata plan {
+      config false;
+      description
+        "What the edges are to be made: each edge's jobs in their
+         order, the changes from what was applied, the warnings an
+         apply must accept.";
+    }
+    anydata ledger {
+      config false;
+      description
+        "The allocations of the plan: FIBs, addresses, route
+         distinguishers, VNIs, tables, with each node's resolved VPN
+         instance profile.";
+    }
+    anydata apply-state {
+      config false;
+      description
+        "The last apply, whether one runs, and those before.";
+    }
+    anydata steering {
+      config false;
+      description
+        "The pins sent to the edges and what the edges say they
+         chose.";
+    }
+    anydata rekeys {
+      config false;
+      description
+        "The key rotations of the tunnels, and whether one runs.";
+    }
+    anydata lists {
+      description
+        "The named lists the policies match on: the feeds (a URL or
+         text pasted) and the interval they are fetched at, each list
+         as kept (version, when fetched, its count, an error) as
+         state.";
+    }
+    anydata identities {
+      config false;
+      description
+        "Every remote end point's identities with their addresses.";
+    }
+    anydata audit {
+      config false;
+      description
+        "The audit trail, newest first, whether its chain is intact
+         and where it broke; the query parameter q keeps the events
+         with it anywhere in them.";
+    }
+    anydata sen {
+      config false;
+      description
+        "The security event notifications (MEF 138), newest first; q
+         as audit's.";
+    }
+    anydata san {
+      config false;
+      description
+        "The security administration notifications (MEF 138), newest
+         first; q as audit's.";
+    }
+    anydata record {
+      config false;
+      description
+        "The security policies' record of every edge, newest first;
+         the query parameters swvc, policy, since and edge pick.";
+    }
+    action check {
+      description
+        "A MEF 70.2 document checked, nothing kept.";
+      input {
+        anydata document {
+          mandatory true;
+          description
+            "The document.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "ok.";
+        }
+      }
+    }
+    action apply {
+      description
+        "The plan applied to the edges, each in its order, the
+         warnings it lists accepted.";
+      input {
+        leaf fresh {
+          type boolean;
+          description
+            "Every job made again, not the changes alone.";
+        }
+        leaf-list accept {
+          type string;
+          description
+            "The warnings accepted, as the plan names them.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "The steps begun.";
+        }
+      }
+    }
+    action pin {
+      description
+        "An entry of an edge's steering pinned to one of its
+         candidates (none: the pin cleared), the console's override;
+         the edge refuses a candidate not the entry's.";
+      input {
+        leaf edge {
+          type string;
+          mandatory true;
+          description
+            "The edge.";
+        }
+        leaf table {
+          type string;
+          mandatory true;
+          description
+            "The policy table.";
+        }
+        leaf prefix {
+          type string;
+          mandatory true;
+          description
+            "The far prefix.";
+        }
+        leaf candidate {
+          type string;
+          description
+            "The candidate; none, the pin cleared.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "ok.";
+        }
+      }
+    }
+    action rekey {
+      description
+        "A tunnel's IPsec keys turned now.";
+      input {
+        leaf tunnel {
+          type string {
+            length "1..150";
+          }
+          mandatory true;
+          description
+            "The tunnel's id.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "What was begun.";
+        }
+      }
+    }
+    action fetch-lists {
+      description
+        "The lists' feeds fetched now: one, or all.";
+      input {
+        leaf name {
+          type string;
+          description
+            "The list; none, all.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "fetched.";
+        }
+      }
+    }
+    action issue-identity {
+      description
+        "An identity issued to a remote end point, a console user's
+         or a name's: its key pair made by the console, the private
+         half in the WireGuard configuration said once and kept
+         nowhere, the edges applied.";
+      input {
+        leaf swvc {
+          type string;
+          mandatory true;
+          description
+            "The service.";
+        }
+        leaf end-point {
+          type string;
+          mandatory true;
+          description
+            "The remote end point.";
+        }
+        leaf name {
+          type string {
+            length "1..64";
+          }
+          mandatory true;
+          description
+            "The identity's name.";
+        }
+        leaf zone {
+          type string;
+          description
+            "Its zone.";
+        }
+        leaf group {
+          type string;
+          description
+            "Its group of the remote's, whose zone it takes.";
+        }
+        leaf user {
+          type boolean;
+          description
+            "A console user's: the name a sign-in key's.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "The identity and its WireGuard configuration, once.";
+        }
+      }
+    }
+    action revoke-identity {
+      description
+        "An identity revoked, its peer removed by the apply that
+         follows.";
+      input {
+        leaf swvc {
+          type string;
+          mandatory true;
+          description
+            "The service.";
+        }
+        leaf end-point {
+          type string;
+          mandatory true;
+          description
+            "The remote end point.";
+        }
+        leaf name {
+          type string;
+          mandatory true;
+          description
+            "The identity's name.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "revoked, applied, and why not.";
+        }
+      }
+    }
+    action attach {
+      description
+        "A service's access placed on a free SAP of its node's host
+         (RFC 9408 Appendix D), the host the user's to change.";
+      input {
+        leaf vpn-id {
+          type string;
+          mandatory true;
+          description
+            "The service.";
+        }
+        leaf vpn-node-id {
+          type string;
+          mandatory true;
+          description
+            "Its node.";
+        }
+        leaf sap-id {
+          type string;
+          description
+            "The SAP; none, the first free.";
+        }
+        anydata access {
+          description
+            "L3NM's vpn-network-access.";
+        }
+      }
+      output {
+        anydata result {
+          description
+            "The access attached.";
+        }
+      }
+    }
+  }
 }

@@ -319,7 +319,7 @@ api_sdwan_audit(struct http_request *req)
 
 	if (!guard(req, false))
 		return (WEB_OK);
-	csv = strstr(req->path, ".csv") != NULL;
+	csv = want_csv(req);
 	q = NULL;
 	(void)http_argument_get_string(req, "q", &q);
 	events = audit_read(q, &intact, &broken, &count);
