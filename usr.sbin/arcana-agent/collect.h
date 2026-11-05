@@ -147,11 +147,15 @@ int	rcr_read(const struct vc_file *files, size_t nfiles, int fib,
 	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes **out,
 	    struct yunread **u, size_t *nu);
 /* FIB fib's static routes made new's, the kernel's as old applied
- * them: by netlink(4), what was done undone on failure. */
+ * them: by netlink(4), a unicast hop by by where given (the agent's
+ * helper, as the route job), what was done undone on failure. */
+typedef int	rcr_hop_fn(const char *prefix, const char *gw,
+		    const char *ifn, int fib, bool add, char *err,
+		    size_t errlen);
 int	rcr_apply(int fib,
 	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *old,
 	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *new,
-	    char *err, size_t errlen);
+	    rcr_hop_fn *by, char *err, size_t errlen);
 int	rcr_write(struct vc_file *f, int fib,
 	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *sr,
 	    char *err, size_t errlen);

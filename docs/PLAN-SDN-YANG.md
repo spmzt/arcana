@@ -1902,23 +1902,50 @@ whose first part is served.
   as before (each step made taken away again, the last first); a
   DELETE of what is not there done.  On a host's edge, net.fibs and
   forwarding are arcana-sysctl's `kept` (sysctl.conf and sysctl(8), as
-  the sysctl job's persist did).  Jobs still: everything on a vnet
-  jail's edge (a `root` mount takes no edit); interfaces and
-  addresses (ietf-interfaces, ietf-ip: the module's commit sets an
-  address by ioctl(2) where the job ran ifconfig(8), which no stand-in
-  of the unprivileged suites covers, and an address on a UNI the
-  user's rc.conf names asks rc-conf-conflict, which the apply has no
-  way to accept yet), a FIB's static routes (a vrf-root's commit is
-  netlink(4)'s alone, likewise untested here), rtadvd (arcana-ra
-  under an interface the same commit makes), a UCS End Point's
-  addressing (DHCP or SLAAC: no leaf of the module), kmod (load is an
-  rpc of arcana-kernel, kld_list a commit), ntp, wireguard's keys and
-  peers (3.1.8), geneve's VNI and ends, ipsec and ipsec-sa (6.2, 6.3),
-  speeder; the `sdwan-*` parts were arcana-sdwan's and arcana-probe's
-  commits already (3.1.11, 3.1.12).  Next: interfaces, ip and routing
-  as edits with the apply's accepted warnings.  Check (console_test
-  sdwan_apply): the plan's edits, sysctl.conf and sysctl(8) after the
-  apply.  The root lab (console_test sdwan_lab, in `make check-root`):
+  the sysctl job's persist did).  On a host's edge too (console
+  0.359.0, agent 0.244.0), each written to Arcana's rc.conf file by its
+  commit, so each may ask rc-conf-files and rc-conf-conflict: the
+  tunnels of gre and gif (ietf-interfaces' entry made with its type,
+  arcana-interfaces' tunnel ends, description, IPv4 MTU, RFC 8529's
+  bind-ni-name, the inner /31 with its peer and the /127; DELETE of
+  the interface), the services' loopbacks (softwareLoopback, bound,
+  /32 and /128), the UNIs (an interface's binding and the provider's
+  addresses, or a VLAN made with its parent and dot1q tag; SLAAC's
+  advertisements in the same entry, RFC 8349's prefix and arcana-ra's
+  rdnss, so the separate rtadvd step is a jail's alone; taken away an
+  address at a time, the binding by a YANG Patch removing the
+  interface's and both families' bind-ni-name, or the VLAN destroyed),
+  and a FIB's static routes of one gateway (rc.conf's static
+  protocol, in the FIB's instance's vrf-root or ietf-routing's own for
+  FIB 0, next-hop-address or outgoing-interface; taken out by a YANG
+  Patch's remove, a key with "/" being a patch target's and not a
+  path's).  A FIB is `${ni:N}` in the plan, the name of the host's
+  instance of FIB N, read by edit_run() at the apply (fibN unless the
+  admin named it).  The agent's commits make the kernel's as the jobs
+  do, so the stand-ins cover them: an address by ifconfig(8) (it was
+  ioctl(2)), one interface made in its table with its MTU,
+  description and up by do_if_create() (an ifconfig(8) each after
+  would find no interface a stand-in made), a static route's unicast
+  hop by the agent's helper (route-add, route-del: it was netlink(4)
+  in the agent, which no unprivileged suite reaches), one already gone
+  with its gateway's address deleted all the same.  What an apply
+  takes away goes the last made first within a phase too (a UNI's
+  route before the UNI).  Jobs still, and why: everything on a vnet
+  jail's edge (a `root` mount takes no edit); a tunnel with an
+  outer FIB of its own (tunnelfib: a commit makes none yet), wg's
+  interfaces with their keys and peers (3.1.8), geneve's VNI and ends,
+  uswe's ipsec(4) interfaces (reqid) and their SAs, ipsec (6.2, 6.3);
+  a route of several weighted gateways (no weight in RFC 8349's
+  next-hop-list); a UCS End Point's addressing and its own FIB (DHCP
+  or SLAAC: no leaf of the module); a remote end point's wg
+  interface; kmod (load is an rpc of arcana-kernel, kld_list a
+  commit), ntp, speeder; the `sdwan-*` parts were arcana-sdwan's and
+  arcana-probe's commits already (3.1.11, 3.1.12).  Check
+  (console_test sdwan_apply, sdwan_jail, sdwan_host, sdwan_loop,
+  sdwan_sets, sdwan_breakout): the plan's edits, an apply refused
+  without its warnings accepted and done with them, rtadvd.conf and
+  Arcana's rc.conf file after it.  The root lab (console_test
+  sdwan_lab, in `make check-root`):
   two vnet jails, each a host whose agent runs in it
   (harness agent_jailed(): the system's ifconfig(8), sysctl(8),
   netstat(1) and helper, its files its own), an epair between them as
@@ -1949,7 +1976,12 @@ whose first part is served.
   silently: one not accepted is the agent's refusal, the step failed
   ("not accepted: the plan lists it, the apply accepts it for this
   step") and the apply rolled back; an apply the console makes itself
-  (an identity's) accepts none.
+  (an identity's) accepts none.  The lab with the edits: the plan lists
+  rc-conf-files for the tunnels, UNIs and routes; an apply without it
+  refused at the first and rolled back, the jails as before; with it,
+  made as above for real and kept in each host's Arcana rc.conf file
+  (cloned_interfaces, the UNI's alias, the route), all of it gone from
+  there and from the kernel when the service is taken away.
 - 4.5.6 done (console sdwan_edge.c): refusal of the infeasible with the
   reason and an alternative: an edge's policies' committed bandwidth
   (each rate limiter's or policy's commit, a security policy's rate

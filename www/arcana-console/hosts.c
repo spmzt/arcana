@@ -6363,7 +6363,8 @@ hosts_sdwan_set(const char *uri, const char *peer, const char *name,
  * A RESTCONF request of the console's own to server sid (the SD-WAN
  * apply's device edits, PLAN-SDN-YANG 4.5.5): method on path, an
  * RFC 8040 path below the host's fleet entry with its query, body
- * (consumed) RFC 7951's JSON, run as restconf.c runs a page's, a
+ * (consumed) RFC 7951's JSON (a PATCH's ietf-yang-patch:yang-patch an
+ * RFC 8072 YANG Patch), run as restconf.c runs a page's, a
  * commit's confirmation over a connection dialled for it.  The reply's
  * JSON (ietf-restconf:errors when refused), malloc'd; its status.
  */
@@ -6391,8 +6392,10 @@ hosts_restconf(const char *sid, const char *uri, const char *peer,
 		return (restconf_errors(400, why));
 	}
 	free(p);
-	if ((st = restconf_prepare(c->rc, method, body != NULL ?
-	    "application/yang-data+json" : NULL, body, &why)) != 0) {
+	if ((st = restconf_prepare(c->rc, method, body == NULL ? NULL :
+	    ucl_object_lookup(body, "ietf-yang-patch:yang-patch") != NULL ?
+	    "application/yang-patch+json" : "application/yang-data+json", body,
+	    &why)) != 0) {
 		restconf_free(c->rc);
 		free(c);
 		*status = st;

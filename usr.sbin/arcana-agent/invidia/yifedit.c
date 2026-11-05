@@ -21,7 +21,9 @@
  * refused as not supported yet.  Each is
  * written to Arcana's rc.conf file as rc.d/netif reads it (rcarcana.c's
  * rules), then made the kernel's; failing, what was made is undone and
- * the files put back.
+ * the files put back.  The kernel's as the jobs make it: by ifconfig(8),
+ * an address too; one made is made in its table, with its MTU and
+ * description, and up (do_if_create()).
  *
  *	description	ifconfig_<if>_descr
  *	enabled		"down" on ifconfig_<if>, or "up"
@@ -1125,13 +1127,33 @@ made_new(struct made **mp, size_t *np, size_t *capp)
 	return (t);
 }
 
+/*
+ * An address made live or taken off by ifconfig(8), as the if-address
+ * job does: "inet a/len [peer] alias", "inet a -alias".
+ */
 static int
 live_addr(struct work *w, const char *ifname, const struct addr *ad,
     bool add, const char **errp)
 {
+	struct execres	 res;
+	char		*argv[7];
+	int		 n;
 
-	return (ifaddr_change_peer(w, ifname, ad->af, &ad->bin, ad->plen,
-	    ad->peer != NULL ? (const void *)&ad->pbin : NULL, add, errp));
+	n = 0;
+	argv[n++] = (char *)(uintptr_t)opts.ifconfig_bin;
+	argv[n++] = (char *)(uintptr_t)ifname;
+	argv[n++] = (char *)(uintptr_t)(ad->af == AF_INET ? "inet" : "inet6");
+	argv[n++] = add ? wfmt(w, "%s/%d", ad->ip, ad->plen) :
+	    (char *)(uintptr_t)ad->ip;
+	if (add && ad->peer != NULL)
+		argv[n++] = (char *)(uintptr_t)ad->peer;
+	argv[n++] = (char *)(uintptr_t)(add ? "alias" : "-alias");
+	argv[n] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+		return (-1);
+	}
+	return (0);
 }
 
 int
@@ -1144,7 +1166,7 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 	struct rca	 x;
 	struct made	*m = NULL;
 	cbl_yarena	*ya;
-	size_t		 nm = 0, cap = 0, nlive = 0;
+	size_t		 nm = 0, cap = 0, nlive = 0, cri = 0;
 	char		 err[512];
 	const char	*e = NULL;
 	bool		 opened = false;
@@ -1357,6 +1379,7 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 			mk->kind = M_CREATE;
 			mk->ifname = wstrdup(&w, a->name);
 			mk->entry = a;
+			cri = nm - 1;
 		}
 		/* Its network instance: its FIB, of both families. */
 		{
@@ -1384,14 +1407,19 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 				if ((error = keep_fib(&w, &x, ri, fa, err,
 				    sizeof(err))) != 0)
 					break;
-				if ((mk = made_new(&m, &nm, &cap)) == NULL) {
+				/* One made: in its table as it is made. */
+				if (made)
+					m[cri].fib = fa;
+				else if ((mk = made_new(&m, &nm, &cap)) ==
+				    NULL) {
 					error = ENOMEM;
 					break;
+				} else {
+					mk->kind = M_FIB;
+					mk->ifname = wstrdup(&w, a->name);
+					mk->fib = fa;
+					mk->was_fib = fb;
 				}
-				mk->kind = M_FIB;
-				mk->ifname = wstrdup(&w, a->name);
-				mk->fib = fa;
-				mk->was_fib = fb;
 			}
 		}
 		/* Its router advertisements: rtadvd.conf's record. */
@@ -1465,7 +1493,9 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 			t = &m[nm];
 			memset(t, 0, sizeof(*t));
 			t->ifname = wstrdup(&w, a->name);
-			if (k == 0 && strcmp(da, db) != 0) {
+			/* One made has its description, MTU and up with it
+			 * (do_if_create()). */
+			if (k == 0 && strcmp(da, db) != 0 && !made) {
 				t->kind = M_DESCR;
 				t->was = wstrdup(&w, db);
 				t->ad.ip = wstrdup(&w, da);
@@ -1484,11 +1514,12 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 				t->ad.ip = wstrdup(&w, va[k - nb - 1].ip);
 				t->add = true;
 				nm++;
-			} else if (k == nb + na + 1 && up_a != up_b) {
+			} else if (k == nb + na + 1 && up_a != up_b && !(made &&
+			    up_a)) {
 				t->kind = M_STATE;
 				t->add = up_a;
 				nm++;
-			} else if (k == nb + na + 2 && mtu4) {
+			} else if (k == nb + na + 2 && mtu4 && !made) {
 				t->kind = M_MTU;
 				t->mtu = a->ip_ipv4->mtu;
 				t->was_mtu = b->ip_ipv4 != NULL ?
@@ -1574,6 +1605,19 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 			const char		*got;
 
 			spec_of(t->entry, &cs);
+			/* In its table, its MTU and description, up. */
+			if (t->fib > 0) {
+				cs.has_fib = true;
+				cs.fib = (unsigned)t->fib;
+			}
+			if (t->entry->ip_ipv4 != NULL &&
+			    t->entry->ip_ipv4->has_mtu) {
+				cs.has_mtu = true;
+				cs.mtu = t->entry->ip_ipv4->mtu;
+			}
+			if (t->entry->description != NULL &&
+			    t->entry->description[0] != '\0')
+				cs.description = t->entry->description;
 			error = do_if_create(&w, &cs, &got, &e);
 			break;
 		}

@@ -13196,13 +13196,16 @@ datastores_body()
 	    "$JGC" -c "$SOCK" commit
 	atf_check -s exit:1 -e match:'static_routes .*rc.conf line 2.*-a rc-conf-conflict' \
 	    "$JGC" -c "$SOCK" commit -a rc-conf-files
-	# Accepted, the kernel refuses (not root): the files as they were.
-	atf_check -s exit:1 -e match:'not permitted' \
-	    "$JGC" -c "$SOCK" commit -a rc-conf-files -a rc-conf-conflict
-	atf_check cmp rc.conf.before root/etc/rc.conf
-	atf_check test ! -e root/usr/local/etc/rc.conf.d/arcana
-	atf_check "$JGC" -c "$SOCK" discard
-	atf_check -o not-match:'"203.0.113.0/24"' "$JGC" -c "$SOCK" get -d candidate routing
+	# Accepted: the route made by the helper, as the route job's (the
+	# stand-in's log), kept in Arcana's file, the user's line
+	# commented out there.
+	atf_check "$JGC" -c "$SOCK" commit -a rc-conf-files -a rc-conf-conflict
+	atf_check -o match:'^0 route-add 203.0.113.0/24 127.0.0.1 - 0 0 0 -$' \
+	    cat route.log
+	atf_check -o match:'203.0.113.0/24 127.0.0.1' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^#static_routes=' cat root/etc/rc.conf
+	atf_check -o match:'"203.0.113.0/24"' "$JGC" -c "$SOCK" get -d running routing
 	# Only the static routes are changed so far.
 	sed -e 's|"name":"ipv4-master"|"name":"v4"|' run.json > ribs.json
 	atf_check "$JGC" -c "$SOCK" edit routing @ribs.json

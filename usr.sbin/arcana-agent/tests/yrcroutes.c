@@ -108,7 +108,8 @@ main(int argc, char **argv)
 			errx(1, "%s", why);
 		fib = atoi(argv[2]);
 		if (rcr_apply(fib, readall(&of, 1, fib, a, false),
-		    readall(&nf, 1, fib, a, false), why, sizeof(why)) != 0)
+		    readall(&nf, 1, fib, a, false), NULL, why, sizeof(why)) !=
+		    0)
 			errx(1, "%s", why);
 		return (0);
 	}

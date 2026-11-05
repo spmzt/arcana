@@ -904,10 +904,11 @@ sockaddr_of(int af, const char *s, struct sockaddr_storage *ss,
 }
 
 /* A hop added (NLM_F_APPEND: another gateway of the prefix a path
- * more) or deleted, as route(8) asks netlink(4). */
+ * more) or deleted, as route(8) asks netlink(4); a unicast one by by
+ * where given. */
 static int
 hop_do(struct snl_state *ss, const struct hop *h, int fib, bool add,
-    char *err, size_t errlen)
+    rcr_hop_fn *by, char *err, size_t errlen)
 {
 	struct sockaddr_storage dst, gw;
 	struct snl_errmsg_data e = { 0 };
@@ -918,6 +919,8 @@ hop_do(struct snl_state *ss, const struct hop *h, int fib, bool add,
 	uint32_t scope = 0, gscope = 0, oif = 0;
 	int error;
 
+	if (by != NULL && h->special < 0)
+		return (by(h->prefix, h->gw, h->ifn, fib, add, err, errlen));
 	strlcpy(prefix, h->prefix, sizeof(prefix));
 	if ((slash = strchr(prefix, '/')) == NULL)
 		return (EINVAL);
@@ -982,7 +985,8 @@ hop_do(struct snl_state *ss, const struct hop *h, int fib, bool add,
  * added; what was done undone if one fails.  0, or an errno and err.
  */
 int
-rcr_apply(int fib, const ysr *old, const ysr *new, char *err, size_t errlen)
+rcr_apply(int fib, const ysr *old, const ysr *new, rcr_hop_fn *by, char *err,
+    size_t errlen)
 {
 	struct hop *ov = NULL, *nv = NULL;
 	struct snl_state ss;
@@ -1010,7 +1014,7 @@ rcr_apply(int fib, const ysr *old, const ysr *new, char *err, size_t errlen)
 
 		for (size_t k = 0; k < nn && !keep; k++)
 			keep = hop_eq(&ov[i], &nv[k]);
-		if (!keep && (error = hop_do(&ss, &ov[i], fib, false, err,
+		if (!keep && (error = hop_do(&ss, &ov[i], fib, false, by, err,
 		    errlen)) == 0)
 			del[ndel++] = i;
 	}
@@ -1019,7 +1023,7 @@ rcr_apply(int fib, const ysr *old, const ysr *new, char *err, size_t errlen)
 
 		for (size_t k = 0; k < no && !had; k++)
 			had = hop_eq(&nv[i], &ov[k]);
-		if (!had && (error = hop_do(&ss, &nv[i], fib, true, err,
+		if (!had && (error = hop_do(&ss, &nv[i], fib, true, by, err,
 		    errlen)) == 0)
 			add[nadd++] = i;
 	}
@@ -1028,11 +1032,11 @@ rcr_apply(int fib, const ysr *old, const ysr *new, char *err, size_t errlen)
 
 		/* Undone, the other way round. */
 		while (nadd > 0)
-			(void)hop_do(&ss, &nv[add[--nadd]], fib, false, ignore,
-			    sizeof(ignore));
+			(void)hop_do(&ss, &nv[add[--nadd]], fib, false, by,
+			    ignore, sizeof(ignore));
 		while (ndel > 0)
-			(void)hop_do(&ss, &ov[del[--ndel]], fib, true, ignore,
-			    sizeof(ignore));
+			(void)hop_do(&ss, &ov[del[--ndel]], fib, true, by,
+			    ignore, sizeof(ignore));
 	}
 	snl_free(&ss);
 out:

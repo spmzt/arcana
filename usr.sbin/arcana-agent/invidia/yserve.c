@@ -462,12 +462,56 @@ but_protocols(const struct ietf_routing *r, struct cbl_ybuf *b)
  * A commit of FIB 0's static routes (PLAN-SDN-YANG 2.3.5, 2.4.3,
  * 2.4.4): written to Arcana's rc.conf file as rc.d/routing reads them
  * (rcr_write(), rcarcana.c's rules: rc_conf_files, the user's
- * variables), then made the kernel's (rcr_apply()), tried again once
+ * variables), then made the kernel's (rcr_apply(), a unicast hop by the
+ * agent's helper as the route job's: route_by_helper()), tried again once
  * where it fails, a route the table changed meanwhile; failing still,
  * the files put back.  What else the tree changes is not done here yet.
  */
 static int	statics_commit(cbl_req *, int, const struct ietf_routing *,
 		    const struct ietf_routing *);
+
+/*
+ * A unicast hop of a commit added or deleted by the agent's helper, as
+ * the route job has it (rcr_apply()'s by): route-add appends a gateway
+ * to the prefix's, as netlink's NLM_F_APPEND.
+ */
+static int
+route_by_helper(const char *prefix, const char *gw, const char *ifn, int fib,
+    bool add, char *err, size_t errlen)
+{
+	struct execres	 res;
+	struct work	 w;
+	const char	*words[7];
+	size_t		 n;
+	int		 error = 0;
+
+	work_init(&w);
+	n = 0;
+	words[n++] = prefix;
+	words[n++] = gw[0] != '\0' ? gw : "-";
+	words[n++] = ifn[0] != '\0' ? ifn : "-";
+	words[n++] = wfmt(&w, "%d", fib);
+	words[n++] = "0";
+	if (add) {
+		words[n++] = "0";
+		words[n++] = "-";
+	}
+	if (run_exec(&w, helper_argv(&w, add ? "route-add" : "route-del", n,
+	    words), &res) != 0) {
+		const char	*e = exec_error(&w, &res, "route");
+
+		/* Gone with its gateway's address: deleted all the same. */
+		if (!add && strstr(e, "no such route") != NULL) {
+			work_free(&w);
+			return (0);
+		}
+		(void)snprintf(err, errlen, "%s %s%s%s: %s", add ? "add" :
+		    "delete", prefix, gw[0] != '\0' ? " via " : "", gw, e);
+		error = EIO;
+	}
+	work_free(&w);
+	return (error);
+}
 
 /* Whether two routings' configuration differ, as YANG-CBOR. */
 static bool
@@ -542,7 +586,8 @@ statics_commit(cbl_req *req, int fib, const struct ietf_routing *before,
 		return (error);
 	}
 	for (int tries = 0; tries < 2; tries++) {
-		if ((error = rcr_apply(fib, old, new, err, sizeof(err))) == 0)
+		if ((error = rcr_apply(fib, old, new, route_by_helper, err,
+		    sizeof(err))) == 0)
 			break;
 		if (tries == 0)
 			(void)usleep(200000);

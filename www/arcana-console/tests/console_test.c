@@ -10574,6 +10574,34 @@ ATF_TC_BODY(sdwan_notices, tc)
 	resp_free(&r);
 }
 
+/*
+ * An apply's request accepting every warning the plan lists now (each
+ * a host's device edit's: rc-conf-files, the tests' hosts naming no
+ * Arcana rc.conf file), as the page's Deploy does; fresh or not.  A
+ * buffer of its own, until the next call.
+ */
+static const char *
+accepting(bool fresh)
+{
+	static char	*json;
+	struct resp	 r;
+	ucl_object_t	*o;
+
+	free(json);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	if (fresh)
+		ucl_object_insert_key(o, ucl_object_frombool(true), "fresh", 0,
+		    false);
+	ucl_object_insert_key(o, ucl_object_copy(ucl_object_lookup(r.json,
+	    "accept")), "accept", 0, false);
+	json = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(o);
+	resp_free(&r);
+	return (json);
+}
+
 /* The apply's end: done or failed; its state, into r. */
 static void
 sdwan_wait(struct resp *r)
@@ -10894,7 +10922,7 @@ ATF_TC_BODY(sdwan_uswe, tc)
 	/* Applied: the pairs made (one agent stands for both ends, so two
 	 * files), the far halves read from the sdwan read, the two SAs each
 	 * way set by setkey, mirrored. */
-	http("POST", "/api/sdwan/apply", "{}", &r);
+	http("POST", "/api/sdwan/apply", accepting(false), &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
 	sdwan_wait(&r);
@@ -10927,7 +10955,7 @@ ATF_TC_BODY(sdwan_uswe, tc)
 	    &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	http("POST", "/api/sdwan/apply", "{}", &r);
+	http("POST", "/api/sdwan/apply", accepting(false), &r);
 	ATF_CHECK_MSG(r.status == 409 && strstr(r.body, "key rotation") != NULL,
 	    "%d %s", r.status, r.body);
 	resp_free(&r);
@@ -11084,8 +11112,30 @@ ATF_TC_BODY(sdwan_jail, tc)
 	http("PUT", "/api/sdwan", doc, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	(void)unlink("jexec.log");
+	/* The host's tunnel a device edit, written to Arcana's rc.conf
+	 * file, which the host's rc.conf names not: the plan lists the
+	 * warning, the jail's jobs none; not accepted, the step refused and
+	 * the apply rolled back. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(t1, sizeof(t1), "\"accept\":[{\"server\":\"%s\",\"name\":\"a\","
+	    "\"key\":\"tvc:acme/a-inet-g-inet\",\"title\":\"gre100, gre to "
+	    "192.0.2.2 over a-inet\",\"warning\":\"rc-conf-files\",\"says\":", sa);
+	ATF_CHECK_MSG(strstr(r.body, t1) != NULL && strstr(r.body, "/gw\","
+	    "\"name\":\"a/gw\",\"key\"") == NULL, "%s", r.body);
+	resp_free(&r);
 	http("POST", "/api/sdwan/apply", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "rolled back") == 0 &&
+	    strstr(r.body, "accept rc-conf-files to add it to /etc/rc.conf, once "
+	    "(rc-conf-files); not accepted: the plan lists it, the apply accepts "
+	    "it for this step") != NULL, "%s", r.body);
+	resp_free(&r);
+	(void)unlink("jexec.log");
+	(void)unlink("ifconfig.log");
+	http("POST", "/api/sdwan/apply", accepting(false), &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
 	sdwan_wait(&r);
@@ -11260,6 +11310,17 @@ lab_sysctl(const char *jail, const char *oid)
 	return (v);
 }
 
+/* An apply accepting every warning the plan lists; its end into r. */
+static void
+lab_apply(struct resp *r, bool fresh)
+{
+
+	http("POST", "/api/sdwan/apply", accepting(fresh), r);
+	EXPECT(r, 200);
+	resp_free(r);
+	sdwan_wait(r);
+}
+
 ATF_TC_WITH_CLEANUP(sdwan_lab);
 ATF_TC_HEAD(sdwan_lab, tc)
 {
@@ -11325,18 +11386,47 @@ ATF_TC_BODY(sdwan_lab, tc)
 	ATF_REQUIRE_EQ(1, lab_sysctl(LAB_A, "net.fibs"));
 
 	/*
-	 * b's UNI on an interface b has not: its step fails after the
-	 * tunnel's and a's UNI's were made, and the apply rolled back
-	 * leaves the jails as they were, but net.fibs, which only goes up.
+	 * The tunnels, UNIs and routes are device edits of the hosts, each
+	 * written to Arcana's rc.conf file, which the hosts' rc.conf does
+	 * not name yet: the plan lists rc-conf-files to accept for each,
+	 * and an apply that does not accept it is refused at the first and
+	 * rolled back.
 	 */
-	lab_doc(doc, sizeof(doc), "0", sa, sb, ifs, "lab9");
+	lab_doc(doc, sizeof(doc), "0", sa, sb, ifs, ifs[3]);
 	http("PUT", "/api/sdwan", doc, &r);
 	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"tvc:acme/a-inet-b-inet\",\""
+	    "title\":\"gre100, gre to 10.203.0.2 over a-inet\",\"warning\":"
+	    "\"rc-conf-files\"") != NULL && strstr(r.body, "\"key\":\"uni:hq\"")
+	    != NULL && strstr(r.body, "\"key\":\"route:acme:10.1.8.0/22\"") !=
+	    NULL, "%s", r.body);
 	resp_free(&r);
 	http("POST", "/api/sdwan/apply", "{\"fresh\":true}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
 	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "rolled back") == 0 &&
+	    strstr(r.body, "(rc-conf-files); not accepted: the plan lists it")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
+	after = lab_snap();
+	ATF_CHECK_STREQ(before, after);
+	free(after);
+
+	/*
+	 * b's UNI on an interface b has not: its step fails after the
+	 * tunnel's and a's UNI's were made, and the apply rolled back
+	 * leaves the jails as they were, but net.fibs, which only goes up.
+	 */
+	lab_version(ver, sizeof(ver));
+	lab_doc(doc, sizeof(doc), ver, sa, sb, ifs, "lab9");
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	lab_apply(&r, true);
 	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "rolled back") == 0 &&
 	    strstr(r.body, "\"state\":\"undone\"") != NULL, "%s", r.body);
 	resp_free(&r);
@@ -11344,19 +11434,21 @@ ATF_TC_BODY(sdwan_lab, tc)
 	ATF_CHECK_STREQ(before, after);
 	free(after);
 
-	/* The good one: made for real. */
+	/* The good one: made for real, kept in Arcana's rc.conf file. */
 	lab_version(ver, sizeof(ver));
 	lab_doc(doc, sizeof(doc), ver, sa, sb, ifs, ifs[3]);
 	http("PUT", "/api/sdwan", doc, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	http("POST", "/api/sdwan/apply", "{\"fresh\":true}", &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	sdwan_wait(&r);
+	lab_apply(&r, true);
 	ATF_REQUIRE_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
 	    r.body);
 	resp_free(&r);
+	ATF_CHECK_MSG(system("grep -q '^cloned_interfaces=\"[^\"]*gre100' "
+	    "ea/root/usr/local/etc/rc.conf.d/arcana && grep -q "
+	    "'10.1.8.0/22 10.1.0.2' ea/root/usr/local/etc/rc.conf.d/arcana && "
+	    "grep -q 'inet 10.1.0.1/24' ea/root/usr/local/etc/rc.conf.d/"
+	    "arcana") == 0, "not kept in Arcana's rc.conf file");
 	after = lab_snap();
 	/* Each end of the tunnel in the service's table, its inner /31
 	 * and its outer ends the underlay's; the UNI's address in it too,
@@ -11400,6 +11492,8 @@ ATF_TC_BODY(sdwan_lab, tc)
 	ATF_CHECK_STREQ(before, after);
 	free(after);
 	free(before);
+	ATF_CHECK_MSG(system("grep -q 'gre100\\|10.1.8.0' ea/root/usr/local/etc/"
+	    "rc.conf.d/arcana") != 0, "still in Arcana's rc.conf file");
 }
 
 CONSOLE_TC(sdwan_mesh, "Several transports on a pair of edges: two Internet "
@@ -11658,12 +11752,18 @@ ATF_TC_BODY(sdwan_host, tc)
 	 */
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
-	ATF_CHECK_MSG(strstr(r.body, "\"interface\":\"gre100\",\"fib\":1,") !=
-	    NULL && strstr(r.body, "\"interface\":\"gre101\",\"fib\":0,") != NULL,
-	    "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"if-set\",\"interface\":\"lo0\","
-	    "\"fib\":1,") != NULL && strstr(r.body, "\"key\":\"uni:branch\","
-	    "\"phase\":") != NULL, "%s", r.body);
+	/* a's tunnel and UNI device edits (4.5.5), bound to FIB 1's
+	 * instance; b's tunnel a job still, its outer packets in a FIB of
+	 * their own (tunnelfib, which a commit makes not yet). */
+	ATF_CHECK_MSG(strstr(r.body, "{\"name\":\"gre100\",\"type\":"
+	    "\"iana-if-type:tunnel\",\"description\":\"sdwan\",\"arcana-"
+	    "interfaces:tunnel\":{\"local\":\"192.0.2.1\",\"remote\":"
+	    "\"192.0.2.2\"},\"ietf-network-instance:bind-ni-name\":\"${ni:1}\"")
+	    != NULL && strstr(r.body, "\"interface\":\"gre101\",\"fib\":0,") !=
+	    NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "{\"name\":\"lo0\",\"ietf-network-"
+	    "instance:bind-ni-name\":\"${ni:1}\",") != NULL && strstr(r.body,
+	    "\"key\":\"uni:branch\",\"phase\":") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"allfibs\":true") != NULL && strstr(
 	    r.body, "\"allfibs\":false") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"name\":\"sw1\",\"fib\":0,") != NULL &&
@@ -11760,8 +11860,9 @@ ATF_TC_BODY(sdwan_loop, tc)
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"loop:acme\"") != NULL &&
-	    strstr(r.body, "\"address\":\"100.64.0.4/32\"") != NULL && strstr(
-	    r.body, "\"address\":\"100.64.0.6/32\"") != NULL, "%s", r.body);
+	    strstr(r.body, "\"ip\":\"100.64.0.4\",\"prefix-length\":32") !=
+	    NULL && strstr(r.body, "\"ip\":\"100.64.0.6\",\"prefix-length\":32")
+	    != NULL, "%s", r.body);
 	/* BIRD's forms (agent_test's sdwan_forms has their text). */
 	ATF_CHECK_MSG(strstr(r.body, "\"loopback\":true,") != NULL && strstr(
 	    r.body, "\"loop\":{\"local4\":\"100.64.0.4\",\"transit\":true,"
@@ -12076,9 +12177,10 @@ ATF_TC_BODY(sdwan_breakout, tc)
 	    NULL && strstr(r.body, "\"key\":\"route:acme:2:203.0.113.254/32\"") !=
 	    NULL && strstr(r.body, "\"key\":\"route:acme:2:198.51.100.1/32\"") != NULL,
 	    "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "\"destination\":\"0.0.0.0/0\",\"gateway\":"
-	    "\"192.0.2.254\"") != NULL && strstr(r.body, "\"destination\":"
-	    "\"0.0.0.0/0\",\"gateway\":\"203.0.113.254\"") == NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"destination-prefix\":\"0.0.0.0/0\","
+	    "\"next-hop\":{\"next-hop-address\":\"192.0.2.254\"}") != NULL &&
+	    strstr(r.body, "\"destination-prefix\":\"0.0.0.0/0\",\"next-hop\":{"
+	    "\"next-hop-address\":\"203.0.113.254\"}") == NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"id\":\"bo:a-inet\",\"address\":"
 	    "\"192.0.2.254\",\"fib\":2") != NULL && strstr(r.body, "\"id\":"
 	    "\"bo:a-wg\",\"address\":\"198.51.100.1\",\"fib\":2") != NULL, "%s",
@@ -12302,8 +12404,14 @@ ATF_TC_BODY(sdwan_sets, tc)
 	    "\"acme\",\"fib\":1,\"table\":1,\"as\":64600,\"router_id\":"
 	    "\"100.64.0.1\",\"direct\":[\"vlan104\",\"gre101\",\"geneve103\"],"
 	    "\"bfd\"") != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "\"destination\":\"192.0.2.254/32\","
-	    "\"gateway\":\"vtnet0\",\"fib\":1") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"path\":\"ietf-network-instance:network-"
+	    "instances/network-instance=${ni:1}/vrf-root/ietf-routing:routing\","
+	    "\"body\":{\"ietf-routing:routing\":{\"control-plane-protocols\":{"
+	    "\"control-plane-protocol\":[{\"type\":\"ietf-routing:static\","
+	    "\"name\":\"rc.conf\",\"static-routes\":{\"ietf-ipv4-unicast-"
+	    "routing:ipv4\":{\"route\":[{\"destination-prefix\":"
+	    "\"192.0.2.254/32\",\"next-hop\":{\"outgoing-interface\":"
+	    "\"vtnet0\"}}]}}}]}}}") != NULL, "%s", r.body);
 	resp_free(&r);
 }
 
@@ -12910,7 +13018,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 		    "\"%s\",\"persist\":true,\"addressing\":\"was\"", lifn);
 		ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
 	}
-	snprintf(t2, sizeof(t2), "\"tunnel_remote\":\"%s\"", laddr);
+	/* The tunnel a device edit: its ends arcana-interfaces'. */
+	snprintf(t2, sizeof(t2), "\"arcana-interfaces:tunnel\":{\"local\":"
+	    "\"10.99.0.1\",\"remote\":\"%s\"}", laddr);
 	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"if-set\",\"interface\":\"vtnet0\","
 	    "\"persist\":true,\"fib\":3") != NULL, "%s", r.body);
@@ -12950,9 +13060,17 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"provider\":[\"10.1.0.1\"],\"reserved\":[\"10.1.0.0/26\","
 	    "\"10.1.0.200/30\"],\"lease\":\"1h\",\"dns\":[\"10.1.0.1\"]}}]}}") !=
 	    NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"rtadvd\",\"interface\":\"vlan")
-	    != NULL && strstr(r.body, "\"args\":[\"2001:db8:1::/64\",\"2001:db8:1::1"
-	    "\"],\"persist\":true") != NULL, "%s", r.body);
+	/* SLAAC's advertisements with the VLAN that carries them, in its
+	 * device edit (RFC 8349's, arcana-ra's DNS servers). */
+	ATF_CHECK_MSG(strstr(r.body, "\"type\":\"iana-if-type:l2vlan\",\"ietf-"
+	    "if-extensions:parent-interface\":\"lo0\",\"ietf-if-extensions:"
+	    "encapsulation\":{\"ietf-if-vlan-encapsulation:dot1q-vlan\":{\""
+	    "outer-tag\":{\"tag-type\":\"ieee802-dot1q-types:c-vlan\",\"vlan-id\""
+	    ":20}}}") != NULL && strstr(r.body, "\"ietf-ipv6-unicast-routing:"
+	    "ipv6-router-advertisements\":{\"send-advertisements\":true,\"prefix-"
+	    "list\":{\"prefix\":[{\"prefix-spec\":\"2001:db8:1::/64\"}]},\"arcana-"
+	    "ra:rdnss\":[{\"address\":\"2001:db8:1::1\"}]}") != NULL &&
+	    strstr(r.body, "\"kind\":\"rtadvd\"") == NULL, "%s", r.body);
 	/* Forwarding and the FIBs by arcana-sysctl, device edits of the
 	 * hosts' candidates (4.5.5), no longer sysctl jobs. */
 	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"edit\",\"method\":\"PATCH\","
@@ -13133,7 +13251,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "accept is an array")
 	    != NULL, "%s", r.body);
 	resp_free(&r);
-	http("POST", "/api/sdwan/apply", "{}", &r);
+	http("POST", "/api/sdwan/apply", accepting(false), &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
 	sdwan_wait(&r);
@@ -13355,9 +13473,12 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "unbound.log") == 0);
 	ATF_CHECK(system("grep -q '^setfib -F 1 ./fake-dnsmasq -C .*sdwan-dhcp-sw1"
 	    ".conf -x ' setfib.log") == 0);
-	ATF_CHECK(system("grep -q 'addr=\"2001:db8:1::\":prefixlen#64:rdnss=\""
-	    "2001:db8:1::1\":' rtadvd.conf && grep -q '^vlan[0-9]*:' rtadvd.conf "
-	    "&& grep -q '^rtadvd_enable=\"YES\"' rc.conf") == 0);
+	/* rtadvd's record by the commit, kept in Arcana's rc.conf file. */
+	ATF_CHECK_MSG(system("grep -q 'addr=\"2001:db8:1::\"' rtadvd.conf && "
+	    "grep -q 'prefixlen#64' rtadvd.conf && grep -q 'rdnss=\"2001:db8:1::"
+	    "1\"' rtadvd.conf && grep -q '^vlan[0-9]*:' rtadvd.conf && grep -q "
+	    "'^rtadvd_enable=\"YES\"' root/usr/local/etc/rc.conf.d/arcana") == 0,
+	    "no record of the VLAN's in rtadvd.conf, or rtadvd not enabled");
 	ATF_CHECK(system("grep -q '^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1"
 	    ".conf -s ' setfib.log") == 0);
 	ATF_CHECK(system("grep -q '^server ntp.example.org iburst$' ntp.conf && "
@@ -13477,15 +13598,19 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_EQ(2, (int)ucl_array_size(ucl_object_lookup(r.json,
 	    "tunnels")));
 	resp_free(&r);
-	http("POST", "/api/sdwan/apply", "{}", &r);
+	http("POST", "/api/sdwan/apply", accepting(false), &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
 	sdwan_wait(&r);
 	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
 	    r.body);
+	/* The tunnels taken away by their device edits (the stand-in's
+	 * made none the kernel has, so nothing there to destroy). */
+	ATF_CHECK_MSG(strstr(r.body, "\"method\":\"DELETE\",\"path\":\"ietf-"
+	    "interfaces:interfaces/interface=gif102\"") != NULL && strstr(r.body,
+	    "\"method\":\"DELETE\",\"path\":\"ietf-interfaces:interfaces/"
+	    "interface=gif103\"") != NULL, "%s", r.body);
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^gif102 destroy' ifconfig.log") == 0);
-	ATF_CHECK(system("grep -q '^gif103 destroy' ifconfig.log") == 0);
 	ATF_CHECK(system("! grep -q '\"units\":\\[102' data/sdwan-state.json") ==
 	    0);
 
@@ -13891,7 +14016,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	EXPECT(&r, 200);
 	resp_free(&r);
 	ATF_REQUIRE(system(": > ifconfig.log") == 0);
-	http("POST", "/api/sdwan/apply", "{\"fresh\":true}", &r);
+	http("POST", "/api/sdwan/apply", accepting(true), &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
 	sdwan_wait(&r);

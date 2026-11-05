@@ -592,6 +592,280 @@ edge_jailed(const char *sid)
 }
 
 /*
+ * Interfaces, addresses, a FIB's static routes and router advertisements
+ * as device edits (ietf-interfaces, ietf-ip, RFC 8529's binding, RFC
+ * 8349's static routes and advertisements, arcana-interfaces' tunnel
+ * ends and peer, arcana-ra's DNS servers), each written to Arcana's
+ * rc.conf file by its commit: the warnings that asks (rc_warns()).  A
+ * FIB is named by the network instance the host has for it, ${ni:N},
+ * which edit_run() resolves; FIB 0 is none.
+ */
+#define	IFS_PATH	"ietf-interfaces:interfaces"
+#define	STATIC_CPP	"control-plane-protocol=ietf-routing:static," \
+			"rc.conf"
+
+/* j (an edit) may ask the warnings that writing rc.conf asks. */
+static ucl_object_t *
+rc_warns(ucl_object_t *j)
+{
+	ucl_object_t	*w;
+	size_t		 i;
+
+	w = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < nitems(warnings); i++)
+		ucl_array_append(w, S(warnings[i].tag));
+	put(j, "warns", w);
+	return (j);
+}
+
+/* An interface's entry of an edit; its type where the commit makes it. */
+static ucl_object_t *
+if_entry(const char *name, const char *type)
+{
+	ucl_object_t	*e;
+
+	e = ucl_object_typed_new(UCL_OBJECT);
+	put(e, "name", S(name));
+	if (type != NULL)
+		put(e, "type", S(type));
+	return (e);
+}
+
+/* e's ietf-ip container of family af, made where it has none. */
+static ucl_object_t *
+if_ip(ucl_object_t *e, int af)
+{
+	const char	*k = af == AF_INET ? "ietf-ip:ipv4" : "ietf-ip:ipv6";
+	ucl_object_t	*c;
+
+	if ((c = (ucl_object_t *)(uintptr_t)ucl_object_lookup(e, k)) == NULL) {
+		c = ucl_object_typed_new(UCL_OBJECT);
+		put(e, k, c);
+	}
+	return (c);
+}
+
+/* e bound to FIB fib's network instance: the interface and both its
+ * families, as FreeBSD binds them (RFC 8529 binds each). */
+static void
+if_fib(ucl_object_t *e, int64_t fib)
+{
+	char	ni[32];
+
+	if (fib <= 0)
+		return;
+	snprintf(ni, sizeof(ni), "${ni:%jd}", (intmax_t)fib);
+	put(e, "ietf-network-instance:bind-ni-name", S(ni));
+	put(if_ip(e, AF_INET), "ietf-network-instance:bind-ni-name", S(ni));
+	put(if_ip(e, AF_INET6), "ietf-network-instance:bind-ni-name", S(ni));
+}
+
+/* A YANG Patch (RFC 8072) of path removing each of targets, n of them:
+ * what is not there is no error. */
+static ucl_object_t *
+patch_remove(const char *path, const char *const *targets, int n)
+{
+	ucl_object_t	*ed, *edits, *p, *body;
+	char		 id[8];
+	int		 i;
+
+	edits = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < n; i++) {
+		ed = ucl_object_typed_new(UCL_OBJECT);
+		snprintf(id, sizeof(id), "%d", i + 1);
+		put(ed, "edit-id", S(id));
+		put(ed, "operation", S("remove"));
+		put(ed, "target", S(targets[i]));
+		ucl_array_append(edits, ed);
+	}
+	p = ucl_object_typed_new(UCL_OBJECT);
+	put(p, "patch-id", S("sdwan"));
+	put(p, "edit", edits);
+	body = ucl_object_typed_new(UCL_OBJECT);
+	put(body, "ietf-yang-patch:yang-patch", p);
+	return (rc_warns(edit("PATCH", path, body)));
+}
+
+/* Interface ifn given back to the host's table: its binding, and its
+ * families', taken out in one commit. */
+static ucl_object_t *
+if_unbind(const char *ifn)
+{
+	static const char *const t[] = {
+	    "/ietf-network-instance:bind-ni-name",
+	    "/ietf-ip:ipv4/ietf-network-instance:bind-ni-name",
+	    "/ietf-ip:ipv6/ietf-network-instance:bind-ni-name" };
+	char	path[128];
+
+	snprintf(path, sizeof(path), IFS_PATH "/interface=%s", ifn);
+	return (patch_remove(path, t, (int)nitems(t)));
+}
+
+/* Address addr, "a/len", on e; its far end peer where given. */
+static void
+if_addr(ucl_object_t *e, const char *addr, const char *peer)
+{
+	ucl_object_t	*c, *list, *a;
+	char		 ip[64];
+	const char	*slash;
+
+	if ((slash = strchr(addr, '/')) == NULL)
+		return;
+	snprintf(ip, sizeof(ip), "%.*s", (int)(slash - addr), addr);
+	c = if_ip(e, family(ip));
+	if ((list = (ucl_object_t *)(uintptr_t)ucl_object_lookup(c,
+	    "address")) == NULL) {
+		list = ucl_object_typed_new(UCL_ARRAY);
+		put(c, "address", list);
+	}
+	a = ucl_object_typed_new(UCL_OBJECT);
+	put(a, "ip", S(ip));
+	put(a, "prefix-length", I(strtol(slash + 1, NULL, 10)));
+	if (peer != NULL)
+		put(a, "arcana-interfaces:peer", S(peer));
+	ucl_array_append(list, a);
+}
+
+/* The edit making e as it says among the host's interfaces. */
+static ucl_object_t *
+if_edit(ucl_object_t *e)
+{
+	ucl_object_t	*body, *c, *list;
+
+	list = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(list, e);
+	c = ucl_object_typed_new(UCL_OBJECT);
+	put(c, "interface", list);
+	body = ucl_object_typed_new(UCL_OBJECT);
+	put(body, IFS_PATH, c);
+	return (rc_warns(edit("PATCH", IFS_PATH, body)));
+}
+
+/* The edit taking away interface ifn, or what below names of it. */
+static ucl_object_t *
+if_del(const char *ifn, const char *below)
+{
+	char	path[256];
+
+	snprintf(path, sizeof(path), IFS_PATH "/interface=%s%s%s", ifn,
+	    below != NULL ? "/" : "", below != NULL ? below : "");
+	return (rc_warns(edit("DELETE", path, NULL)));
+}
+
+/* Address addr ("a/len" or "a") taken off interface ifn. */
+static ucl_object_t *
+if_addr_del(const char *ifn, const char *addr)
+{
+	char	below[128];
+
+	snprintf(below, sizeof(below), "ietf-ip:%s/address=%.*s", family(addr)
+	    == AF_INET ? "ipv4" : "ipv6", (int)strcspn(addr, "/"), addr);
+	return (if_del(ifn, below));
+}
+
+/* FIB fib's routing: its network instance's, or the host's. */
+static void
+fib_routing(char *buf, size_t len, int64_t fib)
+{
+
+	if (fib > 0)
+		snprintf(buf, len, "ietf-network-instance:network-instances/"
+		    "network-instance=${ni:%jd}/vrf-root/ietf-routing:routing",
+		    (intmax_t)fib);
+	else
+		snprintf(buf, len, "ietf-routing:routing");
+}
+
+/*
+ * A static route of FIB fib, prefix by gw (an address, or an interface:
+ * its outgoing interface), made: rc.conf's static protocol's; or, with
+ * remove, taken out by a YANG Patch's remove (a key with "/" is named in
+ * a patch's target, not in a path).
+ */
+static ucl_object_t *
+route_edit(int64_t fib, const char *prefix, const char *gw, bool remove)
+{
+	ucl_object_t	*body, *r, *nh, *list, *fam, *sr, *cpp, *cp, *rt;
+	char		 path[512], target[160];
+	const char	*fk, *tp;
+	bool		 addr;
+
+	fk = family(prefix) == AF_INET ? "ietf-ipv4-unicast-routing:ipv4" :
+	    "ietf-ipv6-unicast-routing:ipv6";
+	fib_routing(path, sizeof(path), fib);
+	if (remove) {
+		snprintf(path + strlen(path), sizeof(path) - strlen(path),
+		    "/control-plane-protocols/" STATIC_CPP "/static-routes/%s",
+		    fk);
+		snprintf(target, sizeof(target), "/route=%.*s%%2F%s",
+		    (int)strcspn(prefix, "/"), prefix, strchr(prefix, '/') !=
+		    NULL ? strchr(prefix, '/') + 1 : "");
+		tp = target;
+		return (patch_remove(path, &tp, 1));
+	}
+	addr = family(gw) == AF_INET || family(gw) == AF_INET6;
+	nh = ucl_object_typed_new(UCL_OBJECT);
+	put(nh, addr ? "next-hop-address" : "outgoing-interface", S(gw));
+	r = ucl_object_typed_new(UCL_OBJECT);
+	put(r, "destination-prefix", S(prefix));
+	put(r, "next-hop", nh);
+	list = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(list, r);
+	fam = ucl_object_typed_new(UCL_OBJECT);
+	put(fam, "route", list);
+	sr = ucl_object_typed_new(UCL_OBJECT);
+	put(sr, fk, fam);
+	cp = ucl_object_typed_new(UCL_OBJECT);
+	put(cp, "type", S("ietf-routing:static"));
+	put(cp, "name", S("rc.conf"));
+	put(cp, "static-routes", sr);
+	list = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(list, cp);
+	cpp = ucl_object_typed_new(UCL_OBJECT);
+	put(cpp, "control-plane-protocol", list);
+	rt = ucl_object_typed_new(UCL_OBJECT);
+	put(rt, "control-plane-protocols", cpp);
+	body = ucl_object_typed_new(UCL_OBJECT);
+	put(body, "ietf-routing:routing", rt);
+	return (rc_warns(edit("PATCH", path, body)));
+}
+
+/*
+ * Router advertisements on e (Mplify 119 §11.5, SLAAC at a UNI): the
+ * prefix sent, and the DNS servers (RFC 8106), rtadvd's.
+ */
+static void
+if_ra(ucl_object_t *e, const char *prefix, const ucl_object_t *dns)
+{
+	const ucl_object_t	*d;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*ra, *pl, *list, *p, *rd, *x;
+
+	ra = ucl_object_typed_new(UCL_OBJECT);
+	put(ra, "send-advertisements", B(true));
+	p = ucl_object_typed_new(UCL_OBJECT);
+	put(p, "prefix-spec", S(prefix));
+	list = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(list, p);
+	pl = ucl_object_typed_new(UCL_OBJECT);
+	put(pl, "prefix", list);
+	put(ra, "prefix-list", pl);
+	rd = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((d = ucl_object_iterate(dns, &it, true)) != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		put(x, "address", S(ucl_object_tostring_forced(d)));
+		ucl_array_append(rd, x);
+	}
+	if (ucl_array_size(rd) > 0)
+		put(ra, "arcana-ra:rdnss", rd);
+	else
+		ucl_object_unref(rd);
+	put(if_ip(e, AF_INET6), "ietf-ipv6-unicast-routing:"
+	    "ipv6-router-advertisements", ra);
+}
+
+/*
  * A UCS End Point's address: the document's, or, when the host gets it
  * by DHCP or SLAAC (Mplify 119 §12.2.3.2, §12.2.3.3), the first global
  * address its interface has now, asked of the host once a plan and
@@ -892,6 +1166,23 @@ loop_obj(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    ? a6 : "", (intmax_t)fib);
 	if (o == NULL)
 		return;
+	if (!edge_jailed(sid)) {
+		ucl_object_t	*e;
+
+		e = if_entry(ifn, "iana-if-type:softwareLoopback");
+		if_fib(e, fib);
+		if (a4 != NULL) {
+			snprintf(addr, sizeof(addr), "%s/32", a4);
+			if_addr(e, addr, NULL);
+		}
+		if (a6 != NULL) {
+			snprintf(addr, sizeof(addr), "%s/128", a6);
+			if_addr(e, addr, NULL);
+		}
+		make(o, if_edit(e));
+		unmake(o, if_del(ifn, NULL));
+		return;
+	}
 	make(o, job("if-create", "interface", S(ifn), "fib", I(fib), "persist",
 	    B(true), NULL));
 	if (a4 != NULL) {
@@ -1090,6 +1381,37 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 			make(o, job("if-address", "interface", S(ifn),
 			    "address", S(port), "persist", B(true), NULL));
 		}
+	} else if ((strcmp(kind, "gre") == 0 || strcmp(kind, "gif") == 0) &&
+	    !edge_jailed(sid) && (ucl_object_lookup(a, "vrf") == NULL ||
+	    relay_of(pl, a, b) != NULL)) {
+		ucl_object_t	*e;
+
+		/*
+		 * A device edit on a host: the interface made with its ends,
+		 * in its table, its inner addresses after (the commit binds
+		 * it first); a tunnel FIB of its own, which a commit does not
+		 * make yet, keeps the job.
+		 */
+		e = if_entry(ifn, "iana-if-type:tunnel");
+		put(e, "description", S("sdwan"));
+		p = ucl_object_typed_new(UCL_OBJECT);
+		put(p, "local", S(str(a, "underlay")));
+		put(p, "remote", S(str(b, "underlay")));
+		put(e, "arcana-interfaces:tunnel", p);
+		if_fib(e, fib);
+		if ((mtu = tunnel_mtu(pl->doc, t, a)) > 0)
+			put(if_ip(e, AF_INET), "mtu", I(mtu));
+		if (str(a, "inner4") != NULL) {
+			snprintf(port, sizeof(port), "%s/31", str(a, "inner4"));
+			if_addr(e, port, str(b, "inner4"));
+		}
+		if (str(a, "inner6") != NULL) {
+			snprintf(port, sizeof(port), "%s/127", str(a,
+			    "inner6"));
+			if_addr(e, port, NULL);
+		}
+		make(o, if_edit(e));
+		unmake(o, if_del(ifn, NULL));
 	} else {
 		/*
 		 * Made in its table, its inner IPv4 address with it: the
@@ -1125,7 +1447,8 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 		}
 		make(o, p);
 	}
-	if (str(a, "inner6") != NULL) {
+	if (str(a, "inner6") != NULL && strcmp(str(ucl_array_find_index(
+	    ucl_object_lookup(o, "make"), 0), "kind"), "edit") != 0) {
 		snprintf(port, sizeof(port), "%s/127", str(a, "inner6"));
 		make(o, job("if-address", "interface", S(ifn), "address",
 		    S(port), "persist", B(true), NULL));
@@ -1133,8 +1456,9 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 	if (strcmp(kind, "wg") == 0)
 		make(o, job("wireguard", "verb", S("init"), "interface", S(ifn),
 		    "listen_port", I(WG_PORT + unit), "persist", B(true), NULL));
-	unmake(o, job("if-destroy", "interface", S(ifn), "persist", B(true),
-	    NULL));
+	if (ucl_array_size(ucl_object_lookup(o, "unmake")) == 0)
+		unmake(o, job("if-destroy", "interface", S(ifn), "persist",
+		    B(true), NULL));
 
 	/* A USWE tunnel (Mplify 119 §10): this end's key pair before the
 	 * interface, the SAs of both directions derived from the far end's
@@ -1727,6 +2051,11 @@ route_fib_obj(struct plan *pl, const char *sid, const ucl_object_t *sw,
 	if ((o = object(pl, sid, key, phase, "%s via %s, fib %jd (%s)",
 	    prefix, gw, (intmax_t)fib, why)) == NULL)
 		return;
+	if (!edge_jailed(sid)) {
+		make(o, route_edit(fib, prefix, gw, false));
+		unmake(o, route_edit(fib, prefix, gw, true));
+		return;
+	}
 	make(o, job("route", "destination", S(prefix), "gateway", S(gw), "fib",
 	    I(fib), "persist", B(true), NULL));
 	unmake(o, job("route", "destination", S(prefix), "gateway", S(gw),
@@ -2013,6 +2342,83 @@ remote_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 }
 
 /* The UNI: in the service's FIB, the provider's addresses on it. */
+/*
+ * A host's UNI as one device edit (o's): its interface, or a VLAN made
+ * on it (vif), in the service's table, the provider's addresses, and
+ * SLAAC's router advertisements (§11.5) with the DNS servers; taken
+ * away an address at a time and given back to the host's table, or
+ * the VLAN destroyed.
+ */
+static bool
+uni_edit(ucl_object_t *o, const ucl_object_t *u, const char *ifn,
+    const char *vif, int64_t vlan, int64_t fib)
+{
+	const char *const	 fams[] = { "ipv4", "ipv6" };
+	const ucl_object_t	*v, *e, *a, *subs[LIST_SUBS];
+	ucl_object_iter_t	 it, ait;
+	ucl_object_t		*ent, *x, *y;
+	char			 addr[80];
+	struct net		 n;
+	int			 i, k, ns;
+
+	if (vif != NULL) {
+		ent = if_entry(vif, "iana-if-type:l2vlan");
+		put(ent, "ietf-if-extensions:parent-interface", S(ifn));
+		x = ucl_object_typed_new(UCL_OBJECT);
+		put(x, "tag-type", S("ieee802-dot1q-types:c-vlan"));
+		put(x, "vlan-id", I(vlan));
+		y = ucl_object_typed_new(UCL_OBJECT);
+		put(y, "outer-tag", x);
+		x = ucl_object_typed_new(UCL_OBJECT);
+		put(x, "ietf-if-vlan-encapsulation:dot1q-vlan", y);
+		put(ent, "ietf-if-extensions:encapsulation", x);
+	} else
+		ent = if_entry(ifn, NULL);
+	if_fib(ent, fib);
+	for (i = 0; i < 2; i++) {
+		v = ucl_object_lookup(u, fams[i]);
+		/* The provider's addresses, whoever addresses the hosts; none
+		 * where the host has them already (host_addressed). */
+		if (str(v, "mode") == NULL || (strcmp(str(v, "mode"), "static")
+		    != 0 && strcmp(str(v, "mode"), "dhcp") != 0 && strcmp(str(v,
+		    "mode"), "slaac") != 0) || ucl_flag(u, "host_addressed"))
+			continue;
+		ns = 0;
+		subs[ns++] = v;
+		it = NULL;
+		while (ns < LIST_SUBS && (e = ucl_object_iterate(
+		    ucl_object_lookup(v, "secondary"), &it, true)) != NULL)
+			subs[ns++] = e;
+		for (k = 0; k < ns; k++) {
+			if (!net_parse(str(subs[k], "prefix"), &n))
+				continue;
+			ait = NULL;
+			while ((a = ucl_object_iterate(ucl_object_lookup(
+			    subs[k], "provider"), &ait, true)) != NULL) {
+				snprintf(addr, sizeof(addr), "%s/%d",
+				    ucl_object_tostring_forced(a), n.len);
+				if_addr(ent, addr, NULL);
+				if (vif == NULL)
+					unmake(o, if_addr_del(ifn, addr));
+			}
+		}
+	}
+	v = ucl_object_lookup(u, "ipv6");
+	if (str(v, "mode") != NULL && strcmp(str(v, "mode"), "slaac") == 0 &&
+	    str(v, "prefix") != NULL) {
+		if_ra(ent, str(v, "prefix"), ucl_object_lookup(v, "dns"));
+		if (vif == NULL)
+			unmake(o, if_del(ifn, "ietf-ip:ipv6/ietf-ipv6-unicast-"
+			    "routing:ipv6-router-advertisements"));
+	}
+	make(o, if_edit(ent));
+	if (vif != NULL)
+		unmake(o, if_del(vif, NULL));
+	else if (fib > 0)
+		unmake(o, if_unbind(ifn));
+	return (true);
+}
+
 static bool
 uni_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 {
@@ -2055,6 +2461,8 @@ uni_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 	    "on " : "", vlan > 0 ? ifn : "", (intmax_t)fib);
 	if (o == NULL)
 		return (true);
+	if (!edge_jailed(str(ep, "edge")))
+		return (uni_edit(o, u, ifn, vlan > 0 ? vif : NULL, vlan, fib));
 	vjob = NULL;
 	if (vlan > 0) {
 		vjob = job("if-create", "interface", S(vif), "id", I(vlan),
@@ -7711,6 +8119,63 @@ unaccepted(const ucl_object_t *j, char *why, size_t wlen)
 }
 
 /*
+ * s with each ${ni:N} the name of the network instance the host has for
+ * FIB N (arcana-network-instance's fib), malloc'd; NULL and why where it
+ * has none (net.fibs below it), or was not read.
+ */
+static char *
+ni_fill(const char *sid, const char *uri, const char *peer,
+    const char *name, const char *s, char *why, size_t wlen)
+{
+	const ucl_object_t	*e, *f;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*nis;
+	struct buf		*b;
+	const char		*p, *q, *ni;
+	char			 path[256], *json, *out;
+	long			 fib;
+	int			 status;
+
+	if (strstr(s, "${ni:") == NULL)
+		return (xstrdup(s));
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/host="
+	    "%s/ietf-network-instance:network-instances", sid);
+	json = hosts_restconf(sid, uri, peer, name, HTTP_METHOD_GET, path,
+	    NULL, &status);
+	nis = status == 200 ? parse(json) : NULL;
+	free(json);
+	b = buf_alloc(strlen(s) + 64);
+	out = NULL;
+	for (p = s; (q = strstr(p, "${ni:")) != NULL; p = strchr(q, '}') + 1) {
+		buf_append(b, p, (size_t)(q - p));
+		fib = strtol(q + 5, NULL, 10);
+		ni = NULL;
+		it = NULL;
+		while ((e = ucl_object_iterate(at_path(nis,
+		    "ietf-network-instance:network-instances",
+		    "network-instance"), &it, true)) != NULL)
+			if ((f = ucl_object_lookup(e,
+			    "arcana-network-instance:fib")) != NULL &&
+			    ucl_object_toint(f) == fib)
+				ni = str(e, "name");
+		if (ni == NULL || strchr(q, '}') == NULL) {
+			snprintf(why, wlen, "%s has no network instance of FIB "
+			    "%ld%s", name, fib, nis == NULL ? " (its instances "
+			    "were not read)" : "");
+			goto done;
+		}
+		buf_appendf(b, "%s", ni);
+	}
+	buf_appendf(b, "%s", p);
+	out = xstrdup(buf_stringify(b, NULL));
+done:
+	buf_free(b);
+	if (nis != NULL)
+		ucl_object_unref(nis);
+	return (out);
+}
+
+/*
  * The warnings an edit's commit goes on despite, as RESTCONF's query
  * (arcana-accept): those the operator accepted for its step (the
  * apply's accept), into q; "" when none.
@@ -7765,8 +8230,9 @@ static bool
 edit_run(const char *sid, const char *uri, const char *peer,
     const char *name, const ucl_object_t *j, char *why, size_t wlen)
 {
-	ucl_object_t	*in, *c;
-	char		 path[1024], q[256], tok[40], w2[200], *json;
+	ucl_object_t	*in, *c, *body;
+	char		 path[1024], q[256], tok[40], w2[200];
+	char		*json, *p, *t;
 	int		 method, status;
 	bool		 del;
 
@@ -7774,11 +8240,28 @@ edit_run(const char *sid, const char *uri, const char *peer,
 	    0;
 	method = del ? HTTP_METHOD_DELETE : HTTP_METHOD_PATCH;
 	accept_query(j, q, sizeof(q));
+	/* The FIBs by the names the host gives their instances. */
+	if ((p = ni_fill(sid, uri, peer, name, str(j, "path"), why, wlen)) ==
+	    NULL)
+		return (false);
+	body = NULL;
+	if (ucl_object_lookup(j, "body") != NULL) {
+		t = emit(ucl_object_lookup(j, "body"));
+		json = t != NULL ? ni_fill(sid, uri, peer, name, t, why, wlen) :
+		    NULL;
+		free(t);
+		if (json == NULL || (body = parse(json)) == NULL) {
+			free(json);
+			free(p);
+			return (false);
+		}
+		free(json);
+	}
 	snprintf(path, sizeof(path), "/restconf/ds/ietf-datastores:candidate/"
-	    "arcana-fleet:fleet/host=%s/%s%s", sid, str(j, "path"), q);
-	json = hosts_restconf(sid, uri, peer, name, method, path,
-	    ucl_object_lookup(j, "body") != NULL ? ucl_object_copy(
-	    ucl_object_lookup(j, "body")) : NULL, &status);
+	    "arcana-fleet:fleet/host=%s/%s%s", sid, p, q);
+	free(p);
+	json = hosts_restconf(sid, uri, peer, name, method, path, body,
+	    &status);
 	if (del && status == 404) {
 		free(json);
 		return (true);
@@ -8138,15 +8621,17 @@ run_main(void *arg)
 	ucl_object_t		*s, *ap, *made_now, *failed_at;
 	ucl_object_iter_t	 it;
 	const char		*ch;
+	unsigned int		 k;
 	int			 ph;
 	bool			 ok, rolled;
 
 	ok = true;
-	/* Taken away first, the last made first. */
+	/* Taken away first, the last made first: a UNI's static route
+	 * before the UNI it is reached by. */
 	for (ph = PHASES; ph >= 1; ph--) {
-		it = NULL;
-		while ((s = (ucl_object_t *)(uintptr_t)ucl_object_iterate(
-		    r->steps, &it, true)) != NULL) {
+		for (k = ucl_array_size(r->steps); k > 0; k--) {
+			s = (ucl_object_t *)(uintptr_t)ucl_array_find_index(
+			    r->steps, k - 1);
 			ch = str(s, "change");
 			if (ucl_object_toint(ucl_object_lookup(s, "phase")) !=
 			    ph || (strcmp(ch, "unmake") != 0 && strcmp(ch,
@@ -10559,9 +11044,9 @@ accept_has(const ucl_object_t *list, const char *sid, const char *key,
 	it = NULL;
 	while ((a = ucl_object_iterate(list, &it, true)) != NULL)
 		if (str(a, "server") != NULL && str(a, "key") != NULL &&
-		    str(a, "warning") != NULL && strcmp(str(a, "server"), sid) ==
-		    0 && strcmp(str(a, "key"), key) == 0 && strcmp(str(a,
-		    "warning"), tag) == 0)
+		    str(a, "warning") != NULL && strcmp(str(a, "server"),
+		    sid) == 0 && strcmp(str(a, "key"), key) == 0 &&
+		    strcmp(str(a, "warning"), tag) == 0)
 			return (true);
 	return (false);
 }
@@ -10639,10 +11124,11 @@ accept_ok(const ucl_object_t *given, const ucl_object_t *listed, char *why,
 		    str(a, "warning") == NULL || !accept_has(listed, str(a,
 		    "server"), str(a, "key"), str(a, "warning"))) {
 			snprintf(why, wlen, "accept: %s of %s on %s is not a "
-			    "warning the plan lists", str(a, "warning") != NULL ?
-			    str(a, "warning") : "(none)", str(a, "key") != NULL ?
-			    str(a, "key") : "(no step)", str(a, "server") !=
-			    NULL ? str(a, "server") : "(no server)");
+			    "warning the plan lists", str(a, "warning") !=
+			    NULL ? str(a, "warning") : "(none)", str(a, "key")
+			    != NULL ? str(a, "key") : "(no step)", str(a,
+			    "server") != NULL ? str(a, "server") :
+			    "(no server)");
 			return (false);
 		}
 	return (true);
@@ -10907,7 +11393,8 @@ steer_pin(struct http_request *req)
 int
 api_sdwan_edges(struct http_request *req)
 {
-	ucl_object_t		*doc, *st, *chg, *body, *needs, *acc, *listed;
+	ucl_object_t		*doc, *st, *chg, *body, *needs;
+	ucl_object_t		*acc, *listed;
 	struct plan		 pl;
 	char			 why[300];
 	bool			 apply, fresh, invalid;
