@@ -1783,6 +1783,14 @@ whose first part is served.
   console could compare without the GET.
 - 4.3.3 done (console rcstream.c): the `fleet` stream, every host's on
   one thread and one reply, each record nested in its host's entry.
+- 4.3.4 C: an agent's actions and rpcs invoked through the fleet
+  mount (RFC 8040 3.6: a POST of `{"<module>:input"}` to the node
+  below `H`, or of a mounted rpc), NACM and the host's role as for
+  its data; today restconf_prepare() takes only ietf-netconf's
+  commit, cancel-commit, discard-changes and
+  establish-subscription there.  The per-host rows of 4.4.1's
+  table that are actions need it before 4.4.2 removes /api;
+  check: each such row asked through the mount as /api asks it.
 - 4.4.1 done (console cyang.c, share/yang arcana-console at SIDs
   91800-92099): the console's own as `/restconf/data/arcana-console:`
   settings, tokens, users, roles, groups, enrolment, workflows and
@@ -1920,6 +1928,62 @@ whose first part is served.
   none of the owners') and cyang_plugins (the list, enabled, a store
   kept, If-Match, the shared one; a member enabling nothing, reading
   no other's store, writing no shared one).
+- 4.4.1 the route table (console 0.369.0): every /api route and its
+  home.  `C` = `/restconf/data/arcana-console:`, `H` =
+  `/restconf/data/arcana-fleet:fleet/host=<id>`, `O` =
+  `/restconf/operations/`; beside = D-10's resources beside
+  `/restconf`, moved by 4.4.2.  No row is open; the agent's actions
+  and rpcs below a host are reached once 4.3.4 lets the mount invoke
+  them (their YANG homes are there now).
+
+  | /api route | Home |
+  |---|---|
+  | health; auth/status, register/*, login/*, setup/password, password, logout; enrol; `/.well-known/assetlinks.json` | beside (D-10) |
+  | notif/<host>/capabilities, relay-notification | beside: the RFC 8650 receiver the agents post to |
+  | servers/<id>/ids/pcap, ids/pcap-log | beside: binary up- and download (a pcap is no YANG data) |
+  | stream (WebSocket) | `/restconf/streams/<id>/json`, `/restconf/streams/fleet/json` (events), `establish-subscription` under `H` (periodic, on-change); the reads it repeats are the rows below |
+  | auth/credentials, credentials/<id> | `C credentials` |
+  | servers GET POST, servers/<id> POST DELETE | `C hosts`, `C hosts/host=<id>` |
+  | servers/<id>/drift, watch, notifications, subscription, tls GET, transport GET, config GET | `C hosts/host=<id>/` drift, watch, notifications, subscription, tls, transport, configuration |
+  | servers/<id>/move, tls POST, transport POST, transport/switch, nacm-sync, agent-build, agent-update, console-update, config/export, config POST, capture, subscription/token | `C hosts/host=<id>/` move, renew-tls, listen, switch-transport, nacm-sync, agent-build, agent-update, console-update, export-configuration, apply-configuration, capture, subscription-token (actions) |
+  | update, update/notes, cluster | `C update`, `C update-notes`, `C cluster` |
+  | ca GET POST | `C ca` (state), `C ca/` make, request, import, discard, rollout, finish |
+  | plugins, plugins/<id>, plugins/<id>/store[/shared] | `C plugins`, `plugin=<id>/enabled`, `plugin=<id>/store`, `shared-store` |
+  | settings, settings/mail-test, telegram-test | `C settings`, `settings/mail-test`, `settings/telegram-test` |
+  | tokens, tokens/<id> | `C tokens`, `tokens/create` |
+  | users, users/<n>, users/<n>/invite; roles, roles/<n>; groups, groups/<n> | `C users`, `user=<n>/invite`, `C roles`, `C groups` |
+  | enrol/tokens | `C enrolment/create-token` |
+  | workflows, workflows/<id>, workflows/<id>/run | `C workflows`, `workflow=<id>/run` |
+  | runs, runs/<n>, runs/<n>/approve | `C runs`, `run=<n>/approve`, `run=<n>/stop`, `runs/clear` |
+  | templates, templates/<n> | `C templates` |
+  | labels, labels/<host>/<if> | `C labels` |
+  | prefix-lists, prefix-lists/<n> | `C prefix-lists` |
+  | feeds, feeds/<id>, /fetch, /preview | `C threat-feeds`, `feed=<id>/fetch`, `preview` |
+  | transfers, transfers/<n> | `C transfers`, `transfers/start`, `transfer=<n>/stop` |
+  | push, push/subscribe, unsubscribe, send | `C push`, `push/send` |
+  | sdwan GET PUT, sdwan/check | `C sdwan/document` (the store `ietf-l3vpn-ntw:l3vpn-ntw`), `sdwan/check` |
+  | sdwan/plan, ledger, apply GET, steer GET, rekey GET, lists, identities GET, audit, sen, san, record (and .csv) | `C sdwan/` plan, ledger, apply-state, steering, rekeys, lists, identities, audit, sen, san, record (CSV by Accept) |
+  | sdwan/apply POST, steer POST, rekey POST, lists/fetch, identities POST DELETE, attach | `C sdwan/` apply, pin, rekey, fetch-lists, issue-identity, revoke-identity, attach |
+  | troubleshoot/path, wg/keypair | `O arcana-console:trace-path`, `O arcana-console:wireguard-keypair` |
+  | servers/<id>/hello, stats, certs | `H/arcana-host:host`, `host/stats`, `host/read-certificates` |
+  | servers/<id>/data | `H`, or `H/<module>:<node>` |
+  | servers/<id>/jails, jails/<n>/action, address, jails/files | `H/arcana-jails:jails`, `jail=<n>/{start,stop,restart,kill}` (enable: `boot` edited), `jail=<n>/arcana-network:address`, `jails/arcana-jail-files:read-files` |
+  | servers/<id>/services, services/<n>/action, config | `H/arcana-services:services`, `service=<n>/{start,stop,restart,reload}` (enable: `enabled` edited), `service=<n>/variable` (read; edited and committed) |
+  | servers/<id>/net/* | `H/arcana-network:network/<kind>` (lookup too), `ietf-interfaces:interfaces`, `arcana-troubleshoot:troubleshoot/traceroute`, `arcana-netgraph:netgraph/read`, `arcana-wireguard:wireguard/read`, `arcana-bird:bird/{read,routes,ospf}`, `arcana-firewall:firewall` (state) |
+  | servers/<id>/bird/config | `H/arcana-bird:bird/configuration` (edited, committed; `bird/check`) |
+  | servers/<id>/storage/*, fstab, zfs/key | `H/arcana-storage:storage` and `storage/read`, `storage/fstab` (`fstab/replace`), `dataset=<ds>/{load-key,change-key}`, `create-encrypted` |
+  | servers/<id>/builder, builder/options | `H/arcana-builder:builder`, `builder/port-options` |
+  | servers/<id>/suricata/rules, netstore, system, smtpd, speeder, monitors, ssh | `H/arcana-suricata:suricata/read-rules`, `arcana-netstore:netstore/read`, `arcana-system:system/read`, `arcana-smtpd:smtpd/read`, `arcana-speeder:speeder/read`, `arcana-probe:probes/read`, `arcana-sshd:sshd/read` |
+  | servers/<id>/kernel, sysctl, processes, log, events | `H/arcana-kernel:kernel`, `arcana-sysctl:sysctl/read`, `arcana-processes:processes`, `arcana-log:logs/read`, `arcana-events:events/read` |
+  | servers/<id>/ipfw/rules, ipfw/trace, ipfw/path | `H/arcana-firewall:firewall/kept` (edited, committed; `firewall/check`), `firewall/trace`, `arcana-troubleshoot:troubleshoot/path-check` |
+  | servers/<id>/history | `H/arcana-history:history/read`, `history/sampling` and `limits` (edited, committed) |
+  | servers/<id>/security, sdwan | `H/arcana-sdwan:sdwan` (proxy and IDS instances edited; `sdwan/apply`), `sdwan/state` with `arcana-probe:probes/state` and `arcana-steer:steering/state` |
+  | servers/<id>/packages, packages/upgrade | `H/arcana-packages:packages/{read,refresh,upgrade}` (a jail's below `jails/jail=<n>`) |
+  | servers/<id>/jobs, jobs/config, jobs/dry-run, jobs/<n> | `H/arcana-jobs:jobs`, `arcana-jobs:submit`, `jobs/lanes` (edited), `arcana-jobs:dry-run`, `job=<n>/read`, `job=<n>/cancel` |
+
+  "Edited, committed": a PUT or PATCH of the host's candidate
+  (`/restconf/ds/ietf-datastores:candidate/...`) and its
+  `ietf-netconf:commit`, as the fleet mount takes them now.
 - 4.4.2 C: the WebAuthn ceremonies, logout, `assetlinks.json`, enrol
   and health moved beside `/restconf`; `/api` removed; check: the
   console tests rewritten.
