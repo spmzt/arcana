@@ -9873,6 +9873,94 @@ ATF_TC_BODY(sapnet, tc)
 	resp_free(&r);
 }
 
+/*
+ * RFC 9408 Appendix D's flow (PLAN-SDN-YANG 4.6.3): a service placed on
+ * a free SAP, the access's id its sap-id and its interface-id the SAP's
+ * attachment-interface, the node made with the host its ne-id; the SAP
+ * then the service's and no longer free; the same SAP again refused, as
+ * a SAP or a service that is not there.
+ */
+CONSOLE_TC(sapnet_attach, "A service placed on a free SAP: the access "
+    "made of it, the SAP the service's, the same again refused")
+ATF_TC_BODY(sapnet_attach, tc)
+{
+	struct authn		 a;
+	struct resp		 r;
+	ucl_object_t		*top;
+	const ucl_object_t	*s;
+	char			 cwd[MAXPATHLEN], uri[MAXPATHLEN + 8], id1[16];
+	char			 body[512], sap[64], path[256];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(uri, sizeof(uri), "unix:%s/jgd.sock", cwd);
+	host_add("one", uri, 0, id1, sizeof(id1));
+	http("POST", L3NM, "{\"ietf-l3vpn-ntw:vpn-services\":{\"vpn-service\":"
+	    "[{\"vpn-id\":\"s1\"}]}}", &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+
+	/* No such service, no such SAP. */
+	snprintf(body, sizeof(body), "{\"vpn-id\":\"nope\",\"vpn-node-id\":"
+	    "\"%s\"}", id1);
+	http("POST", "/api/sdwan/attach", body, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"vpn-id\":\"s1\",\"vpn-node-id\":"
+	    "\"%s\",\"sap-id\":\"nosuch0\"}", id1);
+	http("POST", "/api/sdwan/attach", body, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+
+	/* The first free SAP taken, the access made of it. */
+	snprintf(body, sizeof(body), "{\"vpn-id\":\"s1\",\"vpn-node-id\":"
+	    "\"%s\",\"access\":{\"description\":\"placed\"}}", id1);
+	http("POST", "/api/sdwan/attach", body, &r);
+	EXPECT(&r, 201);
+	ATF_REQUIRE_MSG(jstr(&r, "sap-id") != NULL, "%s", r.body);
+	snprintf(sap, sizeof(sap), "%s", jstr(&r, "sap-id"));
+	ATF_CHECK_STREQ(sap, jstr(&r, "access-id"));
+	ATF_CHECK_STREQ(id1, jstr(&r, "host"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), L3NM "/vpn-services/vpn-service=s1/"
+	    "vpn-nodes/vpn-node=%s", id1);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(id1, jstr(&r, "ietf-l3vpn-ntw:vpn-node.0.ne-id"));
+	ATF_CHECK_STREQ(sap, jstr(&r, "ietf-l3vpn-ntw:vpn-node.0."
+	    "vpn-network-accesses.vpn-network-access.0.id"));
+	ATF_CHECK(jstr(&r, "ietf-l3vpn-ntw:vpn-node.0.vpn-network-accesses."
+	    "vpn-network-access.0.interface-id") != NULL);
+	ATF_CHECK_STREQ("placed", jstr(&r, "ietf-l3vpn-ntw:vpn-node.0."
+	    "vpn-network-accesses.vpn-network-access.0.description"));
+	resp_free(&r);
+
+	/* The SAP the service's now, no longer free. */
+	http("GET", SAPNET, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE((top = body_of(&r)) != NULL);
+	s = sn_sap(sn_node(top, "arcana-sap", id1), sap);
+	ATF_REQUIRE_MSG(s != NULL, "%s", r.body);
+	ATF_CHECK_STREQ("s1", ucl_object_tostring(ucl_object_lookup_path(s,
+	    "arcana-l3nm:attachment.0.vpn-id")));
+	ATF_CHECK(!ucl_object_toboolean(ucl_object_lookup(s,
+	    "arcana-l3nm:free")));
+	ucl_object_unref(top);
+	resp_free(&r);
+
+	/* The same SAP again: not free. */
+	snprintf(body, sizeof(body), "{\"vpn-id\":\"s1\",\"vpn-node-id\":"
+	    "\"%s\",\"sap-id\":\"%s\"}", id1, sap);
+	http("POST", "/api/sdwan/attach", body, &r);
+	EXPECT(&r, 409);
+	ATF_CHECK_MSG(strstr(r.body, "not free") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", "/api/sdwan/attach", "{\"vpn-id\":\"s1\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+}
+
 CONSOLE_TC(enrol, "The console's own CA, a host's certificate renewed, the CA changed for another and for an intermediate across the hosts, and a host joining with "
     "arcana-enrol(8)")
 ATF_TC_BODY(enrol, tc)
@@ -16111,6 +16199,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, agent_update_bridge);
 	ATF_TP_ADD_TC(tp, restconf_revisions);
 	ATF_TP_ADD_TC(tp, sapnet);
+	ATF_TP_ADD_TC(tp, sapnet_attach);
 	ATF_TP_ADD_TC(tp, enrol);
 	ATF_TP_ADD_TC(tp, tls_ec);
 	return (atf_no_error());

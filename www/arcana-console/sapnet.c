@@ -31,6 +31,20 @@
  * UNI that is up, that no access names and that has no anomaly is free
  * (arcana-l3nm's free, attachment and anomaly).
  *
+ * Appendix D's flow, a service placed on a free SAP (4.6.3):
+ *
+ *	POST /api/sdwan/attach	{"vpn-id", "vpn-node-id"[, "sap-id"]
+ *				[, "access"]}
+ *
+ * the edge's host read, the SAP named (or the first free one fit for
+ * the access: a dot1q or qinq one where child SAPs are allowed) taken
+ * when free, and an access made of it at the edge's vpn-node of the
+ * service (the node made where the service has none, its ne-id the
+ * host): its id the sap-id, its interface-id the attachment-interface,
+ * the rest "access" (L3NM's vpn-network-access).  201 with what was
+ * made; 404, no such service, host or SAP; 409, the SAP not free, or
+ * none is.
+ *
  * The hosts are read on a task of the pool, one after another.
  */
 
@@ -76,6 +90,12 @@ struct snreq {
 	ucl_object_t	*top;		/* the reply */
 	int		 status;
 	char		 why[300];
+	/* An attach's: */
+	bool		 attach;
+	char		*svc;
+	char		*edge;
+	char		*sap;		/* asked; NULL: the first free */
+	ucl_object_t	*access;	/* the rest of the access, or NULL */
 };
 
 static const ucl_object_t *
@@ -638,6 +658,169 @@ sapnet_run(struct task *t)
 	return (0);
 }
 
+/* ---- A service placed on a free SAP (Appendix D) -------------------- */
+
+/* Whether SAP s can take access a: free, and with child SAPs where the
+ * access is tagged. */
+static bool
+fits(const ucl_object_t *s, const ucl_object_t *a)
+{
+	const char	*enc;
+
+	if (!ucl_object_toboolean(get(s, "arcana-l3nm:free")))
+		return (false);
+	enc = gstr(get(get(a, "connection"), "encapsulation"), "type");
+	if (enc != NULL && (ident_is(enc, "dot1q") || ident_is(enc, "qinq")))
+		return (ucl_object_toboolean(get(s, "allows-child-saps")));
+	return (true);
+}
+
+/* Why SAP s is not free, in why. */
+static void
+not_free(const ucl_object_t *s, char *why, size_t len)
+{
+	const ucl_object_t	*e;
+
+	if ((e = at(get(s, "arcana-l3nm:attachment"), 0)) != NULL)
+		snprintf(why, len, "SAP %s is not free: access %s of %s names "
+		    "it", gstr(s, "sap-id"), gstr(e, "access-id"), gstr(e,
+		    "vpn-id"));
+	else if (at(get(s, "arcana-l3nm:anomaly"), 0) != NULL)
+		snprintf(why, len, "SAP %s is not free: %s", gstr(s, "sap-id"),
+		    ucl_object_tostring(at(get(s, "arcana-l3nm:anomaly"), 0)));
+	else if (!ident_is(gstr(s, "role"), "uni"))
+		snprintf(why, len, "SAP %s is not free: not a UNI", gstr(s,
+		    "sap-id"));
+	else
+		snprintf(why, len, "SAP %s is not free: it is %s, not up",
+		    gstr(s, "sap-id"), gstr(get(s, "sap-status"), "status") !=
+		    NULL ? gstr(get(s, "sap-status"), "status") : "unknown");
+}
+
+static int
+attach_run(struct task *t)
+{
+	struct snreq		*r = (struct snreq *)t;
+	const ucl_object_t	*svc, *s, *n, *node = NULL;
+	ucl_object_t		*sd, *y, *applied, *c, *pick = NULL, *acc;
+	ucl_object_t		*ny, *o, *l, *nn;
+	char			 why[300];
+	const char		*ifn;
+	int			 st;
+
+	if ((sd = host_node(&r->h[0], why, sizeof(why))) == NULL) {
+		r->status = 409;
+		snprintf(r->why, sizeof(r->why), "%s's SAPs were not read: %s",
+		    r->h[0].name, why);
+		return (0);
+	}
+	y = l3nm_kept();
+	applied = sdwan_applied();
+	for (unsigned i = 0; (svc = entry(y, "vpn-services", "vpn-service",
+	    i)) != NULL; i++)
+		if (gstr(svc, "vpn-id") != NULL && strcmp(gstr(svc, "vpn-id"),
+		    r->svc) == 0)
+			for (unsigned k = 0; (n = entry(svc, "vpn-nodes",
+			    "vpn-node", k)) != NULL; k++)
+				if (gstr(n, "vpn-node-id") != NULL &&
+				    strcmp(gstr(n, "vpn-node-id"), r->edge) == 0)
+					node = n;
+	r->status = r->sap != NULL ? 404 : 409;
+	snprintf(r->why, sizeof(r->why), r->sap != NULL ? "%s has no SAP "
+	    "%s" : "%s has no free SAP fit for the access", r->h[0].name,
+	    r->sap != NULL ? r->sap : "");
+	for (unsigned i = 0; pick == NULL && (svc = at(get(sd, SVC), i)) !=
+	    NULL; i++)
+		for (unsigned k = 0; pick == NULL && (s = at(get(svc, "sap"),
+		    k)) != NULL; k++) {
+			if (gstr(s, "sap-id") == NULL || (r->sap != NULL &&
+			    strcmp(gstr(s, "sap-id"), r->sap) != 0))
+				continue;
+			c = ucl_object_copy(s);
+			sap_fill(c, sd, r->h[0].sid, y, applied);
+			if (fits(c, r->access)) {
+				pick = c;
+				continue;
+			}
+			if (r->sap != NULL) {
+				r->status = 409;
+				if (!ucl_object_toboolean(get(c,
+				    "arcana-l3nm:free")))
+					not_free(c, r->why, sizeof(r->why));
+				else
+					snprintf(r->why, sizeof(r->why), "SAP "
+					    "%s takes no tagged access: it "
+					    "allows no child SAP", r->sap);
+			}
+			ucl_object_unref(c);
+		}
+	if (pick != NULL) {
+		/* Its id the sap-id: none of the node's may have it. */
+		for (unsigned j = 0; (n = entry(node, "vpn-network-accesses",
+		    "vpn-network-access", j)) != NULL; j++)
+			if (gstr(n, "id") != NULL && strcmp(gstr(n, "id"),
+			    gstr(pick, "sap-id")) == 0) {
+				r->status = 409;
+				snprintf(r->why, sizeof(r->why), "%s has an "
+				    "access %s already", r->edge, gstr(pick,
+				    "sap-id"));
+				ucl_object_unref(pick);
+				pick = NULL;
+				break;
+			}
+	}
+	if (pick != NULL) {
+		ifn = gstr(pick, "attachment-interface") != NULL ? gstr(pick,
+		    "attachment-interface") : gstr(pick, "sap-id");
+		acc = r->access != NULL ? ucl_object_copy(r->access) : obj();
+		ucl_object_delete_key(acc, "id");
+		ucl_object_delete_key(acc, "interface-id");
+		puts_(acc, "id", gstr(pick, "sap-id"));
+		puts_(acc, "interface-id", ifn);
+		/* The access at the edge's node of the service. */
+		nn = obj();
+		puts_(nn, "vpn-node-id", r->edge);
+		if (node == NULL)
+			puts_(nn, "ne-id", r->h[0].sid);
+		l = arr();
+		ucl_array_append(l, acc);
+		o = obj();
+		put(o, "vpn-network-access", l);
+		put(nn, "vpn-network-accesses", o);
+		l = arr();
+		ucl_array_append(l, nn);
+		o = obj();
+		put(o, "vpn-node", l);
+		c = obj();
+		puts_(c, "vpn-id", r->svc);
+		put(c, "vpn-nodes", o);
+		l = arr();
+		ucl_array_append(l, c);
+		o = obj();
+		put(o, "vpn-service", l);
+		ny = obj();
+		put(ny, "vpn-services", o);
+		if ((st = l3nm_merge(ny, r->why, sizeof(r->why))) != 0)
+			r->status = st;
+		else {
+			r->status = 201;
+			r->top = obj();
+			puts_(r->top, "vpn-id", r->svc);
+			puts_(r->top, "vpn-node-id", r->edge);
+			puts_(r->top, "access-id", gstr(pick, "sap-id"));
+			puts_(r->top, "sap-id", gstr(pick, "sap-id"));
+			puts_(r->top, "interface-id", ifn);
+			puts_(r->top, "host", r->h[0].sid);
+		}
+		ucl_object_unref(ny);
+		ucl_object_unref(pick);
+	}
+	ucl_object_unref(sd);
+	ucl_object_unref(y);
+	ucl_object_unref(applied);
+	return (0);
+}
+
 /* ---- The routes ------------------------------------------------------ */
 
 /* The hosts the user may read, as they are now: the server's list is
@@ -664,6 +847,25 @@ hosts_of(struct http_request *req, struct snreq *r)
 	}
 }
 
+static int
+attach_finish(struct http_request *req, struct snreq *r)
+{
+	ucl_object_t	*top;
+
+	if (r->status != 201)
+		return (reply_error(req, r->status, r->status == 404 ?
+		    "unknown" : r->status == 409 ? "refused" : "invalid", "%s",
+		    r->why));
+	audit_add("policies-changed", "Administer", r->svc, "a service "
+	    "placed on a free SAP (RFC 9408 Appendix D)", "the console (the "
+	    "Policy Administration Point)", session_who(req), "access %s at "
+	    "%s", ucl_object_tostring(ucl_object_lookup(r->top, "access-id")),
+	    r->edge);
+	top = r->top;
+	r->top = NULL;
+	return (reply_json(req, 201, top));
+}
+
 int
 api_sapnet(struct http_request *req)
 {
@@ -676,6 +878,8 @@ api_sapnet(struct http_request *req)
 			http_request_sleep(req);
 			return (WEB_RETRY);
 		}
+		if (r->attach)
+			return (attach_finish(req, r));
 		if (r->status != 200)
 			return (restconf_error(req, r->status, r->why));
 		top = r->top;
@@ -714,6 +918,93 @@ api_sapnet(struct http_request *req)
 	return (WEB_RETRY);
 }
 
+/* POST /api/sdwan/attach: a service's access placed on a free SAP. */
+int
+api_sapnet_attach(struct http_request *req)
+{
+	const struct server	*sv;
+	const ucl_object_t	*svc, *n, *found = NULL, *v;
+	ucl_object_t		*body, *y;
+	struct snreq		*r;
+	const char		*vid, *edge, *host, *sap;
+	char			 hbuf[64];
+
+	if ((r = req->hdlr_extra) != NULL)
+		return (api_sapnet(req));
+	if (!guard(req, true))
+		return (WEB_OK);
+	if ((body = read_json(req)) == NULL || (vid = gstr(body, "vpn-id")) ==
+	    NULL || (edge = gstr(body, "vpn-node-id")) == NULL ||
+	    ((v = get(body, "sap-id")) != NULL && ucl_object_type(v) !=
+	    UCL_STRING) || ((v = get(body, "access")) != NULL &&
+	    ucl_object_type(v) != UCL_OBJECT)) {
+		if (body != NULL)
+			ucl_object_unref(body);
+		return (reply_error(req, 400, "invalid", "a JSON object: "
+		    "vpn-id, vpn-node-id, and sap-id (none: the first free) "
+		    "and access (L3NM's vpn-network-access) where said"));
+	}
+	sap = gstr(body, "sap-id");
+	/* The service, and its node's host: its ne-id, else the edge's. */
+	y = l3nm_kept();
+	host = NULL;
+	for (unsigned i = 0; (svc = entry(y, "vpn-services", "vpn-service",
+	    i)) != NULL; i++)
+		if (gstr(svc, "vpn-id") != NULL && strcmp(gstr(svc, "vpn-id"),
+		    vid) == 0) {
+			found = svc;
+			for (unsigned k = 0; (n = entry(svc, "vpn-nodes",
+			    "vpn-node", k)) != NULL; k++)
+				if (gstr(n, "vpn-node-id") != NULL &&
+				    strcmp(gstr(n, "vpn-node-id"), edge) == 0)
+					host = node_host(n, hbuf,
+					    sizeof(hbuf));
+		}
+	if (found != NULL && host == NULL) {
+		char	jail[64];
+
+		if (sdwan_edge_split(edge, hbuf, sizeof(hbuf), jail,
+		    sizeof(jail)))
+			host = hbuf;
+	}
+	if (host != NULL)
+		snprintf(hbuf, sizeof(hbuf), "%s", host);
+	ucl_object_unref(y);
+	if (found == NULL) {
+		ucl_object_unref(body);
+		return (reply_error(req, 404, "unknown", "no such service"));
+	}
+	if (host == NULL || (sv = server_find(hbuf)) == NULL) {
+		ucl_object_unref(body);
+		return (reply_error(req, 404, "unknown", "no host of edge %s",
+		    edge));
+	}
+	if (!host_role_ok(req, sv->id, true, false)) {
+		ucl_object_unref(body);
+		return (reply_error(req, 403, "forbidden", "the host %s is not "
+		    "yours to change", sv->name));
+	}
+	r = xcalloc(1, sizeof(*r));
+	r->attach = true;
+	r->svc = xstrdup(vid);
+	r->edge = xstrdup(edge);
+	r->sap = sap != NULL ? xstrdup(sap) : NULL;
+	r->access = get(body, "access") != NULL ? ucl_object_copy(get(body,
+	    "access")) : NULL;
+	ucl_object_unref(body);
+	r->h = xcalloc(1, sizeof(*r->h));
+	snprintf(r->h[0].sid, sizeof(r->h[0].sid), "%s", sv->id);
+	r->h[0].uri = xstrdup(sv->uri);
+	r->h[0].peer = sv->peer_name != NULL ? xstrdup(sv->peer_name) : NULL;
+	r->h[0].name = xstrdup(sv->name);
+	r->nh = 1;
+	req->hdlr_extra = r;
+	task_create(&r->task, attach_run);
+	task_bind_request(&r->task, req);
+	task_run(&r->task);
+	return (WEB_RETRY);
+}
+
 /* on_free: what the request holds, once its task is done. */
 void
 api_sapnet_free(struct http_request *req)
@@ -733,4 +1024,11 @@ api_sapnet_free(struct http_request *req)
 	if (r->top != NULL)
 		ucl_object_unref(r->top);
 	r->top = NULL;
+	free(r->svc);
+	free(r->edge);
+	free(r->sap);
+	r->svc = r->edge = r->sap = NULL;
+	if (r->access != NULL)
+		ucl_object_unref(r->access);
+	r->access = NULL;
 }

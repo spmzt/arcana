@@ -2060,8 +2060,26 @@ whose first part is served.
   other host free still; an access at a SAP down the anomaly; the
   service admin-down, no anomaly; an agent 0.236.0 (ARCANA_OLD_AGENT)
   left out with the 404 logged.
-- 4.6.3 C: the Appendix D flow in the planner (free SAP → access id);
-  check: a service placed on a free SAP.
+- 4.6.3 done (console sapnet.c, l3nm.c, console 0.361.0): RFC 9408
+  Appendix D's flow, `POST /api/sdwan/attach` {vpn-id, vpn-node-id,
+  sap-id, access}: the edge's host (its vpn-node's ne-id, else the
+  edge's) read through the fleet mount on a task, its SAPs with the
+  L3NM's as 4.6.2 has them; the SAP named, else the first free one fit
+  for the access (one allowing child SAPs where the access is dot1q or
+  qinq), taken when free, and an access made of it at the edge's
+  vpn-node of the service (the node made where the service has none,
+  its ne-id the host): its id the sap-id, its interface-id the
+  attachment-interface, the rest the body's access, merged into the
+  L3NM as RESTCONF's PATCH of it (l3nm_merge(), checked as one), audited.
+  404 for no such service, host or SAP; 409 for a SAP not free (the
+  access that names it, its anomaly, not a UNI, not up), none free, or
+  an access of that id at the node already.  The planner then makes
+  the UNI as of any access.  Check (console_test sapnet_attach): the
+  first free SAP taken, the access its sap-id at a node made with the
+  host its ne-id; the SAP then the service's and not free; the same SAP
+  again 409, a service or a SAP not there 404.  Open: the page has no
+  form for it yet (the Service page's end point could offer the free
+  SAPs, 4.8.3).
 - 4.7.1 C: `ietf-vn` view: access points and VNAPs from UNIs, members
   from tunnels, `oper-status` and `if-selected` from `arcana-steer`;
   check: RFC 9731's example shape for the lab service.

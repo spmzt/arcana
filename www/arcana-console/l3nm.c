@@ -447,6 +447,65 @@ l3nm_kept(void)
 	return (y);
 }
 
+/* y, an l3vpn-ntw's value, merged into the L3NM kept as RESTCONF's
+ * PATCH of it: 0, or the HTTP status and why. */
+int
+l3nm_merge(const ucl_object_t *y, char *why, size_t len)
+{
+	struct rcreq	*r;
+	ucl_object_t	*body;
+	cbl_dtree	*t;
+	cbl_yarena	*a;
+	const char	*w = NULL;
+	char		 err[256], *json = NULL;
+	bool		 changed;
+	int		 status;
+
+	body = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(body, ucl_object_copy(y), L3NM_MEMBER, 0, false);
+	if ((r = restconf_parse_own(L3NM_PATH, NULL, &w)) == NULL) {
+		ucl_object_unref(body);
+		snprintf(why, len, "%s", w != NULL ? w : "out of memory");
+		return (500);
+	}
+	if ((status = restconf_prepare(r, HTTP_METHOD_PATCH,
+	    "application/yang-data+json", body, &w)) != 0) {
+		snprintf(why, len, "as L3NM: %s", w != NULL ? w : "refused");
+		restconf_free(r);
+		return (status >= 500 ? 500 : 400);
+	}
+	l3nm_sdwan_migrate();
+	pthread_mutex_lock(&l3nm_lock);
+	t = NULL;
+	if ((a = cbl_yarena_new()) == NULL || (t = l3nm_load(a, err,
+	    sizeof(err))) == NULL) {
+		pthread_mutex_unlock(&l3nm_lock);
+		if (a != NULL)
+			cbl_yarena_free(a);
+		restconf_free(r);
+		snprintf(why, len, "the services kept could not be read");
+		return (500);
+	}
+	restconf_run_own(r, t, a, &changed, &json, &status);
+	if (status >= 300) {
+		error_of(json, why, len);
+		status = status >= 500 ? 500 : 400;
+	} else if (changed && l3nm_save(t, 0) != 0) {
+		snprintf(why, len, "the services could not be kept");
+		status = 500;
+	} else {
+		if (changed)
+			restconf_own_changed(L3NM_URI);
+		status = 0;
+	}
+	pthread_mutex_unlock(&l3nm_lock);
+	free(json);
+	cbl_dtree_free(t);
+	cbl_yarena_free(a);
+	restconf_free(r);
+	return (status);
+}
+
 /* Document doc kept, as L3NM: 0, or the HTTP status and why (409: not
  * made from version expect, unless that is -1). */
 int

@@ -107,6 +107,8 @@ const struct route routes[] = {
 	    HTTP_METHOD_GET | HTTP_METHOD_PUT },
 	{ "/api/sdwan/check", api_sdwan, NULL,
 	    HTTP_METHOD_POST },
+	{ "/api/sdwan/attach", api_sapnet_attach, api_sapnet_free,
+	    HTTP_METHOD_POST },
 	{ "/api/sdwan/plan", api_sdwan_edges, NULL,
 	    HTTP_METHOD_GET },
 	{ "/api/sdwan/apply", api_sdwan_edges, NULL,

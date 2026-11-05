@@ -3009,6 +3009,35 @@ paths:
             service's ipfw tables' prefix) and nodes (VPN/node, its
             profiles resolved - as, router_id, rd, rt, fib).
         "409": { $ref: "#/components/responses/Error" }
+  /api/sdwan/attach:
+    post:
+      tags: [sdwan]
+      summary: A service's access placed on a free SAP (RFC 9408 Appendix D)
+      description: 'vpn-id and vpn-node-id, the service and its edge; the
+        edge''s host''s SAPs read, sap-id taken (none: the first free one
+        fit for the access, one allowing child SAPs where it is dot1q or
+        qinq) and an access made of it in the L3NM: its id the sap-id,
+        its interface-id the attachment-interface, access (an L3NM
+        vpn-network-access) the rest; the vpn-node made where the
+        service has none, its ne-id the host.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vpn-id, vpn-node-id]
+              properties:
+                vpn-id: { type: string }
+                vpn-node-id: { type: string }
+                sap-id: { type: string }
+                access: { type: object }
+      responses:
+        "201":
+          description: vpn-id, vpn-node-id, access-id, sap-id, interface-id
+            and host, what was made.
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/sdwan/apply:
     get:
       tags: [sdwan]
