@@ -141,7 +141,31 @@ saved_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	render();
 }
 
-/* The form: a preset's (new, its source given), a feed's, or a new one. */
+/* A console owner, signed in as one (not by a token)? */
+static bool
+owner(void)
+{
+
+	return (!app.by_token && strcmp(app.console_role, "owner") == 0);
+}
+
+/* Is the feed fetched from a URL of one's own, not its preset's? */
+static bool
+custom(const ucl_object_t *f)
+{
+	const ucl_object_t	*pr;
+
+	pr = jstr(f, "preset") != NULL ? by_id(jget(fd.all, "presets"),
+	    jstr(f, "preset")) : NULL;
+	return (pr == NULL || jstr(f, "url") == NULL || jstr(pr, "url") ==
+	    NULL || strcmp(jstr(f, "url"), jstr(pr, "url")) != 0);
+}
+
+/*
+ * The form: a preset's (new, its source given), a feed's, or a new one.
+ * The source is a console owner's to choose; a feed from a URL of one's
+ * own is an owner's to change but for whether it is on and where.
+ */
 static void
 form(struct html *h, const ucl_object_t *f, const ucl_object_t *pr)
 {
@@ -150,11 +174,12 @@ form(struct html *h, const ucl_object_t *f, const ucl_object_t *pr)
 	const ucl_object_t	*src, *e;
 	ucl_object_iter_t	 it;
 	const char		*fmt;
-	bool			 on;
+	bool			 on, lock;
 	size_t			 i;
 	int			 k;
 
 	src = f != NULL ? f : pr;
+	lock = !owner() && f != NULL && custom(f);
 	h_raw(h, "<form data-form=\"feed\" class=\"secform feed-form\"><h4>");
 	h_txt(h, f != NULL ? "The feed, changed" : pr != NULL ? jstr(pr,
 	    "name") : "A list of one's own");
@@ -176,38 +201,55 @@ form(struct html *h, const ucl_object_t *f, const ucl_object_t *pr)
 	    "id") : "");
 	if (f != NULL || pr != NULL)
 		h_raw(h, " readonly");
-	h_raw(h, "></label><label>Name<input name=\"name\" maxlength=\"80\"");
+	h_fmt(h, "></label><label>Name<input name=\"name\" maxlength=\"80\"%s",
+	    lock ? " readonly" : "");
 	h_attr(h, "value", src != NULL && jstr(src, "name") != NULL ? jstr(src,
 	    "name") : "");
-	h_raw(h, "></label><label class=\"wide\">Source<input name=\"url\" "
+	h_fmt(h, "></label><label class=\"wide\">Source<input name=\"url\" "
 	    "required spellcheck=\"false\" placeholder=\"https://example.org/"
-	    "list.txt\"");
+	    "list.txt\"%s", owner() ? "" : " readonly");
 	h_attr(h, "value", src != NULL && jstr(src, "url") != NULL ? jstr(src,
 	    "url") : "");
-	h_raw(h, "><small class=\"help\">Fetched by the console with libfetch, "
-	    "TLS verified; the hosts need no way out.</small></label><label>"
-	    "Format<select name=\"format\">");
+	h_raw(h, "><small class=\"help\">Fetched by the console, TLS verified, "
+	    "from an address of the internet alone; the hosts need no way out."
+	    "</small></label>");
 	fmt = src != NULL && jstr(src, "format") != NULL ? jstr(src, "format") :
 	    "plain";
+	if (lock) {
+		/* What is not the operator's to change, sent as it is. */
+		h_raw(h, "<input type=\"hidden\" name=\"format\"");
+		h_attr(h, "value", fmt);
+		h_fmt(h, "><input type=\"hidden\" name=\"bogons\" value=\"%s\">",
+		    jbool(src, "bogons") ? "true" : "false");
+	}
+	h_fmt(h, "<label>Format<select%s>", lock ? " disabled" :
+	    " name=\"format\"");
 	for (i = 0; i < nitems(fmts); i++)
 		h_fmt(h, "<option%s>%s</option>", strcmp(fmt, fmts[i]) == 0 ?
 		    " selected" : "", fmts[i]);
 	h_fmt(h, "</select></label><label>Every<input name=\"interval\" "
-	    "type=\"number\" min=\"%lld\" max=\"720\" value=\"%lld\"> hours"
+	    "type=\"number\" min=\"%lld\" max=\"720\" value=\"%lld\"%s> hours"
 	    "</label><label>ipfw table<input name=\"table\" spellcheck=\"false\""
-	    " pattern=\"[A-Za-z0-9_.-]{1,48}\" placeholder=\"feed_&lt;id&gt;\"",
+	    " pattern=\"[A-Za-z0-9_.-]{1,48}\" placeholder=\"feed_&lt;id&gt;\"%s",
 	    (long long)jint(fd.all, "floor", 1), (long long)(src != NULL ?
-	    jint(src, "interval", 6) : 6));
+	    jint(src, "interval", 6) : 6), lock ? " readonly" : "", lock ?
+	    " readonly" : "");
 	h_attr(h, "value", f != NULL && jstr(f, "table") != NULL ? jstr(f,
 	    "table") : "");
 	h_fmt(h, "></label><label class=\"toggle\" title=\"Private and reserved "
 	    "space (RFC 1918, loopback, multicast...) is dropped unless the "
-	    "list holds it on purpose\"><input type=\"checkbox\" name=\""
-	    "bogons\"%s><span>it lists private space on purpose</span></label>"
+	    "list holds it on purpose\"><input type=\"checkbox\"%s%s><span>it "
+	    "lists private space on purpose</span></label>"
 	    "<label class=\"toggle\"><input type=\"checkbox\" name=\"enabled\""
-	    "%s><span>enabled</span></label><fieldset class=\"wide\"><legend>"
-	    "On the hosts</legend>", src != NULL && jbool(src, "bogons") ?
-	    " checked" : "", f == NULL || jbool(f, "enabled") ? " checked" : "");
+	    "%s><span>enabled</span></label>", lock ? " disabled" :
+	    " name=\"bogons\"", src != NULL && jbool(src, "bogons") ? " checked" :
+	    "", f == NULL || jbool(f, "enabled") ? " checked" : "");
+	if (!owner())
+		h_raw(h, "<p class=\"dim wide\">The source is the preset's: a "
+		    "list from a URL of one's own is a console owner's to make "
+		    "and to change, as what it drops, counted even, tells of the "
+		    "addresses no feed may cut off.</p>");
+	h_raw(h, "<fieldset class=\"wide\"><legend>On the hosts</legend>");
 	for (k = 0; k < app.nservers; k++) {
 		on = false;
 		it = NULL;
@@ -266,12 +308,15 @@ detail(struct html *h, const ucl_object_t *f)
 	h_txt(h, jstr(f, "name"));
 	h_raw(h, " <button class=\"ghost small\" data-act=\"fd-fetch\"");
 	h_attr(h, "data-arg", jstr(f, "id"));
-	h_raw(h, " title=\"Fetch it now, if it changed since\">Fetch now</button>"
-	    "<button class=\"ghost small\" data-act=\"fd-preview\"");
-	h_attr(h, "data-arg", jstr(f, "id"));
-	h_raw(h, " title=\"Fetch it whole and ask each host what would change; "
-	    "nothing is changed\">Preview</button><button class=\"ghost small\" "
-	    "data-act=\"fd-close\">Close</button></h4>");
+	h_raw(h, " title=\"Fetch it now, if it changed since\">Fetch now</button>");
+	if (owner() || !custom(f)) {
+		h_raw(h, "<button class=\"ghost small\" data-act=\"fd-preview\"");
+		h_attr(h, "data-arg", jstr(f, "id"));
+		h_raw(h, " title=\"Fetch it whole and ask each host what would "
+		    "change; nothing is changed\">Preview</button>");
+	}
+	h_raw(h, "<button class=\"ghost small\" data-act=\"fd-close\">Close"
+	    "</button></h4>");
 	if (d == NULL) {
 		h_raw(h, "<div class=\"loader\"></div></section>");
 		return;
@@ -350,11 +395,19 @@ detail(struct html *h, const ucl_object_t *f)
 	free(rows);
 	ucl_object_unref(arr);
 	h_raw(h, "</tbody></table>");
+	if (jint(d, "delivered_hidden", 0) > 0)
+		h_fmt(h, "<p class=\"dim\">And on %lld host(s) you may not "
+		    "read.</p>", (long long)jint(d, "delivered_hidden", 0));
 	/* What it dropped, and why. */
 	h_fmt(h, "<h5>Dropped <small class=\"dim\">%lld, the first %u "
 	    "shown; %lld more within another entry, left out</small></h5>",
 	    (long long)jint(d, "dropped_count", 0), ucl_array_size(jget(d,
 	    "dropped")), (long long)jint(d, "covered", 0));
+	if (jint(d, "protected_hidden", 0) > 0)
+		h_fmt(h, "<p class=\"dim\">%lld covered a protected address: "
+		    "the console's, a host's you may not read, or a sign-in's; "
+		    "an owner sees which.</p>", (long long)jint(d,
+		    "protected_hidden", 0));
 	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" data-input=\""
 	    "fd-dfilter\" placeholder=\"Filter\" autocomplete=\"off\" "
 	    "spellcheck=\"false\"");
@@ -452,8 +505,16 @@ view_feeds(struct html *h)
 	    "fd-filter\" placeholder=\"Filter\" autocomplete=\"off\" "
 	    "spellcheck=\"false\"");
 	h_attr(h, "value", fd.filter);
-	h_raw(h, "><button class=\"primary\" data-act=\"fd-add\">+ a list of "
-	    "one's own</button></div>");
+	h_raw(h, ">");
+	if (owner())
+		h_raw(h, "<button class=\"primary\" data-act=\"fd-add\">+ a list "
+		    "of one's own</button>");
+	else
+		h_raw(h, "<small class=\"dim\">A list from a URL of one's own is "
+		    "a console owner's to add: what it drops tells of the "
+		    "addresses no feed may cut off. The presets are yours to "
+		    "use.</small>");
+	h_raw(h, "</div>");
 	/* The feeds. */
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
@@ -582,7 +643,8 @@ feeds_form(const char *form_name, const ucl_object_t *f)
 	q = json_quote(jstr(f, "table") != NULL ? jstr(f, "table") : "");
 	h_fmt(&b, "\"table\":%s,\"interval\":%d,\"bogons\":%s,\"enabled\":%s,"
 	    "\"hosts\":[", q, jstr(f, "interval") != NULL ? atoi(jstr(f,
-	    "interval")) : 6, jbool(f, "bogons") ? "true" : "false", jbool(f,
+	    "interval")) : 6, jbool(f, "bogons") || (jstr(f, "bogons") != NULL && strcmp(jstr(f,
+	    "bogons"), "true") == 0) ? "true" : "false", jbool(f,
 	    "enabled") ? "true" : "false");
 	free(q);
 	first = true;

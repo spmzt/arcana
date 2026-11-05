@@ -1900,29 +1900,72 @@ presets_json(void)
 }
 
 /*
- * What a feed dropped, as the request's user may see it: which
- * protected address an entry covers, and whose, to the console's owners
- * alone, and a host's to whom may read that host; never a sign-in's to
- * anyone else.
+ * What a feed dropped, as the request's user may see it.  The console's
+ * owners see it all.  To anyone else an entry dropped as it covers a
+ * protected address is listed only when it is a host's that the user
+ * may read, with which address; any other (the console's, another
+ * host's, a sign-in's) is only counted, in *hiddenp, as a feed of
+ * chosen addresses would otherwise tell which of them are protected.
  */
 static ucl_object_t *
-dropped_for(struct http_request *req, const ucl_object_t *dropped)
+dropped_for(struct http_request *req, const ucl_object_t *dropped,
+    int64_t *hiddenp)
 {
 	ucl_object_t		*out, *o;
 	const ucl_object_t	*d;
 	ucl_object_iter_t	 it;
 	bool			 owner;
 
+	*hiddenp = 0;
 	owner = user_console(session_user(req)) == CROLE_OWNER;
 	out = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
 	while ((d = ucl_object_iterate(dropped, &it, true)) != NULL) {
+		if (!owner && str(d, "detail") != NULL && (str(d, "host") ==
+		    NULL || !host_role_ok(req, str(d, "host"), false, false))) {
+			(*hiddenp)++;
+			continue;
+		}
 		o = ucl_object_copy(d);
-		if (!owner && (str(d, "host") == NULL || !host_role_ok(req,
-		    str(d, "host"), false, false)))
-			(void)ucl_object_delete_key(o, "detail");
 		(void)ucl_object_delete_key(o, "host");
 		ucl_array_append(out, o);
+	}
+	return (out);
+}
+
+static bool	is_owner(struct http_request *);
+
+/*
+ * Every per-host part of a feed as the request's user may see it: of a
+ * list of host ids, or an object keyed by them (what each host was sent,
+ * its name and errors), those the user may read; the rest only counted
+ * in *hiddenp.  The console's owners see them all.
+ */
+static ucl_object_t *
+hosts_for(struct http_request *req, const ucl_object_t *o, int64_t *hiddenp)
+{
+	ucl_object_t		*out;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*sid;
+	bool			 owner, arr;
+
+	*hiddenp = 0;
+	arr = ucl_object_type(o) == UCL_ARRAY;
+	out = ucl_object_typed_new(arr ? UCL_ARRAY : UCL_OBJECT);
+	owner = is_owner(req);
+	it = NULL;
+	while ((e = ucl_object_iterate(o, &it, true)) != NULL) {
+		sid = arr ? ucl_object_tostring_forced(e) : ucl_object_key(e);
+		if (sid == NULL || (!owner && (server_find(sid) == NULL ||
+		    !host_role_ok(req, sid, false, false)))) {
+			(*hiddenp)++;
+			continue;
+		}
+		if (arr)
+			ucl_array_append(out, S(sid));
+		else
+			put(out, sid, ucl_object_copy(e));
 	}
 	return (out);
 }
@@ -1937,9 +1980,15 @@ feed_json(struct http_request *req, const ucl_object_t *f,
 	ucl_object_t		*o, *ents, *sample;
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
+	int64_t			 hidden;
 	size_t			 i;
 
 	o = ucl_object_copy(f);
+	/* Its hosts, those the user may read; the others counted. */
+	put(o, "hosts", hosts_for(req, ucl_object_lookup(f, "hosts"),
+	    &hidden));
+	if (hidden > 0)
+		put(o, "hosts_hidden", I(hidden));
 	for (i = 0; i < nitems(keys); i++)
 		if (ucl_object_lookup(st, keys[i]) != NULL)
 			put(o, keys[i], I(num(st, keys[i])));
@@ -1947,12 +1996,16 @@ feed_json(struct http_request *req, const ucl_object_t *f,
 		put(o, "error", S(str(st, "error")));
 	if (ucl_object_lookup(st, "alarm") != NULL)
 		put(o, "alarm", ucl_object_copy(ucl_object_lookup(st, "alarm")));
-	put(o, "delivered", ucl_object_lookup(st, "hosts") != NULL ?
-	    ucl_object_copy(ucl_object_lookup(st, "hosts")) :
-	    ucl_object_typed_new(UCL_OBJECT));
+	put(o, "delivered", hosts_for(req, ucl_object_lookup(st, "hosts"),
+	    &hidden));
+	if (hidden > 0)
+		put(o, "delivered_hidden", I(hidden));
 	if (!full)
 		return (o);
-	put(o, "dropped", dropped_for(req, ucl_object_lookup(st, "dropped")));
+	put(o, "dropped", dropped_for(req, ucl_object_lookup(st, "dropped"),
+	    &hidden));
+	if (hidden > 0)
+		put(o, "protected_hidden", I(hidden));
 	put(o, "events", ucl_object_lookup(st, "events") != NULL ?
 	    ucl_object_copy(ucl_object_lookup(st, "events")) :
 	    ucl_object_typed_new(UCL_ARRAY));
@@ -1961,7 +2014,13 @@ feed_json(struct http_request *req, const ucl_object_t *f,
 
 		pv = ucl_object_copy(ucl_object_lookup(st, "preview"));
 		put(pv, "dropped", dropped_for(req, ucl_object_lookup(pv,
-		    "dropped")));
+		    "dropped"), &hidden));
+		if (hidden > 0)
+			put(pv, "protected_hidden", I(hidden));
+		put(pv, "hosts", hosts_for(req, ucl_object_lookup(pv, "hosts"),
+		    &hidden));
+		if (hidden > 0)
+			put(pv, "hosts_hidden", I(hidden));
 		put(o, "preview", pv);
 	}
 	/* The first entries, to see what it holds. */
@@ -2044,7 +2103,10 @@ feed_check(struct http_request *req, const char *id, const ucl_object_t *body,
 			snprintf(err, errlen, "a url has no spaces");
 			return (NULL);
 		}
-	if (!url_allowed(url, err, errlen))
+	/* A preset's own source is the internet's; checked at each fetch,
+	 * as every other. */
+	if ((pr == NULL || strcmp(url, pr->url) != 0) && !url_allowed(url, err,
+	    errlen))
 		return (NULL);
 	fmt = str(body, "format") != NULL ? str(body, "format") : pr != NULL ?
 	    pr->format : "plain";
@@ -2161,6 +2223,41 @@ hosts_denied(struct http_request *req, const ucl_object_t *f,
 	return (NULL);
 }
 
+/*
+ * Is the feed fetched from a URL of one's own, not its preset's?  Only a
+ * console owner makes one, changes one or previews one: what such a
+ * feed drops, counted even, tells of the addresses no feed may cut off.
+ */
+static bool
+feed_custom(const ucl_object_t *f)
+{
+	const struct preset	*pr;
+
+	return ((pr = preset_of(str(f, "preset"))) == NULL || str(f, "url") ==
+	    NULL || strcmp(str(f, "url"), pr->url) != 0);
+}
+
+static bool
+is_owner(struct http_request *req)
+{
+
+	return (user_console(session_user(req)) == CROLE_OWNER);
+}
+
+/* Does b say what a does of key? */
+static bool
+same_key(const ucl_object_t *a, const ucl_object_t *b, const char *key)
+{
+	const ucl_object_t	*x, *y;
+
+	x = ucl_object_lookup(a, key);
+	y = ucl_object_lookup(b, key);
+	if (x == NULL || y == NULL)
+		return (x == y);
+	return (strcmp(ucl_object_tostring_forced(x),
+	    ucl_object_tostring_forced(y)) == 0);
+}
+
 /* The feed's hosts_denied(), as kept. */
 static const char *
 feed_denied(struct http_request *req, const char *id)
@@ -2201,6 +2298,7 @@ api_feed(struct http_request *req)
 	const char		*who;
 	size_t			 n;
 	int			 fd;
+	bool			 custom;
 
 	p = req->path + strlen("/api/feeds/");
 	n = strcspn(p, "/");
@@ -2242,10 +2340,14 @@ api_feed(struct http_request *req)
 		doc = doc_load(FEEDS_FILE, "feeds", UCL_ARRAY);
 		lock_give(fd);
 		e = feed_by(doc, id);
+		custom = e != NULL && feed_custom(e);
 		ucl_object_unref(doc);
 		if (e == NULL)
 			return (reply_error(req, 404, "not_found", "no such "
 			    "feed"));
+		if (strcmp(verb, "preview") == 0 && custom && !is_owner(req))
+			return (reply_error(req, 403, "role", "a feed from a URL "
+			    "of one's own is previewed by a console owner alone"));
 		ask(id, verb);
 		out = ucl_object_typed_new(UCL_OBJECT);
 		put(out, "asked", S(verb));
@@ -2303,6 +2405,26 @@ api_feed(struct http_request *req)
 		return (reply_error(req, 400, "invalid", "%s", err));
 	}
 	ucl_object_unref(body);
+	/* A URL of one's own: a console owner's to set and to change; an
+	 * operator enables such a feed, disables it, chooses its hosts. */
+	if (!is_owner(req) && feed_custom(f)) {
+		static const char *const keys[] = { "name", "url", "format",
+		    "bogons", "table", "interval" };
+		size_t	 k;
+		bool	 same = was != NULL && feed_custom(was);
+
+		for (k = 0; same && k < nitems(keys); k++)
+			same = same_key(was, f, keys[k]);
+		if (!same) {
+			lock_give(fd);
+			ucl_object_unref(doc);
+			ucl_object_unref(f);
+			return (reply_error(req, 403, "role", "a feed from a URL "
+			    "of one's own is made and changed by a console owner "
+			    "alone: an operator uses the presets, and enables, "
+			    "disables or chooses the hosts of such a feed"));
+		}
+	}
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
 	while ((e = ucl_object_iterate(ucl_object_lookup(doc, "feeds"), &it,

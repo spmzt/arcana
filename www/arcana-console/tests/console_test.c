@@ -14737,7 +14737,7 @@ ATF_TC_BODY(feeds, tc)
 	struct authn	a, b, c;
 	struct resp	r;
 	char		cwd[1024], body[1024], sa[16], k[96], invite[80];
-	char		invite2[80];
+	char		invite2[80], sn[16], sg[16];
 	int		port, i;
 
 	port = feeds_server(tc);
@@ -14755,6 +14755,35 @@ ATF_TC_BODY(feeds, tc)
 	http("POST", "/api/servers", "{\"name\":\"far\",\"uri\":\"tcp://"
 	    "192.0.2.77:4310\"}", &r);
 	EXPECT(&r, 200);
+	resp_free(&r);
+	/* And one at 100.64.0.5, which the operator below may read. */
+	http("POST", "/api/servers", "{\"name\":\"near\",\"uri\":\"tcp://"
+	    "100.64.0.5:4310\"}", &r);
+	EXPECT(&r, 200);
+	sn[0] = '\0';
+	for (i = 0; i < 3; i++) {
+		snprintf(k, sizeof(k), "servers.%d.name", i);
+		if (jstr(&r, k) != NULL && strcmp(jstr(&r, k), "near") == 0) {
+			snprintf(k, sizeof(k), "servers.%d.id", i);
+			snprintf(sn, sizeof(sn), "%s", jstr(&r, k));
+		}
+	}
+	ATF_REQUIRE(sn[0] != '\0');
+	resp_free(&r);
+	/* And one no agent answers for, which the operator may not read. */
+	snprintf(body, sizeof(body), "{\"name\":\"gone\",\"uri\":\"unix:%s/"
+	    "none.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	sg[0] = '\0';
+	for (i = 0; i < 4; i++) {
+		snprintf(k, sizeof(k), "servers.%d.name", i);
+		if (jstr(&r, k) != NULL && strcmp(jstr(&r, k), "gone") == 0) {
+			snprintf(k, sizeof(k), "servers.%d.id", i);
+			snprintf(sg, sizeof(sg), "%s", jstr(&r, k));
+		}
+	}
+	ATF_REQUIRE(sg[0] != '\0');
 	resp_free(&r);
 	put("data/signins.json", "{\"alice\":{\"addr\":\"203.0.113.9\","
 	    "\"at\":1}}");
@@ -14969,11 +14998,46 @@ ATF_TC_BODY(feeds, tc)
 	    "reserved address") != NULL, "%s", r.body);
 	resp_free(&r);
 
-	/* An operator who only views host a may not take away the feed
-	 * that is on it, nor change it: refused, its table left.  A
-	 * member reads none and changes none. */
+	/* A feed of chosen addresses: a sign-in's, an unreadable host's, a
+	 * readable host's.  The owner sees each entry dropped, and why. */
+	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
+	    "oracle.txt\",\"enabled\":true,\"hosts\":[]}", port);
+	http("PUT", "/api/feeds/oracle", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	feed_wait("oracle", "fetched_at", NULL, &r);
+	ATF_CHECK_MSG(feed_dropped(&r, "203.0.113.9/32", "alice's last "
+	    "sign-in") && feed_dropped(&r, "192.0.2.77/32", "host far's") &&
+	    feed_dropped(&r, "100.64.0.5/32", "host near's"), "%s", r.body);
+	ATF_CHECK(jstr(&r, "protected_hidden") == NULL);
+	ATF_CHECK_STREQ("1", jstr(&r, "count"));
+	resp_free(&r);
+
+	/* A feed on host gone, which fails there: the owner sees it, by
+	 * its name and error, in what was sent and in a preview. */
+	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
+	    "drop_v4.json\",\"format\":\"spamhaus-json\",\"enabled\":true,"
+	    "\"hosts\":[\"%s\"]}", port, sg);
+	http("PUT", "/api/feeds/seen", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(k, sizeof(k), "delivered.%s.error", sg);
+	feed_wait("seen", k, NULL, &r);
+	snprintf(k, sizeof(k), "delivered.%s.name", sg);
+	ATF_CHECK_STREQ("gone", jstr(&r, k));
+	resp_free(&r);
+	http("POST", "/api/feeds/seen/preview", NULL, &r);
+	EXPECT(&r, 202);
+	resp_free(&r);
+	snprintf(k, sizeof(k), "preview.hosts.%s.error", sg);
+	feed_wait("seen", k, NULL, &r);
+	resp_free(&r);
+
+	/* An operator who only views hosts a and near may not take away
+	 * the feed that is on a, nor change it: refused, its table left.
+	 * A member reads none and changes none. */
 	snprintf(body, sizeof(body), "{\"console\":\"operator\",\"hosts\":"
-	    "{\"%s\":\"viewer\"}}", sa);
+	    "{\"%s\":\"viewer\",\"%s\":\"viewer\"}}", sa, sn);
 	http("PUT", "/api/roles/a-viewer-op", body, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
@@ -15018,18 +15082,71 @@ ATF_TC_BODY(feeds, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("true", jstr(&r, "enabled"));
 	resp_free(&r);
-	/* What a feed dropped read by one who is no owner: the reason,
-	 * not whose address it is, of a host it may not read nor of a
-	 * sign-in. */
+	/* What a feed dropped read by one who is no owner: what covers
+	 * a host's address it may not read, or a sign-in's, only counted. */
 	http("GET", "/api/feeds/local", NULL, &r);
 	EXPECT(&r, 200);
-	ATF_CHECK_MSG(feed_dropped(&r, "192.0.2.0/24", "covers a protected "
-	    "address") && feed_dropped(&r, "203.0.113.0/24", "covers a "
-	    "protected address"), "%s", r.body);
+	ATF_CHECK_MSG(!feed_dropped(&r, "192.0.2.0/24", "covers") &&
+	    !feed_dropped(&r, "203.0.113.0/24", "covers"), "%s", r.body);
+	ATF_CHECK_STREQ("2", jstr(&r, "protected_hidden"));
 	ATF_CHECK_MSG(strstr(r.body, "192.0.2.77") == NULL && strstr(r.body,
 	    "203.0.113.9") == NULL && strstr(r.body, "alice") == NULL &&
 	    strstr(r.body, "far") == NULL && strstr(r.body, "127.0.0.1,") ==
 	    NULL, "%s", r.body);
+	resp_free(&r);
+	/* A feed from a URL of one's own is an owner's: an operator uses
+	 * a preset, enables or disables such a feed, and previews none. */
+	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
+	    "drop_v4.json\",\"enabled\":true,\"hosts\":[]}", port);
+	http("PUT", "/api/feeds/carol2", body, &r);
+	ATF_CHECK_MSG(r.status == 403 && strstr(r.body, "console owner") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/feeds/dshield", "{\"preset\":\"dshield\","
+	    "\"enabled\":false,\"hosts\":[]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("https://feeds.dshield.org/block.txt", jstr(&r,
+	    "feed.url"));
+	resp_free(&r);
+	http("POST", "/api/feeds/oracle/preview", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
+	    "oracle.txt\",\"enabled\":false,\"hosts\":[]}", port);
+	http("PUT", "/api/feeds/oracle", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "feed.enabled"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
+	    "local.txt\",\"enabled\":true,\"hosts\":[]}", port);
+	http("PUT", "/api/feeds/oracle", body, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	/* Host gone is not the operator's to read: neither its id nor its
+	 * name nor its error anywhere, only counted. */
+	http("GET", "/api/feeds", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, sg) == NULL && strstr(r.body, "gone") ==
+	    NULL && strstr(r.body, "none.sock") == NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/feeds/seen", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, sg) == NULL && strstr(r.body, "gone") ==
+	    NULL && strstr(r.body, "none.sock") == NULL, "%s", r.body);
+	ATF_CHECK_STREQ("1", jstr(&r, "hosts_hidden"));
+	ATF_CHECK_STREQ("1", jstr(&r, "delivered_hidden"));
+	ATF_CHECK_STREQ("1", jstr(&r, "preview.hosts_hidden"));
+	resp_free(&r);
+	/* Not even listed by entry, which a feed of chosen addresses
+	 * would tell: counted; the host it may read, listed. */
+	http("GET", "/api/feeds/oracle", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "203.0.113.9") == NULL && strstr(r.body,
+	    "192.0.2.77") == NULL && strstr(r.body, "alice") == NULL,
+	    "%s", r.body);
+	ATF_CHECK_STREQ("2", jstr(&r, "protected_hidden"));
+	ATF_CHECK_MSG(feed_dropped(&r, "100.64.0.5/32", "host near's"), "%s",
+	    r.body);
 	resp_free(&r);
 	cookie[0] = '\0';
 	authn_new(&b, -8);

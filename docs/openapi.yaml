@@ -2505,7 +2505,10 @@ paths:
         interval, what it lists and its terms), and feeds, each with its
         last fetch (fetched_at, count, dropped_count, covered, error,
         failures, alarm) and delivered, per host {table, count, added,
-        removed, set, at, error}. Operators and owners only.
+        removed, set, at, error}. Operators and owners only. Of hosts,
+        delivered and a preview's hosts, a user who is no owner gets
+        those hosts it may read alone, the others counted (hosts_hidden,
+        delivered_hidden).
       responses:
         "200":
           description: "{presets, feeds, floor, max_entries}"
@@ -2518,8 +2521,10 @@ paths:
         prefix, the whole address space, covering a protected address,
         or private space the feed does not list on purpose; which
         protected address and whose, the console's, a host's or a user's
-        last sign-in, in detail to the console's owners alone, a host's
-        to whom may read that host), its events (each update whose
+        last sign-in, in detail to the console's owners alone; to anyone
+        else such an entry is listed only when it is a host's that user
+        may read, the others only counted in protected_hidden), its
+        events (each update whose
         entries changed), the last preview and its first entries.
       parameters:
         - name: id
@@ -2540,6 +2545,10 @@ paths:
         purpose), "enabled" and "hosts" (servers the user may change).
         Enabled, it is fetched at once; disabled, its tables are given
         up. The id is lower-case letters, digits and -, 24 at most. A
+        url other than a preset's is a console owner's to set or change
+        (403 to an operator, who uses the presets and may enable,
+        disable and choose the hosts of a feed from an owner's url); its
+        preview is an owner's too. A
         url that resolves to loopback, private, shared, link-local or
         reserved space is refused (400). Every change of a feed (PUT,
         DELETE, fetch, preview) needs the right to change each host it is
