@@ -120,6 +120,8 @@ ARC_YFEATS+=	-F ietf-vpn-common:* -F ietf-l3vpn-ntw:*
 ARC_YMODS+=	ietf-vn@2025-03-27 ietf-te-types@2020-06-10 \
 		ietf-te-topology@2020-08-06 arcana-sdwan-underlay@2026-11-05
 ARC_YFEATS+=	-F ietf-vn:multi-src-dest
+# The console's own configuration and state (cyang.c), from its files.
+ARC_YMODS+=	arcana-console@2026-11-05
 .endif
 # cblink-gen takes 64 -F at most, and a module named with no feature is
 # as one not named: those left out, each spec one word, quoted.

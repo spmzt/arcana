@@ -545,6 +545,8 @@ library_object(void)
 		    "urn:ietf:params:xml:ns:yang:ietf-sap-ntw" },
 		{ "arcana-sdwan-underlay", "2026-11-05",
 		    "urn:arcana:yang:arcana-sdwan-underlay" },
+		{ "arcana-console", "2026-11-05",
+		    "urn:arcana:yang:arcana-console" },
 	};
 	/* What they import alone, for its identities and types. */
 	static const char *const imps[][3] = {
@@ -599,7 +601,7 @@ library_object(void)
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	ucl_array_append(arr, ds);
 	ucl_object_insert_key(lib, arr, "datastore", 0, false);
-	ucl_object_insert_key(lib, ucl_object_fromstring("2026-11-05.3"),
+	ucl_object_insert_key(lib, ucl_object_fromstring("2026-11-05.4"),
 	    "content-id", 0, false);
 	return (lib);
 }
@@ -692,6 +694,8 @@ api_restconf_data(struct http_request *req)
 		return (api_l3nm(req));
 	if (vn_path(req->path))
 		return (api_vn(req));
+	if (cyang_path(req->path))
+		return (api_cyang(req));
 	if (req->method != HTTP_METHOD_GET)
 		return (restconf_error(req, 405, "the console's own data is "
 		    "read alone; a host's changes are below its entry"));
@@ -712,6 +716,7 @@ api_restconf_data(struct http_request *req)
 		    "ietf-yang-schema-mount:schema-mounts", 0, false);
 		l3nm_into(req, top);
 		vn_into(req, top);
+		cyang_into(req, top);
 	} else if (strcmp(p, "/arcana-fleet:fleet") == 0)
 		ucl_object_insert_key(top, fleet_object(req),
 		    "arcana-fleet:fleet", 0, false);

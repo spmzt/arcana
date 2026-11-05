@@ -1172,6 +1172,7 @@ run_save(struct run *r)
 	(void)store_save(RUNS_FILE, top);
 	ucl_object_unref(top);
 	pthread_mutex_unlock(&wf_lock);
+	cyang_changed("runs");
 }
 
 static void
@@ -2642,105 +2643,59 @@ reply_list(struct http_request *req, const char *file, const char *key,
 	return (reply_json(req, 200, out));
 }
 
-int
-api_workflows(struct http_request *req)
+/* Workflow id deleted: 0, or 404. */
+static int
+wf_delete(const char *wid)
 {
-	ucl_object_t		*body, *w, *top, *keep, *hosts, *params;
+	ucl_object_t		*top, *keep;
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
-	const char		*why, *id, *p;
-	char			 wid[9], buf[64];
-	uint32_t		 n;
 	bool			 found;
 
-	refs_copy();
-	if (req->method == HTTP_METHOD_GET) {
-		if (!guard(req, false))
-			return (WEB_OK);
-		return (reply_list(req, WF_FILE, "workflows", true));
-	}
-	if (!guard(req, true))
-		return (WEB_OK);
-	/* /api/workflows/<id>[/run] */
-	wid[0] = '\0';
-	if (strncmp(req->path, "/api/workflows/", 15) == 0)
-		snprintf(wid, sizeof(wid), "%.8s", req->path + 15);
-	if (req->method == HTTP_METHOD_POST && (p = strstr(req->path,
-	    "/run")) != NULL && p[4] == '\0') {
-		if ((w = wf_find(wid)) == NULL)
-			return (reply_error(req, 404, "not-found", "no such "
-			    "workflow"));
-		body = read_json(req);
-		hosts = body != NULL ? (ucl_object_t *)(uintptr_t)
-		    ucl_object_lookup(body, "hosts") : NULL;
-		params = body != NULL ? (ucl_object_t *)(uintptr_t)
-		    ucl_object_lookup(body, "params") : NULL;
-		it = NULL;
-		while ((e = ucl_object_iterate(hosts, &it, true)) != NULL) {
-			struct hostref	h;
-
-			if (!ref_get(ucl_object_tostring_forced(e), &h)) {
-				ucl_object_unref(w);
-				ucl_object_unref(body);
-				return (reply_error(req, 404, "not_found",
-				    "no such server"));
-			}
-			/* A change on each host: the user's role there, as a
-			 * job on it would ask. */
-			if (!host_allowed(req, ucl_object_tostring_forced(e),
-			    true, false)) {
-				ucl_object_unref(w);
-				ucl_object_unref(body);
-				return (WEB_OK);
-			}
-		}
-		n = run_start(w, hosts, params, NULL, "hand",
-		    session_user(req), &why);
-		ucl_object_unref(w);
-		if (body != NULL)
-			ucl_object_unref(body);
-		if (n == 0)
-			return (reply_error(req, 409, "not-run", "%s", why));
-		top = ucl_object_typed_new(UCL_OBJECT);
-		put(top, "run", ucl_object_fromint(n));
-		return (reply_json(req, 200, top));
-	}
 	pthread_mutex_lock(&wf_lock);
 	top = wf_load();
-	if (req->method == HTTP_METHOD_DELETE) {
-		keep = ucl_object_typed_new(UCL_ARRAY);
-		found = false;
-		it = NULL;
-		while ((e = ucl_object_iterate(ucl_object_lookup(top,
-		    "workflows"), &it, true)) != NULL)
-			if (strcmp(ucl_str(e, "id"), wid) == 0) {
-				found = true;
-				/* Said in the log, as a server removed is. */
-				log_msg(LOG_NOTICE, "workflow %s deleted: %s", wid,
-				    ucl_str(e, "name") != NULL ? ucl_str(e, "name") :
-				    "");
-			} else
-				ucl_array_append(keep, ucl_object_copy(e));
-		put(top, "workflows", keep);
-		if (found)
-			(void)store_save(WF_FILE, top);
-		pthread_mutex_unlock(&wf_lock);
-		ucl_object_unref(top);
-		if (!found)
-			return (reply_error(req, 404, "not-found", "no such "
-			    "workflow"));
-		top = ucl_object_typed_new(UCL_OBJECT);
-		put(top, "ok", ucl_object_frombool(true));
-		return (reply_json(req, 200, top));
-	}
+	keep = ucl_object_typed_new(UCL_ARRAY);
+	found = false;
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(top, "workflows"),
+	    &it, true)) != NULL)
+		if (strcmp(ucl_str(e, "id"), wid) == 0) {
+			found = true;
+			/* Said in the log, as a server removed is. */
+			log_msg(LOG_NOTICE, "workflow %s deleted: %s", wid,
+			    ucl_str(e, "name") != NULL ? ucl_str(e, "name") :
+			    "");
+		} else
+			ucl_array_append(keep, ucl_object_copy(e));
+	put(top, "workflows", keep);
+	if (found)
+		(void)store_save(WF_FILE, top);
 	pthread_mutex_unlock(&wf_lock);
 	ucl_object_unref(top);
-	if ((body = read_json(req)) == NULL)
-		return (reply_error(req, 400, "invalid", "a workflow, as JSON"));
-	w = wf_check(body, &why);
-	ucl_object_unref(body);
-	if (w == NULL)
-		return (reply_error(req, 400, "invalid", "%s", why));
+	if (!found)
+		return (404);
+	cyang_changed("workflows");
+	return (0);
+}
+
+/*
+ * Workflow in checked and kept, in its place or as the newest: *kept
+ * the one kept (its id made where it had none); 0, or the HTTP status
+ * and why.
+ */
+static int
+wf_keep(const ucl_object_t *in, ucl_object_t **kept, char *why, size_t len)
+{
+	ucl_object_t		*w, *top, *keep;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*bad, *id;
+	bool			 found;
+
+	if ((w = wf_check(in, &bad)) == NULL) {
+		snprintf(why, len, "%s", bad);
+		return (400);
+	}
 	/* In its place, or as the newest. */
 	pthread_mutex_lock(&wf_lock);
 	top = wf_load();
@@ -2761,8 +2716,8 @@ api_workflows(struct http_request *req)
 		ucl_object_unref(keep);
 		ucl_object_unref(top);
 		ucl_object_unref(w);
-		snprintf(buf, sizeof(buf), "%d workflows at most", WF_MAX);
-		return (reply_error(req, 409, "full", "%s", buf));
+		snprintf(why, len, "%d workflows at most", WF_MAX);
+		return (409);
 	}
 	if (!found)
 		ucl_array_append(keep, ucl_object_ref(w));
@@ -2773,25 +2728,154 @@ api_workflows(struct http_request *req)
 	    "name") != NULL ? ucl_str(w, "name") : "");
 	pthread_mutex_unlock(&wf_lock);
 	ucl_object_unref(top);
+	cyang_changed("workflows");
+	*kept = w;
+	return (0);
+}
+
+/*
+ * Workflow wid run by hand on hosts (NULL: its own) with params, each
+ * host's role the request's user's to change: *n its run; 0, or the
+ * HTTP status and why.  Without a reply.
+ */
+static int
+wf_run(struct http_request *req, const char *wid, const ucl_object_t *hosts,
+    const ucl_object_t *params, uint32_t *n, char *why, size_t len)
+{
+	ucl_object_t		*w;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*bad;
+
+	if ((w = wf_find(wid)) == NULL) {
+		snprintf(why, len, "no such workflow");
+		return (404);
+	}
+	it = NULL;
+	while ((e = ucl_object_iterate(hosts, &it, true)) != NULL) {
+		struct hostref	h;
+
+		if (!ref_get(ucl_object_tostring_forced(e), &h) ||
+		    user_host(session_user(req), ucl_object_tostring_forced(
+		    e)) == ROLE_NONE) {
+			ucl_object_unref(w);
+			snprintf(why, len, "no such server");
+			return (404);
+		}
+		/* A change on each host: the user's role there, as a job
+		 * on it would ask. */
+		if (!host_role_ok(req, ucl_object_tostring_forced(e), true,
+		    false)) {
+			ucl_object_unref(w);
+			snprintf(why, len, "a %s of host %s may not change it",
+			    role_name(user_host(session_user(req),
+			    ucl_object_tostring_forced(e))),
+			    ucl_object_tostring_forced(e));
+			return (403);
+		}
+	}
+	*n = run_start(w, hosts, params, NULL, "hand", session_user(req),
+	    &bad);
+	ucl_object_unref(w);
+	if (*n == 0) {
+		snprintf(why, len, "%s", bad);
+		return (409);
+	}
+	cyang_changed("runs");
+	return (0);
+}
+
+int
+api_workflows(struct http_request *req)
+{
+	ucl_object_t		*body, *w, *top, *hosts, *params;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*p;
+	char			 wid[9], why[200];
+	uint32_t		 n;
+	int			 rc;
+
+	refs_copy();
+	if (req->method == HTTP_METHOD_GET) {
+		if (!guard(req, false))
+			return (WEB_OK);
+		return (reply_list(req, WF_FILE, "workflows", true));
+	}
+	if (!guard(req, true))
+		return (WEB_OK);
+	/* /api/workflows/<id>[/run] */
+	wid[0] = '\0';
+	if (strncmp(req->path, "/api/workflows/", 15) == 0)
+		snprintf(wid, sizeof(wid), "%.8s", req->path + 15);
+	if (req->method == HTTP_METHOD_POST && (p = strstr(req->path,
+	    "/run")) != NULL && p[4] == '\0') {
+		if ((w = wf_find(wid)) == NULL)
+			return (reply_error(req, 404, "not-found", "no such "
+			    "workflow"));
+		ucl_object_unref(w);
+		body = read_json(req);
+		hosts = body != NULL ? (ucl_object_t *)(uintptr_t)
+		    ucl_object_lookup(body, "hosts") : NULL;
+		params = body != NULL ? (ucl_object_t *)(uintptr_t)
+		    ucl_object_lookup(body, "params") : NULL;
+		it = NULL;
+		while ((e = ucl_object_iterate(hosts, &it, true)) != NULL) {
+			struct hostref	h;
+
+			if (!ref_get(ucl_object_tostring_forced(e), &h)) {
+				ucl_object_unref(body);
+				return (reply_error(req, 404, "not_found",
+				    "no such server"));
+			}
+			if (!host_allowed(req, ucl_object_tostring_forced(e),
+			    true, false)) {
+				ucl_object_unref(body);
+				return (WEB_OK);
+			}
+		}
+		rc = wf_run(req, wid, hosts, params, &n, why, sizeof(why));
+		if (body != NULL)
+			ucl_object_unref(body);
+		if (rc != 0)
+			return (reply_error(req, rc, rc == 404 ? "not-found" :
+			    "not-run", "%s", why));
+		top = ucl_object_typed_new(UCL_OBJECT);
+		put(top, "run", ucl_object_fromint(n));
+		return (reply_json(req, 200, top));
+	}
+	if (req->method == HTTP_METHOD_DELETE) {
+		if (wf_delete(wid) != 0)
+			return (reply_error(req, 404, "not-found", "no such "
+			    "workflow"));
+		top = ucl_object_typed_new(UCL_OBJECT);
+		put(top, "ok", ucl_object_frombool(true));
+		return (reply_json(req, 200, top));
+	}
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "invalid", "a workflow, as JSON"));
+	rc = wf_keep(body, &w, why, sizeof(why));
+	ucl_object_unref(body);
+	if (rc != 0)
+		return (reply_error(req, rc, rc == 400 ? "invalid" : "full",
+		    "%s", why));
 	return (reply_json(req, 200, w));
 }
 
 /*
- * The history cleared: every run that has ended, of one workflow where
- * ?workflow= says, out of runs.json with its traces' file; a run going
- * on stays, its threads writing it still.
+ * The runs that ended forgotten, of workflow wid alone unless NULL,
+ * out of runs.json with their traces' files; a run going on stays, its
+ * threads writing it still.  How many.
  */
 static int
-runs_clear(struct http_request *req)
+runs_forget(const char *wid, const char *who)
 {
-	ucl_object_t		*top, *keep, *out;
+	ucl_object_t		*top, *keep;
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
-	char			 file[64], path[MAXPATHLEN], *wid;
+	char			 file[64], path[MAXPATHLEN];
 	int			 n = 0;
 
-	wid = NULL;
-	(void)http_argument_get_string(req, "workflow", &wid);
 	pthread_mutex_lock(&wf_lock);
 	if ((top = store_load(RUNS_FILE)) == NULL)
 		top = ucl_object_typed_new(UCL_OBJECT);
@@ -2816,33 +2900,41 @@ runs_clear(struct http_request *req)
 	pthread_mutex_unlock(&wf_lock);
 	ucl_object_unref(top);
 	log_msg(LOG_NOTICE, "runs: %d cleared%s%s by %s", n, wid != NULL ?
-	    " of workflow " : "", wid != NULL ? wid : "", session_user(req) !=
-	    NULL ? session_user(req) : "a token");
+	    " of workflow " : "", wid != NULL ? wid : "", who != NULL ? who :
+	    "a token");
+	cyang_changed("runs");
+	return (n);
+}
+
+/* The history cleared: ?workflow=, one's alone. */
+static int
+runs_clear(struct http_request *req)
+{
+	ucl_object_t	*out;
+	char		*wid;
+	int		 n;
+
+	wid = NULL;
+	(void)http_argument_get_string(req, "workflow", &wid);
+	n = runs_forget(wid, session_user(req));
 	out = ucl_object_typed_new(UCL_OBJECT);
 	put(out, "cleared", ucl_object_fromint(n));
 	return (reply_json(req, 200, out));
 }
 
-int
-api_runs(struct http_request *req)
+/*
+ * Of run n, step id approved by who (on any of its hosts: the run's
+ * threads see it when they look next), or, id NULL, the run stopped
+ * (when they write next).  0, or the HTTP status and why.
+ */
+static int
+run_mark(uint32_t n, const char *id, const char *who, char *why, size_t len)
 {
-	ucl_object_t		*top, *one;
-	ucl_object_t		*e;
-	ucl_object_iter_t	 it;
-	uint32_t		 n;
-	bool			 all;
+	ucl_object_t		*top, *one, *e, *a, *ap;
+	const ucl_object_t	*h, *st;
+	ucl_object_iter_t	 it, hit, sit;
+	bool			 waits;
 
-	all = strcmp(req->path, "/api/runs") == 0;
-	if (req->method == HTTP_METHOD_GET) {
-		if (!guard(req, false))
-			return (WEB_OK);
-		if (all)
-			return (reply_list(req, RUNS_FILE, "runs", false));
-	} else if (!guard(req, true))
-		return (WEB_OK);
-	if (all)
-		return (runs_clear(req));
-	n = (uint32_t)strtoul(req->path + sizeof("/api/runs/") - 1, NULL, 10);
 	pthread_mutex_lock(&wf_lock);
 	top = store_load(RUNS_FILE);
 	one = NULL;
@@ -2856,25 +2948,18 @@ api_runs(struct http_request *req)
 		pthread_mutex_unlock(&wf_lock);
 		if (top != NULL)
 			ucl_object_unref(top);
-		return (reply_error(req, 404, "not-found", "no such run"));
+		snprintf(why, len, "no such run");
+		return (404);
 	}
-	if (req->method == HTTP_METHOD_POST) {
-		/* An approval of a step that waits, on any of its hosts: the
-		 * run's threads see it when they look next. */
-		ucl_object_t		*in, *a, *one_ap;
-		const ucl_object_t	*h, *st;
-		ucl_object_iter_t	 hit, sit;
-		const char		*id;
-		bool			 waits;
-
-		if ((in = read_json(req)) == NULL || (id = ucl_str(in, "step")) ==
-		    NULL) {
+	if (id == NULL) {
+		if (strcmp(ucl_str(one, "state"), "running") != 0) {
 			pthread_mutex_unlock(&wf_lock);
 			ucl_object_unref(top);
-			if (in != NULL)
-				ucl_object_unref(in);
-			return (reply_error(req, 400, "invalid", "say the step"));
+			snprintf(why, len, "it ended");
+			return (409);
 		}
+		put(one, "cancel", ucl_object_frombool(true));
+	} else {
 		waits = false;
 		hit = NULL;
 		while ((h = ucl_object_iterate(ucl_object_lookup(one, "hosts"),
@@ -2883,61 +2968,56 @@ api_runs(struct http_request *req)
 			while ((st = ucl_object_iterate(ucl_object_lookup(h,
 			    "steps"), &sit, true)) != NULL)
 				waits = waits || (ucl_str(st, "id") != NULL &&
-				    strcmp(ucl_str(st, "id"), id) == 0 && ucl_str(st,
-				    "state") != NULL && strcmp(ucl_str(st, "state"),
-				    "waiting") == 0);
+				    strcmp(ucl_str(st, "id"), id) == 0 &&
+				    ucl_str(st, "state") != NULL && strcmp(
+				    ucl_str(st, "state"), "waiting") == 0);
 		}
 		if (strcmp(ucl_str(one, "state"), "running") != 0 || !waits) {
 			pthread_mutex_unlock(&wf_lock);
 			ucl_object_unref(top);
-			/* id is in's: the reply first. */
-			reply_error(req, 409, "not-waiting", "no step %s waits "
-			    "for an approval", id);
-			ucl_object_unref(in);
-			return (WEB_OK);
+			snprintf(why, len, "no step %s waits for an approval",
+			    id);
+			return (409);
 		}
 		if ((a = (ucl_object_t *)(uintptr_t)ucl_object_lookup(one,
 		    "approved")) == NULL) {
 			a = ucl_object_typed_new(UCL_ARRAY);
 			put(one, "approved", a);
 		}
-		one_ap = ucl_object_typed_new(UCL_OBJECT);
-		put(one_ap, "step", ucl_object_fromstring(id));
-		put(one_ap, "by", ucl_object_fromstring(session_user(req) != NULL ?
-		    session_user(req) : "?"));
-		put(one_ap, "at", ucl_object_fromint(time(NULL)));
-		ucl_array_append(a, one_ap);
-		(void)store_save(RUNS_FILE, top);
+		ap = ucl_object_typed_new(UCL_OBJECT);
+		put(ap, "step", ucl_object_fromstring(id));
+		put(ap, "by", ucl_object_fromstring(who != NULL ? who : "?"));
+		put(ap, "at", ucl_object_fromint(time(NULL)));
+		ucl_array_append(a, ap);
 		log_msg(LOG_NOTICE, "run %u: step %s approved by %s", n, id,
-		    ucl_str(one_ap, "by"));
-		pthread_mutex_unlock(&wf_lock);
-		ucl_object_unref(top);
-		ucl_object_unref(in);
-		top = ucl_object_typed_new(UCL_OBJECT);
-		put(top, "ok", ucl_object_frombool(true));
-		return (reply_json(req, 200, top));
+		    ucl_str(ap, "by"));
 	}
-	if (req->method == HTTP_METHOD_DELETE) {
-		/* A stop: the run's threads see it when they write next. */
-		if (strcmp(ucl_str(one, "state"), "running") != 0) {
-			pthread_mutex_unlock(&wf_lock);
-			ucl_object_unref(top);
-			return (reply_error(req, 409, "ended", "it ended"));
-		}
-		put(one, "cancel", ucl_object_frombool(true));
-		(void)store_save(RUNS_FILE, top);
-		pthread_mutex_unlock(&wf_lock);
-		ucl_object_unref(top);
-		top = ucl_object_typed_new(UCL_OBJECT);
-		put(top, "ok", ucl_object_frombool(true));
-		return (reply_json(req, 200, top));
-	}
-	/* With its traces, from its own file; its state as the list has
-	 * it, which a restart may have made interrupted. */
-	{
-		ucl_object_t	*full;
-		char		 file[64];
+	(void)store_save(RUNS_FILE, top);
+	pthread_mutex_unlock(&wf_lock);
+	ucl_object_unref(top);
+	cyang_changed("runs");
+	return (0);
+}
 
+/* Run n with its traces, from its own file; its state as the list has
+ * it, which a restart may have made interrupted.  NULL: none. */
+static ucl_object_t *
+run_full(uint32_t n)
+{
+	ucl_object_t		*top, *one, *full;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	char			 file[64];
+
+	pthread_mutex_lock(&wf_lock);
+	top = store_load(RUNS_FILE);
+	one = NULL;
+	it = NULL;
+	while (top != NULL && (e = ucl_object_iterate(ucl_object_lookup(top,
+	    "runs"), &it, true)) != NULL)
+		if ((uint32_t)ucl_object_toint(ucl_object_lookup(e, "id")) == n)
+			one = (ucl_object_t *)(uintptr_t)e;
+	if (one != NULL) {
 		if ((full = store_load(run_file(n, file, sizeof(file)))) !=
 		    NULL) {
 			put(full, "state", ucl_object_copy(ucl_object_lookup(
@@ -2949,6 +3029,731 @@ api_runs(struct http_request *req)
 			one = ucl_object_ref(one);
 	}
 	pthread_mutex_unlock(&wf_lock);
-	ucl_object_unref(top);
+	if (top != NULL)
+		ucl_object_unref(top);
+	return (one);
+}
+
+int
+api_runs(struct http_request *req)
+{
+	ucl_object_t	*in, *top, *one;
+	char		 why[200];
+	uint32_t	 n;
+	int		 rc;
+	bool		 all;
+
+	all = strcmp(req->path, "/api/runs") == 0;
+	if (req->method == HTTP_METHOD_GET) {
+		if (!guard(req, false))
+			return (WEB_OK);
+		if (all)
+			return (reply_list(req, RUNS_FILE, "runs", false));
+	} else if (!guard(req, true))
+		return (WEB_OK);
+	if (all)
+		return (runs_clear(req));
+	n = (uint32_t)strtoul(req->path + sizeof("/api/runs/") - 1, NULL, 10);
+	if (req->method == HTTP_METHOD_POST) {
+		/* An approval of a step that waits, on any of its hosts. */
+		if ((in = read_json(req)) == NULL || ucl_str(in, "step") ==
+		    NULL) {
+			if ((one = run_full(n)) == NULL) {
+				if (in != NULL)
+					ucl_object_unref(in);
+				return (reply_error(req, 404, "not-found",
+				    "no such run"));
+			}
+			ucl_object_unref(one);
+			if (in != NULL)
+				ucl_object_unref(in);
+			return (reply_error(req, 400, "invalid", "say the step"));
+		}
+		rc = run_mark(n, ucl_str(in, "step"), session_user(req) != NULL ?
+		    session_user(req) : "?", why, sizeof(why));
+		ucl_object_unref(in);
+		if (rc != 0)
+			return (reply_error(req, rc, rc == 404 ? "not-found" :
+			    "not-waiting", "%s", why));
+		top = ucl_object_typed_new(UCL_OBJECT);
+		put(top, "ok", ucl_object_frombool(true));
+		return (reply_json(req, 200, top));
+	}
+	if (req->method == HTTP_METHOD_DELETE) {
+		/* A stop: the run's threads see it when they write next. */
+		if ((rc = run_mark(n, NULL, NULL, why, sizeof(why))) != 0)
+			return (reply_error(req, rc, rc == 404 ? "not-found" :
+			    "ended", "%s", why));
+		top = ucl_object_typed_new(UCL_OBJECT);
+		put(top, "ok", ucl_object_frombool(true));
+		return (reply_json(req, 200, top));
+	}
+	if ((one = run_full(n)) == NULL)
+		return (reply_error(req, 404, "not-found", "no such run"));
 	return (reply_json(req, 200, one));
+}
+
+/* ---- arcana-console's workflows and runs (cyang.c) ------------------- */
+
+static ucl_object_t *
+json_text(const ucl_object_t *o)
+{
+	unsigned char	*s;
+	ucl_object_t	*v;
+
+	s = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+	v = ucl_object_fromstring(s != NULL ? (char *)s : "null");
+	free(s);
+	return (v);
+}
+
+/* List l as o's key, where it has an entry. */
+static void
+put_list(ucl_object_t *o, const char *key, ucl_object_t *l)
+{
+
+	if (ucl_array_size(l) > 0)
+		put(o, key, l);
+	else
+		ucl_object_unref(l);
+}
+
+/* Value x into o as its leaf has it: text (named text), number, flag,
+ * or a list's or map's json. */
+static void
+typed_into(ucl_object_t *o, const char *text, const ucl_object_t *x)
+{
+	char	num[24];
+
+	switch (ucl_object_type(x)) {
+	case UCL_STRING:
+		put(o, text, ucl_object_fromstring(ucl_object_tostring(x)));
+		break;
+	case UCL_INT:
+		/* int64: a string, RFC 7951's. */
+		snprintf(num, sizeof(num), "%jd", (intmax_t)ucl_object_toint(x));
+		put(o, "number", ucl_object_fromstring(num));
+		break;
+	case UCL_BOOLEAN:
+		put(o, "flag", ucl_object_frombool(ucl_object_toboolean(x)));
+		break;
+	default:
+		put(o, "json", json_text(x));
+		break;
+	}
+}
+
+/* The value typed_into() put into y, as it was; NULL: its json is not
+ * JSON. */
+static ucl_object_t *
+typed_of(const ucl_object_t *y, const char *text)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*v;
+
+	if (ucl_object_lookup(y, "number") != NULL)
+		return (ucl_object_fromint(strtoll(ucl_object_tostring_forced(
+		    ucl_object_lookup(y, "number")), NULL, 10)));
+	if (ucl_object_lookup(y, "flag") != NULL)
+		return (ucl_object_frombool(ucl_flag(y, "flag")));
+	if (ucl_str(y, "json") != NULL) {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO);
+		v = ucl_parser_add_string(p, ucl_str(y, "json"), 0) ?
+		    ucl_parser_get_object(p) : NULL;
+		ucl_parser_free(p);
+		return (v);
+	}
+	return (ucl_object_fromstring(ucl_str(y, text) != NULL ? ucl_str(y,
+	    text) : ""));
+}
+
+/* A workflow kept as its entry of arcana-console's workflow list. */
+static ucl_object_t *
+wf_yang(const ucl_object_t *w)
+{
+	static const char *const tests[] = { "read", "step", "path", "op",
+	    "value" };
+	ucl_object_t		*o, *l, *e, *s, *j, *f, *m;
+	const ucl_object_t	*v, *st, *x;
+	ucl_object_iter_t	 it, xit;
+	char			 num[24];
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "id", ucl_object_fromstring(ucl_str(w, "id")));
+	put(o, "name", ucl_object_fromstring(ucl_str(w, "name") != NULL ?
+	    ucl_str(w, "name") : ""));
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(w, "hosts"), &it,
+	    true)) != NULL)
+		ucl_array_append(l, ucl_object_fromstring(
+		    ucl_object_tostring_forced(v)));
+	put_list(o, "host", l);
+	put(o, "serial", ucl_object_frombool(ucl_flag(w, "serial")));
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(w, "params"), &it,
+	    true)) != NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "name", ucl_object_fromstring(ucl_str(v, "name")));
+		put(e, "default", ucl_object_fromstring(ucl_str(v, "default") !=
+		    NULL ? ucl_str(v, "default") : ""));
+		ucl_array_append(l, e);
+	}
+	put_list(o, "param", l);
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((st = ucl_object_iterate(ucl_object_lookup(w, "steps"), &it,
+	    true)) != NULL) {
+		s = ucl_object_typed_new(UCL_OBJECT);
+		put(s, "id", ucl_object_fromstring(ucl_str(st, "id")));
+		if (ucl_str(st, "name") != NULL)
+			put(s, "name", ucl_object_fromstring(ucl_str(st,
+			    "name")));
+		if ((v = ucl_object_lookup(st, "job")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			put(j, "kind", ucl_object_fromstring(ucl_str(v,
+			    "kind")));
+			f = ucl_object_typed_new(UCL_ARRAY);
+			xit = NULL;
+			while ((x = ucl_object_iterate(v, &xit, true)) != NULL) {
+				if (strcmp(ucl_object_key(x), "kind") == 0)
+					continue;
+				e = ucl_object_typed_new(UCL_OBJECT);
+				put(e, "name", ucl_object_fromstring(
+				    ucl_object_key(x)));
+				switch (ucl_object_type(x)) {
+				case UCL_STRING:
+					put(e, "text", ucl_object_fromstring(
+					    ucl_object_tostring(x)));
+					break;
+				case UCL_INT:
+					/* int64: a string, RFC 7951's. */
+					snprintf(num, sizeof(num), "%jd",
+					    (intmax_t)ucl_object_toint(x));
+					put(e, "number", ucl_object_fromstring(
+					    num));
+					break;
+				case UCL_BOOLEAN:
+					put(e, "flag", ucl_object_frombool(
+					    ucl_object_toboolean(x)));
+					break;
+				default:
+					put(e, "json", json_text(x));
+					break;
+				}
+				ucl_array_append(f, e);
+			}
+			put_list(j, "field", f);
+			put(s, "job", j);
+		} else if ((v = ucl_object_lookup(st, "notify")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			put(j, "via", ucl_object_fromstring(ucl_str(v, "via")));
+			put(j, "text", ucl_object_fromstring(ucl_str(v, "text")));
+			put(s, "notify", j);
+		} else if ((v = ucl_object_lookup(st, "approval")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			put(j, "text", ucl_object_fromstring(ucl_str(v, "text")));
+			if (ucl_str(v, "via") != NULL && ucl_str(v, "via")[0] !=
+			    '\0')
+				put(j, "via", ucl_object_fromstring(ucl_str(v,
+				    "via")));
+			if (ucl_object_lookup(v, "timeout") != NULL)
+				put(j, "timeout", ucl_object_fromint(
+				    ucl_object_toint(ucl_object_lookup(v,
+				    "timeout"))));
+			put(s, "approval", j);
+		} else if (ucl_str(st, "arcana") != NULL)
+			put(s, "arcana", ucl_object_fromstring(ucl_str(st,
+			    "arcana")));
+		else if (ucl_str(st, "read") != NULL)
+			put(s, "read", ucl_object_fromstring(ucl_str(st,
+			    "read")));
+		if ((v = ucl_object_lookup(st, "when")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			for (size_t i = 0; i < nitems(tests); i++)
+				if (ucl_str(v, tests[i]) != NULL)
+					put(j, tests[i], ucl_object_fromstring(
+					    ucl_str(v, tests[i])));
+			put(s, "when", j);
+		}
+		put(s, "on-fail", ucl_object_fromstring(ucl_str(st,
+		    "on_fail") != NULL ? ucl_str(st, "on_fail") : "stop"));
+		put(s, "destroys", ucl_object_frombool(ucl_flag(st,
+		    "destroys")));
+		ucl_array_append(l, s);
+	}
+	put_list(o, "step", l);
+	put(o, "every", ucl_object_fromint(ucl_object_toint(ucl_object_lookup(
+	    w, "every"))));
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(w, "on"), &it,
+	    true)) != NULL) {
+		/* Keyed by its place: two of one kind are both there. */
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "index", ucl_object_fromint((int64_t)ucl_array_size(l)));
+		put(e, "event", ucl_object_fromstring(ucl_str(v, "event")));
+		m = ucl_object_typed_new(UCL_ARRAY);
+		xit = NULL;
+		while ((x = ucl_object_iterate(ucl_object_lookup(v, "match"),
+		    &xit, true)) != NULL) {
+			f = ucl_object_typed_new(UCL_OBJECT);
+			put(f, "name", ucl_object_fromstring(ucl_object_key(x)));
+			typed_into(f, "value", x);
+			ucl_array_append(m, f);
+		}
+		put_list(e, "match", m);
+		ucl_array_append(l, e);
+	}
+	put_list(o, "on", l);
+	put(o, "destructive", ucl_object_frombool(ucl_flag(w,
+	    "destructive")));
+	if (ucl_object_lookup(w, "changed") != NULL)
+		put(o, "changed", yang_time((double)ucl_object_toint(
+		    ucl_object_lookup(w, "changed"))));
+	return (o);
+}
+
+/* arcana-console:workflows's value. */
+ucl_object_t *
+workflows_yang(void)
+{
+	ucl_object_t		*top, *o, *l;
+	const ucl_object_t	*w;
+	ucl_object_iter_t	 it;
+
+	pthread_mutex_lock(&wf_lock);
+	top = wf_load();
+	pthread_mutex_unlock(&wf_lock);
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((w = ucl_object_iterate(ucl_object_lookup(top, "workflows"),
+	    &it, true)) != NULL)
+		if (ucl_str(w, "id") != NULL)
+			ucl_array_append(l, wf_yang(w));
+	ucl_object_unref(top);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "workflow", l);
+	return (o);
+}
+
+/* An entry of the workflow list made a workflow as /api takes it: NULL
+ * and why, a field's JSON that is not. */
+static ucl_object_t *
+wf_of_yang(const ucl_object_t *y, char *why, size_t len)
+{
+	static const char *const tests[] = { "read", "step", "path", "op",
+	    "value" };
+	struct ucl_parser	*p;
+	ucl_object_t		*w, *l, *s, *j, *e, *m;
+	const ucl_object_t	*v, *st, *x;
+	ucl_object_iter_t	 it, xit;
+
+	w = ucl_object_typed_new(UCL_OBJECT);
+	put(w, "id", ucl_object_fromstring(ucl_str(y, "id")));
+	put(w, "name", ucl_object_fromstring(ucl_str(y, "name") != NULL ?
+	    ucl_str(y, "name") : ""));
+	put(w, "hosts", ucl_object_lookup(y, "host") != NULL ?
+	    ucl_object_copy(ucl_object_lookup(y, "host")) :
+	    ucl_object_typed_new(UCL_ARRAY));
+	put(w, "serial", ucl_object_frombool(ucl_flag(y, "serial")));
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(y, "param"), &it,
+	    true)) != NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "name", ucl_object_fromstring(ucl_str(v, "name")));
+		if (ucl_str(v, "default") != NULL)
+			put(e, "default", ucl_object_fromstring(ucl_str(v,
+			    "default")));
+		ucl_array_append(l, e);
+	}
+	put(w, "params", l);
+	l = ucl_object_typed_new(UCL_ARRAY);
+	put(w, "steps", l);
+	it = NULL;
+	while ((st = ucl_object_iterate(ucl_object_lookup(y, "step"), &it,
+	    true)) != NULL) {
+		s = ucl_object_typed_new(UCL_OBJECT);
+		ucl_array_append(l, s);
+		put(s, "id", ucl_object_fromstring(ucl_str(st, "id")));
+		if (ucl_str(st, "name") != NULL)
+			put(s, "name", ucl_object_fromstring(ucl_str(st,
+			    "name")));
+		if ((v = ucl_object_lookup(st, "job")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			put(j, "kind", ucl_object_fromstring(ucl_str(v,
+			    "kind")));
+			xit = NULL;
+			while ((x = ucl_object_iterate(ucl_object_lookup(v,
+			    "field"), &xit, true)) != NULL) {
+				const char	*k = ucl_str(x, "name");
+
+				if (ucl_object_lookup(x, "number") != NULL)
+					put(j, k, ucl_object_fromint(strtoll(
+					    ucl_object_tostring_forced(
+					    ucl_object_lookup(x, "number")),
+					    NULL, 10)));
+				else if (ucl_object_lookup(x, "flag") != NULL)
+					put(j, k, ucl_object_frombool(
+					    ucl_flag(x, "flag")));
+				else if (ucl_str(x, "json") != NULL) {
+					p = ucl_parser_new(
+					    UCL_PARSER_NO_IMPLICIT_ARRAYS |
+					    UCL_PARSER_DISABLE_MACRO);
+					m = ucl_parser_add_string(p, ucl_str(x,
+					    "json"), 0) ? ucl_parser_get_object(
+					    p) : NULL;
+					ucl_parser_free(p);
+					if (m == NULL) {
+						snprintf(why, len, "step %s: "
+						    "%s's json is not JSON",
+						    ucl_str(st, "id"), k);
+						ucl_object_unref(j);
+						ucl_object_unref(w);
+						return (NULL);
+					}
+					put(j, k, m);
+				} else
+					put(j, k, ucl_object_fromstring(
+					    ucl_str(x, "text") != NULL ?
+					    ucl_str(x, "text") : ""));
+			}
+			put(s, "job", j);
+		} else if ((v = ucl_object_lookup(st, "notify")) != NULL)
+			put(s, "notify", ucl_object_copy(v));
+		else if ((v = ucl_object_lookup(st, "approval")) != NULL)
+			put(s, "approval", ucl_object_copy(v));
+		else if (ucl_str(st, "arcana") != NULL)
+			put(s, "arcana", ucl_object_fromstring(ucl_str(st,
+			    "arcana")));
+		else if (ucl_str(st, "read") != NULL)
+			put(s, "read", ucl_object_fromstring(ucl_str(st,
+			    "read")));
+		if ((v = ucl_object_lookup(st, "when")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			for (size_t i = 0; i < nitems(tests); i++)
+				if (ucl_str(v, tests[i]) != NULL)
+					put(j, tests[i], ucl_object_fromstring(
+					    ucl_str(v, tests[i])));
+			put(s, "when", j);
+		}
+		if (ucl_str(st, "on-fail") != NULL)
+			put(s, "on_fail", ucl_object_fromstring(ucl_str(st,
+			    "on-fail")));
+	}
+	put(w, "every", ucl_object_fromint(ucl_object_toint(ucl_object_lookup(
+	    y, "every"))));
+	/* The events in their places' order. */
+	l = ucl_object_typed_new(UCL_ARRAY);
+	for (int64_t i = 0; i < 8; i++) {
+		it = NULL;
+		while ((v = ucl_object_iterate(ucl_object_lookup(y, "on"), &it,
+		    true)) != NULL && ucl_object_toint(ucl_object_lookup(v,
+		    "index")) != i)
+			;
+		if (v == NULL)
+			continue;
+		e = ucl_object_typed_new(UCL_OBJECT);
+		ucl_array_append(l, e);
+		put(e, "event", ucl_object_fromstring(ucl_str(v, "event")));
+		m = ucl_object_typed_new(UCL_OBJECT);
+		if (ucl_object_lookup(v, "match") != NULL)
+			put(e, "match", m);
+		else
+			ucl_object_unref(m);
+		xit = NULL;
+		while ((x = ucl_object_iterate(ucl_object_lookup(v, "match"),
+		    &xit, true)) != NULL) {
+			ucl_object_t	*val;
+
+			if ((val = typed_of(x, "value")) == NULL) {
+				snprintf(why, len, "event %s: %s's json is not "
+				    "JSON", ucl_str(v, "event"), ucl_str(x,
+				    "name"));
+				ucl_object_unref(l);
+				ucl_object_unref(w);
+				return (NULL);
+			}
+			put(m, ucl_str(x, "name"), val);
+		}
+	}
+	put(w, "on", l);
+	put(w, "destructive", ucl_object_frombool(ucl_flag(y, "destructive")));
+	return (w);
+}
+
+/* An entry without what the console says of it (when it changed, which
+ * steps destroy). */
+static ucl_object_t *
+wf_config(const ucl_object_t *y)
+{
+	ucl_object_t		*c;
+	const ucl_object_t	*s;
+	ucl_object_iter_t	 it = NULL;
+
+	c = ucl_object_copy(y);
+	(void)ucl_object_delete_key(c, "changed");
+	while ((s = ucl_object_iterate(ucl_object_lookup(c, "step"), &it,
+	    true)) != NULL)
+		(void)ucl_object_delete_key((ucl_object_t *)(uintptr_t)s,
+		    "destroys");
+	return (c);
+}
+
+static const ucl_object_t *
+wf_entry(const ucl_object_t *list, const char *id)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+
+	while ((e = ucl_object_iterate(list, &it, true)) != NULL)
+		if (ucl_str(e, "id") != NULL && strcmp(ucl_str(e, "id"), id) ==
+		    0)
+			return (e);
+	return (NULL);
+}
+
+/*
+ * The workflows changed from was to now: each made or changed kept by
+ * the check /api's go through, each left out deleted.  All or nothing:
+ * the workflows kept before put back on a refusal.  0, or the HTTP
+ * status and why.
+ */
+int
+workflows_yang_set(const ucl_object_t *was, const ucl_object_t *now,
+    char *why, size_t len)
+{
+	ucl_object_t		*saved, *in, *a, *b, *kept;
+	const ucl_object_t	*e, *o;
+	ucl_object_iter_t	 it;
+	int			 rc = 0;
+	bool			 same;
+
+	refs_copy();
+	pthread_mutex_lock(&wf_lock);
+	saved = wf_load();
+	pthread_mutex_unlock(&wf_lock);
+	it = NULL;
+	while (rc == 0 && (e = ucl_object_iterate(ucl_object_lookup(now,
+	    "workflow"), &it, true)) != NULL) {
+		if ((o = wf_entry(ucl_object_lookup(was, "workflow"), ucl_str(e,
+		    "id"))) != NULL) {
+			a = wf_config(o);
+			b = wf_config(e);
+			same = ucl_object_compare(a, b) == 0;
+			ucl_object_unref(a);
+			ucl_object_unref(b);
+			if (same)
+				continue;
+		}
+		if ((in = wf_of_yang(e, why, len)) == NULL) {
+			rc = 400;
+			break;
+		}
+		if ((rc = wf_keep(in, &kept, why, len)) == 0)
+			ucl_object_unref(kept);
+		ucl_object_unref(in);
+	}
+	it = NULL;
+	while (rc == 0 && (o = ucl_object_iterate(ucl_object_lookup(was,
+	    "workflow"), &it, true)) != NULL)
+		if (wf_entry(ucl_object_lookup(now, "workflow"), ucl_str(o,
+		    "id")) == NULL)
+			(void)wf_delete(ucl_str(o, "id"));
+	if (rc != 0) {
+		pthread_mutex_lock(&wf_lock);
+		(void)store_save(WF_FILE, saved);
+		pthread_mutex_unlock(&wf_lock);
+		cyang_changed("workflows");
+	}
+	ucl_object_unref(saved);
+	return (rc);
+}
+
+/* The run action of workflow wid, input its input: *n the run. */
+int
+workflows_yang_run(struct http_request *req, const char *wid,
+    const ucl_object_t *input, uint32_t *n, char *why, size_t len)
+{
+	ucl_object_t		*params;
+	const ucl_object_t	*p;
+	ucl_object_iter_t	 it = NULL;
+	int			 rc;
+
+	refs_copy();
+	params = ucl_object_typed_new(UCL_OBJECT);
+	while ((p = ucl_object_iterate(ucl_object_lookup(input, "param"), &it,
+	    true)) != NULL)
+		if (ucl_str(p, "name") != NULL)
+			put(params, ucl_str(p, "name"), ucl_object_fromstring(
+			    ucl_str(p, "value") != NULL ? ucl_str(p, "value") :
+			    ""));
+	rc = wf_run(req, wid, ucl_object_lookup(input, "host"), params, n,
+	    why, len);
+	ucl_object_unref(params);
+	return (rc);
+}
+
+/* A time of runs.json's (seconds, a fraction of one maybe) as a leaf. */
+static void
+time_into(ucl_object_t *o, const char *key, const ucl_object_t *v)
+{
+
+	if (v != NULL && ucl_object_todouble(v) > 0)
+		put(o, key, yang_time(ucl_object_todouble(v)));
+}
+
+/* A run as its entry of arcana-console's run list, its traces when it
+ * has them. */
+static ucl_object_t *
+run_yang(const ucl_object_t *r)
+{
+	static const char *const strs[] = { "workflow", "name", "trigger",
+	    "state" };
+	static const char *const sstrs[] = { "state", "title", "error" };
+	ucl_object_t		*o, *l, *e, *hl, *sl, *s;
+	const ucl_object_t	*v, *h, *st, *x;
+	ucl_object_iter_t	 it, hit, sit;
+	char			 num[24];
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "id", ucl_object_fromint(ucl_object_toint(ucl_object_lookup(r,
+	    "id"))));
+	for (size_t i = 0; i < nitems(strs); i++)
+		if (ucl_str(r, strs[i]) != NULL)
+			put(o, strs[i], ucl_object_fromstring(ucl_str(r,
+			    strs[i])));
+	if (ucl_str(r, "started_by") != NULL)
+		put(o, "started-by", ucl_object_fromstring(ucl_str(r,
+		    "started_by")));
+	time_into(o, "started", ucl_object_lookup(r, "started"));
+	time_into(o, "ended", ucl_object_lookup(r, "ended"));
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(r, "params"), &it,
+	    true)) != NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "name", ucl_object_fromstring(ucl_object_key(v)));
+		put(e, "value", ucl_object_fromstring(
+		    ucl_object_tostring_forced(v)));
+		ucl_array_append(l, e);
+	}
+	put_list(o, "param", l);
+	if ((v = ucl_object_lookup(r, "event")) != NULL)
+		put(o, "event", json_text(v));
+	if (ucl_flag(r, "cancel"))
+		put(o, "cancel", ucl_object_frombool(true));
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(r, "approved"), &it,
+	    true)) != NULL) {
+		const ucl_object_t	*y;
+		ucl_object_iter_t	 yit = NULL;
+		bool			 dup = false;
+
+		if (ucl_str(v, "step") == NULL)
+			continue;
+		while ((y = ucl_object_iterate(l, &yit, true)) != NULL)
+			dup = dup || strcmp(ucl_str(y, "step"), ucl_str(v,
+			    "step")) == 0;
+		if (dup)
+			continue;
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "step", ucl_object_fromstring(ucl_str(v, "step")));
+		if (ucl_str(v, "by") != NULL)
+			put(e, "by", ucl_object_fromstring(ucl_str(v, "by")));
+		time_into(e, "at", ucl_object_lookup(v, "at"));
+		ucl_array_append(l, e);
+	}
+	put_list(o, "approved", l);
+	hl = ucl_object_typed_new(UCL_ARRAY);
+	hit = NULL;
+	while ((h = ucl_object_iterate(ucl_object_lookup(r, "hosts"), &hit,
+	    true)) != NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "id", ucl_object_fromstring(ucl_str(h, "id")));
+		if (ucl_str(h, "name") != NULL)
+			put(e, "name", ucl_object_fromstring(ucl_str(h, "name")));
+		if (ucl_str(h, "state") != NULL)
+			put(e, "state", ucl_object_fromstring(ucl_str(h,
+			    "state")));
+		sl = ucl_object_typed_new(UCL_ARRAY);
+		sit = NULL;
+		while ((st = ucl_object_iterate(ucl_object_lookup(h, "steps"),
+		    &sit, true)) != NULL) {
+			s = ucl_object_typed_new(UCL_OBJECT);
+			put(s, "id", ucl_object_fromstring(ucl_str(st, "id")));
+			for (size_t i = 0; i < nitems(sstrs); i++)
+				if (ucl_str(st, sstrs[i]) != NULL)
+					put(s, sstrs[i], ucl_object_fromstring(
+					    ucl_str(st, sstrs[i])));
+			if ((x = ucl_object_lookup(st, "job")) != NULL) {
+				/* uint64: a string, RFC 7951's. */
+				snprintf(num, sizeof(num), "%ju",
+				    (uintmax_t)ucl_object_toint(x));
+				put(s, "job", ucl_object_fromstring(num));
+			}
+			time_into(s, "started", ucl_object_lookup(st,
+			    "started"));
+			time_into(s, "ended", ucl_object_lookup(st, "ended"));
+			if ((x = ucl_object_lookup(st, "trace")) != NULL)
+				put(s, "trace", json_text(x));
+			ucl_array_append(sl, s);
+		}
+		put_list(e, "step", sl);
+		ucl_array_append(hl, e);
+	}
+	put_list(o, "host", hl);
+	return (o);
+}
+
+/* arcana-console:runs's value: the last runs; run one (unless 0) with
+ * its traces. */
+ucl_object_t *
+runs_yang(uint32_t one)
+{
+	ucl_object_t		*top, *o, *l, *full;
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it;
+
+	pthread_mutex_lock(&wf_lock);
+	top = store_load(RUNS_FILE);
+	pthread_mutex_unlock(&wf_lock);
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while (top != NULL && (r = ucl_object_iterate(ucl_object_lookup(top,
+	    "runs"), &it, true)) != NULL) {
+		if (one != 0 && (uint32_t)ucl_object_toint(ucl_object_lookup(r,
+		    "id")) == one && (full = run_full(one)) != NULL) {
+			ucl_array_append(l, run_yang(full));
+			ucl_object_unref(full);
+		} else
+			ucl_array_append(l, run_yang(r));
+	}
+	if (top != NULL)
+		ucl_object_unref(top);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "run", l);
+	return (o);
+}
+
+/* The approve (step not NULL) and stop actions of run n. */
+int
+runs_yang_mark(uint32_t n, const char *step, const char *who, char *why,
+    size_t len)
+{
+
+	return (run_mark(n, step, step != NULL ? (who != NULL ? who : "?") :
+	    NULL, why, len));
+}
+
+/* The clear action: how many forgotten. */
+int
+runs_yang_clear(const char *wid, const char *who)
+{
+
+	return (runs_forget(wid, who));
 }

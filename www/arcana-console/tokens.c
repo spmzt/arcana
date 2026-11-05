@@ -73,6 +73,11 @@ bool
 token_readable(const char *path)
 {
 
+	/* arcana-console's settings and enrolment as /api's. */
+	if (strncmp(path, CYANG_DATA "settings", sizeof(CYANG_DATA) + 7) ==
+	    0 || strncmp(path, CYANG_DATA "enrolment", sizeof(CYANG_DATA) +
+	    8) == 0)
+		return (false);
 	if (strcmp(path, "/restconf") == 0 || strncmp(path, "/restconf/",
 	    10) == 0)
 		return (true);
@@ -92,7 +97,11 @@ token_writable(const char *path)
 	return (token_readable(path) && strncmp(path, "/api/tokens", 11) !=
 	    0 && strncmp(path, "/api/ca", 7) != 0 && strncmp(path,
 	    "/api/users", 10) != 0 && strncmp(path, "/api/roles", 10) != 0 &&
-	    strncmp(path, "/api/groups", 11) != 0);
+	    strncmp(path, "/api/groups", 11) != 0 && strncmp(path, CYANG_DATA
+	    "tokens", sizeof(CYANG_DATA) + 5) != 0 && strncmp(path, CYANG_DATA
+	    "users", sizeof(CYANG_DATA) + 4) != 0 && strncmp(path, CYANG_DATA
+	    "roles", sizeof(CYANG_DATA) + 4) != 0 && strncmp(path, CYANG_DATA
+	    "groups", sizeof(CYANG_DATA) + 5) != 0);
 }
 
 static void
@@ -194,6 +203,7 @@ tokens_save(void)
 	if (rc == 0 && stat(path, &sb) == 0)
 		tokens_mtime = sb.st_mtim;
 	tokens_saved = time(NULL);
+	cyang_changed("tokens");
 	return (rc);
 }
 
@@ -293,6 +303,79 @@ token_who(struct http_request *req)
 }
 
 /*
+ * A token of name and kind (NULL: read) made and kept, its id and its
+ * value (said once; TOKEN_LEN bytes) into id and value: 0, or
+ * the HTTP status and why.
+ */
+int
+token_new(const char *name, const char *kind, char *id, char *value,
+    char *why, size_t len)
+{
+	uint8_t	raw[32];
+	bool	write;
+
+	tokens_load();
+	if (name == NULL || name[0] == '\0' || strlen(name) > 64) {
+		snprintf(why, len, "a token has a name of 1 to 64 characters");
+		return (400);
+	}
+	if (kind != NULL && strcmp(kind, "read") != 0 && strcmp(kind,
+	    "write") != 0) {
+		snprintf(why, len, "a token's kind is read or write");
+		return (400);
+	}
+	write = kind != NULL && strcmp(kind, "write") == 0;
+	if (ntokens == TOKENS_MAX) {
+		snprintf(why, len, "%d tokens at most: delete one first",
+		    TOKENS_MAX);
+		return (409);
+	}
+	arc4random_buf(raw, sizeof(raw));
+	memcpy(value, write ? TOKEN_WPREFIX : TOKEN_PREFIX,
+	    strlen(TOKEN_PREFIX));
+	hex(raw, sizeof(raw), value + strlen(TOKEN_PREFIX));
+	memset(&tokens[ntokens], 0, sizeof(tokens[ntokens]));
+	digest(value, tokens[ntokens].hash);
+	hex(tokens[ntokens].hash, 8, tokens[ntokens].id);
+	snprintf(tokens[ntokens].name, sizeof(tokens[ntokens].name), "%s",
+	    name);
+	tokens[ntokens].created = time(NULL);
+	tokens[ntokens].write = write;
+	ntokens++;
+	explicit_bzero(raw, sizeof(raw));
+	if (tokens_save() != 0) {
+		ntokens--;
+		explicit_bzero(value, TOKEN_LEN);
+		snprintf(why, len, "the token could not be written");
+		return (500);
+	}
+	snprintf(id, 17, "%s", tokens[ntokens - 1].id);
+	return (0);
+}
+
+/* Token id gone: 0, or the HTTP status and why. */
+int
+token_drop(const char *id, char *why, size_t len)
+{
+	int	i;
+
+	tokens_load();
+	for (i = 0; i < ntokens; i++)
+		if (strcmp(tokens[i].id, id) == 0)
+			break;
+	if (i == ntokens) {
+		snprintf(why, len, "no such token");
+		return (404);
+	}
+	tokens[i] = tokens[--ntokens];
+	if (tokens_save() != 0) {
+		snprintf(why, len, "the tokens could not be written");
+		return (500);
+	}
+	return (0);
+}
+
+/*
  * GET /api/tokens: the tokens, without what opens them.
  * POST /api/tokens {"name", "kind": "read"|"write"}: a new one, a read
  * one unless said, its value in the reply only.
@@ -302,11 +385,9 @@ int
 api_tokens(struct http_request *req)
 {
 	ucl_object_t	*top, *a, *e, *body;
-	const char	*name, *id, *kind;
-	uint8_t		 raw[32];
-	bool		 write;
-	char		 value[sizeof(TOKEN_PREFIX) + 64];
-	int		 i;
+	const char	*id, *kind;
+	char		 value[TOKEN_LEN], tid[17], why[128];
+	int		 i, rc;
 
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
@@ -331,68 +412,110 @@ api_tokens(struct http_request *req)
 	 * through where something changes. */
 	if (!guard(req, true))
 		return (WEB_OK);
-	tokens_load();
 	if (req->method == HTTP_METHOD_DELETE) {
 		id = strrchr(req->path, '/') != NULL ? strrchr(req->path, '/') +
 		    1 : "";
-		for (i = 0; i < ntokens; i++)
-			if (strcmp(tokens[i].id, id) == 0)
-				break;
-		if (i == ntokens)
-			return (reply_error(req, 404, "not-found", "no such "
-			    "token"));
-		tokens[i] = tokens[--ntokens];
-		if (tokens_save() != 0)
-			return (reply_error(req, 500, "store", "the tokens "
-			    "could not be written"));
+		if ((rc = token_drop(id, why, sizeof(why))) != 0)
+			return (reply_error(req, rc, rc == 404 ? "not-found" :
+			    "store", "%s", why));
 		top = ucl_object_typed_new(UCL_OBJECT);
 		put(top, "ok", ucl_object_frombool(true));
 		return (reply_json(req, 200, top));
 	}
 	body = read_json(req);
-	name = body != NULL ? ucl_str(body, "name") : NULL;
-	if (name == NULL || name[0] == '\0' || strlen(name) > 64) {
+	kind = body != NULL ? ucl_str(body, "kind") : NULL;
+	rc = token_new(body != NULL ? ucl_str(body, "name") : NULL, kind, tid,
+	    value, why, sizeof(why));
+	if (rc != 0) {
 		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "a token has a name "
-		    "of 1 to 64 characters"));
-	}
-	kind = ucl_str(body, "kind");
-	if (kind != NULL && strcmp(kind, "read") != 0 && strcmp(kind,
-	    "write") != 0) {
-		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "a token's kind is "
-		    "read or write"));
-	}
-	write = kind != NULL && strcmp(kind, "write") == 0;
-	if (ntokens == TOKENS_MAX) {
-		ucl_object_unref(body);
-		return (reply_error(req, 409, "full", "%d tokens at most: "
-		    "delete one first", TOKENS_MAX));
-	}
-	arc4random_buf(raw, sizeof(raw));
-	memcpy(value, write ? TOKEN_WPREFIX : TOKEN_PREFIX,
-	    strlen(TOKEN_PREFIX));
-	hex(raw, sizeof(raw), value + strlen(TOKEN_PREFIX));
-	memset(&tokens[ntokens], 0, sizeof(tokens[ntokens]));
-	digest(value, tokens[ntokens].hash);
-	hex(tokens[ntokens].hash, 8, tokens[ntokens].id);
-	snprintf(tokens[ntokens].name, sizeof(tokens[ntokens].name), "%s",
-	    name);
-	tokens[ntokens].created = time(NULL);
-	tokens[ntokens].write = write;
-	ntokens++;
-	ucl_object_unref(body);
-	if (tokens_save() != 0) {
-		ntokens--;
-		return (reply_error(req, 500, "store", "the token could not "
-		    "be written"));
+		return (reply_error(req, rc, rc == 400 ? "invalid" : rc == 409 ?
+		    "full" : "store", "%s", why));
 	}
 	top = ucl_object_typed_new(UCL_OBJECT);
-	put(top, "id", ucl_object_fromstring(tokens[ntokens - 1].id));
-	put(top, "name", ucl_object_fromstring(tokens[ntokens - 1].name));
-	put(top, "kind", ucl_object_fromstring(write ? "write" : "read"));
+	put(top, "id", ucl_object_fromstring(tid));
+	put(top, "name", ucl_object_fromstring(ucl_str(body, "name")));
+	put(top, "kind", ucl_object_fromstring(kind != NULL && strcmp(kind,
+	    "write") == 0 ? "write" : "read"));
 	put(top, "token", ucl_object_fromstring(value));
 	explicit_bzero(value, sizeof(value));
-	explicit_bzero(raw, sizeof(raw));
+	ucl_object_unref(body);
 	return (reply_json(req, 200, top));
+}
+
+/* ---- arcana-console's tokens (cyang.c) ------------------------------- */
+
+/* arcana-console:tokens's value: each token, never its value. */
+ucl_object_t *
+tokens_yang(void)
+{
+	ucl_object_t	*o, *a, *e;
+	int		 i;
+
+	tokens_load();
+	a = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < ntokens; i++) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "id", ucl_object_fromstring(tokens[i].id));
+		put(e, "name", ucl_object_fromstring(tokens[i].name));
+		put(e, "kind", ucl_object_fromstring(tokens[i].write ?
+		    "write" : "read"));
+		put(e, "created", yang_time(tokens[i].created));
+		if (tokens[i].last != 0)
+			put(e, "last-used", yang_time(tokens[i].last));
+		ucl_array_append(a, e);
+	}
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "token", a);
+	return (o);
+}
+
+/* The tokens changed from was to now: those left out deleted; one made
+ * or changed refused (the create action makes one).  0, or the HTTP
+ * status and why. */
+int
+tokens_yang_set(const ucl_object_t *was, const ucl_object_t *now,
+    char *why, size_t len)
+{
+	const ucl_object_t	*e, *f;
+	ucl_object_iter_t	 it, fit;
+	const char		*id;
+	int			 rc;
+
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(now, "token"), &it,
+	    true)) != NULL) {
+		id = ucl_str(e, "id");
+		fit = NULL;
+		while ((f = ucl_object_iterate(ucl_object_lookup(was, "token"),
+		    &fit, true)) != NULL)
+			if (strcmp(ucl_str(f, "id"), id) == 0)
+				break;
+		if (f == NULL) {
+			snprintf(why, len, "a token is made by the create "
+			    "action, its value said once");
+			return (400);
+		}
+		if (strcmp(ucl_str(f, "name"), ucl_str(e, "name")) != 0 ||
+		    strcmp(ucl_str(f, "kind"), ucl_str(e, "kind") != NULL ?
+		    ucl_str(e, "kind") : "read") != 0) {
+			snprintf(why, len, "a token's name and kind are kept: "
+			    "make another");
+			return (400);
+		}
+	}
+	it = NULL;
+	while ((f = ucl_object_iterate(ucl_object_lookup(was, "token"), &it,
+	    true)) != NULL) {
+		id = ucl_str(f, "id");
+		fit = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(now, "token"),
+		    &fit, true)) != NULL)
+			if (strcmp(ucl_str(e, "id"), id) == 0)
+				break;
+		if (e == NULL && (rc = token_drop(id, why, len)) != 0)
+			return (rc);
+		if (e == NULL)
+			log_msg(LOG_NOTICE, "token %s deleted", id);
+	}
+	return (0);
 }

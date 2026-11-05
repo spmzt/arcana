@@ -16536,6 +16536,578 @@ ATF_TC_BODY(feeds, tc)
 	resp_free(&r);
 }
 
+/*
+ * arcana-console (PLAN-SDN-YANG 4.4.1): the console's own configuration
+ * and state through RESTCONF, from the files /api keeps, changed through
+ * /api's setters.
+ */
+#define	CC	"/restconf/data/arcana-console:"
+
+/* A member of the console, a viewer of every host: bob, signed in with
+ * key b. */
+static void
+cc_member(struct authn *b)
+{
+	struct resp	 r;
+	char		 invite[80];
+
+	http("PUT", CC "users/user=bob", "{\"arcana-console:user\":[{\"name\":"
+	    "\"bob\",\"role\":[\"viewer\"]}]}", &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("POST", CC "users/user=bob/invite", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "arcana-console:output.token") != NULL);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r,
+	    "arcana-console:output.token"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	authn_new(b, -8);
+	do_register(b, invite, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r, "user"));
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_settings, "arcana-console's settings: GET and PUT as "
+    "/api's, a secret never read, entity-tags, a member refused")
+ATF_TC_BODY(cyang_settings, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		e1[64], e2[64], hdr[128];
+
+	start(tc, 0, NULL);
+	http("GET", CC "settings", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	enrol(&a);
+	/* The library names it. */
+	http("GET", "/restconf/data/ietf-yang-library:yang-library", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "\"arcana-console\"") != NULL);
+	resp_free(&r);
+	/* Read: what /api says. */
+	http("GET", "/api/settings", NULL, &r);
+	ATF_CHECK_STREQ("Arcana", jstr(&r, "settings.0.value"));
+	resp_free(&r);
+	http("GET", CC "settings", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("Arcana", jstr(&r, "arcana-console:settings.rp-name"));
+	ATF_CHECK_STREQ("30", jstr(&r, "arcana-console:settings.session-idle"));
+	ATF_CHECK_STREQ("false", jstr(&r,
+	    "arcana-console:settings.telegram-token-set"));
+	ATF_REQUIRE(resp_header(&r, "etag", e1, sizeof(e1)) != NULL);
+	resp_free(&r);
+	http("GET", CC "settings/rp-name", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("Arcana", jstr(&r, "arcana-console:rp-name"));
+	resp_free(&r);
+	/* Changed: /api says it; a value /api refuses refused, nothing
+	 * kept. */
+	http("PUT", CC "settings/rp-name", "{\"arcana-console:rp-name\":"
+	    "\"Lab\"}", &r);
+	EXPECT(&r, 204);
+	ATF_REQUIRE(resp_header(&r, "etag", e2, sizeof(e2)) != NULL);
+	ATF_CHECK(strcmp(e1, e2) != 0);
+	resp_free(&r);
+	http("GET", "/api/settings", NULL, &r);
+	ATF_CHECK_STREQ("Lab", jstr(&r, "settings.0.value"));
+	ATF_CHECK_STREQ("true", jstr(&r, "settings.0.overridden"));
+	resp_free(&r);
+	http("PATCH", CC "settings", "{\"arcana-console:settings\":{"
+	    "\"update-url\":\"http://plain.example/\",\"rp-name\":\"X\"}}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK(strstr(r.body, "error-tag") != NULL);
+	resp_free(&r);
+	http("PATCH", CC "settings", "{\"arcana-console:settings\":{"
+	    "\"session-idle\":2}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("GET", CC "settings/rp-name", NULL, &r);
+	ATF_CHECK_STREQ("Lab", jstr(&r, "arcana-console:rp-name"));
+	resp_free(&r);
+	/* /api's change is RESTCONF's to read, its entity-tag a new one:
+	 * the old refused. */
+	http("POST", "/api/settings", "{\"set\":{\"session_idle\":\"45\"}}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", CC "settings/session-idle", NULL, &r);
+	ATF_CHECK_STREQ("45", jstr(&r, "arcana-console:session-idle"));
+	resp_free(&r);
+	snprintf(hdr, sizeof(hdr), "If-Match: %s\r\n", e2);
+	http_with("PUT", CC "settings/rp-name", hdr,
+	    "{\"arcana-console:rp-name\":\"Y\"}", &r);
+	EXPECT(&r, 412);
+	resp_free(&r);
+	/* Left out: web.conf's again. */
+	http("DELETE", CC "settings/rp-name", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/settings", NULL, &r);
+	ATF_CHECK_STREQ("Arcana", jstr(&r, "settings.0.value"));
+	ATF_CHECK_STREQ("false", jstr(&r, "settings.0.overridden"));
+	resp_free(&r);
+	/* A secret: set, never read; its being set said. */
+	http("PATCH", CC "settings", "{\"arcana-console:settings\":{"
+	    "\"telegram-token\":\"123456:ABCdefGhIJKlmnoPQRstuVWxyz0123456"
+	    "78\"}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", CC "settings", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r,
+	    "arcana-console:settings.telegram-token-set"));
+	ATF_CHECK(strstr(r.body, "ABCdefGhIJ") == NULL);
+	resp_free(&r);
+	http("GET", "/restconf/data", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "ABCdefGhIJ") == NULL);
+	ATF_CHECK_STREQ("true", jstr(&r,
+	    "arcana-console:settings.telegram-token-set"));
+	resp_free(&r);
+	/* A PUT of what was read keeps the secret. */
+	http("GET", CC "settings?content=config", NULL, &r);
+	EXPECT(&r, 200);
+	{
+		char	*doc = strdup(r.body);
+
+		resp_free(&r);
+		http("PUT", CC "settings", doc, &r);
+		EXPECT(&r, 204);
+		resp_free(&r);
+		free(doc);
+	}
+	http("GET", CC "settings/telegram-token-set", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "arcana-console:telegram-token-set"));
+	resp_free(&r);
+	/* A member: neither reads nor changes them. */
+	cc_member(&b);
+	http("GET", CC "settings", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("PUT", CC "settings/rp-name", "{\"arcana-console:rp-name\":"
+	    "\"Mine\"}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", "/restconf/data", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "arcana-console:settings") == NULL);
+	ATF_CHECK(jstr(&r, "arcana-console:users") == NULL);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"rp_name\":\"Mine\"}}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_tokens, "arcana-console's tokens: made by an action, "
+    "the value said once and in no GET, removed by DELETE, a token's own "
+    "reach as /api's")
+ATF_TC_BODY(cyang_tokens, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		token[80], wtoken[80], id[20], path[128];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("POST", CC "tokens/create", "{\"arcana-console:input\":{"
+	    "\"name\":\"planner\"}}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "arcana-console:output.token") != NULL);
+	ATF_CHECK(strncmp(jstr(&r, "arcana-console:output.token"), "arcr_",
+	    5) == 0);
+	snprintf(token, sizeof(token), "%s", jstr(&r,
+	    "arcana-console:output.token"));
+	snprintf(id, sizeof(id), "%s", jstr(&r, "arcana-console:output.id"));
+	resp_free(&r);
+	http("POST", CC "tokens/create", "{\"arcana-console:input\":{"
+	    "\"name\":\"writer\",\"kind\":\"write\"}}", &r);
+	EXPECT(&r, 200);
+	snprintf(wtoken, sizeof(wtoken), "%s", jstr(&r,
+	    "arcana-console:output.token"));
+	resp_free(&r);
+	http("POST", CC "tokens/create", "{\"arcana-console:input\":{}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* Read: /api's list, the value nowhere. */
+	http("GET", CC "tokens", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(id, jstr(&r, "arcana-console:tokens.token.0.id"));
+	ATF_CHECK_STREQ("planner", jstr(&r,
+	    "arcana-console:tokens.token.0.name"));
+	ATF_CHECK_STREQ("read", jstr(&r, "arcana-console:tokens.token.0.kind"));
+	ATF_CHECK(jstr(&r, "arcana-console:tokens.token.0.created") != NULL);
+	ATF_CHECK(strstr(r.body, token + 5) == NULL);
+	ATF_CHECK(strstr(r.body, wtoken + 5) == NULL);
+	resp_free(&r);
+	http("GET", "/restconf/data", NULL, &r);
+	ATF_CHECK(strstr(r.body, token + 5) == NULL);
+	ATF_CHECK(strstr(r.body, wtoken + 5) == NULL);
+	resp_free(&r);
+	http("GET", "/api/tokens", NULL, &r);
+	ATF_CHECK_STREQ(id, jstr(&r, "tokens.0.id"));
+	resp_free(&r);
+	/* Made or renamed by an edit: refused. */
+	http("PUT", CC "tokens/token=0123456789abcdef", "{\"arcana-console:"
+	    "token\":[{\"id\":\"0123456789abcdef\",\"name\":\"x\"}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(path, sizeof(path), CC "tokens/token=%s/name", id);
+	http("PUT", path, "{\"arcana-console:name\":\"renamed\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* A read token reads them, not the settings; a write token
+	 * neither makes nor removes one. */
+	http_bearer("GET", CC "tokens", token, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http_bearer("GET", CC "settings", token, NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	http_bearer("GET", CC "enrolment", wtoken, NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http_bearer("POST", CC "tokens/create", wtoken, "{\"arcana-console:"
+	    "input\":{\"name\":\"more\"}}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	snprintf(path, sizeof(path), CC "tokens/token=%s", id);
+	http_bearer("DELETE", path, wtoken, NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http_bearer("GET", "/restconf/data", wtoken, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "arcana-console:settings") == NULL);
+	ATF_CHECK(jstr(&r, "arcana-console:enrolment") == NULL);
+	ATF_CHECK(jstr(&r, "arcana-console:tokens") != NULL);
+	resp_free(&r);
+	/* Deleted: it opens nothing. */
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/tokens", NULL, &r);
+	ATF_CHECK(strstr(r.body, id) == NULL);
+	resp_free(&r);
+	http_bearer("GET", "/api/servers", token, NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_users, "arcana-console's users, roles and groups: made "
+    "and changed as /api's, a role named that is none refused, the last "
+    "owner kept, an invitation by its action")
+ATF_TC_BODY(cyang_users, tc)
+{
+	struct authn	a;
+	struct resp	r;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("GET", CC "users", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("admin", jstr(&r, "arcana-console:users.user.0.name"));
+	ATF_CHECK_STREQ("owner", jstr(&r,
+	    "arcana-console:users.user.0.role.0"));
+	ATF_CHECK_STREQ("owner", jstr(&r,
+	    "arcana-console:users.user.0.console-role"));
+	ATF_CHECK_STREQ("1", jstr(&r, "arcana-console:users.user.0.keys"));
+	resp_free(&r);
+	http("GET", CC "roles/role=owner", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("*", jstr(&r, "arcana-console:role.0.host.0.id"));
+	ATF_CHECK_STREQ("admin", jstr(&r, "arcana-console:role.0.host.0.role"));
+	resp_free(&r);
+	/* A role, a group giving it, a user in the group. */
+	http("POST", CC "roles", "{\"arcana-console:role\":[{\"name\":\"noc\","
+	    "\"console\":\"operator\",\"host\":[{\"id\":\"*\",\"role\":"
+	    "\"viewer\"}]}]}", &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("PUT", CC "groups/group=night", "{\"arcana-console:group\":[{"
+	    "\"name\":\"night\",\"role\":[\"noc\"],\"description\":"
+	    "\"on call\"}]}", &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("PUT", CC "users/user=carol", "{\"arcana-console:user\":[{"
+	    "\"name\":\"carol\",\"group\":[\"night\"]}]}", &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("GET", "/api/users", NULL, &r);
+	ATF_CHECK_STREQ("carol", jstr(&r, "users.1.name"));
+	ATF_CHECK_STREQ("night", jstr(&r, "users.1.groups.0"));
+	ATF_CHECK_STREQ("operator", jstr(&r, "users.1.console"));
+	ATF_CHECK_STREQ("noc", jstr(&r, "roles.3.name"));
+	ATF_CHECK_STREQ("viewer", jstr(&r, "roles.3.hosts.*"));
+	ATF_CHECK_STREQ("carol", jstr(&r, "groups.0.members.0"));
+	resp_free(&r);
+	http("GET", CC "groups/group=night", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("carol", jstr(&r, "arcana-console:group.0.member.0"));
+	resp_free(&r);
+	/* /api's change read here. */
+	http("PUT", "/api/users/dave", "{\"roles\":[\"viewer\"],\"tenant\":"
+	    "\"acme\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", CC "users/user=dave", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("acme", jstr(&r, "arcana-console:user.0.tenant"));
+	ATF_CHECK_STREQ("member", jstr(&r,
+	    "arcana-console:user.0.console-role"));
+	resp_free(&r);
+	/* Refused: a role that is none (its leafref), a user with no role
+	 * nor group, the last owner made less, a role in use. */
+	http("PUT", CC "users/user=eve", "{\"arcana-console:user\":[{\"name\":"
+	    "\"eve\",\"role\":[\"nosuch\"]}]}", &r);
+	ATF_CHECK_MSG(r.status == 400 || r.status == 409, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	http("PUT", CC "users/user=eve", "{\"arcana-console:user\":[{\"name\":"
+	    "\"eve\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK(strstr(r.body, "one at least") != NULL);
+	resp_free(&r);
+	http("PUT", CC "users/user=admin", "{\"arcana-console:user\":[{"
+	    "\"name\":\"admin\",\"role\":[\"viewer\"]}]}", &r);
+	EXPECT(&r, 409);
+	ATF_CHECK(strstr(r.body, "keeps an owner") != NULL);
+	resp_free(&r);
+	http("GET", CC "users/user=admin", NULL, &r);
+	ATF_CHECK_STREQ("owner", jstr(&r, "arcana-console:user.0.role.0"));
+	resp_free(&r);
+	http("DELETE", CC "roles/role=noc", NULL, &r);
+	ATF_CHECK_MSG(r.status == 400 || r.status == 409, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	/* An invitation, said once. */
+	http("POST", CC "users/user=dave/invite", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strncmp(jstr(&r, "arcana-console:output.token"), "inv_", 4) ==
+	    0);
+	ATF_CHECK(jstr(&r, "arcana-console:output.expires") != NULL);
+	resp_free(&r);
+	http("GET", CC "users/user=dave/invitations", NULL, &r);
+	ATF_CHECK_STREQ("1", jstr(&r, "arcana-console:invitations"));
+	resp_free(&r);
+	http("POST", CC "users/user=nobody/invite", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	/* Removed: the user, then the group, then the role. */
+	http("DELETE", CC "users/user=carol", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("DELETE", CC "groups/group=night", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("DELETE", CC "roles/role=noc", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/users", NULL, &r);
+	ATF_CHECK(strstr(r.body, "carol") == NULL);
+	ATF_CHECK(strstr(r.body, "\"noc\"") == NULL);
+	ATF_CHECK(strstr(r.body, "night") == NULL);
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_enrolment, "arcana-console's enrolment: a token by its "
+    "action as /api's, the token in no GET")
+ATF_TC_BODY(cyang_enrolment, tc)
+{
+	struct authn	a;
+	struct resp	r, s;
+	char		tok[80];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("POST", "/api/enrol/tokens", "{\"name\":\"h\",\"host\":"
+	    "\"h.example\"}", &s);
+	http("GET", CC "enrolment", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(s.status == 200 ? "true" : "false", jstr(&r,
+	    "arcana-console:enrolment.enabled"));
+	resp_free(&r);
+	http("POST", CC "enrolment/create-token", "{\"arcana-console:input\":"
+	    "{\"name\":\"h2\",\"host\":\"h2.example\",\"port\":4311}}", &r);
+	EXPECT(&r, s.status == 200 ? 200 : 409);
+	if (s.status == 200) {
+		snprintf(tok, sizeof(tok), "%s", jstr(&r,
+		    "arcana-console:output.token"));
+		ATF_CHECK_EQ(64, strlen(tok));
+		ATF_CHECK(strstr(jstr(&r, "arcana-console:output.command"),
+		    "-p 4311") != NULL);
+		resp_free(&r);
+		http("GET", "/restconf/data", NULL, &r);
+		ATF_CHECK(strstr(r.body, tok) == NULL);
+	}
+	resp_free(&r);
+	resp_free(&s);
+	http("POST", CC "enrolment/create-token", "{\"arcana-console:input\":"
+	    "{\"name\":\"h3\",\"host\":\"-bad\"}}", &r);
+	ATF_CHECK_MSG(r.status == 400 || r.status == 409, "%d", r.status);
+	resp_free(&r);
+	http("PUT", CC "enrolment", "{\"arcana-console:enrolment\":{}}", &r);
+	EXPECT(&r, 405);
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_workflows, "arcana-console's workflows and runs: made "
+    "and changed through /api's check, read as /api's, run, the runs "
+    "cleared")
+ATF_TC_BODY(cyang_workflows, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[2048], id[16], path[256];
+	int		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	/* Made: /api reads it as it would have made it. */
+	snprintf(body, sizeof(body), "{\"arcana-console:workflow\":[{\"id\":"
+	    "\"0000beef\",\"name\":\"probe\",\"host\":[\"%s\"],\"param\":[{"
+	    "\"name\":\"what\",\"default\":\"hostname\"}],\"step\":[{\"id\":"
+	    "\"r\",\"read\":\"hello\"},{\"id\":\"s\",\"job\":{\"kind\":"
+	    "\"sysctl\",\"field\":[{\"name\":\"args\",\"json\":"
+	    "\"[\\\"kern.${param.what}\\\"]\"}]},\"when\":{\"step\":\"r\","
+	    "\"path\":\"hostname\",\"op\":\"exists\"},\"on-fail\":"
+	    "\"continue\"}]}]}", id);
+	http("PUT", CC "workflows/workflow=0000beef", body, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("GET", "/api/workflows", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("probe", jstr(&r, "workflows.0.name"));
+	ATF_CHECK_STREQ("hello", jstr(&r, "workflows.0.steps.0.read"));
+	ATF_CHECK_STREQ("sysctl", jstr(&r, "workflows.0.steps.1.job.kind"));
+	ATF_CHECK_STREQ("kern.${param.what}", jstr(&r,
+	    "workflows.0.steps.1.job.args.0"));
+	ATF_CHECK_STREQ("exists", jstr(&r, "workflows.0.steps.1.when.op"));
+	ATF_CHECK_STREQ("continue", jstr(&r, "workflows.0.steps.1.on_fail"));
+	resp_free(&r);
+	http("GET", CC "workflows/workflow=0000beef", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("args", jstr(&r, "arcana-console:workflow.0.step.1."
+	    "job.field.0.name"));
+	ATF_CHECK_STREQ("false", jstr(&r, "arcana-console:workflow.0.step.1."
+	    "destroys"));
+	ATF_CHECK(jstr(&r, "arcana-console:workflow.0.changed") != NULL);
+	resp_free(&r);
+	/* What /api's check refuses refused, nothing kept. */
+	http("PATCH", CC "workflows/workflow=0000beef", "{\"arcana-console:"
+	    "workflow\":[{\"id\":\"0000beef\",\"step\":[{\"id\":\"s\",\"job\":"
+	    "{\"kind\":\"nosuch\"}}]}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK(strstr(r.body, "jobs.yaml") != NULL);
+	resp_free(&r);
+	http("GET", "/api/workflows", NULL, &r);
+	ATF_CHECK_STREQ("sysctl", jstr(&r, "workflows.0.steps.1.job.kind"));
+	resp_free(&r);
+	/* Renamed by a merge. */
+	http("PATCH", CC "workflows/workflow=0000beef", "{\"arcana-console:"
+	    "workflow\":[{\"id\":\"0000beef\",\"name\":\"probe2\"}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/workflows", NULL, &r);
+	ATF_CHECK_STREQ("probe2", jstr(&r, "workflows.0.name"));
+	ATF_CHECK_STREQ("kern.${param.what}", jstr(&r,
+	    "workflows.0.steps.1.job.args.0"));
+	resp_free(&r);
+	/* Run by its action; read in the runs, with its traces when it is
+	 * named. */
+	http("POST", CC "workflows/workflow=0000beef/run", "{\"arcana-console:"
+	    "input\":{\"param\":[{\"name\":\"what\",\"value\":\"ostype\"}]}}",
+	    &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "arcana-console:output.run") != NULL);
+	snprintf(path, sizeof(path), CC "runs/run=%s", jstr(&r,
+	    "arcana-console:output.run"));
+	resp_free(&r);
+	for (i = 0; i < 100; i++) {
+		http("GET", path, NULL, &r);
+		if (r.status == 200 && jstr(&r, "arcana-console:run.0.state") !=
+		    NULL && strcmp(jstr(&r, "arcana-console:run.0.state"),
+		    "running") != 0)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(i < 100, "the run did not end");
+	ATF_CHECK_STREQ("probe2", jstr(&r, "arcana-console:run.0.name"));
+	ATF_CHECK_STREQ("hand", jstr(&r, "arcana-console:run.0.trigger"));
+	ATF_CHECK_STREQ("ostype", jstr(&r, "arcana-console:run.0.param.0.value"));
+	ATF_CHECK_STREQ(id, jstr(&r, "arcana-console:run.0.host.0.id"));
+	ATF_CHECK(jstr(&r, "arcana-console:run.0.host.0.step.0.trace") != NULL);
+	resp_free(&r);
+	http("POST", CC "runs/run=1/stop", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("POST", CC "runs/clear", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("1", jstr(&r, "arcana-console:output.cleared"));
+	resp_free(&r);
+	http("GET", "/api/runs", NULL, &r);
+	ATF_CHECK(jstr(&r, "runs.0") == NULL);
+	resp_free(&r);
+	/* Two events of one kind, made by /api: both read, both kept
+	 * through a change made here, their matches' types too. */
+	snprintf(body, sizeof(body), "{\"id\":\"0000cafe\",\"name\":\"jails\","
+	    "\"hosts\":[\"%s\"],\"steps\":[{\"id\":\"r\",\"read\":\"jails\"}],"
+	    "\"on\":[{\"event\":\"jail-state\",\"match\":{\"name\":\"web\"}},"
+	    "{\"event\":\"jail-state\",\"match\":{\"name\":\"db\",\"jid\":7}},"
+	    "{\"event\":\"host-down\"}]}", id);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", CC "workflows/workflow=0000cafe", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("jail-state", jstr(&r, "arcana-console:workflow.0.on.0."
+	    "event"));
+	ATF_CHECK_STREQ("web", jstr(&r, "arcana-console:workflow.0.on.0.match.0."
+	    "value"));
+	ATF_CHECK_STREQ("1", jstr(&r, "arcana-console:workflow.0.on.1.index"));
+	ATF_CHECK_STREQ("jail-state", jstr(&r, "arcana-console:workflow.0.on.1."
+	    "event"));
+	ATF_CHECK_STREQ("host-down", jstr(&r, "arcana-console:workflow.0.on.2."
+	    "event"));
+	resp_free(&r);
+	http("PATCH", CC "workflows/workflow=0000cafe", "{\"arcana-console:"
+	    "workflow\":[{\"id\":\"0000cafe\",\"name\":\"jails2\"}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/workflows", NULL, &r);
+	ATF_CHECK_STREQ("jails2", jstr(&r, "workflows.1.name"));
+	ATF_CHECK_STREQ("jail-state", jstr(&r, "workflows.1.on.0.event"));
+	ATF_CHECK_STREQ("web", jstr(&r, "workflows.1.on.0.match.name"));
+	ATF_CHECK_STREQ("jail-state", jstr(&r, "workflows.1.on.1.event"));
+	ATF_CHECK_STREQ("db", jstr(&r, "workflows.1.on.1.match.name"));
+	ATF_CHECK_STREQ("7", jstr(&r, "workflows.1.on.1.match.jid"));
+	ATF_CHECK_STREQ("host-down", jstr(&r, "workflows.1.on.2.event"));
+	ATF_CHECK(jstr(&r, "workflows.1.on.3") == NULL);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '\"db\"' data/workflows.json && "
+	    "grep -q '\"jid\": *7' data/workflows.json && "
+	    "test $(grep -o 'jail-state' data/workflows.json | wc -l) -eq 2") ==
+	    0);
+	http("DELETE", CC "workflows/workflow=0000cafe", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	/* Deleted. */
+	http("DELETE", CC "workflows/workflow=0000beef", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/workflows", NULL, &r);
+	ATF_CHECK(jstr(&r, "workflows.0") == NULL);
+	resp_free(&r);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, feeds);
@@ -16587,6 +17159,11 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, l3nm_vn);
 	ATF_TP_ADD_TC(tp, l3nm_vn_tca);
 	ATF_TP_ADD_TC(tp, l3nm_vn_compute);
+	ATF_TP_ADD_TC(tp, cyang_settings);
+	ATF_TP_ADD_TC(tp, cyang_tokens);
+	ATF_TP_ADD_TC(tp, cyang_users);
+	ATF_TP_ADD_TC(tp, cyang_enrolment);
+	ATF_TP_ADD_TC(tp, cyang_workflows);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_sync);
 	ATF_TP_ADD_TC(tp, server_readdress);

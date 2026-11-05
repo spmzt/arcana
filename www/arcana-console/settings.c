@@ -826,44 +826,30 @@ reply(struct http_request *req)
 }
 
 /*
- * GET /api/settings: every setting with its value, what web.conf says,
- * and whether it can be changed here.
- * POST, {"set": {"agent_source": "https://…", "update_check": false}}:
- * change some.  A value equal to web.conf's, or null, drops the
- * override.
+ * What set says ({"key": value or null}) checked whole and kept: 0, or
+ * the HTTP status and why.  A value equal to web.conf's, or null, drops
+ * the override; a secret left empty is left as it is.
  */
 int
-api_settings(struct http_request *req)
+settings_set(const ucl_object_t *set, char *why, size_t len)
 {
-	ucl_object_t		*body, *out;
-	const ucl_object_t	*set, *v;
+	ucl_object_t		*out;
+	const ucl_object_t	*v;
 	ucl_object_iter_t	 it;
 	struct setting		*s;
-	const char		*val, *why;
+	const char		*val, *bad;
 	char			*next[nitems(settings)];
 	size_t			 i;
 
-	if (!guard(req, req->method == HTTP_METHOD_POST))
-		return (WEB_OK);
-	if (req->method != HTTP_METHOD_POST)
-		return (reply(req));
-	if ((body = read_json(req)) == NULL || (set = ucl_object_lookup(body,
-	    "set")) == NULL || ucl_object_type(set) != UCL_OBJECT) {
-		if (body != NULL)
-			ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "a \"set\" object is "
-		    "needed"));
-	}
 	/* All of it is checked before any of it is kept. */
 	for (i = 0; i < nitems(settings); i++)
 		next[i] = settings[i].over;
 	it = NULL;
 	while ((v = ucl_object_iterate(set, &it, true)) != NULL) {
 		if ((s = find(ucl_object_key(v))) == NULL) {
-			reply_error(req, 400, "invalid", "%s cannot be set "
-			    "here", ucl_object_key(v));
-			ucl_object_unref(body);
-			return (WEB_OK);
+			snprintf(why, len, "%s cannot be set here",
+			    ucl_object_key(v));
+			return (400);
 		}
 		i = (size_t)(s - settings);
 		if (ucl_object_type(v) == UCL_NULL) {
@@ -876,19 +862,16 @@ api_settings(struct http_request *req)
 		if (s->kind == K_SECRET && val[0] == '\0')
 			continue;
 		/* Empty means none, where there can be none. */
-		why = s->valid != NULL && !(val[0] == '\0' && (s->valid ==
+		bad = s->valid != NULL && !(val[0] == '\0' && (s->valid ==
 		    v_source || s->valid == v_ref || s->valid == v_keypath)) ?
 		    s->valid(val) : NULL;
-		if (why != NULL) {
-			reply_error(req, 400, "invalid", "%s: not %s", s->label,
-			    why);
-			ucl_object_unref(body);
-			return (WEB_OK);
+		if (bad != NULL) {
+			snprintf(why, len, "%s: not %s", s->label, bad);
+			return (400);
 		}
 		next[i] = strcmp(val, s->base != NULL ? s->base : "") == 0 ?
 		    NULL : xstrdup(val);
 	}
-	ucl_object_unref(body);
 
 	out = ucl_object_typed_new(UCL_OBJECT);
 	for (i = 0; i < nitems(settings); i++) {
@@ -900,11 +883,189 @@ api_settings(struct http_request *req)
 	}
 	if (store_save(SETTINGS_FILE, out) == -1) {
 		ucl_object_unref(out);
-		return (reply_error(req, 500, "io", "cannot write %s in the "
-		    "data directory", SETTINGS_FILE));
+		snprintf(why, len, "cannot write %s in the data directory",
+		    SETTINGS_FILE);
+		return (500);
 	}
 	ucl_object_unref(out);
 	log_msg(LOG_NOTICE, "settings changed from the console");
 	load();
+	cyang_changed("settings");
+	return (0);
+}
+
+/*
+ * GET /api/settings: every setting with its value, what web.conf says,
+ * and whether it can be changed here.
+ * POST, {"set": {"agent_source": "https://…", "update_check": false}}:
+ * change some.  A value equal to web.conf's, or null, drops the
+ * override.
+ */
+int
+api_settings(struct http_request *req)
+{
+	ucl_object_t		*body;
+	const ucl_object_t	*set;
+	char			 why[200];
+	int			 rc;
+
+	if (!guard(req, req->method == HTTP_METHOD_POST))
+		return (WEB_OK);
+	if (req->method != HTTP_METHOD_POST)
+		return (reply(req));
+	if ((body = read_json(req)) == NULL || (set = ucl_object_lookup(body,
+	    "set")) == NULL || ucl_object_type(set) != UCL_OBJECT) {
+		if (body != NULL)
+			ucl_object_unref(body);
+		return (reply_error(req, 400, "invalid", "a \"set\" object is "
+		    "needed"));
+	}
+	rc = settings_set(set, why, sizeof(why));
+	ucl_object_unref(body);
+	if (rc != 0)
+		return (reply_error(req, rc, rc == 400 ? "invalid" : "io", "%s",
+		    why));
 	return (reply(req));
+}
+
+/* ---- arcana-console's settings (cyang.c) ----------------------------- */
+
+/* put(), the key copied: a leaf's name is made in a buffer. */
+static void
+yput(ucl_object_t *o, const char *key, ucl_object_t *v)
+{
+
+	ucl_object_insert_key(o, v, key, 0, true);
+}
+
+/* A setting's leaf: its key, - for _. */
+static void
+yname(const char *key, char *buf, size_t len)
+{
+
+	snprintf(buf, len, "%s", key);
+	for (char *p = buf; *p != '\0'; p++)
+		if (*p == '_')
+			*p = '-';
+}
+
+/* Whether a setting's leaf is a number. */
+static bool
+numeric(const struct setting *s)
+{
+
+	return (s->valid == v_minutes || s->valid == v_hours || s->valid ==
+	    v_days || s->valid == v_safe);
+}
+
+/* A setting's value v as its leaf has it; NULL, the leaf left out (a
+ * number or an enumeration's value it is not). */
+static ucl_object_t *
+leaf_of(const struct setting *s, const char *v)
+{
+	char	*end;
+	long	 n;
+
+	if (s->kind == K_BOOL)
+		return (ucl_object_frombool(truth(v)));
+	if (numeric(s)) {
+		n = strtol(v, &end, 10);
+		return (v[0] == '\0' || *end != '\0' || s->valid(v) != NULL ?
+		    NULL : ucl_object_fromint(n));
+	}
+	if (s->valid == v_severity || s->valid == v_which)
+		return (v[0] == '\0' || s->valid(v) != NULL ? NULL :
+		    ucl_object_fromstring(v));
+	return (ucl_object_fromstring(v));
+}
+
+/* arcana-console:settings's value: what is in force, of a secret
+ * whether it is set, where each comes from, what web.conf alone sets. */
+ucl_object_t *
+settings_yang(void)
+{
+	ucl_object_t	*o, *src, *e, *f, *x;
+	char		 name[64], set[80];
+	size_t		 i;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	src = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < nitems(settings); i++) {
+		yname(settings[i].key, name, sizeof(name));
+		if (settings[i].kind == K_SECRET) {
+			snprintf(set, sizeof(set), "%s-set", name);
+			yput(o, set, ucl_object_frombool(value(
+			    settings[i].key)[0] != '\0'));
+		} else if ((x = leaf_of(&settings[i], value(settings[i].key))) !=
+		    NULL)
+			yput(o, name, x);
+		e = ucl_object_typed_new(UCL_OBJECT);
+		yput(e, "name", ucl_object_fromstring(name));
+		yput(e, "overridden", ucl_object_frombool(settings[i].over !=
+		    NULL));
+		if (settings[i].kind != K_SECRET && settings[i].base != NULL)
+			yput(e, "web-conf", ucl_object_fromstring(
+			    settings[i].base));
+		ucl_array_append(src, e);
+	}
+	yput(o, "source", src);
+	f = ucl_object_typed_new(UCL_OBJECT);
+	yput(f, "relying-party", ucl_object_fromstring(cfg.rp_id != NULL ?
+	    cfg.rp_id : ""));
+	yput(f, "origin", ucl_object_fromstring(cfg.origin != NULL ?
+	    cfg.origin : ""));
+	yput(f, "data-directory", ucl_object_fromstring(cfg.datadir));
+	yput(f, "cookie-secure", ucl_object_frombool(cfg.cookie_secure));
+	yput(f, "agent-certificates", ucl_object_fromstring(cfg.tls_own ?
+	    "the console's own CA, in the data directory" : cfg.tls_cert !=
+	    NULL ? cfg.tls_cert : ""));
+	yput(o, "fixed", f);
+	return (o);
+}
+
+/*
+ * The settings changed from was to now, kept by settings_set(): a leaf
+ * left out null (web.conf's again); a secret left out as it is, an
+ * empty one null.  0, or the HTTP status and why.
+ */
+int
+settings_yang_set(const ucl_object_t *was, const ucl_object_t *now,
+    char *why, size_t len)
+{
+	ucl_object_t		*set;
+	const ucl_object_t	*a, *b;
+	char			 name[64];
+	size_t			 i;
+	int			 rc;
+	bool			 any;
+
+	set = ucl_object_typed_new(UCL_OBJECT);
+	any = false;
+	for (i = 0; i < nitems(settings); i++) {
+		yname(settings[i].key, name, sizeof(name));
+		a = ucl_object_lookup(was, name);
+		b = ucl_object_lookup(now, name);
+		if (settings[i].kind == K_SECRET) {
+			if (b == NULL)
+				continue;
+			yput(set, settings[i].key, ucl_object_tostring_forced(
+			    b)[0] == '\0' ? ucl_object_typed_new(UCL_NULL) :
+			    ucl_object_fromstring(ucl_object_tostring_forced(
+			    b)));
+			any = true;
+			continue;
+		}
+		if ((a == NULL && b == NULL) || (a != NULL && b != NULL &&
+		    strcmp(ucl_object_tostring_forced(a),
+		    ucl_object_tostring_forced(b)) == 0))
+			continue;
+		yput(set, settings[i].key, b == NULL ? ucl_object_typed_new(
+		    UCL_NULL) : settings[i].kind == K_BOOL ?
+		    ucl_object_frombool(ucl_object_toboolean(b)) :
+		    ucl_object_fromstring(ucl_object_tostring_forced(b)));
+		any = true;
+	}
+	rc = any ? settings_set(set, why, len) : 0;
+	ucl_object_unref(set);
+	return (rc);
 }

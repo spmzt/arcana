@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.364.1"
+#define	ARCW_VERSION		"0.365.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -539,6 +539,49 @@ bool		 vn_bound_tca(const char *, uint64_t, const char **, double *);
 void		 vn_into(struct http_request *, ucl_object_t *);
 int		 api_vn(struct http_request *);
 int		 api_restconf_operations(struct http_request *);
+/*
+ * cyang.c: the console's own configuration and state as arcana-console,
+ * from the files the stores keep, changed through their setters.  Each
+ * store's view and change of it: its file's (settings.c, tokens.c,
+ * users.c, pki.c, workflows.c).  cyang_changed(): a part's entity-tag
+ * changed, by either way of changing it.
+ */
+#define	CYANG_DATA	"/restconf/data/arcana-console:"
+bool		 cyang_path(const char *);
+int		 api_cyang(struct http_request *);
+void		 cyang_into(struct http_request *, ucl_object_t *);
+void		 cyang_changed(const char *);
+ucl_object_t	*yang_time(double);
+int		 settings_set(const ucl_object_t *, char *, size_t);
+ucl_object_t	*settings_yang(void);
+int		 settings_yang_set(const ucl_object_t *, const ucl_object_t *,
+		    char *, size_t);
+#define	TOKEN_LEN	72		/* a token's value, with its NUL */
+int		 token_new(const char *, const char *, char *, char *, char *,
+		    size_t);
+int		 token_drop(const char *, char *, size_t);
+ucl_object_t	*tokens_yang(void);
+int		 tokens_yang_set(const ucl_object_t *, const ucl_object_t *,
+		    char *, size_t);
+ucl_object_t	*users_yang(void);
+ucl_object_t	*roles_yang(void);
+ucl_object_t	*groups_yang(void);
+int		 users_yang_set(const ucl_object_t *, const ucl_object_t *,
+		    const char *, char *, size_t);
+int		 users_yang_invite(const char *, const char *, char *, size_t,
+		    time_t *, char *, size_t);
+int		 enrol_token_new(const char *, const char *, int64_t,
+		    ucl_object_t **, char *, size_t);
+bool		 enrol_enabled(void);
+ucl_object_t	*workflows_yang(void);
+int		 workflows_yang_set(const ucl_object_t *, const ucl_object_t *,
+		    char *, size_t);
+int		 workflows_yang_run(struct http_request *, const char *,
+		    const ucl_object_t *, uint32_t *, char *, size_t);
+ucl_object_t	*runs_yang(uint32_t);
+int		 runs_yang_mark(uint32_t, const char *, const char *, char *,
+		    size_t);
+int		 runs_yang_clear(const char *, const char *);
 /* The tunnels a plan of an L3NM makes (sdwan_edge.c). */
 ucl_object_t	*sdwan_plan_tunnels(const ucl_object_t *);
 int		 api_restconf_ds(struct http_request *);

@@ -1783,9 +1783,31 @@ whose first part is served.
   console could compare without the GET.
 - 4.3.3 done (console rcstream.c): the `fleet` stream, every host's on
   one thread and one reply, each record nested in its host's entry.
-- 4.4.1 C: `arcana-console` module served from the libucl files
-  (settings, tokens, workflows, enrolment tokens, users); check: GET
-  and PUT of a setting.
+- 4.4.1 done (console cyang.c, share/yang arcana-console at SIDs
+  91800-92099): the console's own as `/restconf/data/arcana-console:`
+  settings, tokens, users, roles, groups, enrolment, workflows and
+  runs.  No second store: each request reads the stores' files, each
+  store's view of itself (settings_yang() and the others) made a tree,
+  runs as restconf_run_own() runs the L3NM's, and what changed goes
+  through the setters /api's handlers go through (their checks, log
+  lines and refusals; users, roles and groups all or nothing).  Who may
+  is /api's (owners; the workflows and runs operators too; a token's
+  reach as on /api); the entity-tags change with the stores, by either
+  way.  A secret is never read: the tokens' values, the bot's token
+  and the directory's password (write-only, `-set` says whether), an
+  invitation's and an enrolment token's (each an action's output, said
+  once).  The actions: tokens/create, user/invite,
+  enrolment/create-token, workflow/run, run/approve, run/stop,
+  runs/clear.  A job's fields are typed leaves (text, number, flag) or
+  a list's or map's JSON, an event's matches the same; a workflow's
+  events keyed by their place, two of one kind both kept.  Check:
+  console_test's
+  cyang_settings (GET and PUT of a setting as /api's, a member refused,
+  a secret in no GET, If-Match), cyang_tokens, cyang_users,
+  cyang_enrolment, cyang_workflows.  Open: the console's other stores
+  (templates, labels, prefix lists, threat feeds, transfers, the Web
+  Push subscriptions) are /api's alone, to join the module before
+  4.4.2 removes /api.
 - 4.4.2 C: the WebAuthn ceremonies, logout, `assetlinks.json`, enrol
   and health moved beside `/restconf`; `/api` removed; check: the
   console tests rewritten.

@@ -562,39 +562,31 @@ token_find(const char *value)
 }
 
 /*
- * POST /api/enrol/tokens {name, host, port?}: a one-time token for a host
- * to join with, and the command to run there.
+ * A one-time token for host, its name in the console name, to join
+ * with on port: *out, what /api/enrol/tokens says ({token, host, name,
+ * port, expires, command}); 0, or the HTTP status and why (409: no CA
+ * key).
  */
 int
-api_enrol_tokens(struct http_request *req)
+enrol_token_new(const char *name, const char *host, int64_t port,
+    ucl_object_t **out, char *why, size_t len)
 {
-	struct etoken		*t;
-	ucl_object_t		*body, *o;
-	const ucl_object_t	*v;
-	const char		*name, *host;
-	uint8_t			 raw[32];
-	char			 cmd[512], portstr[16];
-	int64_t			 port;
-	int			 i;
+	struct etoken	*t;
+	ucl_object_t	*o;
+	uint8_t		 raw[32];
+	char		 cmd[512], portstr[16];
+	int		 i;
 
-	if (!guard(req, true))
-		return (WEB_OK);
-	if (cfg.tls_ca_key == NULL)
-		return (reply_error(req, 409, "no_ca", "the console has no "
-		    "CA key (tls.ca_key in web.conf); enrolment is off"));
-	if ((body = read_json(req)) == NULL)
-		return (reply_error(req, 400, "bad_request",
-		    "expected a JSON object"));
-	name = ucl_str(body, "name");
-	host = ucl_str(body, "host");
-	port = (v = ucl_object_lookup(body, "port")) != NULL ?
-	    ucl_object_toint(v) : DEFAULT_PORT;
+	if (cfg.tls_ca_key == NULL) {
+		snprintf(why, len, "the console has no CA key (tls.ca_key in "
+		    "web.conf); enrolment is off");
+		return (409);
+	}
 	if (name == NULL || *name == '\0' || strlen(name) > 64 ||
 	    host == NULL || !valid_host(host) || port < 1 || port > 65535) {
-		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", "a name, the host's "
-		    "name or address, and a port (default %d) are needed",
-		    DEFAULT_PORT));
+		snprintf(why, len, "a name, the host's name or address, and a "
+		    "port (default %d) are needed", DEFAULT_PORT);
+		return (400);
 	}
 	/* A free slot, else the one that expires first. */
 	t = &tokens[0];
@@ -611,12 +603,12 @@ api_enrol_tokens(struct http_request *req)
 	arc4random_buf(raw, sizeof(raw));
 	for (i = 0; i < 32; i++)
 		snprintf(t->value + i * 2, 3, "%02x", raw[i]);
+	explicit_bzero(raw, sizeof(raw));
 	strlcpy(t->name, name, sizeof(t->name));
 	strlcpy(t->host, host, sizeof(t->host));
 	t->port = (int)port;
 	t->expires = time(NULL) + TOKEN_TTL;
 	snprintf(portstr, sizeof(portstr), "%d", t->port);
-	ucl_object_unref(body);
 	log_msg(LOG_NOTICE, "enrolment token for %s (%s) made", t->host,
 	    t->name);
 
@@ -637,6 +629,45 @@ api_enrol_tokens(struct http_request *req)
 	    false);
 	ucl_object_insert_key(o, ucl_object_fromstring(cmd), "command", 0,
 	    false);
+	*out = o;
+	return (0);
+}
+
+/* Whether a host may be enrolled: the console has a CA key. */
+bool
+enrol_enabled(void)
+{
+
+	return (cfg.tls_ca_key != NULL);
+}
+
+/*
+ * POST /api/enrol/tokens {name, host, port?}: a one-time token for a host
+ * to join with, and the command to run there.
+ */
+int
+api_enrol_tokens(struct http_request *req)
+{
+	ucl_object_t		*body, *o;
+	const ucl_object_t	*v;
+	char			 why[160];
+	int			 rc;
+
+	if (!guard(req, true))
+		return (WEB_OK);
+	if (cfg.tls_ca_key == NULL)
+		return (reply_error(req, 409, "no_ca", "the console has no "
+		    "CA key (tls.ca_key in web.conf); enrolment is off"));
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "bad_request",
+		    "expected a JSON object"));
+	rc = enrol_token_new(ucl_str(body, "name"), ucl_str(body, "host"),
+	    (v = ucl_object_lookup(body, "port")) != NULL ?
+	    ucl_object_toint(v) : DEFAULT_PORT, &o, why, sizeof(why));
+	ucl_object_unref(body);
+	if (rc != 0)
+		return (reply_error(req, rc, rc == 409 ? "no_ca" : "invalid",
+		    "%s", why));
 	return (reply_json(req, 200, o));
 }
 

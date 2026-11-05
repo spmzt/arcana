@@ -1,0 +1,1329 @@
+module arcana-console {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-console";
+  prefix arcc;
+
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The console's own configuration and state, served by its RESTCONF
+     from the files it keeps in its data directory (settings.json,
+     tokens.json, users.json, workflows.json, runs.json): its settings,
+     API tokens, users, roles and groups (its RBAC), the enrolment of
+     hosts by token, the workflows and their runs.  No agent serves it.
+
+     Who may: the console's owners, but for the workflows and runs,
+     which its operators may too.  A secret (a token's value, a bot's
+     token, a directory's password) is never read: it is set, and
+     whether it is set is what is said.  A value made by the console
+     (a token, an invitation, an enrolment token) is the output of an
+     action, said once.  Times are the console's clock, UTC.";
+
+  revision 2026-11-05 {
+    description
+      "Initial revision.";
+  }
+
+  typedef severity {
+    type enumeration {
+      enum Critical;
+      enum Major;
+      enum Minor;
+      enum Warning;
+      enum none;
+    }
+    description
+      "The least severity of a fault told, and its clearing; none for
+       none.";
+  }
+
+  typedef which {
+    type enumeration {
+      enum failed;
+      enum all;
+      enum none;
+    }
+    description
+      "Which jobs or runs are told: the failed ones, all, or none.";
+  }
+
+  typedef host-id {
+    type string {
+      pattern '[0-9a-f]{8}';
+    }
+    description
+      "A host's id, as arcana-fleet's host list has it.";
+  }
+
+  typedef name {
+    type string {
+      length "1..64";
+      pattern '[A-Za-z0-9_.@-]+';
+    }
+    description
+      "A user's, a role's, a group's or a tenant's name.";
+  }
+
+  typedef notify-via {
+    type enumeration {
+      enum mail;
+      enum telegram;
+      enum all;
+    }
+    description
+      "How a step tells: by mail, Telegram, or both.";
+  }
+
+  /* The settings */
+
+  container settings {
+    description
+      "The settings that change while the console runs: settings.json,
+       over web.conf's.  A leaf left out is web.conf's again; a leaf
+       read is the value in force.  The secrets (telegram-token,
+       ldap-bind-password) are never read: left out of a change, they
+       stay; set to the empty string, they are cleared.";
+    leaf rp-name {
+      type string {
+        length "1..64";
+      }
+      description
+        "The name a security key or passkey shows for this console.";
+    }
+    leaf update-check {
+      type boolean;
+      description
+        "Ask the release feed every few hours whether a newer version
+         is out.";
+    }
+    leaf update-url {
+      type string;
+      description
+        "The release feed: a URL in the shape of GitHub's
+         releases/latest.";
+    }
+    leaf agent-binary {
+      type string;
+      description
+        "The arcana-agent sent to hosts when they are updated, until a
+         host has built one from agent-source.";
+    }
+    leaf agent-source {
+      type string;
+      description
+        "A git repository with the Arcana tree the hosts build the
+         agent from; empty for none.  Whoever sets it decides what runs
+         as root on every host.";
+    }
+    leaf agent-ref {
+      type string;
+      description
+        "The branch or tag built; empty for the repository's own.";
+    }
+    leaf agent-ssh-key {
+      type string;
+      description
+        "The path of a private key on the build host for a repository
+         reached over SSH; empty for one the host makes.";
+    }
+    leaf session-idle {
+      type uint16 {
+        range "5..1440";
+      }
+      units "minutes";
+      description
+        "A sign-in not used for this long ends.";
+    }
+    leaf session-max {
+      type uint16 {
+        range "1..720";
+      }
+      units "hours";
+      description
+        "A sign-in lasts at most this long, however much it is used.";
+    }
+    leaf hsts-days {
+      type uint16 {
+        range "0..730";
+      }
+      units "days";
+      description
+        "How long Strict-Transport-Security keeps a browser to HTTPS;
+         0, none sent.";
+    }
+    leaf mail-to {
+      type string;
+      description
+        "The addresses mailed by sendmail(8), by commas; empty for no
+         mail.";
+    }
+    leaf mail-from {
+      type string;
+      description
+        "The sender's address; empty for arcana@ the host's name.";
+    }
+    leaf mail-faults {
+      type severity;
+      description
+        "The faults mailed.";
+    }
+    leaf mail-jobs {
+      type which;
+      description
+        "The jobs mailed.";
+    }
+    leaf mail-runs {
+      type which;
+      description
+        "The workflow runs mailed.";
+    }
+    leaf mail-limits {
+      type boolean;
+      description
+        "A host's usage crossing a limit, and coming back under,
+         mailed.";
+    }
+    leaf telegram-chats {
+      type string;
+      description
+        "The chats the bot writes to, by spaces: ids or @channel
+         names.";
+    }
+    leaf telegram-token {
+      type string;
+      description
+        "The bot's token, as BotFather gave it: write-only.";
+    }
+    leaf telegram-token-set {
+      type boolean;
+      config false;
+      description
+        "Whether telegram-token is set.";
+    }
+    leaf telegram-via {
+      type string;
+      description
+        "The host whose agent sends to api.telegram.org, by name or
+         id; empty for the agent beside the console.";
+    }
+    leaf telegram-faults {
+      type severity;
+      description
+        "The faults sent to Telegram.";
+    }
+    leaf telegram-jobs {
+      type which;
+      description
+        "The jobs sent to Telegram.";
+    }
+    leaf telegram-runs {
+      type which;
+      description
+        "The workflow runs sent to Telegram.";
+    }
+    leaf telegram-limits {
+      type boolean;
+      description
+        "A host's usage crossing a limit sent to Telegram.";
+    }
+    leaf mail-sen {
+      type string;
+      description
+        "Where MEF 138's Security Event Notifications are mailed, by
+         commas.";
+    }
+    leaf mail-san {
+      type string;
+      description
+        "Where MEF 138's Security Admin Notifications are mailed, by
+         commas.";
+    }
+    leaf telegram-sen {
+      type string;
+      description
+        "The chats the Security Event Notifications go to.";
+    }
+    leaf telegram-san {
+      type string;
+      description
+        "The chats the Security Admin Notifications go to.";
+    }
+    leaf feeds-allow-private {
+      type string;
+      description
+        "The prefixes a threat feed may be fetched from although they
+         are not the internet's, by spaces.";
+    }
+    leaf ldap-url {
+      type string;
+      description
+        "The directory users sign in by: ldaps:// or ldap:// (StartTLS
+         required); empty for none.";
+    }
+    leaf ldap-ca {
+      type string;
+      description
+        "A PEM file holding the directory's CA; empty for the
+         system's.";
+    }
+    leaf ldap-base {
+      type string;
+      description
+        "Where users are looked up, the subtree under it.";
+    }
+    leaf ldap-user-attr {
+      type string;
+      description
+        "The attribute that is the user name.";
+    }
+    leaf ldap-group {
+      type string;
+      description
+        "A group whose members alone may sign in; empty for anyone
+         the base holds.";
+    }
+    leaf ldap-bind-dn {
+      type string;
+      description
+        "The DN the console binds as to look users up; empty for
+         anonymously.";
+    }
+    leaf ldap-bind-password {
+      type string;
+      description
+        "The reader's password: write-only.";
+    }
+    leaf ldap-bind-password-set {
+      type boolean;
+      config false;
+      description
+        "Whether ldap-bind-password is set.";
+    }
+    leaf safe-wait {
+      type uint16 {
+        range "10..3600";
+      }
+      units "seconds";
+      description
+        "How long a change made in safe mode waits to hear from the
+         console before the host undoes it; left out, each agent's
+         own.";
+    }
+    list source {
+      key "name";
+      config false;
+      description
+        "Where each setting comes from.";
+      leaf name {
+        type string;
+        description
+          "The setting.";
+      }
+      leaf overridden {
+        type boolean;
+        description
+          "Set here, over web.conf's.";
+      }
+      leaf web-conf {
+        type string;
+        description
+          "What web.conf says, but of a secret.";
+      }
+    }
+    container fixed {
+      config false;
+      description
+        "What web.conf alone sets, read once at the start.";
+      leaf relying-party {
+        type string;
+        description
+          "The WebAuthn relying party every key is bound to.";
+      }
+      leaf origin {
+        type string;
+        description
+          "The console's origin.";
+      }
+      leaf data-directory {
+        type string;
+        description
+          "Where the console keeps its files.";
+      }
+      leaf cookie-secure {
+        type boolean;
+        description
+          "The session cookie over HTTPS only.";
+      }
+      leaf agent-certificates {
+        type string;
+        description
+          "The certificates for the agents: the console's own CA, or
+           web.conf's file.";
+      }
+    }
+  }
+
+  /* API tokens */
+
+  container tokens {
+    description
+      "API tokens, for a program to use the console without a
+       passkey, each kept as its SHA-256 alone.  Made by the create
+       action, its value said once; removed by deleting its entry; its
+       name and kind are not changed.";
+    list token {
+      key "id";
+      description
+        "A token.";
+      leaf id {
+        type string {
+          pattern '[0-9a-f]{16}';
+        }
+        description
+          "The first eight bytes of its hash, in hex.";
+      }
+      leaf name {
+        type string {
+          length "1..64";
+        }
+        mandatory true;
+        description
+          "What it is for.";
+      }
+      leaf kind {
+        type enumeration {
+          enum read {
+            description
+              "It reads.";
+          }
+          enum write {
+            description
+              "It reads and changes.";
+          }
+        }
+        default "read";
+        description
+          "What it may.";
+      }
+      leaf created {
+        type yang:date-and-time;
+        config false;
+        description
+          "When it was made.";
+      }
+      leaf last-used {
+        type yang:date-and-time;
+        config false;
+        description
+          "When it was last used.";
+      }
+    }
+    action create {
+      description
+        "A new token; its value is said here alone.";
+      input {
+        leaf name {
+          type string {
+            length "1..64";
+          }
+          mandatory true;
+          description
+            "What it is for.";
+        }
+        leaf kind {
+          type enumeration {
+            enum read;
+            enum write;
+          }
+          default "read";
+          description
+            "What it may.";
+        }
+      }
+      output {
+        leaf id {
+          type string;
+          description
+            "Its id.";
+        }
+        leaf token {
+          type string;
+          description
+            "Its value, sent as Authorization: Bearer.";
+        }
+      }
+    }
+  }
+
+  /* Who may: users, roles and groups */
+
+  container users {
+    description
+      "The console's users.  A user has roles, its own and its
+       groups'; may belong to a tenant, which then limits it to that
+       tenant's hosts.  The console keeps an owner.";
+    list user {
+      key "name";
+      description
+        "A user.";
+      leaf name {
+        type name;
+        description
+          "Its name.";
+      }
+      leaf tenant {
+        type name;
+        description
+          "Its tenant; none, every host.";
+      }
+      leaf-list role {
+        type leafref {
+          path "/arcc:roles/arcc:role/arcc:name";
+        }
+        description
+          "Its roles.";
+      }
+      leaf-list group {
+        type leafref {
+          path "/arcc:groups/arcc:group/arcc:name";
+        }
+        description
+          "The groups it is in.";
+      }
+      leaf created {
+        type yang:date-and-time;
+        config false;
+        description
+          "When it was made.";
+      }
+      leaf console-role {
+        type enumeration {
+          enum owner;
+          enum operator;
+          enum member;
+          enum none;
+        }
+        config false;
+        description
+          "The most its roles allow on the console.";
+      }
+      leaf keys {
+        type uint32;
+        config false;
+        description
+          "Its sign-in keys.";
+      }
+      leaf invitations {
+        type uint32;
+        config false;
+        description
+          "Its invitations not yet used.";
+      }
+      leaf has-password {
+        type boolean;
+        config false;
+        description
+          "Whether it has a password of the console's (never read).";
+      }
+      action invite {
+        description
+          "A one-time token with which the user registers a first key,
+           said here alone.";
+        output {
+          leaf token {
+            type string;
+            description
+              "The invitation.";
+          }
+          leaf expires {
+            type yang:date-and-time;
+            description
+              "When it runs out.";
+          }
+        }
+      }
+    }
+  }
+
+  container roles {
+    description
+      "What may be done: on the console (owner: everything; operator:
+       the fleet's tools too; member: the hosts alone) and on each
+       host.";
+    list role {
+      key "name";
+      description
+        "A role.";
+      leaf name {
+        type name;
+        description
+          "Its name.";
+      }
+      leaf console {
+        type enumeration {
+          enum owner;
+          enum operator;
+          enum member;
+        }
+        default "member";
+        description
+          "What it allows on the console.";
+      }
+      list host {
+        key "id";
+        description
+          "What it allows on a host, or on all.";
+        leaf id {
+          type string {
+            pattern '\*|[0-9a-f]{8}';
+          }
+          description
+            "The host's id, or * for every host.";
+        }
+        leaf role {
+          type enumeration {
+            enum viewer {
+              description
+                "Reads.";
+            }
+            enum operator {
+              description
+                "Changes.";
+            }
+            enum admin {
+              description
+                "Also updates, moves and removes.";
+            }
+          }
+          mandatory true;
+          description
+            "What it may there.";
+        }
+      }
+      leaf ldap-group {
+        type string;
+        description
+          "A directory group's DN whose members have the role.";
+      }
+      leaf created {
+        type yang:date-and-time;
+        config false;
+        description
+          "When it was made.";
+      }
+      leaf users {
+        type uint32;
+        config false;
+        description
+          "How many users have it.";
+      }
+      leaf groups {
+        type uint32;
+        config false;
+        description
+          "How many groups give it.";
+      }
+    }
+  }
+
+  container groups {
+    description
+      "Users given roles together.  Who is in a group is the user's
+       group.";
+    list group {
+      key "name";
+      description
+        "A group.";
+      leaf name {
+        type name;
+        description
+          "Its name.";
+      }
+      leaf-list role {
+        type leafref {
+          path "/arcc:roles/arcc:role/arcc:name";
+        }
+        min-elements 1;
+        description
+          "The roles it gives.";
+      }
+      leaf description {
+        type string {
+          length "0..200";
+        }
+        description
+          "What it is.";
+      }
+      leaf-list member {
+        type string;
+        config false;
+        description
+          "The users in it.";
+      }
+    }
+  }
+
+  /* Enrolment */
+
+  container enrolment {
+    config false;
+    description
+      "Hosts joining by a one-time token: arcana-enrol(8) on the host
+       sends it with its certificate request, which the console's CA
+       signs.";
+    leaf enabled {
+      type boolean;
+      description
+        "Whether the console has a CA key to sign with.";
+    }
+    action create-token {
+      description
+        "A one-time token for a host to join with, said here alone,
+         and the command to run there.";
+      input {
+        leaf name {
+          type string {
+            length "1..64";
+          }
+          mandatory true;
+          description
+            "The host's name in the console.";
+        }
+        leaf host {
+          type inet:host;
+          mandatory true;
+          description
+            "The host's name or address, its certificate's.";
+        }
+        leaf port {
+          type inet:port-number;
+          default "4310";
+          description
+            "Its agent's port.";
+        }
+      }
+      output {
+        leaf token {
+          type string;
+          description
+            "The token.";
+        }
+        leaf expires {
+          type yang:date-and-time;
+          description
+            "When it runs out.";
+        }
+        leaf command {
+          type string;
+          description
+            "What to run on the host.";
+        }
+      }
+    }
+  }
+
+  /* Workflows */
+
+  grouping test {
+    description
+      "A test of what is at a path.";
+    leaf path {
+      type string {
+        length "0..256";
+      }
+      description
+        "Words with dots, a number an array's place,
+         key[field=value] the element whose field is value.";
+    }
+    leaf op {
+      type enumeration {
+        enum eq;
+        enum ne;
+        enum contains;
+        enum gt;
+        enum lt;
+        enum exists;
+        enum missing;
+      }
+      mandatory true;
+      description
+        "The test.";
+    }
+    leaf value {
+      type string;
+      description
+        "What it is tested against.";
+    }
+  }
+
+  typedef read {
+    type enumeration {
+      enum hello;
+      enum jails;
+      enum services;
+      enum stats;
+      enum events;
+      enum history;
+      enum packages;
+    }
+    description
+      "A read of the host.";
+  }
+
+  container workflows {
+    description
+      "Chains of steps the console keeps and runs on several hosts at
+       once, by hand, at an interval or on events.  A value in a step
+       may be ${param.NAME}, ${host.id}, ${host.name}, ${step.ID.PATH}
+       or ${event.PATH}.";
+    list workflow {
+      key "id";
+      description
+        "A workflow.";
+      leaf id {
+        type string {
+          pattern '[0-9a-f]{8}';
+        }
+        description
+          "Its id.";
+      }
+      leaf name {
+        type string {
+          length "1..64";
+        }
+        mandatory true;
+        description
+          "Its name.";
+      }
+      leaf-list host {
+        type host-id;
+        ordered-by user;
+        max-elements 32;
+        description
+          "The hosts it runs on by itself, and by hand unless told
+           others.";
+      }
+      leaf serial {
+        type boolean;
+        default "false";
+        description
+          "Its hosts one after the other, a failure leaving the rest
+           not run; else at once.";
+      }
+      list param {
+        key "name";
+        ordered-by user;
+        max-elements 16;
+        description
+          "A parameter, asked for when it runs.";
+        leaf name {
+          type string {
+            length "1..32";
+            pattern '[A-Za-z0-9_-]+';
+          }
+          description
+            "Its name.";
+        }
+        leaf default {
+          type string {
+            length "0..256";
+          }
+          description
+            "Its value unless one is given.";
+        }
+      }
+      list step {
+        key "id";
+        ordered-by user;
+        min-elements 1;
+        max-elements 64;
+        description
+          "A step.";
+        leaf id {
+          type string {
+            length "1..16";
+            pattern '[A-Za-z0-9_-]+';
+          }
+          description
+            "Its id.";
+        }
+        leaf name {
+          type string;
+          description
+            "Its name; its id unless said.";
+        }
+        choice does {
+          mandatory true;
+          description
+            "What it does.";
+          container job {
+            description
+              "A job of share/arcana/jobs.yaml's kinds, checked
+               against what its kind needs and uses.";
+            leaf kind {
+              type string;
+              mandatory true;
+              description
+                "The job's kind.";
+            }
+            list field {
+              key "name";
+              ordered-by user;
+              description
+                "A field of the job.";
+              leaf name {
+                type string;
+                description
+                  "Its name.";
+              }
+              choice value {
+                mandatory true;
+                description
+                  "Its value.";
+                leaf text {
+                  type string;
+                  description
+                    "Text.";
+                }
+                leaf number {
+                  type int64;
+                  description
+                    "A number.";
+                }
+                leaf flag {
+                  type boolean;
+                  description
+                    "True or false.";
+                }
+                leaf json {
+                  type string;
+                  description
+                    "A list or a map, as RFC 8259's JSON.";
+                }
+              }
+            }
+          }
+          leaf read {
+            type read;
+            description
+              "A read of the host whose answer a later step looks
+               at.";
+          }
+          container notify {
+            description
+              "A message sent.";
+            leaf via {
+              type notify-via;
+              mandatory true;
+              description
+                "How.";
+            }
+            leaf text {
+              type string {
+                length "1..2000";
+              }
+              mandatory true;
+              description
+                "What it says.";
+            }
+          }
+          container approval {
+            description
+              "The host's run waits here until someone approves the
+               step, or stops the run, or its time runs out.";
+            leaf text {
+              type string {
+                length "1..2000";
+              }
+              mandatory true;
+              description
+                "What is asked.";
+            }
+            leaf via {
+              type notify-via;
+              description
+                "How it is told; not told unless said.";
+            }
+            leaf timeout {
+              type uint32 {
+                range "0..604800";
+              }
+              units "seconds";
+              description
+                "How long it waits; 0, as long as it takes.";
+            }
+          }
+          leaf arcana {
+            type enumeration {
+              enum check;
+              enum build;
+              enum agents;
+              enum console;
+            }
+            description
+              "What it does to Arcana itself.";
+          }
+        }
+        container when {
+          presence "a condition";
+          description
+            "Its condition: a read made then, or an earlier step's
+             answer, tested; a step whose condition fails is
+             skipped.";
+          choice of {
+            mandatory true;
+            description
+              "What is tested.";
+            leaf read {
+              type read;
+              description
+                "A read made then.";
+            }
+            leaf step {
+              type string;
+              description
+                "An earlier step's answer.";
+            }
+          }
+          uses test;
+        }
+        leaf on-fail {
+          type string;
+          default "stop";
+          description
+            "On a failure: stop, continue, or a later step's id.";
+        }
+        leaf destroys {
+          type boolean;
+          config false;
+          description
+            "Its job destroys, as jobs.yaml says.";
+        }
+      }
+      leaf every {
+        type uint32 {
+          range "0 | 60..604800";
+        }
+        units "seconds";
+        default "0";
+        description
+          "It runs by itself at this interval; 0, not.";
+      }
+      list on {
+        key "index";
+        max-elements 8;
+        description
+          "An event it runs on: the console's (host-down, host-up) or
+           a host's.  Two may be of one kind, each matching other
+           values.";
+        leaf index {
+          type uint8 {
+            range "0..7";
+          }
+          description
+            "Its place among them, from 0, as kept.";
+        }
+        leaf event {
+          type string {
+            length "1..32";
+            pattern '[A-Za-z0-9_-]+';
+          }
+          mandatory true;
+          description
+            "The event's kind.";
+        }
+        list match {
+          key "name";
+          description
+            "What the event must have.";
+          leaf name {
+            type string;
+            description
+              "A member of the event.";
+          }
+          choice is {
+            mandatory true;
+            description
+              "Its value; ${param.NAME}, that parameter's default.";
+            leaf value {
+              type string;
+              description
+                "Text.";
+            }
+            leaf number {
+              type int64;
+              description
+                "A number.";
+            }
+            leaf flag {
+              type boolean;
+              description
+                "True or false.";
+            }
+            leaf json {
+              type string;
+              description
+                "A list or a map, as RFC 8259's JSON.";
+            }
+          }
+        }
+      }
+      leaf destructive {
+        type boolean;
+        default "false";
+        description
+          "Said of one that runs by itself with a step that
+           destroys.";
+      }
+      leaf changed {
+        type yang:date-and-time;
+        config false;
+        description
+          "When it was last changed.";
+      }
+      action run {
+        description
+          "It runs now, by hand.";
+        input {
+          leaf-list host {
+            type host-id;
+            description
+              "Its hosts this time; its own unless said.";
+          }
+          list param {
+            key "name";
+            description
+              "A parameter's value this time.";
+            leaf name {
+              type string;
+              description
+                "The parameter.";
+            }
+            leaf value {
+              type string;
+              description
+                "Its value.";
+            }
+          }
+        }
+        output {
+          leaf run {
+            type uint32;
+            description
+              "The run's id.";
+          }
+        }
+      }
+    }
+  }
+
+  container runs {
+    config false;
+    description
+      "The last runs of the workflows.  A run's traces, its steps'
+       answers, are read where the path names the run.";
+    list run {
+      key "id";
+      description
+        "A run.";
+      leaf id {
+        type uint32;
+        description
+          "Its id.";
+      }
+      leaf workflow {
+        type string;
+        description
+          "The workflow's id.";
+      }
+      leaf name {
+        type string;
+        description
+          "The workflow's name then.";
+      }
+      leaf trigger {
+        type string;
+        description
+          "What began it: hand, every, or an event.";
+      }
+      leaf started-by {
+        type string;
+        description
+          "The user who ran it by hand.";
+      }
+      leaf state {
+        type string;
+        description
+          "running, done, failed, cancelled or interrupted.";
+      }
+      leaf started {
+        type yang:date-and-time;
+        description
+          "When it began.";
+      }
+      leaf ended {
+        type yang:date-and-time;
+        description
+          "When it ended.";
+      }
+      list param {
+        key "name";
+        description
+          "A parameter's value.";
+        leaf name {
+          type string;
+          description
+            "The parameter.";
+        }
+        leaf value {
+          type string;
+          description
+            "Its value.";
+        }
+      }
+      leaf event {
+        type string;
+        description
+          "The event that began it, as RFC 8259's JSON.";
+      }
+      leaf cancel {
+        type boolean;
+        description
+          "A stop was asked.";
+      }
+      list approved {
+        key "step";
+        description
+          "A step approved.";
+        leaf step {
+          type string;
+          description
+            "The step.";
+        }
+        leaf by {
+          type string;
+          description
+            "Who approved it.";
+        }
+        leaf at {
+          type yang:date-and-time;
+          description
+            "When.";
+        }
+      }
+      list host {
+        key "id";
+        description
+          "A host it runs on.";
+        leaf id {
+          type string;
+          description
+            "The host's id.";
+        }
+        leaf name {
+          type string;
+          description
+            "Its name.";
+        }
+        leaf state {
+          type string;
+          description
+            "Its run's state.";
+        }
+        list step {
+          key "id";
+          description
+            "A step there.";
+          leaf id {
+            type string;
+            description
+              "The step.";
+          }
+          leaf state {
+            type string;
+            description
+              "pending, skipped, running, waiting, done, failed,
+               cancelled or not run.";
+          }
+          leaf job {
+            type uint64;
+            description
+              "The job it queued on the host.";
+          }
+          leaf title {
+            type string;
+            description
+              "What it did.";
+          }
+          leaf error {
+            type string;
+            description
+              "Why it failed.";
+          }
+          leaf started {
+            type yang:date-and-time;
+            description
+              "When it began.";
+          }
+          leaf ended {
+            type yang:date-and-time;
+            description
+              "When it ended.";
+          }
+          leaf trace {
+            type string;
+            description
+              "What it answered, as RFC 8259's JSON.";
+          }
+        }
+      }
+      action approve {
+        description
+          "A step that waits approved, on each of the run's hosts.";
+        input {
+          leaf step {
+            type string;
+            mandatory true;
+            description
+              "The step.";
+          }
+        }
+      }
+      action stop {
+        description
+          "The run stopped.";
+      }
+    }
+    action clear {
+      description
+        "The runs that ended forgotten, with their traces.";
+      input {
+        leaf workflow {
+          type string;
+          description
+            "Those of this workflow alone.";
+        }
+      }
+      output {
+        leaf cleared {
+          type uint32;
+          description
+            "How many.";
+        }
+      }
+    }
+  }
+}

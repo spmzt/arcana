@@ -1,0 +1,1071 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-console",
+    "module-revision": "2026-11-05",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "91800",
+        "size": "300"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-console",
+        "sid": "91800"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:enrolment",
+        "sid": "91801"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:enrolment/create-token",
+        "sid": "91802"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:enrolment/create-token/input",
+        "sid": "91803"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:enrolment/create-token/input/host",
+        "sid": "91804"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:enrolment/create-token/input/name",
+        "sid": "91805"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:enrolment/create-token/input/port",
+        "sid": "91806"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:enrolment/create-token/output",
+        "sid": "91807"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:enrolment/create-token/output/command",
+        "sid": "91808"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:enrolment/create-token/output/expires",
+        "sid": "91809"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:enrolment/create-token/output/token",
+        "sid": "91810"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:enrolment/enabled",
+        "sid": "91811"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:groups",
+        "sid": "91812"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:groups/group",
+        "sid": "91813"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:groups/group/description",
+        "sid": "91814"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:groups/group/member",
+        "sid": "91815"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:groups/group/name",
+        "sid": "91816"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:groups/group/role",
+        "sid": "91817"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:roles",
+        "sid": "91818"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:roles/role",
+        "sid": "91819"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:roles/role/console",
+        "sid": "91820"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:roles/role/created",
+        "sid": "91821"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:roles/role/groups",
+        "sid": "91822"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:roles/role/host",
+        "sid": "91823"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:roles/role/host/id",
+        "sid": "91824"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:roles/role/host/role",
+        "sid": "91825"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:roles/role/ldap-group",
+        "sid": "91826"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:roles/role/name",
+        "sid": "91827"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:roles/role/users",
+        "sid": "91828"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs",
+        "sid": "91829"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/clear",
+        "sid": "91830"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/clear/input",
+        "sid": "91831"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/clear/input/workflow",
+        "sid": "91832"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/clear/output",
+        "sid": "91833"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/clear/output/cleared",
+        "sid": "91834"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run",
+        "sid": "91835"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/approve",
+        "sid": "91836"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/approve/input",
+        "sid": "91837"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/approve/input/step",
+        "sid": "91838"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/approve/output",
+        "sid": "91839"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/approved",
+        "sid": "91840"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/approved/at",
+        "sid": "91841"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/approved/by",
+        "sid": "91842"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/approved/step",
+        "sid": "91843"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/cancel",
+        "sid": "91844"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/ended",
+        "sid": "91845"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/event",
+        "sid": "91846"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host",
+        "sid": "91847"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/id",
+        "sid": "91848"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/name",
+        "sid": "91849"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/state",
+        "sid": "91850"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/step",
+        "sid": "91851"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/step/ended",
+        "sid": "91852"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/step/error",
+        "sid": "91853"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/step/id",
+        "sid": "91854"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/step/job",
+        "sid": "91855"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/step/started",
+        "sid": "91856"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/step/state",
+        "sid": "91857"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/step/title",
+        "sid": "91858"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/step/trace",
+        "sid": "91859"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/id",
+        "sid": "91860"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/name",
+        "sid": "91861"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/param",
+        "sid": "91862"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/param/name",
+        "sid": "91863"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/param/value",
+        "sid": "91864"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/started",
+        "sid": "91865"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/started-by",
+        "sid": "91866"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/state",
+        "sid": "91867"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/stop",
+        "sid": "91868"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/stop/input",
+        "sid": "91869"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/stop/output",
+        "sid": "91870"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/trigger",
+        "sid": "91871"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/workflow",
+        "sid": "91872"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings",
+        "sid": "91873"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/agent-binary",
+        "sid": "91874"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/agent-ref",
+        "sid": "91875"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/agent-source",
+        "sid": "91876"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/agent-ssh-key",
+        "sid": "91877"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/feeds-allow-private",
+        "sid": "91878"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/fixed",
+        "sid": "91879"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/fixed/agent-certificates",
+        "sid": "91880"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/fixed/cookie-secure",
+        "sid": "91881"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/fixed/data-directory",
+        "sid": "91882"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/fixed/origin",
+        "sid": "91883"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/fixed/relying-party",
+        "sid": "91884"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/hsts-days",
+        "sid": "91885"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/ldap-base",
+        "sid": "91886"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/ldap-bind-dn",
+        "sid": "91887"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/ldap-bind-password",
+        "sid": "91888"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/ldap-bind-password-set",
+        "sid": "91889"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/ldap-ca",
+        "sid": "91890"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/ldap-group",
+        "sid": "91891"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/ldap-url",
+        "sid": "91892"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/ldap-user-attr",
+        "sid": "91893"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-faults",
+        "sid": "91894"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-from",
+        "sid": "91895"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-jobs",
+        "sid": "91896"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-limits",
+        "sid": "91897"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-runs",
+        "sid": "91898"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-san",
+        "sid": "91899"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-sen",
+        "sid": "91900"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/mail-to",
+        "sid": "91901"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/rp-name",
+        "sid": "91902"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/safe-wait",
+        "sid": "91903"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/session-idle",
+        "sid": "91904"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/session-max",
+        "sid": "91905"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/source",
+        "sid": "91906"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/source/name",
+        "sid": "91907"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/source/overridden",
+        "sid": "91908"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/source/web-conf",
+        "sid": "91909"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-chats",
+        "sid": "91910"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-faults",
+        "sid": "91911"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-jobs",
+        "sid": "91912"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-limits",
+        "sid": "91913"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-runs",
+        "sid": "91914"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-san",
+        "sid": "91915"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-sen",
+        "sid": "91916"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-token",
+        "sid": "91917"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-token-set",
+        "sid": "91918"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/telegram-via",
+        "sid": "91919"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/update-check",
+        "sid": "91920"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:settings/update-url",
+        "sid": "91921"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens",
+        "sid": "91922"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/create",
+        "sid": "91923"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/create/input",
+        "sid": "91924"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/create/input/kind",
+        "sid": "91925"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/create/input/name",
+        "sid": "91926"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/create/output",
+        "sid": "91927"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/create/output/id",
+        "sid": "91928"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/create/output/token",
+        "sid": "91929"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/token",
+        "sid": "91930"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/token/created",
+        "sid": "91931"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/token/id",
+        "sid": "91932"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/token/kind",
+        "sid": "91933"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/token/last-used",
+        "sid": "91934"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:tokens/token/name",
+        "sid": "91935"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users",
+        "sid": "91936"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user",
+        "sid": "91937"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/console-role",
+        "sid": "91938"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/created",
+        "sid": "91939"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/group",
+        "sid": "91940"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/has-password",
+        "sid": "91941"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/invitations",
+        "sid": "91942"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/invite",
+        "sid": "91943"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/invite/input",
+        "sid": "91944"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/invite/output",
+        "sid": "91945"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/invite/output/expires",
+        "sid": "91946"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/invite/output/token",
+        "sid": "91947"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/keys",
+        "sid": "91948"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/name",
+        "sid": "91949"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/role",
+        "sid": "91950"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:users/user/tenant",
+        "sid": "91951"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows",
+        "sid": "91952"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow",
+        "sid": "91953"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/changed",
+        "sid": "91954"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/destructive",
+        "sid": "91955"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/every",
+        "sid": "91956"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/host",
+        "sid": "91957"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/id",
+        "sid": "91958"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/name",
+        "sid": "91959"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/on",
+        "sid": "91960"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/on/event",
+        "sid": "91961"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/on/match",
+        "sid": "91962"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/on/match/name",
+        "sid": "91963"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/on/match/value",
+        "sid": "91964"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/param",
+        "sid": "91965"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/param/default",
+        "sid": "91966"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/param/name",
+        "sid": "91967"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/run",
+        "sid": "91968"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/run/input",
+        "sid": "91969"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/run/input/host",
+        "sid": "91970"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/run/input/param",
+        "sid": "91971"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/run/input/param/name",
+        "sid": "91972"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/run/input/param/value",
+        "sid": "91973"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/run/output",
+        "sid": "91974"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/run/output/run",
+        "sid": "91975"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/serial",
+        "sid": "91976"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step",
+        "sid": "91977"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/approval",
+        "sid": "91978"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/approval/text",
+        "sid": "91979"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/approval/timeout",
+        "sid": "91980"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/approval/via",
+        "sid": "91981"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/arcana",
+        "sid": "91982"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/destroys",
+        "sid": "91983"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/id",
+        "sid": "91984"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/job",
+        "sid": "91985"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/job/field",
+        "sid": "91986"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/job/field/flag",
+        "sid": "91987"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/job/field/json",
+        "sid": "91988"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/job/field/name",
+        "sid": "91989"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/job/field/number",
+        "sid": "91990"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/job/field/text",
+        "sid": "91991"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/job/kind",
+        "sid": "91992"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/name",
+        "sid": "91993"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/notify",
+        "sid": "91994"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/notify/text",
+        "sid": "91995"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/notify/via",
+        "sid": "91996"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/on-fail",
+        "sid": "91997"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/read",
+        "sid": "91998"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/when",
+        "sid": "91999"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/when/op",
+        "sid": "92000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/when/path",
+        "sid": "92001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/when/read",
+        "sid": "92002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/when/step",
+        "sid": "92003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/step/when/value",
+        "sid": "92004"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/on/index",
+        "sid": "92005"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/on/match/flag",
+        "sid": "92006"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/on/match/json",
+        "sid": "92007"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:workflows/workflow/on/match/number",
+        "sid": "92008"
+      }
+    ]
+  }
+}

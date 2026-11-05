@@ -80,7 +80,8 @@ l3nm_module(const struct cbl_ymodule *m)
 
 	return (strcmp(m->name, "ietf-l3vpn-ntw") == 0 || strcmp(m->name,
 	    "arcana-l3nm") == 0 || strcmp(m->name, "ietf-vn") == 0 ||
-	    strcmp(m->name, "arcana-sdwan-underlay") == 0);
+	    strcmp(m->name, "arcana-sdwan-underlay") == 0 || strcmp(m->name,
+	    "arcana-console") == 0);
 }
 
 static const struct cbl_ynode *
