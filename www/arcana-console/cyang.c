@@ -24,6 +24,14 @@
  *	/restconf/data/arcana-console:threat-feeds	operators and owners
  *	/restconf/data/arcana-console:transfers		operators and owners
  *	/restconf/data/arcana-console:push		everyone, their own
+ *	/restconf/data/arcana-console:hosts		everyone, the hosts
+ *							they have a role on;
+ *							added by operators,
+ *							changed by admins
+ *
+ * What the console makes rather than keeps (a host's drift, its
+ * subscription, a bundle) and its verbs on it are /api's handlers
+ * answering at the module's paths too: the bridges below.
  *
  * No second store: a request reads the files the stores keep, each
  * store's view of itself made into a tree (settings_yang() and the
@@ -81,7 +89,220 @@ static const struct part {
 	{ "threat-feeds", false, true },
 	{ "transfers", false, false },
 	{ "push", false, true },
+	{ "hosts", false, true },
 };
+
+static void	put(ucl_object_t *, const char *, ucl_object_t *);
+
+/*
+ * The /api handlers that answer at arcana-console's paths too
+ * (routes.c): what the console makes rather than keeps, a node read
+ * (GET) or written whole (PUT), and its verbs, actions and rpcs (POST).
+ * The handler sees /api's body: the input (RFC 8040 section 3.6.1), or
+ * the node's value, unwrapped; in names the input's member that is the
+ * body, and with snake the input's names are /api's, - for _.  Its
+ * reply is RESTCONF's: a GET's nested in the nodes wrap names (the
+ * path's last by default), an action's its output (in wrap's member,
+ * where one is named), a PUT's none; errors ietf-restconf's.  Who may
+ * is the handler's, guard() told the RESTCONF path (users.c, tokens.c).
+ */
+static const struct bridge {
+	const char	*path;		/* below /restconf/, * a key */
+	const char	*wrap;
+	const char	*in;
+	bool		 snake;
+} bridges[] = {
+#define	H	"data/arcana-console:hosts/host=*/"
+	{ H "drift", NULL, NULL, false },
+	{ H "watch", NULL, NULL, false },
+	{ H "notifications", NULL, NULL, false },
+	{ H "subscription", NULL, NULL, false },
+	{ H "tls", NULL, NULL, false },
+	{ H "transport", NULL, NULL, false },
+	{ H "configuration", NULL, NULL, false },
+	{ H "move", "result", NULL, true },
+	{ H "renew-tls", "result", NULL, true },
+	{ H "listen", "result", NULL, true },
+	{ H "switch-transport", "result", NULL, true },
+	{ H "nacm-sync", "result", NULL, true },
+	{ H "agent-build", "result", NULL, true },
+	{ H "agent-update", "result", NULL, true },
+	{ H "console-update", "result", NULL, true },
+	{ H "export-configuration", "result", NULL, true },
+	{ H "apply-configuration", "result", NULL, true },
+	{ H "capture", "result", NULL, true },
+	{ H "subscription-token", "result", NULL, true },
+#undef	H
+};
+
+/* Whether path is pattern pat, each * a key (no /). */
+static bool
+pmatch(const char *pat, const char *path)
+{
+	size_t	n;
+
+	while (*pat != '\0') {
+		if (*pat == '*') {
+			if ((n = strcspn(path, "/")) == 0)
+				return (false);
+			path += n;
+			pat++;
+			continue;
+		}
+		if (*pat++ != *path++)
+			return (false);
+	}
+	return (*path == '\0');
+}
+
+static const struct bridge *
+bridge_of(const char *path)
+{
+
+	if (strncmp(path, "/restconf/", 10) != 0)
+		return (NULL);
+	for (size_t i = 0; i < nitems(bridges); i++)
+		if (pmatch(bridges[i].path, path + 10))
+			return (&bridges[i]);
+	return (NULL);
+}
+
+bool
+cyang_bridged(const char *path)
+{
+
+	return (bridge_of(path) != NULL);
+}
+
+/* The path's last node's name. */
+static const char *
+last_of(const char *path, char *buf, size_t len)
+{
+	const char	*p;
+
+	p = strrchr(path, '/');
+	snprintf(buf, len, "%s", p != NULL ? p + 1 : path);
+	if ((p = strchr(buf, ':')) != NULL)
+		memmove(buf, p + 1, strlen(p + 1) + 1);
+	return (buf);
+}
+
+/*
+ * The body a bridged handler reads: a POST's input, a PUT's node,
+ * unwrapped; NULL where it is neither (the handler's "a JSON object").
+ */
+ucl_object_t *
+cyang_unwrap(struct http_request *req, ucl_object_t *o)
+{
+	const struct bridge	*b;
+	const ucl_object_t	*v, *e;
+	ucl_object_iter_t	 it = NULL;
+	ucl_object_t		*n;
+	char			 key[96], name[64], *p;
+
+	if (o == NULL || (b = bridge_of(req->path)) == NULL)
+		return (o);
+	if (req->method == HTTP_METHOD_POST)
+		snprintf(key, sizeof(key), MODULE ":input");
+	else
+		snprintf(key, sizeof(key), MODULE ":%s", last_of(req->path,
+		    name, sizeof(name)));
+	v = ucl_object_lookup(o, key);
+	if (v != NULL && b->in != NULL && req->method == HTTP_METHOD_POST)
+		v = ucl_object_lookup(v, b->in);
+	if (v == NULL || o->len != 1 || ucl_object_type(v) != UCL_OBJECT) {
+		ucl_object_unref(o);
+		return (NULL);
+	}
+	if (!b->snake) {
+		n = ucl_object_copy(v);
+		ucl_object_unref(o);
+		return (n);
+	}
+	n = ucl_object_typed_new(UCL_OBJECT);
+	while ((e = ucl_object_iterate(v, &it, true)) != NULL) {
+		snprintf(key, sizeof(key), "%s", ucl_object_key(e));
+		for (p = key; *p != '\0'; p++)
+			if (*p == '-')
+				*p = '_';
+		put(n, key, ucl_object_copy(e));
+	}
+	ucl_object_unref(o);
+	return (n);
+}
+
+/* A bridged handler's reply, o consumed: RESTCONF's. */
+int
+cyang_bridge_reply(struct http_request *req, int status, ucl_object_t *o)
+{
+	const struct bridge	*b;
+	const ucl_object_t	*e;
+	ucl_object_t		*top, *in;
+	char			 wrap[96], name[64], msg[512], *p, *s;
+
+	b = bridge_of(req->path);
+	if (status >= 400 || b == NULL) {
+		e = ucl_object_lookup(o, "error");
+		if (ucl_object_type(e) == UCL_OBJECT)
+			e = ucl_object_lookup(e, "message");
+		snprintf(msg, sizeof(msg), "%s", ucl_object_type(e) ==
+		    UCL_STRING ? ucl_object_tostring(e) : "it failed");
+		ucl_object_unref(o);
+		return (restconf_error(req, status >= 400 ? status : 500, msg));
+	}
+	if (req->method == HTTP_METHOD_PUT || req->method ==
+	    HTTP_METHOD_DELETE) {
+		ucl_object_unref(o);
+		http_response_header(req, "cache-control", "no-store");
+		http_response(req, 204, NULL, 0);
+		return (WEB_OK);
+	}
+	if (req->method == HTTP_METHOD_POST) {
+		if (b->wrap != NULL) {
+			top = ucl_object_typed_new(UCL_OBJECT);
+			put(top, b->wrap, o);
+			o = top;
+		}
+		return (cyang_output(req, o));
+	}
+	/* A node's nodes, the outermost in the module's namespace. */
+	snprintf(wrap, sizeof(wrap), "%s", b->wrap != NULL ? b->wrap :
+	    last_of(req->path, name, sizeof(name)));
+	while ((p = strrchr(wrap, '/')) != NULL) {
+		top = ucl_object_typed_new(UCL_OBJECT);
+		put(top, p + 1, o);
+		o = top;
+		*p = '\0';
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	s = NULL;
+	if (asprintf(&s, MODULE ":%s", wrap) == -1)
+		s = NULL;
+	in = o;
+	put(top, s != NULL ? s : MODULE, in);
+	free(s);
+	return (restconf_reply(req, top));
+}
+
+/* The same of a reply's JSON as /api would send it. */
+int
+cyang_bridge_raw(struct http_request *req, int status, const char *json)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o = NULL;
+
+	if (json != NULL) {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		if (ucl_parser_add_string(p, json, 0))
+			o = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+	}
+	if (o == NULL)
+		return (restconf_error(req, status >= 400 ? status : 502,
+		    "the reply is not JSON"));
+	return (cyang_bridge_reply(req, status, o));
+}
 
 static void
 put(ucl_object_t *o, const char *key, ucl_object_t *v)
@@ -238,6 +459,8 @@ value_of(struct http_request *req, const struct part *p, uint32_t one)
 		return (transfers_yang());
 	if (strcmp(p->name, "push") == 0)
 		return (push_yang(req));
+	if (strcmp(p->name, "hosts") == 0)
+		return (servers_yang(req));
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put(o, "enabled", ucl_object_frombool(enrol_enabled()));
 	return (o);
@@ -400,6 +623,9 @@ keep(struct http_request *req, const struct part *p, const ucl_object_t *was,
 	if (strcmp(p->name, "push") == 0)
 		return (push_yang_set(req, ucl_object_lookup(was, "push"),
 		    ucl_object_lookup(now, "push"), why, len));
+	if (strcmp(p->name, "hosts") == 0)
+		return (servers_yang_set(req, ucl_object_lookup(was, "hosts"),
+		    ucl_object_lookup(now, "hosts"), why, len));
 	snprintf(why, len, "%s is not configuration", p->name);
 	return (405);
 }
@@ -602,7 +828,7 @@ api_cyang(struct http_request *req)
 		return (restconf_error(req, 404, "no such resource: "
 		    MODULE "'s are settings, tokens, users, roles, groups, "
 		    "enrolment, workflows, runs, templates, labels, "
-		    "prefix-lists, threat-feeds, transfers and push"));
+		    "prefix-lists, threat-feeds, transfers, push and hosts"));
 	if (req->method == HTTP_METHOD_POST && (st = action(req)) != -1)
 		return (st);
 	if (!guard(req, req->method != HTTP_METHOD_GET))

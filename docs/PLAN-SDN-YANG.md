@@ -1831,15 +1831,47 @@ whose first part is served.
   key with `/` (a template's file, a subscription's endpoint, a
   prefix) is named in no path: libwebsockets decodes the path before
   RESTCONF cuts it; such entries are changed through their parent.
-  Open, /api's alone still: the hosts' registry (servers.json: add,
-  rename, remove), the console's update check and notes, its cluster,
-  its CA, its plugins and their stores, a user's own security keys,
-  the SD-WAN's lists, identities, ledger, steering pins, rekey, plan
-  and apply, its records (audit, SEN, SAN, record, their CSV), the
-  path finder, the WireGuard key pair, and the per-host routes the
-  console answers itself (drift, watch, subscription,
-  notifications, move, tls, transport switch, NACM sync, agent build
-  and update, config apply and export, capture, IDS pcap).
+  Open, /api's alone still: the console's update check and notes, its
+  cluster, its CA, its plugins and their stores, a user's own security
+  keys, the SD-WAN's lists, identities, ledger, steering pins, rekey,
+  plan and apply, its records (audit, SEN, SAN, record, their CSV),
+  the path finder, the WireGuard key pair.
+- 4.4.1 the hosts done (console 0.367.0): `arcana-console:hosts`, the
+  registry (servers.json) as a typed list keyed by the host's id
+  (name, uri, peer-name, tenant, safe-wait, pkg-repos; local,
+  notification-token-set and the reader's role as state), each user
+  the hosts they have a role on, through servers_yang_set(): all
+  checked first, a host added by operators and owners (a write
+  token), renamed (new: /api has no rename), changed and removed by
+  its admins, a URI one host's, a host the reader may not read left
+  alone, a URI changed by the console alone keeping the certificate
+  name it was enrolled with.  Decided: what the console makes rather
+  than keeps, and its verbs, are /api's own handlers answering at the
+  module's paths too (cyang.c's bridges, one table): a node read is
+  `anydata` read at its own path alone (not in its parent's GET: it
+  asks the agent), a verb an action whose output is the handler's
+  document in an `anydata result`; the input arrives unwrapped (RFC
+  8040 3.6.1) with /api's names (- for _), the reply wrapped, errors
+  ietf-restconf's, and every check is the handler's own, guard()
+  given the RESTCONF path.  Typing those documents is 4.8's, where
+  the page's forms need them.  Below each host: `drift`, `watch`,
+  `notifications` (?after= as on /api), `subscription`, `tls`,
+  `transport`, `configuration` (the bundle without secrets) read;
+  `move`, `renew-tls`, `listen`, `switch-transport`, `nacm-sync`,
+  `agent-build`, `agent-update`, `console-update`,
+  `export-configuration`, `apply-configuration`, `capture` (?jail=
+  as on /api) and `subscription-token` (the token said once) as
+  actions.  The receiver's subscription is not 4.3.3's: those are a
+  client's dynamic subscriptions, this the host's configured one
+  (RFC 8650) toward the console.  The IDS pcap upload and the
+  pcap-log download stay binary resources beside /restconf (D-10): a
+  pcap is no YANG data, and as `binary` it would go base64 in chunks
+  of 8 MB for nothing.  Check: console_test's cyang_hosts (GET as
+  /api's, rename, tenant, timer, repositories, add, a URI twice and a
+  bad one refused, a move keeping the certificate's name, removal, a
+  member reading and refused every change) and cyang_host_verbs (each
+  read and verb the same status as /api's, an /api body refused as
+  input, an unknown host 404, a viewer refused the admins' verbs).
 - 4.4.2 C: the WebAuthn ceremonies, logout, `assetlinks.json`, enrol
   and health moved beside `/restconf`; `/api` removed; check: the
   console tests rewritten.

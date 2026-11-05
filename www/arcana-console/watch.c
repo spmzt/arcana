@@ -1260,14 +1260,11 @@ api_watch(struct http_request *req)
 	ucl_object_t		*top, *arr, *o;
 	uint64_t		 asked, held, secs, now;
 	char			 id[17];
-	const char		*p, *e;
 
 	if (!guard(req, false))
 		return (WEB_OK);
-	p = req->path + strlen("/api/servers/");
-	e = strchr(p, '/');
-	snprintf(id, sizeof(id), "%.*s", e != NULL ? (int)(e - p) : 0, p);
-	if ((s = server_find(id)) == NULL)
+	if (!server_capture(req, id, sizeof(id)) || (s = server_find(id)) ==
+	    NULL)
 		return (reply_error(req, 404, "not_found", "no such server"));
 	if (!host_allowed(req, id, false, false))
 		return (WEB_OK);

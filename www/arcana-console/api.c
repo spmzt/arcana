@@ -29,6 +29,9 @@ reply_json(struct http_request *req, int status, ucl_object_t *o)
 {
 	unsigned char	*json;
 
+	/* An /api handler at arcana-console's path: RESTCONF's shape. */
+	if (cyang_bridged(req->path))
+		return (cyang_bridge_reply(req, status, o));
 	json = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(o);
 	if (json == NULL) {
@@ -119,6 +122,9 @@ read_json(struct http_request *req)
 		ucl_object_unref(o);
 		o = NULL;
 	}
+	/* At arcana-console's path, /api's body is the input's. */
+	if (cyang_bridged(req->path))
+		o = cyang_unwrap(req, o);
 	return (o);
 }
 
@@ -224,6 +230,29 @@ capture(struct http_request *req, int idx, char *buf, size_t len)
 {
 
 	return (capture_path(req->path, idx, buf, len));
+}
+
+/* The host's id of a host's route: /api/servers/<id>/..., or
+ * arcana-console's hosts/host=<id>/... */
+bool
+server_capture(struct http_request *req, char *sid, size_t len)
+{
+	const char	*p;
+	size_t		 n;
+
+	if (strncmp(req->path, CYANG_HOST, sizeof(CYANG_HOST) - 1) != 0) {
+		if (!capture(req, 3, sid, len))
+			return (false);
+	} else {
+		p = req->path + sizeof(CYANG_HOST) - 1;
+		n = strcspn(p, "/");
+		if (n == 0 || n >= len)
+			return (false);
+		memcpy(sid, p, n);
+		sid[n] = '\0';
+	}
+	/* An id is hex: nothing a file's name reads otherwise. */
+	return (strspn(sid, "0123456789abcdef") == strlen(sid));
 }
 
 /* Path segment idx of path, as capture() takes it of a request's. */

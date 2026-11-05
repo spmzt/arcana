@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-console",
     "module-revision": "2026-11-05",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -1989,6 +1989,466 @@
         "namespace": "data",
         "identifier": "/arcana-console:transfers/transfer/to",
         "sid": "92192"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts",
+        "sid": "92193"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host",
+        "sid": "92194"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/agent-build",
+        "sid": "92195"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/agent-build/input",
+        "sid": "92196"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/agent-build/input/host-keys",
+        "sid": "92197"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/agent-build/output",
+        "sid": "92198"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/agent-build/output/result",
+        "sid": "92199"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/agent-update",
+        "sid": "92200"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/agent-update/input",
+        "sid": "92201"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/agent-update/input/restart",
+        "sid": "92202"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/agent-update/output",
+        "sid": "92203"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/agent-update/output/result",
+        "sid": "92204"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/apply-configuration",
+        "sid": "92205"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/apply-configuration/input",
+        "sid": "92206"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/apply-configuration/input/anyway",
+        "sid": "92207"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/apply-configuration/input/bundle",
+        "sid": "92208"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/apply-configuration/input/dry-run",
+        "sid": "92209"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/apply-configuration/input/from",
+        "sid": "92210"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/apply-configuration/input/hostname",
+        "sid": "92211"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/apply-configuration/input/template",
+        "sid": "92212"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/apply-configuration/input/values",
+        "sid": "92213"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/apply-configuration/output",
+        "sid": "92214"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/apply-configuration/output/result",
+        "sid": "92215"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/capture",
+        "sid": "92216"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/capture/input",
+        "sid": "92217"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/capture/input/filter",
+        "sid": "92218"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/capture/input/packets",
+        "sid": "92219"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/capture/input/seconds",
+        "sid": "92220"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/capture/input/source",
+        "sid": "92221"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/capture/output",
+        "sid": "92222"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/capture/output/result",
+        "sid": "92223"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/configuration",
+        "sid": "92224"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/console-update",
+        "sid": "92225"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/console-update/input",
+        "sid": "92226"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/console-update/input/host-keys",
+        "sid": "92227"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/console-update/output",
+        "sid": "92228"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/console-update/output/result",
+        "sid": "92229"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/drift",
+        "sid": "92230"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/export-configuration",
+        "sid": "92231"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/export-configuration/input",
+        "sid": "92232"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/export-configuration/input/secrets",
+        "sid": "92233"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/export-configuration/output",
+        "sid": "92234"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/export-configuration/output/result",
+        "sid": "92235"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/id",
+        "sid": "92236"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/listen",
+        "sid": "92237"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/listen/input",
+        "sid": "92238"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/listen/input/retry",
+        "sid": "92239"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/listen/input/sctp-also",
+        "sid": "92240"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/listen/output",
+        "sid": "92241"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/listen/output/result",
+        "sid": "92242"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/local",
+        "sid": "92243"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/move",
+        "sid": "92244"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/move/input",
+        "sid": "92245"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/move/input/uri",
+        "sid": "92246"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/move/output",
+        "sid": "92247"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/move/output/result",
+        "sid": "92248"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/nacm-sync",
+        "sid": "92249"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/nacm-sync/input",
+        "sid": "92250"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/nacm-sync/output",
+        "sid": "92251"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/nacm-sync/output/result",
+        "sid": "92252"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/name",
+        "sid": "92253"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/notification-token-set",
+        "sid": "92254"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/notifications",
+        "sid": "92255"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/peer-name",
+        "sid": "92256"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/pkg-repos",
+        "sid": "92257"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/pkg-repos/base",
+        "sid": "92258"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/pkg-repos/install",
+        "sid": "92259"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/pkg-repos/jail",
+        "sid": "92260"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/pkg-repos/upgrade",
+        "sid": "92261"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/renew-tls",
+        "sid": "92262"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/renew-tls/input",
+        "sid": "92263"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/renew-tls/output",
+        "sid": "92264"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/renew-tls/output/result",
+        "sid": "92265"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/role",
+        "sid": "92266"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/safe-wait",
+        "sid": "92267"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/subscription",
+        "sid": "92268"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/subscription-token",
+        "sid": "92269"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/subscription-token/input",
+        "sid": "92270"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/subscription-token/output",
+        "sid": "92271"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/subscription-token/output/result",
+        "sid": "92272"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/switch-transport",
+        "sid": "92273"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/switch-transport/input",
+        "sid": "92274"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/switch-transport/input/transport",
+        "sid": "92275"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/switch-transport/output",
+        "sid": "92276"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/switch-transport/output/result",
+        "sid": "92277"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/tenant",
+        "sid": "92278"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/tls",
+        "sid": "92279"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/transport",
+        "sid": "92280"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/uri",
+        "sid": "92281"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/host/watch",
+        "sid": "92282"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/local",
+        "sid": "92283"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:hosts/local-agent",
+        "sid": "92284"
       }
     ]
   }

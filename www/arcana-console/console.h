@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.366.1"
+#define	ARCW_VERSION		"0.367.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -610,6 +610,20 @@ int		 transfers_yang_stop(uint32_t, char *, size_t);
 ucl_object_t	*push_yang(struct http_request *);
 int		 push_yang_set(struct http_request *, const ucl_object_t *,
 		    const ucl_object_t *, char *, size_t);
+ucl_object_t	*servers_yang(struct http_request *);
+int		 servers_yang_set(struct http_request *, const ucl_object_t *,
+		    const ucl_object_t *, char *, size_t);
+/*
+ * The /api handlers answering at arcana-console's paths too (cyang.c's
+ * bridges): whether path is one; read_json()'s body unwrapped from the
+ * input or the node; reply_json()'s and a raw reply's made RESTCONF's.
+ */
+#define	CYANG_HOST	CYANG_DATA "hosts/host="
+bool		 cyang_bridged(const char *);
+ucl_object_t	*cyang_unwrap(struct http_request *, ucl_object_t *);
+int		 cyang_bridge_reply(struct http_request *, int, ucl_object_t *);
+int		 cyang_bridge_raw(struct http_request *, int, const char *);
+bool		 server_capture(struct http_request *, char *, size_t);
 /* The tunnels a plan of an L3NM makes (sdwan_edge.c). */
 ucl_object_t	*sdwan_plan_tunnels(const ucl_object_t *);
 int		 api_restconf_ds(struct http_request *);

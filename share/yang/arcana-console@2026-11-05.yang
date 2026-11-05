@@ -2257,4 +2257,452 @@ module arcana-console {
       }
     }
   }
+
+  /* The hosts */
+
+  container hosts {
+    description
+      "The hosts the console manages (servers.json): each its agent's
+       address, the certificate name expected of it, the tenant fleet
+       it is in.  Each user reads the hosts they have a role on; a
+       host is added by an operator or an owner, changed and removed
+       by its admins.  What the console answers of a host itself is
+       below its entry: what it holds or asks of the host, read at
+       its own path alone (not in the entry's), and the console's
+       verbs on it as actions.  The documents the console makes
+       (drift, a bundle, a capture) are anydata, their members /api's
+       (openapi.yaml); an action's input names are /api's with - for
+       _.";
+    leaf local {
+      type enumeration {
+        enum off;
+        enum added;
+        enum removed;
+        enum absent;
+        enum denied;
+      }
+      config false;
+      description
+        "The agent beside the console: not looked for, added by
+         itself, taken off the list by somebody, not running, or not
+         reachable by the console.";
+    }
+    leaf local-agent {
+      type string;
+      config false;
+      description
+        "The local agent's socket, as web.conf names it.";
+    }
+    list host {
+      key "id";
+      description
+        "A host, 64 at most.";
+      leaf id {
+        type host-id;
+        description
+          "Its id, arcana-fleet's.";
+      }
+      leaf name {
+        type string {
+          length "1..64";
+        }
+        mandatory true;
+        description
+          "What it is called.";
+      }
+      leaf uri {
+        type string {
+          length "1..255";
+          pattern '(tcp|sctp)://.+:[0-9]+|unix:/.+';
+        }
+        mandatory true;
+        description
+          "Where its agent is reached: tcp://host:port,
+           sctp://host:port, or unix:/path.  Changed, the console
+           alone reaches it there from now on (move asks the agent).";
+      }
+      leaf peer-name {
+        type string {
+          length "1..64";
+          pattern '[^ ]+';
+        }
+        description
+          "The name its certificate has, where it is not the URI's
+           host.";
+      }
+      leaf tenant {
+        type name;
+        description
+          "The tenant fleet it is in.";
+      }
+      leaf safe-wait {
+        type uint32 {
+          range "0 | 10..3600";
+        }
+        units "seconds";
+        description
+          "How long a change made in safe mode waits to be confirmed
+           before the agent undoes it; 0 or none, the agent's own.";
+      }
+      list pkg-repos {
+        key "jail";
+        description
+          "The pkg repositories each action takes packages from, per
+           jail; none named, any.";
+        leaf jail {
+          type string {
+            length "1..64";
+          }
+          description
+            "A jail's name, . for the host.";
+        }
+        leaf upgrade {
+          type string {
+            length "0..64";
+          }
+          description
+            "The repository upgrades come from.";
+        }
+        leaf install {
+          type string {
+            length "0..64";
+          }
+          description
+            "The repository installs come from.";
+        }
+        leaf base {
+          type string {
+            length "0..64";
+          }
+          description
+            "The repository the base system comes from.";
+        }
+      }
+      leaf local {
+        type boolean;
+        config false;
+        description
+          "Reached by its local socket: the host the console runs on.";
+      }
+      leaf notification-token-set {
+        type boolean;
+        config false;
+        description
+          "Whether its notification receiver token is made; the token
+           itself is the output of subscription-token alone.";
+      }
+      leaf role {
+        type enumeration {
+          enum viewer;
+          enum operator;
+          enum admin;
+        }
+        config false;
+        description
+          "The reader's role on the host; left out for an API token.";
+      }
+      anydata drift {
+        config false;
+        description
+          "What the host has otherwise than its running configuration
+           says, the agent asked.";
+      }
+      anydata watch {
+        config false;
+        description
+          "The console's connection for the host's subscriptions, each
+           topic subscribed.";
+      }
+      anydata notifications {
+        config false;
+        description
+          "The notification records the host sent the console's
+           receiver (RFC 8650), the newest; the query parameter after
+           gives those after a record's number.";
+      }
+      anydata subscription {
+        config false;
+        description
+          "What to configure on the host for it to send the console
+           its notifications (ietf-subscribed-notif-receivers), but
+           the token.";
+      }
+      anydata tls {
+        config false;
+        description
+          "The host's own certificate, its chain and the CAs it
+           trusts.";
+      }
+      anydata transport {
+        config false;
+        description
+          "The agent's listeners and the connections open to it.";
+      }
+      anydata configuration {
+        config false;
+        description
+          "The host as a bundle (config-export), its secrets not in
+           it.";
+      }
+      action move {
+        description
+          "The host reached at another address: the agent asked to
+           listen there too, the new address tried, and only when it
+           answers is the host moved and the old listener closed.  Its
+           admins'.";
+        input {
+          leaf uri {
+            type string;
+            mandatory true;
+            description
+              "tcp:// or sctp://, an address and a port.";
+          }
+        }
+        output {
+          anydata result {
+            description
+              "ok, the URI it is reached at, why not, a note.";
+          }
+        }
+      }
+      action renew-tls {
+        description
+          "Its certificate renewed from the console's CA.";
+        output {
+          anydata result {
+            description
+              "What the agent said.";
+          }
+        }
+      }
+      action listen {
+        description
+          "The agent's SCTP listeners started again where not up, or
+           bound to other addresses too.";
+        input {
+          leaf retry {
+            type boolean;
+            description
+              "Start the SCTP listeners that are not up.";
+          }
+          leaf sctp-also {
+            type string;
+            description
+              "The other addresses its SCTP listeners are bound to;
+               empty, none.";
+          }
+        }
+        output {
+          anydata result {
+            description
+              "What the agent said.";
+          }
+        }
+      }
+      action switch-transport {
+        description
+          "The agent reached the other way at the same address and
+           port, once it answers there.";
+        input {
+          leaf transport {
+            type enumeration {
+              enum sctp;
+              enum tcp;
+            }
+            mandatory true;
+            description
+              "The transport to reach it by.";
+          }
+        }
+        output {
+          anydata result {
+            description
+              "What the agent said.";
+          }
+        }
+      }
+      action nacm-sync {
+        description
+          "The console's owners made the host's NACM group admin, its
+           other users taken out of it; by an owner of the console.";
+        output {
+          anydata result {
+            description
+              "What the agent said.";
+          }
+        }
+      }
+      action agent-build {
+        description
+          "The host builds arcana-agent from agent_source, kept as the
+           one the console sends.  Its admins'.";
+        input {
+          leaf host-keys {
+            type string;
+            description
+              "The SSH host keys of the repository's host the user
+               confirmed.";
+          }
+        }
+        output {
+          anydata result {
+            description
+              "What the agent said.";
+          }
+        }
+      }
+      action agent-update {
+        description
+          "The console's arcana-agent sent to the host.  Its admins'.";
+        input {
+          leaf restart {
+            type boolean;
+            description
+              "Its service restarted after.";
+          }
+        }
+        output {
+          anydata result {
+            description
+              "What the agent said.";
+          }
+        }
+      }
+      action console-update {
+        description
+          "The console itself built and updated by the agent of the
+           host it runs on (a host reached by its local socket).";
+        input {
+          leaf host-keys {
+            type string;
+            description
+              "The SSH host keys the user confirmed.";
+          }
+        }
+        output {
+          anydata result {
+            description
+              "What the agent said.";
+          }
+        }
+      }
+      action export-configuration {
+        description
+          "The host as a bundle, with its secrets when asked, for who
+           may change it.";
+        input {
+          leaf secrets {
+            type boolean;
+            description
+              "With the secrets.";
+          }
+        }
+        output {
+          anydata result {
+            description
+              "The bundle.";
+          }
+        }
+      }
+      action apply-configuration {
+        description
+          "A bundle made the host's configuration: given, read from
+           another host (its secrets not through the client), or a
+           template made the host's by its values.";
+        input {
+          anydata bundle {
+            description
+              "A bundle as config-export makes it.";
+          }
+          leaf from {
+            type host-id;
+            description
+              "The host whose bundle it is.";
+          }
+          leaf template {
+            type string;
+            description
+              "A template's name.";
+          }
+          anydata values {
+            description
+              "The template's values.";
+          }
+          leaf hostname {
+            type string;
+            description
+              "The host name the bundle gives the host.";
+          }
+          leaf dry-run {
+            type boolean;
+            description
+              "What would change, nothing changed.";
+          }
+          leaf anyway {
+            type boolean;
+            description
+              "Applied though the agent warns.";
+          }
+        }
+        output {
+          anydata result {
+            description
+              "What the agent said.";
+          }
+        }
+      }
+      action capture {
+        description
+          "Packets taken with tcpdump; no source, the sources there
+           are.  The query parameter jail picks a jail.";
+        input {
+          leaf source {
+            type string {
+              length "1..15";
+            }
+            description
+              "An interface's or a tap's name.";
+          }
+          leaf filter {
+            type string {
+              length "0..128";
+            }
+            description
+              "A pcap-filter expression, one line.";
+          }
+          leaf packets {
+            type uint32 {
+              range "1..500";
+            }
+            description
+              "The packets taken at most.";
+          }
+          leaf seconds {
+            type uint32 {
+              range "0..60";
+            }
+            description
+              "How long at most.";
+          }
+        }
+        output {
+          anydata result {
+            description
+              "The packets, or the sources.";
+          }
+        }
+      }
+      action subscription-token {
+        description
+          "A new receiver token made for the host, the one before
+           forgotten: the subscription with it, said once.";
+        output {
+          anydata result {
+            description
+              "The subscription, with the token.";
+          }
+        }
+      }
+    }
+  }
 }

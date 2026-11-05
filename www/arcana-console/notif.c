@@ -305,7 +305,7 @@ api_notifications(struct http_request *req)
 	uint64_t		 after = 0, total = 0;
 	FILE			*fp;
 
-	if (!host_of(req->path, "/api/servers/", id, sizeof(id)))
+	if (!server_capture(req, id, sizeof(id)))
 		return (reply_error(req, 404, "not_found", "no such host"));
 	if (!guard(req, false) || !host_allowed(req, id, false, false))
 		return (WEB_OK);
@@ -453,7 +453,7 @@ api_subscription(struct http_request *req)
 	ucl_object_t		*top;
 	char			 id[17];
 
-	if (!host_of(req->path, "/api/servers/", id, sizeof(id)) ||
+	if (!server_capture(req, id, sizeof(id)) ||
 	    (s = server_find(id)) == NULL)
 		return (reply_error(req, 404, "not_found", "no such host"));
 	if (!guard(req, false) || !host_allowed(req, id, false, false))
@@ -474,7 +474,7 @@ api_subscription_token(struct http_request *req)
 	char		 id[17], token[65];
 	int		 error;
 
-	if (!host_of(req->path, "/api/servers/", id, sizeof(id)) ||
+	if (!server_capture(req, id, sizeof(id)) ||
 	    server_find(id) == NULL)
 		return (reply_error(req, 404, "not_found", "no such host"));
 	if (!guard(req, true) || !host_allowed(req, id, true, false))

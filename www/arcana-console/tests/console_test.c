@@ -17979,6 +17979,205 @@ ATF_TC_BODY(cyang_feeds, tc)
 	resp_free(&r);
 }
 
+/* The same request of /api and of arcana-console: the same status. */
+static void
+cc_same(const char *method, const char *api, const char *abody,
+    const char *cc, const char *cbody)
+{
+	struct resp	r;
+	int		st;
+
+	http(method, api, abody, &r);
+	st = r.status;
+	resp_free(&r);
+	http(method, cc, cbody, &r);
+	ATF_CHECK_MSG(r.status == st || (st == 200 && (r.status == 204 ||
+	    r.status == 201)), "%s %s: %d, /api's %d: %s", method, cc,
+	    r.status, st, r.body);
+	if (r.status >= 400)
+		ATF_CHECK_MSG(strstr(r.body, "ietf-restconf:errors") != NULL,
+		    "%s", r.body);
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_hosts, "arcana-console's hosts: the registry as /api's, "
+    "added, renamed, changed and removed, each user the hosts they have "
+    "a role on, a member refused")
+ATF_TC_BODY(cyang_hosts, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		sa[16], path[160], body[512];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	cc_host("a", "jgd.sock", sa, sizeof(sa));
+	http("GET", CC "hosts", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(sa, jstr(&r, "arcana-console:hosts.host.0.id"));
+	ATF_CHECK_STREQ("a", jstr(&r, "arcana-console:hosts.host.0.name"));
+	ATF_CHECK_STREQ("true", jstr(&r, "arcana-console:hosts.host.0.local"));
+	ATF_CHECK_STREQ("admin", jstr(&r, "arcana-console:hosts.host.0.role"));
+	ATF_CHECK_STREQ("false", jstr(&r,
+	    "arcana-console:hosts.host.0.notification-token-set"));
+	resp_free(&r);
+	/* Renamed, its tenant and timer: /api's. */
+	snprintf(path, sizeof(path), CC "hosts/host=%s", sa);
+	snprintf(body, sizeof(body), "{\"arcana-console:host\":[{\"id\":"
+	    "\"%s\",\"name\":\"b\",\"tenant\":\"t1\",\"safe-wait\":30,"
+	    "\"pkg-repos\":[{\"jail\":\".\",\"upgrade\":\"FreeBSD\"}]}]}", sa);
+	http("PATCH", path, body, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	ATF_CHECK_STREQ("b", jstr(&r, "servers.0.name"));
+	ATF_CHECK_STREQ("t1", jstr(&r, "servers.0.tenant"));
+	ATF_CHECK_STREQ("30", jstr(&r, "servers.0.safe_wait"));
+	ATF_CHECK(strstr(r.body, "\"pkg_repos\":{\".\":{\"upgrade\":"
+	    "\"FreeBSD\"}}") != NULL);
+	resp_free(&r);
+	/* Refused as /api refuses: a timer out of range, a bad tenant. */
+	snprintf(body, sizeof(body), "{\"arcana-console:host\":[{\"id\":"
+	    "\"%s\",\"safe-wait\":5}]}", sa);
+	http("PATCH", path, body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* Added: its URI another's refused, a bad one refused. */
+	http("POST", CC "hosts", "{\"arcana-console:host\":[{\"id\":"
+	    "\"0000abcd\",\"name\":\"c\",\"uri\":\"tcp://192.0.2.1:4310\"}]}",
+	    &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http("POST", CC "hosts", "{\"arcana-console:host\":[{\"id\":"
+	    "\"0000abce\",\"name\":\"d\",\"uri\":\"tcp://192.0.2.1:4310\"}]}",
+	    &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	http("POST", CC "hosts", "{\"arcana-console:host\":[{\"id\":"
+	    "\"0000abce\",\"name\":\"d\",\"uri\":\"ftp://x\"}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	ATF_CHECK_STREQ("c", jstr(&r, "servers.1.name"));
+	ATF_CHECK(jstr(&r, "servers.2.name") == NULL);
+	resp_free(&r);
+	/* Moved by the console alone: the certificate checked is the
+	 * name it was enrolled as, as /api's. */
+	http("PATCH", CC "hosts/host=0000abcd", "{\"arcana-console:host\":[{"
+	    "\"id\":\"0000abcd\",\"uri\":\"tcp://192.0.2.2:4310\"}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", CC "hosts/host=0000abcd", NULL, &r);
+	ATF_CHECK_STREQ("192.0.2.1", jstr(&r,
+	    "arcana-console:host.0.peer-name"));
+	resp_free(&r);
+	/* Removed. */
+	http("DELETE", CC "hosts/host=0000abcd", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	ATF_CHECK(jstr(&r, "servers.1.name") == NULL);
+	resp_free(&r);
+	/* A member, a viewer of every host: reads them, changes none. */
+	cc_member(&b);
+	http("GET", CC "hosts", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("viewer", jstr(&r,
+	    "arcana-console:hosts.host.0.role"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"arcana-console:host\":[{\"id\":"
+	    "\"%s\",\"tenant\":\"t2\"}]}", sa);
+	http("PATCH", path, body, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("POST", CC "hosts", "{\"arcana-console:host\":[{\"id\":"
+	    "\"0000abcf\",\"name\":\"e\",\"uri\":\"tcp://192.0.2.3:4310\"}]}",
+	    &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+}
+
+CONSOLE_TC(cyang_host_verbs, "arcana-console's hosts: what the console "
+    "answers of a host, and its verbs, at their RESTCONF paths as /api's, "
+    "their refusals held")
+ATF_TC_BODY(cyang_host_verbs, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		sa[16], api[160], cc[160];
+
+#define	SAME(m, a1, ab, c1, cb) do {					\
+	snprintf(api, sizeof(api), "/api/servers/%s/%s", sa, a1);	\
+	snprintf(cc, sizeof(cc), CC "hosts/host=%s/%s", sa, c1);	\
+	cc_same(m, api, ab, cc, cb);					\
+} while (0)
+	start(tc, 0, NULL);
+	enrol(&a);
+	cc_host("a", "jgd.sock", sa, sizeof(sa));
+	snprintf(cc, sizeof(cc), CC "hosts/host=%s/drift", sa);
+	http("GET", cc, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "arcana-console:drift.ok"));
+	resp_free(&r);
+	SAME("GET", "watch", NULL, "watch", NULL);
+	SAME("GET", "notifications", NULL, "notifications", NULL);
+	SAME("GET", "subscription", NULL, "subscription", NULL);
+	SAME("GET", "tls", NULL, "tls", NULL);
+	SAME("GET", "transport", NULL, "transport", NULL);
+	SAME("GET", "config", NULL, "configuration", NULL);
+	snprintf(cc, sizeof(cc), CC "hosts/host=%s/transport", sa);
+	http("GET", cc, NULL, &r);
+	ATF_CHECK_MSG(r.status == 200 && strstr(r.body,
+	    "\"arcana-console:transport\"") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* A host on its local socket is not moved, nor switched. */
+	SAME("POST", "move", "{\"uri\":\"tcp://192.0.2.1:4310\"}", "move",
+	    "{\"arcana-console:input\":{\"uri\":\"tcp://192.0.2.1:4310\"}}");
+	SAME("POST", "transport/switch", "{\"transport\":\"sctp\"}",
+	    "switch-transport", "{\"arcana-console:input\":{\"transport\":"
+	    "\"sctp\"}}");
+	/* /api's body is no input. */
+	snprintf(cc, sizeof(cc), CC "hosts/host=%s/move", sa);
+	http("POST", cc, "{\"uri\":\"tcp://192.0.2.1:4310\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	SAME("POST", "subscription/token", NULL, "subscription-token", NULL);
+	SAME("POST", "config/export", "{\"secrets\":false}",
+	    "export-configuration", "{\"arcana-console:input\":{\"secrets\":"
+	    "false}}");
+	SAME("POST", "config", "{\"dry_run\":true}", "apply-configuration",
+	    "{\"arcana-console:input\":{\"dry-run\":true}}");
+	SAME("POST", "capture", "{}", "capture",
+	    "{\"arcana-console:input\":{}}");
+	snprintf(cc, sizeof(cc), CC "hosts/host=%s/capture", sa);
+	http("POST", cc, "{\"arcana-console:input\":{}}", &r);
+	ATF_CHECK_MSG(r.status != 200 || strstr(r.body,
+	    "\"arcana-console:output\":{\"result\"") != NULL, "%s", r.body);
+	resp_free(&r);
+	SAME("POST", "nacm-sync", NULL, "nacm-sync", NULL);
+	/* No such host. */
+	http("GET", CC "hosts/host=0000ffff/drift", NULL, &r);
+	EXPECT(&r, 404);
+	ATF_CHECK(strstr(r.body, "ietf-restconf:errors") != NULL);
+	resp_free(&r);
+	/* A member, a viewer: reads, and administers nothing. */
+	cc_member(&b);
+	SAME("GET", "drift", NULL, "drift", NULL);
+	SAME("POST", "agent-update", "{}", "agent-update",
+	    "{\"arcana-console:input\":{}}");
+	SAME("POST", "nacm-sync", NULL, "nacm-sync", NULL);
+	SAME("POST", "tls", NULL, "renew-tls", NULL);
+	SAME("POST", "subscription/token", NULL, "subscription-token", NULL);
+	snprintf(cc, sizeof(cc), CC "hosts/host=%s/agent-update", sa);
+	http("POST", cc, "{\"arcana-console:input\":{}}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+#undef	SAME
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, feeds);
@@ -18100,5 +18299,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sapnet_attach);
 	ATF_TP_ADD_TC(tp, enrol);
 	ATF_TP_ADD_TC(tp, tls_ec);
+	ATF_TP_ADD_TC(tp, cyang_hosts);
+	ATF_TP_ADD_TC(tp, cyang_host_verbs);
 	return (atf_no_error());
 }

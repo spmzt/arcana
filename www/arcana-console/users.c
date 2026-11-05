@@ -372,7 +372,8 @@ user_path_ok(enum crole r, const char *path, bool mutate)
 		    path[n] == '/' || path[n] == '?'))
 			return (false);
 	}
-	if (mutate && (strcmp(path, "/api/servers") == 0 || strncmp(path,
+	if (mutate && (strcmp(path, "/api/servers") == 0 || strcmp(path,
+	    CYANG_DATA "hosts") == 0 || strncmp(path,
 	    "/api/prefix-lists", 17) == 0 || strncmp(path, CYANG_DATA
 	    "prefix-lists", sizeof(CYANG_DATA) + 11) == 0))
 		return (false);

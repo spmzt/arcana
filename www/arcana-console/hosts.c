@@ -3468,7 +3468,7 @@ call_new(struct http_request *req, enum op op)
 		return (NULL);
 	t1 = now_us();
 	if (!(op == OP_RESTCONF ? restconf_host(req->path, sid,
-	    sizeof(sid)) : capture(req, 3, sid, sizeof(sid))) ||
+	    sizeof(sid)) : server_capture(req, sid, sizeof(sid))) ||
 	    (s = server_find(sid)) == NULL) {
 		reply_error(req, 404, "not_found", "no such server");
 		return (NULL);
@@ -3543,6 +3543,8 @@ call_finish(struct http_request *req)
 	}
 	if (c->op == OP_RESTCONF)
 		return (restconf_finish(req, c));
+	if (cyang_bridged(req->path))
+		return (cyang_bridge_raw(req, c->status, c->json));
 	http_response_header(req, "content-type",
 	    "application/json; charset=utf-8");
 	http_response_header(req, "cache-control", "no-store");

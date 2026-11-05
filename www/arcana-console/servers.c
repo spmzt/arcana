@@ -543,7 +543,63 @@ save(void)
 	    "local_done", 0, false);
 	rc = store_save(SERVERS, doc);
 	ucl_object_unref(doc);
+	cyang_changed("hosts");
 	return (rc);
+}
+
+/* Why v is no pkg_repos ({"<jail>" or ".": {upgrade, install, base}}),
+ * or NULL. */
+static const char *
+pkg_repos_why(const ucl_object_t *v)
+{
+	const ucl_object_t	*jo, *ao;
+	ucl_object_iter_t	 jit, ait;
+	const char		*jn, *an;
+
+	if (ucl_object_type(v) != UCL_OBJECT)
+		return ("pkg_repos is an object: a jail's name, or . for the "
+		    "host, to {upgrade, install, base}");
+	jit = NULL;
+	while ((jo = ucl_object_iterate(v, &jit, true)) != NULL) {
+		jn = ucl_object_key(jo);
+		if (jn == NULL || strlen(jn) > 64 ||
+		    ucl_object_type(jo) != UCL_OBJECT)
+			return ("pkg_repos: a jail's name, 64 at most, to an "
+			    "object");
+		ait = NULL;
+		while ((ao = ucl_object_iterate(jo, &ait, true)) != NULL) {
+			an = ucl_object_key(ao);
+			if (an == NULL || (strcmp(an, "upgrade") != 0 &&
+			    strcmp(an, "install") != 0 && strcmp(an, "base") !=
+			    0) || ucl_object_type(ao) != UCL_STRING ||
+			    strlen(ucl_object_tostring(ao)) > 64)
+				return ("pkg_repos: upgrade, install or base, "
+				    "each a repository's name, 64 at most");
+		}
+	}
+	return (NULL);
+}
+
+/* Server i taken off the list, not saved. */
+static void
+remove_at(int i)
+{
+
+	log_msg(LOG_NOTICE, "server %s removed: %s", servers[i].id,
+	    servers[i].uri);
+	hosts_forget(servers[i].uri);
+	pthread_mutex_lock(&table_lock);
+	free(servers[i].name);
+	free(servers[i].uri);
+	free(servers[i].peer_name);
+	free(servers[i].tenant);
+	free(servers[i].notif_token);
+	if (servers[i].pkg_repos != NULL)
+		ucl_object_unref(servers[i].pkg_repos);
+	memmove(&servers[i], &servers[i + 1],
+	    (size_t)(nservers - i - 1) * sizeof(servers[0]));
+	nservers--;
+	pthread_mutex_unlock(&table_lock);
 }
 
 /* GET: the list, the hosts the user has a role on, with it.  POST
@@ -747,45 +803,12 @@ api_server(struct http_request *req)
 		 * any; kept whole, as given.
 		 */
 		if ((v = ucl_object_lookup(body, "pkg_repos")) != NULL) {
-			const ucl_object_t	*jo, *ao;
-			ucl_object_iter_t	 jit, ait;
-			ucl_object_t		*keep;
+			ucl_object_t	*keep;
+			const char	*e;
 
-			if (ucl_object_type(v) != UCL_OBJECT) {
+			if ((e = pkg_repos_why(v)) != NULL) {
 				ucl_object_unref(body);
-				return (reply_error(req, 400, "invalid",
-				    "pkg_repos is an object: a jail's name, or "
-				    ". for the host, to {upgrade, install, "
-				    "base}"));
-			}
-			jit = NULL;
-			while ((jo = ucl_object_iterate(v, &jit, true)) != NULL) {
-				const char	*jn = ucl_object_key(jo);
-
-				if (jn == NULL || strlen(jn) > 64 ||
-				    ucl_object_type(jo) != UCL_OBJECT) {
-					ucl_object_unref(body);
-					return (reply_error(req, 400, "invalid",
-					    "pkg_repos: a jail's name, 64 at "
-					    "most, to an object"));
-				}
-				ait = NULL;
-				while ((ao = ucl_object_iterate(jo, &ait, true)) !=
-				    NULL) {
-					const char	*an = ucl_object_key(ao);
-
-					if (an == NULL || (strcmp(an, "upgrade") !=
-					    0 && strcmp(an, "install") != 0 &&
-					    strcmp(an, "base") != 0) ||
-					    ucl_object_type(ao) != UCL_STRING ||
-					    strlen(ucl_object_tostring(ao)) > 64) {
-						ucl_object_unref(body);
-						return (reply_error(req, 400,
-						    "invalid", "pkg_repos: upgrade, "
-						    "install or base, each a "
-						    "repository's name, 64 at most"));
-					}
-				}
+				return (reply_error(req, 400, "invalid", "%s", e));
 			}
 			keep = ucl_object_ref(v);
 			pthread_mutex_lock(&table_lock);
@@ -827,20 +850,7 @@ api_server(struct http_request *req)
 		req->method = HTTP_METHOD_GET;
 		return (api_servers(req));
 	}
-	log_msg(LOG_NOTICE, "server %s removed: %s", id, servers[i].uri);
-	hosts_forget(servers[i].uri);
-	pthread_mutex_lock(&table_lock);
-	free(servers[i].name);
-	free(servers[i].uri);
-	free(servers[i].peer_name);
-	free(servers[i].tenant);
-	free(servers[i].notif_token);
-	if (servers[i].pkg_repos != NULL)
-		ucl_object_unref(servers[i].pkg_repos);
-	memmove(&servers[i], &servers[i + 1],
-	    (size_t)(nservers - i - 1) * sizeof(servers[0]));
-	nservers--;
-	pthread_mutex_unlock(&table_lock);
+	remove_at(i);
 	if (save() == -1)
 		return (reply_error(req, 500, "store", "cannot save"));
 	req->method = HTTP_METHOD_GET;
@@ -1016,7 +1026,8 @@ api_server_move(struct http_request *req)
 	}
 	if (!guard(req, true))
 		return (WEB_OK);
-	if (!capture(req, 3, id, sizeof(id)) || (s = server_find(id)) == NULL)
+	if (!server_capture(req, id, sizeof(id)) || (s = server_find(id)) ==
+	    NULL)
 		return (reply_error(req, 404, "not_found", "no such server"));
 	if (!host_allowed(req, id, true, true))
 		return (WEB_OK);
@@ -1062,4 +1073,293 @@ api_server_move_free(struct http_request *req)
 	task_destroy(&m->task);
 	free(m);
 	req->hdlr_extra = NULL;
+}
+
+/*
+ * arcana-console's hosts (cyang.c): the hosts the request's user has a
+ * role on, as GET /api/servers has them.
+ */
+ucl_object_t *
+servers_yang(struct http_request *req)
+{
+	ucl_object_t		*top, *list, *e, *pr, *r;
+	const ucl_object_t	*jo, *v;
+	ucl_object_iter_t	 it, vit;
+	const char		*u;
+	int			 i;
+
+	local_enrol();
+	u = session_user(req);
+	list = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < nservers; i++) {
+		if (u != NULL && user_host(u, servers[i].id) == ROLE_NONE)
+			continue;
+		e = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(e, ucl_object_fromstring(servers[i].id),
+		    "id", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromstring(servers[i].name),
+		    "name", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromstring(servers[i].uri),
+		    "uri", 0, false);
+		if (servers[i].peer_name != NULL)
+			ucl_object_insert_key(e, ucl_object_fromstring(
+			    servers[i].peer_name), "peer-name", 0, false);
+		if (servers[i].tenant != NULL)
+			ucl_object_insert_key(e, ucl_object_fromstring(
+			    servers[i].tenant), "tenant", 0, false);
+		if (servers[i].safe_wait > 0)
+			ucl_object_insert_key(e, ucl_object_fromint(
+			    servers[i].safe_wait), "safe-wait", 0, false);
+		pr = ucl_object_typed_new(UCL_ARRAY);
+		it = NULL;
+		while ((jo = ucl_object_iterate(servers[i].pkg_repos, &it,
+		    true)) != NULL) {
+			r = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(r, ucl_object_fromstring(
+			    ucl_object_key(jo)), "jail", 0, true);
+			vit = NULL;
+			while ((v = ucl_object_iterate(jo, &vit, true)) != NULL)
+				ucl_object_insert_key(r, ucl_object_copy(v),
+				    ucl_object_key(v), 0, true);
+			ucl_array_append(pr, r);
+		}
+		if (ucl_array_size(pr) > 0)
+			ucl_object_insert_key(e, pr, "pkg-repos", 0, false);
+		else
+			ucl_object_unref(pr);
+		ucl_object_insert_key(e, ucl_object_frombool(strncmp(
+		    servers[i].uri, "unix:", 5) == 0), "local", 0, false);
+		ucl_object_insert_key(e, ucl_object_frombool(
+		    servers[i].notif_token != NULL), "notification-token-set", 0,
+		    false);
+		if (u != NULL)
+			ucl_object_insert_key(e, ucl_object_fromstring(role_name(
+			    user_host(u, servers[i].id))), "role", 0, false);
+		ucl_array_append(list, e);
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, ucl_object_fromstring(local_state), "local",
+	    0, false);
+	if (cfg.local_agent != NULL)
+		ucl_object_insert_key(top, ucl_object_fromstring(
+		    cfg.local_agent), "local-agent", 0, false);
+	ucl_object_insert_key(top, list, "host", 0, false);
+	return (top);
+}
+
+/* An entry's pkg-repos as servers.json keeps them; NULL: none. */
+static ucl_object_t *
+pkg_repos_of(const ucl_object_t *e)
+{
+	static const char *const acts[] = { "upgrade", "install", "base" };
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it = NULL;
+	ucl_object_t		*o, *j;
+	size_t			 k;
+
+	if (ucl_array_size(ucl_object_lookup(e, "pkg-repos")) == 0)
+		return (NULL);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	while ((r = ucl_object_iterate(ucl_object_lookup(e, "pkg-repos"),
+	    &it, true)) != NULL) {
+		j = ucl_object_typed_new(UCL_OBJECT);
+		for (k = 0; k < nitems(acts); k++)
+			if (ucl_str(r, acts[k]) != NULL)
+				ucl_object_insert_key(j, ucl_object_fromstring(
+				    ucl_str(r, acts[k])), acts[k], 0, true);
+		ucl_object_insert_key(o, j, ucl_str(r, "jail"), 0, true);
+	}
+	return (o);
+}
+
+/* Why entry e is not one /api would keep, or NULL. */
+static const char *
+entry_why(const ucl_object_t *e)
+{
+	ucl_object_t	*pr;
+	const char	*s, *why;
+
+	if ((s = ucl_str(e, "name")) == NULL || !valid_name(s) ||
+	    (s = ucl_str(e, "uri")) == NULL || !valid_uri(s))
+		return ("a name and a URI such as tcp://host:4310 or "
+		    "unix:/var/run/arcana-agent.sock are needed");
+	if ((s = ucl_str(e, "peer-name")) != NULL && (!valid_name(s) ||
+	    strchr(s, ' ') != NULL))
+		return ("a peer name is the name a certificate has");
+	if ((s = ucl_str(e, "tenant")) != NULL && !user_name_ok(s))
+		return ("a tenant is named by letters, digits, _ . @ and -, 64 "
+		    "at most");
+	why = NULL;
+	if ((pr = pkg_repos_of(e)) != NULL) {
+		why = pkg_repos_why(pr);
+		ucl_object_unref(pr);
+	}
+	return (why);
+}
+
+static char *
+dup_or_null(const char *s)
+{
+
+	return (s != NULL && s[0] != '\0' ? xstrdup(s) : NULL);
+}
+
+/*
+ * The hosts' change from was to now (cyang.c), each as /api's add,
+ * change and removal, with their checks and log lines: all checked
+ * first, then kept.  A host the user may not read is not in was and is
+ * left alone; one is added by an operator or an owner (or a write
+ * token), changed or removed by its admins.  0, or the HTTP status and
+ * why.
+ */
+int
+servers_yang_set(struct http_request *req, const ucl_object_t *was,
+    const ucl_object_t *now, char *why, size_t len)
+{
+	const ucl_object_t	*wl, *nl, *e, *o;
+	ucl_object_iter_t	 it, it2;
+	const char		*id, *u, *w, *pn, *nu;
+	char			 oldhost[256], *old;
+	int			 i, nnew, ngone;
+
+	wl = ucl_object_lookup(was, "host");
+	nl = ucl_object_lookup(now, "host");
+	u = session_user(req);
+	nnew = ngone = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(nl, &it, true)) != NULL) {
+		id = ucl_str(e, "id");
+		if ((o = cyang_entry(wl, "id", id)) != NULL && cyang_same(o, e))
+			continue;
+		if (o == NULL) {
+			if (server_find(id) != NULL) {
+				snprintf(why, len, "%s is another host's id", id);
+				return (409);
+			}
+			if (u != NULL && !user_path_ok(user_console(u),
+			    "/api/servers", true)) {
+				snprintf(why, len, "a host is added by an "
+				    "operator or an owner of this console");
+				return (403);
+			}
+			nnew++;
+		} else if (!host_role_ok(req, id, true, true)) {
+			snprintf(why, len, "a %s of host %s may not administer "
+			    "it", role_name(user_host(u, id)), id);
+			return (403);
+		}
+		if ((w = entry_why(e)) != NULL) {
+			snprintf(why, len, "host %s: %s", id, w);
+			return (400);
+		}
+	}
+	it = NULL;
+	while ((e = ucl_object_iterate(wl, &it, true)) != NULL) {
+		id = ucl_str(e, "id");
+		if (cyang_entry(nl, "id", id) != NULL)
+			continue;
+		if (!host_role_ok(req, id, true, true)) {
+			snprintf(why, len, "a %s of host %s may not remove it",
+			    role_name(user_host(u, id)), id);
+			return (403);
+		}
+		ngone++;
+	}
+	if (nservers - ngone + nnew > MAX_SERVERS) {
+		snprintf(why, len, "at most %d servers", MAX_SERVERS);
+		return (409);
+	}
+	/* A URI is one host's: those not read keep theirs. */
+	for (i = 0; i < nservers; i++)
+		if (cyang_entry(wl, "id", servers[i].id) == NULL &&
+		    cyang_entry(nl, "uri", servers[i].uri) != NULL) {
+			snprintf(why, len, "%s is already another host's",
+			    servers[i].uri);
+			return (409);
+		}
+	it = NULL;
+	while ((e = ucl_object_iterate(nl, &it, true)) != NULL) {
+		it2 = NULL;
+		while ((o = ucl_object_iterate(nl, &it2, true)) != NULL &&
+		    o != e)
+			if (strcmp(ucl_str(o, "uri"), ucl_str(e, "uri")) == 0) {
+				snprintf(why, len, "%s is already %s",
+				    ucl_str(e, "uri"), ucl_str(o, "name"));
+				return (409);
+			}
+	}
+	/* Then kept. */
+	it = NULL;
+	while ((e = ucl_object_iterate(wl, &it, true)) != NULL) {
+		id = ucl_str(e, "id");
+		if (cyang_entry(nl, "id", id) != NULL)
+			continue;
+		for (i = 0; i < nservers && strcmp(servers[i].id, id) != 0; i++)
+			;
+		if (i < nservers)
+			remove_at(i);
+	}
+	it = NULL;
+	while ((e = ucl_object_iterate(nl, &it, true)) != NULL) {
+		id = ucl_str(e, "id");
+		if ((o = cyang_entry(wl, "id", id)) != NULL && cyang_same(o, e))
+			continue;
+		if (o == NULL) {
+			add(id, ucl_str(e, "name"), ucl_str(e, "uri"),
+			    ucl_str(e, "peer-name"), ucl_str(e, "tenant"));
+			log_msg(LOG_NOTICE, "server %s added: %s", id,
+			    ucl_str(e, "uri"));
+		} else
+			log_msg(LOG_NOTICE, "server %s changed", id);
+		for (i = 0; i < nservers && strcmp(servers[i].id, id) != 0; i++)
+			;
+		if (i == nservers)
+			continue;
+		pn = ucl_str(e, "peer-name");
+		nu = ucl_str(e, "uri");
+		/*
+		 * Reached elsewhere: its certificate names the host it was
+		 * enrolled as, still the one checked unless a peer name
+		 * says another, as /api's.
+		 */
+		uri_host_of(servers[i].uri, oldhost, sizeof(oldhost));
+		if (o != NULL && pn == NULL && servers[i].peer_name == NULL &&
+		    oldhost[0] != '\0' && strcmp(nu, servers[i].uri) != 0)
+			pn = oldhost;
+		pthread_mutex_lock(&table_lock);
+		if (strcmp(servers[i].name, ucl_str(e, "name")) != 0) {
+			free(servers[i].name);
+			servers[i].name = xstrdup(ucl_str(e, "name"));
+		}
+		if (o != NULL) {
+			free(servers[i].peer_name);
+			servers[i].peer_name = dup_or_null(pn);
+		}
+		free(servers[i].tenant);
+		servers[i].tenant = dup_or_null(ucl_str(e, "tenant"));
+		servers[i].safe_wait = (int)ucl_object_toint(ucl_object_lookup(e,
+		    "safe-wait"));
+		if (servers[i].pkg_repos != NULL)
+			ucl_object_unref(servers[i].pkg_repos);
+		servers[i].pkg_repos = pkg_repos_of(e);
+		old = NULL;
+		if (strcmp(nu, servers[i].uri) != 0) {
+			old = servers[i].uri;
+			servers[i].uri = xstrdup(nu);
+		}
+		pthread_mutex_unlock(&table_lock);
+		if (old != NULL) {
+			log_msg(LOG_NOTICE, "server %s moved: %s to %s", id, old,
+			    nu);
+			hosts_forget(old);
+			hosts_nacm_sync_moved(old, nu);
+			hosts_forget(nu);
+			free(old);
+		}
+	}
+	if (save() == -1) {
+		snprintf(why, len, "cannot save");
+		return (500);
+	}
+	return (0);
 }
