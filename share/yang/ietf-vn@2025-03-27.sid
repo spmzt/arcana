@@ -1,0 +1,1333 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-vn",
+    "module-revision": "2025-03-27",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-network",
+        "module-revision": "2018-02-26"
+      },
+      {
+        "module-name": "ietf-network-topology",
+        "module-revision": "2018-02-26"
+      },
+      {
+        "module-name": "ietf-te-types",
+        "module-revision": "2020-06-10"
+      },
+      {
+        "module-name": "ietf-te-topology",
+        "module-revision": "2020-08-06"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "91300",
+        "size": "400"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-vn",
+        "sid": "91300"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "vn-computation-ap-unknown",
+        "sid": "91301"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "vn-computation-error-no-cnc",
+        "sid": "91302"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "vn-computation-error-no-resource",
+        "sid": "91303"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "vn-computation-error-not-ready",
+        "sid": "91304"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "vn-computation-error-path-not-found",
+        "sid": "91305"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "vn-computation-error-reason",
+        "sid": "91306"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "multi-src-dest",
+        "sid": "91307"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point",
+        "sid": "91308"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point/ap",
+        "sid": "91309"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point/ap/avl-bandwidth",
+        "sid": "91310"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point/ap/id",
+        "sid": "91311"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point/ap/max-bandwidth",
+        "sid": "91312"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point/ap/pe",
+        "sid": "91313"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point/ap/vn-ap",
+        "sid": "91314"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point/ap/vn-ap/abstract-node",
+        "sid": "91315"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point/ap/vn-ap/id",
+        "sid": "91316"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point/ap/vn-ap/ltp",
+        "sid": "91317"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point/ap/vn-ap/max-bandwidth",
+        "sid": "91318"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:access-point/ap/vn-ap/vn",
+        "sid": "91319"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network",
+        "sid": "91320"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn",
+        "sid": "91321"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/abstract-node",
+        "sid": "91322"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/admin-status",
+        "sid": "91323"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/id",
+        "sid": "91324"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/oper-status",
+        "sid": "91325"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/te-topology-identifier",
+        "sid": "91326"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/te-topology-identifier/client-id",
+        "sid": "91327"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/te-topology-identifier/provider-id",
+        "sid": "91328"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/te-topology-identifier/topology-id",
+        "sid": "91329"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-level-diversity",
+        "sid": "91330"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member",
+        "sid": "91331"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/connectivity-matrix-id",
+        "sid": "91332"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/dest",
+        "sid": "91333"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/dest/ap",
+        "sid": "91334"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/dest/multi-dest",
+        "sid": "91335"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/dest/vn-ap-id",
+        "sid": "91336"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/id",
+        "sid": "91337"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/if-selected",
+        "sid": "91338"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/oper-status",
+        "sid": "91339"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/src",
+        "sid": "91340"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/src/ap",
+        "sid": "91341"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/src/multi-src",
+        "sid": "91342"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/src/vn-ap-id",
+        "sid": "91343"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:virtual-network/vn/vn-member/underlay",
+        "sid": "91344"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute",
+        "sid": "91345"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input",
+        "sid": "91346"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/abstract-node",
+        "sid": "91347"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/cos",
+        "sid": "91348"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations",
+        "sid": "91349"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/objective-function",
+        "sid": "91350"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/objective-function/objective-function-type",
+        "sid": "91351"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric",
+        "sid": "91352"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects",
+        "sid": "91353"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object",
+        "sid": "91354"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/as-number-hop",
+        "sid": "91355"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/as-number-hop/as-number",
+        "sid": "91356"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/as-number-hop/hop-type",
+        "sid": "91357"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/index",
+        "sid": "91358"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/label-hop",
+        "sid": "91359"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/label-hop/te-label",
+        "sid": "91360"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/label-hop/te-label/direction",
+        "sid": "91361"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/label-hop/te-label/generic",
+        "sid": "91362"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-link-hop",
+        "sid": "91363"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-link-hop/direction",
+        "sid": "91364"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-link-hop/hop-type",
+        "sid": "91365"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-link-hop/link-tp-id",
+        "sid": "91366"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-node-hop",
+        "sid": "91367"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-node-hop/hop-type",
+        "sid": "91368"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-node-hop/node-id",
+        "sid": "91369"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/srlg",
+        "sid": "91370"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/srlg/srlg",
+        "sid": "91371"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/unnumbered-link-hop",
+        "sid": "91372"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/unnumbered-link-hop/direction",
+        "sid": "91373"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/unnumbered-link-hop/hop-type",
+        "sid": "91374"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/unnumbered-link-hop/link-tp-id",
+        "sid": "91375"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/unnumbered-link-hop/node-id",
+        "sid": "91376"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects",
+        "sid": "91377"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object",
+        "sid": "91378"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/as-number-hop",
+        "sid": "91379"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/as-number-hop/as-number",
+        "sid": "91380"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/as-number-hop/hop-type",
+        "sid": "91381"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/index",
+        "sid": "91382"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/label-hop",
+        "sid": "91383"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/label-hop/te-label",
+        "sid": "91384"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/label-hop/te-label/direction",
+        "sid": "91385"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/label-hop/te-label/generic",
+        "sid": "91386"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-link-hop",
+        "sid": "91387"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-link-hop/direction",
+        "sid": "91388"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-link-hop/hop-type",
+        "sid": "91389"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-link-hop/link-tp-id",
+        "sid": "91390"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-node-hop",
+        "sid": "91391"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-node-hop/hop-type",
+        "sid": "91392"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-node-hop/node-id",
+        "sid": "91393"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/unnumbered-link-hop",
+        "sid": "91394"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/unnumbered-link-hop/direction",
+        "sid": "91395"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/unnumbered-link-hop/hop-type",
+        "sid": "91396"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/unnumbered-link-hop/link-tp-id",
+        "sid": "91397"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/unnumbered-link-hop/node-id",
+        "sid": "91398"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/metric-type",
+        "sid": "91399"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/optimization-metric/weight",
+        "sid": "91400"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/tiebreakers",
+        "sid": "91401"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/tiebreakers/tiebreaker",
+        "sid": "91402"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/optimizations/tiebreakers/tiebreaker/tiebreaker-type",
+        "sid": "91403"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints",
+        "sid": "91404"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/disjointness",
+        "sid": "91405"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/hold-priority",
+        "sid": "91406"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/link-protection",
+        "sid": "91407"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-affinities-values",
+        "sid": "91408"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-affinities-values/path-affinities-value",
+        "sid": "91409"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-affinities-values/path-affinities-value/usage",
+        "sid": "91410"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-affinities-values/path-affinities-value/value",
+        "sid": "91411"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-affinity-names",
+        "sid": "91412"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-affinity-names/path-affinity-name",
+        "sid": "91413"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-affinity-names/path-affinity-name/affinity-name",
+        "sid": "91414"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-affinity-names/path-affinity-name/affinity-name/name",
+        "sid": "91415"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-affinity-names/path-affinity-name/usage",
+        "sid": "91416"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-metric-bounds",
+        "sid": "91417"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-metric-bounds/path-metric-bound",
+        "sid": "91418"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-metric-bounds/path-metric-bound/metric-type",
+        "sid": "91419"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-metric-bounds/path-metric-bound/upper-bound",
+        "sid": "91420"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-srlgs-lists",
+        "sid": "91421"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-srlgs-lists/path-srlgs-list",
+        "sid": "91422"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-srlgs-lists/path-srlgs-list/usage",
+        "sid": "91423"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-srlgs-lists/path-srlgs-list/values",
+        "sid": "91424"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-srlgs-names",
+        "sid": "91425"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-srlgs-names/path-srlgs-name",
+        "sid": "91426"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-srlgs-names/path-srlgs-name/names",
+        "sid": "91427"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/path-srlgs-names/path-srlgs-name/usage",
+        "sid": "91428"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/setup-priority",
+        "sid": "91429"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/signaling-type",
+        "sid": "91430"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/te-bandwidth",
+        "sid": "91431"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/path-constraints/te-bandwidth/generic",
+        "sid": "91432"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/te-topology-identifier",
+        "sid": "91433"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/te-topology-identifier/client-id",
+        "sid": "91434"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/te-topology-identifier/provider-id",
+        "sid": "91435"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/te-topology-identifier/topology-id",
+        "sid": "91436"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-level-diversity",
+        "sid": "91437"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list",
+        "sid": "91438"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/connectivity-matrix-id",
+        "sid": "91439"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/cos",
+        "sid": "91440"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/dest",
+        "sid": "91441"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/dest/ap",
+        "sid": "91442"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/dest/multi-dest",
+        "sid": "91443"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/dest/vn-ap-id",
+        "sid": "91444"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/id",
+        "sid": "91445"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations",
+        "sid": "91446"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/objective-function",
+        "sid": "91447"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/objective-function/objective-function-type",
+        "sid": "91448"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric",
+        "sid": "91449"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects",
+        "sid": "91450"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object",
+        "sid": "91451"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/as-number-hop",
+        "sid": "91452"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/as-number-hop/as-number",
+        "sid": "91453"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/as-number-hop/hop-type",
+        "sid": "91454"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/index",
+        "sid": "91455"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/label-hop",
+        "sid": "91456"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/label-hop/te-label",
+        "sid": "91457"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/label-hop/te-label/direction",
+        "sid": "91458"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/label-hop/te-label/generic",
+        "sid": "91459"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-link-hop",
+        "sid": "91460"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-link-hop/direction",
+        "sid": "91461"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-link-hop/hop-type",
+        "sid": "91462"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-link-hop/link-tp-id",
+        "sid": "91463"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-node-hop",
+        "sid": "91464"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-node-hop/hop-type",
+        "sid": "91465"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/numbered-node-hop/node-id",
+        "sid": "91466"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/srlg",
+        "sid": "91467"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/srlg/srlg",
+        "sid": "91468"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/unnumbered-link-hop",
+        "sid": "91469"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/unnumbered-link-hop/direction",
+        "sid": "91470"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/unnumbered-link-hop/hop-type",
+        "sid": "91471"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/unnumbered-link-hop/link-tp-id",
+        "sid": "91472"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-exclude-objects/route-object-exclude-object/unnumbered-link-hop/node-id",
+        "sid": "91473"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects",
+        "sid": "91474"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object",
+        "sid": "91475"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/as-number-hop",
+        "sid": "91476"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/as-number-hop/as-number",
+        "sid": "91477"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/as-number-hop/hop-type",
+        "sid": "91478"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/index",
+        "sid": "91479"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/label-hop",
+        "sid": "91480"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/label-hop/te-label",
+        "sid": "91481"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/label-hop/te-label/direction",
+        "sid": "91482"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/label-hop/te-label/generic",
+        "sid": "91483"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-link-hop",
+        "sid": "91484"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-link-hop/direction",
+        "sid": "91485"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-link-hop/hop-type",
+        "sid": "91486"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-link-hop/link-tp-id",
+        "sid": "91487"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-node-hop",
+        "sid": "91488"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-node-hop/hop-type",
+        "sid": "91489"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/numbered-node-hop/node-id",
+        "sid": "91490"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/unnumbered-link-hop",
+        "sid": "91491"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/unnumbered-link-hop/direction",
+        "sid": "91492"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/unnumbered-link-hop/hop-type",
+        "sid": "91493"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/unnumbered-link-hop/link-tp-id",
+        "sid": "91494"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/explicit-route-include-objects/route-object-include-object/unnumbered-link-hop/node-id",
+        "sid": "91495"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/metric-type",
+        "sid": "91496"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/optimization-metric/weight",
+        "sid": "91497"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/tiebreakers",
+        "sid": "91498"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/tiebreakers/tiebreaker",
+        "sid": "91499"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/optimizations/tiebreakers/tiebreaker/tiebreaker-type",
+        "sid": "91500"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints",
+        "sid": "91501"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/disjointness",
+        "sid": "91502"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/hold-priority",
+        "sid": "91503"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/link-protection",
+        "sid": "91504"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-affinities-values",
+        "sid": "91505"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-affinities-values/path-affinities-value",
+        "sid": "91506"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-affinities-values/path-affinities-value/usage",
+        "sid": "91507"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-affinities-values/path-affinities-value/value",
+        "sid": "91508"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-affinity-names",
+        "sid": "91509"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-affinity-names/path-affinity-name",
+        "sid": "91510"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-affinity-names/path-affinity-name/affinity-name",
+        "sid": "91511"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-affinity-names/path-affinity-name/affinity-name/name",
+        "sid": "91512"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-affinity-names/path-affinity-name/usage",
+        "sid": "91513"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-metric-bounds",
+        "sid": "91514"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-metric-bounds/path-metric-bound",
+        "sid": "91515"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-metric-bounds/path-metric-bound/metric-type",
+        "sid": "91516"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-metric-bounds/path-metric-bound/upper-bound",
+        "sid": "91517"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-srlgs-lists",
+        "sid": "91518"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-srlgs-lists/path-srlgs-list",
+        "sid": "91519"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-srlgs-lists/path-srlgs-list/usage",
+        "sid": "91520"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-srlgs-lists/path-srlgs-list/values",
+        "sid": "91521"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-srlgs-names",
+        "sid": "91522"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-srlgs-names/path-srlgs-name",
+        "sid": "91523"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-srlgs-names/path-srlgs-name/names",
+        "sid": "91524"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/path-srlgs-names/path-srlgs-name/usage",
+        "sid": "91525"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/setup-priority",
+        "sid": "91526"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/signaling-type",
+        "sid": "91527"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/te-bandwidth",
+        "sid": "91528"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/path-constraints/te-bandwidth/generic",
+        "sid": "91529"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/src",
+        "sid": "91530"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/src/ap",
+        "sid": "91531"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/src/multi-src",
+        "sid": "91532"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/src/vn-ap-id",
+        "sid": "91533"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/input/vn-member-list/underlay",
+        "sid": "91534"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output",
+        "sid": "91535"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/abstract-node",
+        "sid": "91536"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/te-topology-identifier",
+        "sid": "91537"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/te-topology-identifier/client-id",
+        "sid": "91538"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/te-topology-identifier/provider-id",
+        "sid": "91539"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/te-topology-identifier/topology-id",
+        "sid": "91540"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list",
+        "sid": "91541"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/compute-status",
+        "sid": "91542"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/connectivity-matrix-id",
+        "sid": "91543"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/dest",
+        "sid": "91544"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/dest/ap",
+        "sid": "91545"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/dest/multi-dest",
+        "sid": "91546"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/dest/vn-ap-id",
+        "sid": "91547"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/error-info",
+        "sid": "91548"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/error-info/error-description",
+        "sid": "91549"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/error-info/error-reason",
+        "sid": "91550"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/error-info/error-timestamp",
+        "sid": "91551"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/id",
+        "sid": "91552"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/if-selected",
+        "sid": "91553"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/src",
+        "sid": "91554"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/src/ap",
+        "sid": "91555"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/src/multi-src",
+        "sid": "91556"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/src/vn-ap-id",
+        "sid": "91557"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-vn:vn-compute/output/vn-member-list/underlay",
+        "sid": "91558"
+      }
+    ]
+  }
+}

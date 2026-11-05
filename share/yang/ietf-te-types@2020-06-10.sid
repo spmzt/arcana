@@ -1,0 +1,965 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-te-types",
+    "module-revision": "2020-06-10",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-routing-types",
+        "module-revision": "2017-12-04"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "89000",
+        "size": "300"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-te-types",
+        "sid": "89000"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "action-exercise",
+        "sid": "89001"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "action-forced-switch",
+        "sid": "89002"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "action-freeze",
+        "sid": "89003"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "action-lockout-of-normal",
+        "sid": "89004"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "action-lockout-of-protection",
+        "sid": "89005"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "action-manual-switch",
+        "sid": "89006"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "association-type",
+        "sid": "89007"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "association-type-double-sided-bidir",
+        "sid": "89008"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "association-type-recovery",
+        "sid": "89009"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "association-type-resource-sharing",
+        "sid": "89010"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "association-type-single-sided-bidir",
+        "sid": "89011"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "bandwidth-protection-desired",
+        "sid": "89012"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "boundary-rerouting-desired",
+        "sid": "89013"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "clear",
+        "sid": "89014"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "clear-freeze",
+        "sid": "89015"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "clear-lockout-of-normal",
+        "sid": "89016"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "contiguous-lsp-desired",
+        "sid": "89017"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "cost",
+        "sid": "89018"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "delay",
+        "sid": "89019"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "do-not-revert",
+        "sid": "89020"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "end-to-end-rerouting-desired",
+        "sid": "89021"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "entropy-label-capability",
+        "sid": "89022"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "failure-of-protocol",
+        "sid": "89023"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "forced-switch",
+        "sid": "89024"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "link-protection-1-for-1",
+        "sid": "89025"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "link-protection-1-plus-1",
+        "sid": "89026"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "link-protection-enhanced",
+        "sid": "89027"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "link-protection-extra-traffic",
+        "sid": "89028"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "link-protection-shared",
+        "sid": "89029"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "link-protection-type",
+        "sid": "89030"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "link-protection-unprotected",
+        "sid": "89031"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "local-protection-desired",
+        "sid": "89032"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "local-recording-desired",
+        "sid": "89033"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lockout-of-protection",
+        "sid": "89034"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "loopback-desired",
+        "sid": "89035"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-attributes-flags",
+        "sid": "89036"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-digital-wrapper",
+        "sid": "89037"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-ethernet",
+        "sid": "89038"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-fiber",
+        "sid": "89039"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-fiber-channel",
+        "sid": "89040"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-lambda",
+        "sid": "89041"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-line",
+        "sid": "89042"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-oduk",
+        "sid": "89043"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-optical-channel",
+        "sid": "89044"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-packet",
+        "sid": "89045"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-pdh",
+        "sid": "89046"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-sdh",
+        "sid": "89047"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-encoding-types",
+        "sid": "89048"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-integrity-required",
+        "sid": "89049"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-metric-absolute",
+        "sid": "89050"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-metric-inherited",
+        "sid": "89051"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-metric-relative",
+        "sid": "89052"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-metric-type",
+        "sid": "89053"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-path-computation-failed",
+        "sid": "89054"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-path-computation-ok",
+        "sid": "89055"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-path-computing",
+        "sid": "89056"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-protection-1-for-1",
+        "sid": "89057"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-protection-1-for-n",
+        "sid": "89058"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-protection-bidir-1-plus-1",
+        "sid": "89059"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-protection-extra-traffic",
+        "sid": "89060"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-protection-reroute",
+        "sid": "89061"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-protection-reroute-extra",
+        "sid": "89062"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-protection-state",
+        "sid": "89063"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-protection-type",
+        "sid": "89064"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-protection-unidir-1-plus-1",
+        "sid": "89065"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-protection-unprotected",
+        "sid": "89066"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-restoration-restore-all",
+        "sid": "89067"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-restoration-restore-any",
+        "sid": "89068"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-restoration-type",
+        "sid": "89069"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-state-down",
+        "sid": "89070"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-state-setting-up",
+        "sid": "89071"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-state-setup-failed",
+        "sid": "89072"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-state-setup-ok",
+        "sid": "89073"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-state-tearing-down",
+        "sid": "89074"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-state-type",
+        "sid": "89075"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-state-up",
+        "sid": "89076"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lsp-stitching-desired",
+        "sid": "89077"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "manual-switch",
+        "sid": "89078"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "node-protection-desired",
+        "sid": "89079"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "non-php-behavior-flag",
+        "sid": "89080"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "normal",
+        "sid": "89081"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "not-optimized",
+        "sid": "89082"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "oam-mep-entity-desired",
+        "sid": "89083"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "oam-mip-entity-desired",
+        "sid": "89084"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "objective-function-type",
+        "sid": "89085"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "of-maximize-residual-bandwidth",
+        "sid": "89086"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "of-minimize-agg-bandwidth-consumption",
+        "sid": "89087"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "of-minimize-cost-path",
+        "sid": "89088"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "of-minimize-cost-path-set",
+        "sid": "89089"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "of-minimize-load-most-loaded-link",
+        "sid": "89090"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "of-minimize-load-path",
+        "sid": "89091"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "oob-mapping-flag",
+        "sid": "89092"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "p2mp-te-tree-eval-request",
+        "sid": "89093"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-computation-method",
+        "sid": "89094"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-computation-srlg-type",
+        "sid": "89095"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-explicitly-defined",
+        "sid": "89096"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-externally-queried",
+        "sid": "89097"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-invalidation-action-drop",
+        "sid": "89098"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-invalidation-action-teardown",
+        "sid": "89099"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-invalidation-action-type",
+        "sid": "89100"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-locally-computed",
+        "sid": "89101"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-metric-delay-average",
+        "sid": "89102"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-metric-delay-minimum",
+        "sid": "89103"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-metric-hop",
+        "sid": "89104"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-metric-igp",
+        "sid": "89105"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-metric-optimize-excludes",
+        "sid": "89106"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-metric-optimize-includes",
+        "sid": "89107"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-metric-residual-bandwidth",
+        "sid": "89108"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-metric-te",
+        "sid": "89109"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-metric-type",
+        "sid": "89110"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-reevaluation-request",
+        "sid": "89111"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-scope-end-to-end",
+        "sid": "89112"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-scope-segment",
+        "sid": "89113"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-scope-type",
+        "sid": "89114"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-setup-rsvp",
+        "sid": "89115"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-setup-sr",
+        "sid": "89116"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-setup-static",
+        "sid": "89117"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-signaling-type",
+        "sid": "89118"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-tiebreaker-maxfill",
+        "sid": "89119"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-tiebreaker-minfill",
+        "sid": "89120"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-tiebreaker-random",
+        "sid": "89121"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "path-tiebreaker-type",
+        "sid": "89122"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pre-planned-lsp-flag",
+        "sid": "89123"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "protection-external-commands",
+        "sid": "89124"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "resource-aff-exclude-any",
+        "sid": "89125"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "resource-aff-include-all",
+        "sid": "89126"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "resource-aff-include-any",
+        "sid": "89127"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "resource-affinities-type",
+        "sid": "89128"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "restoration-scheme-precomputed",
+        "sid": "89129"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "restoration-scheme-preconfigured",
+        "sid": "89130"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "restoration-scheme-presignaled",
+        "sid": "89131"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "restoration-scheme-type",
+        "sid": "89132"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "route-exclude-object",
+        "sid": "89133"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "route-exclude-srlg",
+        "sid": "89134"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "route-include-object",
+        "sid": "89135"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "route-usage-type",
+        "sid": "89136"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "rtm-set-desired",
+        "sid": "89137"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "se-style-desired",
+        "sid": "89138"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "segment-based-rerouting-desired",
+        "sid": "89139"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "session-attributes-flags",
+        "sid": "89140"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "signal-degrade",
+        "sid": "89141"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "signal-fail",
+        "sid": "89142"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "signal-fail-of-protection",
+        "sid": "89143"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "soft-preemption-desired",
+        "sid": "89144"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "srlg-collection-desired",
+        "sid": "89145"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "srlg-ignore",
+        "sid": "89146"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "srlg-preferred",
+        "sid": "89147"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "srlg-strict",
+        "sid": "89148"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "srlg-weighted",
+        "sid": "89149"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "switching-capabilities",
+        "sid": "89150"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "switching-dcsc",
+        "sid": "89151"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "switching-evpl",
+        "sid": "89152"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "switching-fsc",
+        "sid": "89153"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "switching-l2sc",
+        "sid": "89154"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "switching-lsc",
+        "sid": "89155"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "switching-otn",
+        "sid": "89156"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "switching-psc1",
+        "sid": "89157"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "switching-tdm",
+        "sid": "89158"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "te-action-fail",
+        "sid": "89159"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "te-action-result",
+        "sid": "89160"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "te-action-success",
+        "sid": "89161"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "te-optimization-criterion",
+        "sid": "89162"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "te-tunnel-p2mp",
+        "sid": "89163"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "te-tunnel-p2p",
+        "sid": "89164"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "te-tunnel-type",
+        "sid": "89165"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel-action-inprogress",
+        "sid": "89166"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel-action-reoptimize",
+        "sid": "89167"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel-action-resetup",
+        "sid": "89168"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel-action-switchpath",
+        "sid": "89169"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel-action-type",
+        "sid": "89170"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel-admin-state-down",
+        "sid": "89171"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel-admin-state-type",
+        "sid": "89172"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel-admin-state-up",
+        "sid": "89173"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel-state-down",
+        "sid": "89174"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel-state-type",
+        "sid": "89175"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel-state-up",
+        "sid": "89176"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "wait-to-restore",
+        "sid": "89177"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "extended-admin-groups",
+        "sid": "89178"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "frr-te",
+        "sid": "89179"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "named-extended-admin-groups",
+        "sid": "89180"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "named-path-affinities",
+        "sid": "89181"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "named-path-constraints",
+        "sid": "89182"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "named-srlg-groups",
+        "sid": "89183"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "p2mp-te",
+        "sid": "89184"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "path-optimization-metric",
+        "sid": "89185"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "path-optimization-objective-function",
+        "sid": "89186"
+      }
+    ]
+  }
+}

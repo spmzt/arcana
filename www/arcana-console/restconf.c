@@ -25,6 +25,9 @@
  *	/restconf/data/ietf-network:networks
  *					the fleet's SAPs (RFC 9408), each
  *					host's node merged (sapnet.c)
+ *	/restconf/data/ietf-vn:access-point, virtual-network[/<api-path>]
+ *					their VN view (RFC 9731), read
+ *					alone (vn.c)
  *
  * A host's path is made an XPath filter of the agent's GET, the node
  * then taken from the RFC 7951 JSON that comes back.  Of the query
@@ -526,6 +529,12 @@ library_object(void)
 		{ "ietf-l3vpn-ntw", "2022-02-14",
 		    "urn:ietf:params:xml:ns:yang:ietf-l3vpn-ntw" },
 		{ "arcana-l3nm", "2026-11-05", "urn:arcana:yang:arcana-l3nm" },
+		{ "ietf-vn", "2025-03-27",
+		    "urn:ietf:params:xml:ns:yang:ietf-vn" },
+		{ "ietf-te-types", "2020-06-10",
+		    "urn:ietf:params:xml:ns:yang:ietf-te-types" },
+		{ "ietf-te-topology", "2020-08-06",
+		    "urn:ietf:params:xml:ns:yang:ietf-te-topology" },
 		{ "ietf-network", "2018-02-26",
 		    "urn:ietf:params:xml:ns:yang:ietf-network" },
 		{ "ietf-network-topology", "2018-02-26",
@@ -586,7 +595,7 @@ library_object(void)
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	ucl_array_append(arr, ds);
 	ucl_object_insert_key(lib, arr, "datastore", 0, false);
-	ucl_object_insert_key(lib, ucl_object_fromstring("2026-11-05.1"),
+	ucl_object_insert_key(lib, ucl_object_fromstring("2026-11-05.2"),
 	    "content-id", 0, false);
 	return (lib);
 }
@@ -677,6 +686,8 @@ api_restconf_data(struct http_request *req)
 		return (api_restconf_host(req));
 	if (l3nm_path(req->path))
 		return (api_l3nm(req));
+	if (vn_path(req->path))
+		return (api_vn(req));
 	if (req->method != HTTP_METHOD_GET)
 		return (restconf_error(req, 405, "the console's own data is "
 		    "read alone; a host's changes are below its entry"));
@@ -696,6 +707,7 @@ api_restconf_data(struct http_request *req)
 		ucl_object_insert_key(top, mounts_object(),
 		    "ietf-yang-schema-mount:schema-mounts", 0, false);
 		l3nm_into(req, top);
+		vn_into(req, top);
 	} else if (strcmp(p, "/arcana-fleet:fleet") == 0)
 		ucl_object_insert_key(top, fleet_object(req),
 		    "arcana-fleet:fleet", 0, false);

@@ -1827,7 +1827,8 @@ static const char l3nm_fig34[] =
 static bool
 own_name(const char *m, size_t n)
 {
-	static const char *const own[] = { "ietf-l3vpn-ntw", "arcana-l3nm" };
+	static const char *const own[] = { "ietf-l3vpn-ntw", "arcana-l3nm",
+	    "ietf-vn" };
 
 	for (size_t i = 0; i < nitems(own); i++)
 		if (strlen(own[i]) == n && strncmp(m, own[i], n) == 0)
@@ -10427,6 +10428,132 @@ sdwan_good_at(const char *a, const char *b, char *doc, size_t len)
  * before imported at its start, its version kept, the file kept aside.
  * (Every document kept by the tests comes back the same: http().)
  */
+/*
+ * The VN view (PLAN-SDN-YANG 4.7, RFC 9731): made of the L3NM kept at
+ * each read, a VN each service, an AP each attachment, a member each
+ * pair of a service's accesses on two nodes; read alone.
+ */
+#define	VN_VN	"/restconf/data/ietf-vn:virtual-network"
+#define	VN_AP	"/restconf/data/ietf-vn:access-point"
+
+CONSOLE_TC(l3nm_vn, "the VN view of the L3NM: l3nm_good's service of two "
+    "sites one VN with its members; an L3NM change in it; edits refused")
+ATF_TC_BODY(l3nm_vn, tc)
+{
+	static const char *const methods[] = { "PUT", "POST", "PATCH",
+	    "DELETE" };
+	struct authn	 a;
+	struct resp	 r;
+	char		 etag[64], etag2[64];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	/* No service, no VN. */
+	http("GET", VN_VN, NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("PUT", L3NM, l3nm_good, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	/* Sites a (hq on vtnet2, road on wg5) and b (branch on vtnet2):
+	 * one VN, a member from each of a's accesses to b's. */
+	http("GET", VN_VN, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("acme", jstr(&r, "ietf-vn:virtual-network.vn.0.id"));
+	ATF_CHECK(jstr(&r, "ietf-vn:virtual-network.vn.1") == NULL);
+	ATF_CHECK_STREQ("a:hq~b:branch", jstr(&r, "ietf-vn:virtual-network."
+	    "vn.0.vn-member.0.id"));
+	ATF_CHECK_STREQ("a:vtnet2", jstr(&r, "ietf-vn:virtual-network.vn.0."
+	    "vn-member.0.src.ap"));
+	ATF_CHECK_STREQ("acme:hq", jstr(&r, "ietf-vn:virtual-network.vn.0."
+	    "vn-member.0.src.vn-ap-id"));
+	ATF_CHECK_STREQ("b:vtnet2", jstr(&r, "ietf-vn:virtual-network.vn.0."
+	    "vn-member.0.dest.ap"));
+	ATF_CHECK_STREQ("acme:branch", jstr(&r, "ietf-vn:virtual-network."
+	    "vn.0.vn-member.0.dest.vn-ap-id"));
+	ATF_CHECK_STREQ("a:road~b:branch", jstr(&r, "ietf-vn:virtual-network."
+	    "vn.0.vn-member.1.id"));
+	ATF_CHECK(jstr(&r, "ietf-vn:virtual-network.vn.0.vn-member.2") ==
+	    NULL);
+	ATF_CHECK_MSG(resp_header(&r, "etag", etag, sizeof(etag)) != NULL,
+	    "%s", r.head);
+	resp_free(&r);
+	http("GET", VN_AP, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("a:vtnet2", jstr(&r, "ietf-vn:access-point.ap.0.id"));
+	ATF_CHECK_STREQ("acme:hq", jstr(&r, "ietf-vn:access-point.ap.0."
+	    "vn-ap.0.id"));
+	ATF_CHECK_STREQ("acme", jstr(&r, "ietf-vn:access-point.ap.0.vn-ap.0."
+	    "vn"));
+	ATF_CHECK_STREQ("a:wg5", jstr(&r, "ietf-vn:access-point.ap.1.id"));
+	ATF_CHECK_STREQ("b:vtnet2", jstr(&r, "ietf-vn:access-point.ap.2.id"));
+	ATF_CHECK(jstr(&r, "ietf-vn:access-point.ap.3") == NULL);
+	resp_free(&r);
+	/* A member by its key; the root and the library have the view. */
+	http("GET", VN_VN "/vn=acme/vn-member=a%3Ahq~b%3Abranch/dest", NULL,
+	    &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("b:vtnet2", jstr(&r, "ietf-vn:dest.ap"));
+	resp_free(&r);
+	http("GET", "/restconf/data", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("acme", jstr(&r, "ietf-vn:virtual-network.vn.0.id"));
+	ATF_CHECK(strstr(r.body, "\"name\":\"ietf-vn\"") != NULL);
+	resp_free(&r);
+	/* Edits refused, the L3NM as it was. */
+	for (size_t i = 0; i < nitems(methods); i++) {
+		http(methods[i], VN_VN "/vn=acme", strcmp(methods[i],
+		    "DELETE") == 0 ? NULL : "{\"ietf-vn:vn\":[{\"id\":"
+		    "\"acme\",\"admin-status\":\"down\"}]}", &r);
+		EXPECT(&r, 405);
+		ATF_CHECK_STREQ("operation-not-supported", jstr(&r,
+		    "ietf-restconf:errors.error.0.error-tag"));
+		resp_free(&r);
+	}
+	http("GET", L3NM "/vpn-services/vpn-service=acme/vpn-id", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* An access added at b: a member from each of a's to it. */
+	http("PATCH", L3NM "/vpn-services/vpn-service=acme/vpn-nodes/"
+	    "vpn-node=b/vpn-network-accesses", "{\"ietf-l3vpn-ntw:"
+	    "vpn-network-accesses\":{\"vpn-network-access\":[{\"id\":\"lab\","
+	    "\"interface-id\":\"vtnet3\",\"vpn-network-access-type\":"
+	    "\"ietf-vpn-common:multipoint\",\"vpn-instance-profile\":"
+	    "\"subscriber\"}]}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", VN_VN, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("a:hq~b:lab", jstr(&r, "ietf-vn:virtual-network.vn.0."
+	    "vn-member.1.id"));
+	ATF_CHECK_STREQ("a:road~b:lab", jstr(&r, "ietf-vn:virtual-network."
+	    "vn.0.vn-member.3.id"));
+	ATF_CHECK_MSG(resp_header(&r, "etag", etag2, sizeof(etag2)) != NULL &&
+	    strcmp(etag, etag2) != 0, "%s", r.head);
+	resp_free(&r);
+	/* Its accesses spokes, the service down: no member, the VN down. */
+	http("PATCH", L3NM "/vpn-services/vpn-service=acme", "{\"ietf-l3vpn-"
+	    "ntw:vpn-service\":[{\"vpn-id\":\"acme\",\"status\":{\""
+	    "admin-status\":{\"status\":\"ietf-vpn-common:admin-down\"}},"
+	    "\"vpn-instance-profiles\":{\"vpn-instance-profile\":[{"
+	    "\"profile-id\":\"subscriber\",\"role\":"
+	    "\"ietf-vpn-common:spoke-role\"}]}}]}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", VN_VN "/vn=acme", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("down", jstr(&r, "ietf-vn:vn.0.admin-status"));
+	ATF_CHECK(jstr(&r, "ietf-vn:vn.0.vn-member") == NULL);
+	resp_free(&r);
+	/* The service taken away, its VN and APs with it. */
+	http("DELETE", L3NM "/vpn-services/vpn-service=acme", NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	http("GET", VN_AP, NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+}
+
 CONSOLE_TC(l3nm_mef, "the SD-WAN document a view of the L3NM: l3nm_good "
     "exported is sdwan_good; sdwan.json imported once at start")
 ATF_TC_BODY(l3nm_mef, tc)
@@ -16144,6 +16271,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, l3nm);
 	ATF_TP_ADD_TC(tp, l3nm_sdwan);
 	ATF_TP_ADD_TC(tp, l3nm_mef);
+	ATF_TP_ADD_TC(tp, l3nm_vn);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_sync);
 	ATF_TP_ADD_TC(tp, server_readdress);

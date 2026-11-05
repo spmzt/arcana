@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.361.0"
+#define	ARCW_VERSION		"0.362.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -532,6 +532,11 @@ ucl_object_t	*sdwan_applied(void);
 int		 api_sapnet(struct http_request *);
 void		 api_sapnet_free(struct http_request *);
 int		 api_sapnet_attach(struct http_request *);
+/* vn.c: the services' customer view (RFC 9731), made of the L3NM kept. */
+bool		 vn_path(const char *);
+ucl_object_t	*vn_view(const ucl_object_t *);
+void		 vn_into(struct http_request *, ucl_object_t *);
+int		 api_vn(struct http_request *);
 int		 api_restconf_ds(struct http_request *);
 int		 api_restconf_stream(struct http_request *);
 int		 api_restconf_fleet_stream(struct http_request *);

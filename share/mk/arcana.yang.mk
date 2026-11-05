@@ -113,6 +113,12 @@ ARC_YFEATS+=	-F ietf-vpn-common:dot1q,qinq,lag-interface
 ARC_YMODS+=	ietf-l3vpn-ntw@2022-02-14 arcana-l3nm@2026-11-05
 ARC_YIMPORTS+=	ietf-key-chain@2017-06-15 ietf-tcp@2024-10-10
 ARC_YFEATS+=	-F ietf-vpn-common:* -F ietf-l3vpn-ntw:*
+# Their customer view (RFC 9731's VN, vn.c), read alone; its leafrefs'
+# targets, RFC 8795's TE topology over RFC 8345's networks (above),
+# implemented with it and holding nothing.
+ARC_YMODS+=	ietf-vn@2025-03-27 ietf-te-types@2020-06-10 \
+		ietf-te-topology@2020-08-06
+ARC_YFEATS+=	-F ietf-vn:multi-src-dest
 .endif
 # cblink-gen takes 64 -F at most, and a module named with no feature is
 # as one not named: those left out, each spec one word, quoted.

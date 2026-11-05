@@ -122,12 +122,12 @@ origin.
 | `ietf-subscribed-notifications@2019-09-09.yang` | module | RFC 8639 |
 | `ietf-tcp-common@2024-10-10.yang` | module | RFC 9643 |
 | `ietf-tcp@2024-10-10.yang` | module | RFC 9648; its identities derive from `ietf-key-chain`'s, numbered with them |
-| `ietf-te-topology@2020-08-06.yang` | module | IANA, RFC 8795 |
-| `ietf-te-types@2020-06-10.yang` | module | IANA, RFC 8776 |
+| `ietf-te-topology@2020-08-06.yang` | module | IANA, RFC 8795; the targets of `ietf-vn`'s leafrefs, implemented by the console with nothing in it |
+| `ietf-te-types@2020-06-10.yang` | module | IANA, RFC 8776 (RFC 8776's revision, not draft-ietf-teas-rfc8776-update's); `ietf-vn`'s types |
 | `ietf-tls-client@2024-10-10.yang` | module | RFC 9645; `ietf-syslog`'s TLS transport |
 | `ietf-tls-common@2024-10-10.yang` | module | RFC 9645 |
 | `ietf-truststore@2024-10-10.yang` | module | RFC 9641 |
-| `ietf-vn@2025-03-27.yang` | module | IANA, RFC 9731 |
+| `ietf-vn@2025-03-27.yang` | module | IANA, RFC 9731 (YangModels/yang standard/ietf/RFC, the same bytes); the services' customer view, made by the console of the L3NM kept and served read-only (vn.c) |
 | `ietf-vpn-common@2022-02-11.yang` | module | RFC 9181 (YangModels/yang standard/ietf/RFC, the same bytes); `ietf-l3vpn-ntw`'s import, implemented with it by the console; implemented by the agent for a SAP's identities (features dot1q, qinq, lag-interface) |
 | `ietf-yang-library@2019-01-04.yang` | module | RFC 8525 |
 | `ietf-yang-patch@2017-02-22.yang` | module | RFC 8072 |
@@ -205,7 +205,8 @@ The `.sid` files of the IETF and IANA modules the agent fills
 publishes no file, so they are numbered here (SIDS.md). So are those
 of the ones with no IETF range (`ietf-routing`, its address families,
 `ietf-network-instance`, `ietf-logical-network-element`, `ietf-network`,
-`ietf-network-topology`, `ietf-sap-ntw`), from Arcana's block. A module's file numbers every item of it, whatever
+`ietf-network-topology`, `ietf-sap-ntw`, `ietf-te-types`,
+`ietf-te-topology`, `ietf-vn`), from Arcana's block. A module's file numbers every item of it, whatever
 another module deviates:
 `arcana-network-instance` takes `vsi-root` away, its number stays.
 

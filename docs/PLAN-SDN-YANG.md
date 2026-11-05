@@ -2083,6 +2083,32 @@ whose first part is served.
 - 4.7.1 C: `ietf-vn` view: access points and VNAPs from UNIs, members
   from tunnels, `oper-status` and `if-selected` from `arcana-steer`;
   check: RFC 9731's example shape for the lab service.
+  Begun (console 0.360.0, vn.c): RFC 9731's published module (no
+  draft needed), with RFC 8776's `ietf-te-types` and RFC 8795's
+  `ietf-te-topology` over RFC 8345's networks, which its leafrefs name
+  and the console implements holding nothing, numbered at 89 000,
+  89 300 and 91 300 (SIDS.md).  Served read-only at
+  `/restconf/data/ietf-vn:access-point` and `ietf-vn:virtual-network`
+  (and in `/restconf/data`), made of the L3NM kept at each read, no
+  store of its own, with its query parameters and the L3NM's
+  entity-tag; any other method 405 `operation-not-supported`, naming
+  the L3NM as where a change is made.  The mapping: a VN each
+  vpn-service (id the vpn-id, admin-status the service's admin-down
+  and admin-testing); an AP each place a host attaches accesses, the
+  SAP, `<ne-id>:<interface-id>` (the access's id where it names no
+  interface); a VNAP each access there, `<vpn-id>:<access-id>`, its VN
+  the service's; a VN member each pair of a service's accesses on two
+  vpn-nodes (the tunnel between their edges),
+  `<node>:<access>~<node>:<access>`, its source the first as the L3NM
+  lists them, none between two of RFC 9181's spoke-role.  No TE
+  topology is kept, so `pe`, `abstract-node`, `ltp` and
+  `connectivity-matrix-id` are left out.  Check (console_test l3nm_vn):
+  l3nm_good's service of two sites one VN, its three APs and two
+  members; a member by key; an access added to the L3NM two members
+  more and a new entity-tag; spokes and admin-down none and `down`;
+  PUT, POST, PATCH and DELETE of the view refused, the L3NM as it was.
+  Left: `oper-status` and `if-selected` from `arcana-steer` (the
+  agents' state, not the L3NM), 4.7.2, 4.7.3.
 - 4.7.2 C: `path-metric-bounds` with Arcana metric identities for
   loss and delay variation; the `arcana-sdwan-underlay` augment;
   check: the TCA thresholds round-trip.

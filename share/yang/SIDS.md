@@ -175,6 +175,9 @@ on the wire.
 | 88 100 | 100 | `ietf-network@2018-02-26`, RFC 8345 (no IETF range): the agent's SAP network | `share/yang/ietf-network@2018-02-26.sid` (12 used) |
 | 88 200 | 100 | `ietf-network-topology@2018-02-26`, RFC 8345 (no IETF range): its termination points | `share/yang/ietf-network-topology@2018-02-26.sid` (18 used) |
 | 88 300 | 100 | `ietf-sap-ntw@2023-06-20`, RFC 9408 (no IETF range): the SAPs | `share/yang/ietf-sap-ntw@2023-06-20.sid` (40 used) |
+| 89 000 | 300 | `ietf-te-types@2020-06-10`, RFC 8776 (no IETF range; `ietf-vn`'s types and identities, the console's) | `share/yang/ietf-te-types@2020-06-10.sid` (187 used) |
+| 89 300 | 2 000 | `ietf-te-topology@2020-08-06`, RFC 8795 (no IETF range): the targets of `ietf-vn`'s leafrefs, implemented by the console and holding nothing | `share/yang/ietf-te-topology@2020-08-06.sid` (1 726 used) |
+| 91 300 | 400 | `ietf-vn@2025-03-27`, RFC 9731 (no IETF range): the services' VN view, the console's | `share/yang/ietf-vn@2025-03-27.sid` (259 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,
