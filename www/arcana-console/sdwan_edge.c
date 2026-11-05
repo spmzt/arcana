@@ -4141,6 +4141,87 @@ dn_objects(const struct dn *dn, ucl_object_t *objects)
 }
 
 /*
+ * What the edge's policies commit to (§9.12.2.11: each limiter's
+ * commit, a security policy's rate limit a cap and none) against what
+ * its uplinks carry, the UCS End Points' bandwidth where each says it
+ * (Mplify 119 §12.2.3): more is infeasible, refused with the reason and
+ * the nearest commit that fits (PLAN-SDN-YANG 4.5.6, RFC 9543 step 2).
+ */
+static bool
+dn_fits(struct plan *pl, const char *sid, const struct dn *dn)
+{
+	const ucl_object_t	*edge, *u;
+	ucl_object_iter_t	 it;
+	const struct limiter	*big;
+	const char		*k, *s1, *s2;
+	char			 caps[300], commits[400], what[200], alt[300];
+	int64_t			 cap, sum, over;
+	int			 i, n;
+
+	edge = by(ucl_object_lookup(pl->doc, "edges"), "server", sid);
+	cap = 0;
+	n = 0;
+	caps[0] = '\0';
+	it = NULL;
+	while ((u = ucl_object_iterate(ucl_object_lookup(edge,
+	    "ucs_end_points"), &it, true)) != NULL) {
+		/* One that does not say: what the edge carries is not known. */
+		if (ucl_object_type(ucl_object_lookup(u, "bandwidth")) !=
+		    UCL_INT)
+			return (true);
+		cap += ucl_object_toint(ucl_object_lookup(u, "bandwidth"));
+		snprintf(caps + strlen(caps), sizeof(caps) - strlen(caps),
+		    "%s%s %jd", n++ > 0 ? ", " : "", str(u, "id"), (intmax_t)
+		    ucl_object_toint(ucl_object_lookup(u, "bandwidth")));
+	}
+	if (n == 0)
+		return (true);
+	sum = 0;
+	big = NULL;
+	commits[0] = '\0';
+	for (i = 0, n = 0; i < dn->nlim; i++) {
+		if (strstr(dn->lim[i].key, "/security/") != NULL ||
+		    dn->lim[i].commit <= 0)
+			continue;
+		sum += dn->lim[i].commit;
+		if (big == NULL || dn->lim[i].commit > big->commit)
+			big = &dn->lim[i];
+		snprintf(commits + strlen(commits), sizeof(commits) -
+		    strlen(commits), "%s%s %jd", n++ > 0 ? ", " : "",
+		    dn->lim[i].key, (intmax_t)dn->lim[i].commit);
+	}
+	if (sum <= cap)
+		return (true);
+	/* The largest commit's owner: "service/limiter/name" or
+	 * "service/policy/end point". */
+	k = big->key;
+	s1 = strchr(k, '/');
+	s2 = s1 != NULL ? strchr(s1 + 1, '/') : NULL;
+	if (s1 != NULL && s2 != NULL && strncmp(s1 + 1, "limiter/", 8) == 0)
+		snprintf(what, sizeof(what), "rate limiter %s of service %.*s",
+		    s2 + 1, (int)(s1 - k), k);
+	else if (s1 != NULL && s2 != NULL)
+		snprintf(what, sizeof(what), "policy %.*s of service %.*s at "
+		    "end point %s", (int)(s2 - s1 - 1), s1 + 1, (int)(s1 - k), k,
+		    s2 + 1);
+	else
+		snprintf(what, sizeof(what), "%s", k);
+	over = sum - cap;
+	if (big->commit - over > 0)
+		snprintf(alt, sizeof(alt), "it fits with the commit of %s at "
+		    "%jd bit/s or less", what, (intmax_t)(big->commit - over));
+	else
+		snprintf(alt, sizeof(alt), "it fits with %jd bit/s less "
+		    "committed in all, or uplinks of %jd bit/s more", (intmax_t)
+		    over, (intmax_t)over);
+	snprintf(pl->why, sizeof(pl->why), "infeasible: edge %s's policies "
+	    "commit %jd bit/s, more than its uplinks carry, %jd bit/s: %s "
+	    "(uplinks %s; commits %s)", server_name_of(sid), (intmax_t)sum,
+	    (intmax_t)cap, alt, caps, commits);
+	return (false);
+}
+
+/*
  * A security policy's rate limit (Arcana's own): a pipe of its own, one per
  * policy of the service; -1 for none or too many.
  */
@@ -5648,6 +5729,15 @@ rules_build(struct plan *pl, const char *sid)
 					    "to %s in recv %s", n64n, str(n64, "pool"), bif);
 			}
 		}
+	}
+	if (!dn_fits(pl, sid, dn)) {
+		free(dn);
+		ucl_object_unref(tables);
+		ucl_object_unref(rules);
+		ucl_object_unref(pre);
+		ucl_object_unref(entries);
+		ucl_object_unref(objects);
+		return (false);
 	}
 	dn_objects(dn, objects);
 	free(dn);

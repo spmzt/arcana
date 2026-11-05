@@ -1918,8 +1918,16 @@ whose first part is served.
   console's apply, then interfaces, ip and routing as edits with the
   apply's accepted warnings.  Check (console_test sdwan_apply): the
   plan's edits, sysctl.conf and sysctl(8) after the apply.
-- 4.5.6 C: refusal of the infeasible with the reason and an
-  alternative; check: a bandwidth over the link refused.
+- 4.5.6 done (console sdwan_edge.c): refusal of the infeasible with the
+  reason and an alternative: an edge's policies' committed bandwidth
+  (each rate limiter's or policy's commit, a security policy's rate
+  limit a cap and none) against what its uplinks carry (its UCS End
+  Points' bandwidth, where each says one): more is no plan (409
+  unplanned, the apply refused too), the reason the two sums, and the
+  nearest that fits, the largest commit lowered by the excess, or the
+  excess in all and as uplinks; check (console_test sdwan_infeasible):
+  700 kbit/s of uplinks under 1 Mbit/s committed refused with the
+  commit that fits, 10 Mbit/s planned.
 - 4.6.1 A: each agent's node, TPs and SAPs dumped with `sap-status`;
   check: equals the interface list.
 - 4.6.2 C: the SAP network and the physical network under it; the

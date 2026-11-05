@@ -11624,6 +11624,87 @@ ATF_TC_BODY(l3nm_plan, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(sdwan_infeasible, "The infeasible refused (PLAN-SDN-YANG 4.5.6): "
+    "an edge whose policies commit more bandwidth than its uplinks carry "
+    "is not planned, the reason and the commit that would fit said; one "
+    "with room is")
+ATF_TC_BODY(sdwan_infeasible, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"bandwidth\":400000" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\",\"bandwidth\":300000" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* a carries 700 kbit/s, its policies commit 1 Mbit/s (shared):
+	 * refused, with the commit that fits; nothing to apply. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 409);
+	ATF_CHECK_MSG(strstr(r.body, "infeasible: edge a's policies commit "
+	    "1000000 bit/s, more than its uplinks carry, 700000 bit/s: it "
+	    "fits with the commit of rate limiter shared of service acme at "
+	    "700000 bit/s or less") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	ATF_CHECK_MSG(r.status == 409 && strstr(r.body, "infeasible") != NULL,
+	    "%d %s", r.status, r.body);
+	resp_free(&r);
+	/* An uplink with room: planned. */
+	ATF_REQUIRE(swap_in(doc, "\"bandwidth\":400000", "\"bandwidth\":"
+	    "10000000", t1, sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"version\":0", "\"version\":1", doc,
+	    sizeof(doc)));
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+}
+
 CONSOLE_TC(sdwan_breakout, "Breakout failover: an edge with several breakout "
     "uplinks has a route to each one's gateway, the default by the most "
     "preferred, a probe to each one's beacon, and the agent told to put "
@@ -15372,6 +15453,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_host);
 	ATF_TP_ADD_TC(tp, sdwan_loop);
 	ATF_TP_ADD_TC(tp, l3nm_plan);
+	ATF_TP_ADD_TC(tp, sdwan_infeasible);
 	ATF_TP_ADD_TC(tp, sdwan_breakout);
 	ATF_TP_ADD_TC(tp, sdwan_nat64);
 	ATF_TP_ADD_TC(tp, sdwan_sets);
