@@ -2502,7 +2502,12 @@ whose first part is served.
   names).  Decided: the URL filter's stop no longer asks the agent's
   version first (pre-1.0, no agent before 0.248.0 is kept); the IDS
   pcap upload and pcap-log download stay /api's (D-10's binary
-  resources).  A tab's export names a read by its nodes
+  resources).  An edge's SD-WAN state on the SD-WAN page (console
+  0.394.0): the same sdwan_yread(), each edge of the plan's tunnels, the
+  samples after the last as arcana-probe's read takes after; the
+  interfaces its link and endpoint forms offer arcana-network's
+  interfaces (a vnet jail's edge its own).  Check: pwa_test
+  pwa_flows_sdwan.  A tab's export names a read by its nodes
   without their modules ("services").  Added to the console's RESTCONF
   side: the socket's `{"what": "restconf"}`, a GET or an action that reads below a host's
   entry with its steps (hosts_restconf_live(); console_test
@@ -2511,8 +2516,7 @@ whose first part is served.
   restconf_job_confirm).  Decided: the Log tab's events stay on /api
   with the socket's events, the same shape, until the stream is
   RESTCONF's (4.8.2).  Open: a dataset's key (its name has a /, which
-  no path below the mount carries, as 4.4.1 found), an edge's SD-WAN
-  state and the interfaces its forms read (sdwan.c), builder.c, the events read (logs.c, 4.8.2); then `/api`
+  no path below the mount carries, as 4.4.1 found), builder.c, the events read (logs.c, 4.8.2); then `/api`
   keeps D-10's resources alone.
 - 4.8.2 P: SSE subscriptions replace the page's polling; check:
   timings in the browser test.

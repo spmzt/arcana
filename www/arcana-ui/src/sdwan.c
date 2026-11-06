@@ -995,6 +995,24 @@ paths_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	free(sid);
 }
 
+/*
+ * The interfaces of an edge ("host" or "host/jail") for its forms:
+ * arcana-network's interfaces through the fleet mount.
+ */
+static void
+sd_ifs_read(const char *edge)
+{
+	struct netq	q;
+	char		sid[16];
+
+	snprintf(sid, sizeof(sid), "%.*s", (int)strcspn(edge, "/"), edge);
+	memset(&q, 0, sizeof(q));
+	q.kind = "interfaces";
+	q.jail = strchr(edge, '/') != NULL ? strchr(edge, '/') + 1 : NULL;
+	sd.ifs_loading = true;
+	net_yread(sid, &q, false, ifs_cb, NULL);
+}
+
 /* Every edge of the plan's tunnels asked what its probes saw. */
 static void
 paths_load(void)
@@ -1002,7 +1020,7 @@ paths_load(void)
 	const ucl_object_t	*t, *e;
 	ucl_object_iter_t	 it, eit;
 	ucl_object_t		*asked;
-	char			 url[96];
+	char			 sid[16];
 
 	sd.paths_at = arc_now();
 	if (sd.plan == NULL) {
@@ -1022,13 +1040,10 @@ paths_load(void)
 			ucl_object_insert_key(asked, ucl_object_frombool(true),
 			    jstr(e, "edge"), 0, true);
 			/* A jail's edge: its server's read, its part kept. */
-			snprintf(url, sizeof(url), "/api/servers/%.*s/sdwan",
-			    (int)strcspn(jstr(e, "edge"), "/"), jstr(e, "edge"));
-			if (paths_after(jstr(e, "edge")) > 0)
-				snprintf(url + strlen(url), sizeof(url) - strlen(url),
-				    "?after=%lld", (long long)paths_after(jstr(e,
-				    "edge")));
-			api("GET", url, NULL, paths_cb, strdup(jstr(e, "edge")));
+			snprintf(sid, sizeof(sid), "%.*s", (int)strcspn(jstr(e,
+			    "edge"), "/"), jstr(e, "edge"));
+			sdwan_yread(sid, (long long)paths_after(jstr(e, "edge")),
+			    paths_cb, strdup(jstr(e, "edge")));
 		}
 	}
 	ucl_object_unref(asked);
@@ -9366,8 +9381,6 @@ sdwan_action(const char *act, const char *arg, const char *value)
 	}
 	if (strcmp(act, "sd-link-add") == 0 || strcmp(act, "sd-link-edit") ==
 	    0) {
-		char	url[96];
-
 		snprintf(sd.link_host, sizeof(sd.link_host), "%s", arg);
 		snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(act,
 		    "sd-link-edit") == 0 ? value : "");
@@ -9375,9 +9388,7 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		if (sd.ifs != NULL)
 			ucl_object_unref(sd.ifs);
 		sd.ifs = NULL;
-		sd.ifs_loading = true;
-		snprintf(url, sizeof(url), "/api/servers/%s/net/interfaces", arg);
-		api("GET", url, NULL, ifs_cb, NULL);
+		sd_ifs_read(arg);
 		app.modal = MODAL_SD_LINK;
 		app.modal_error[0] = '\0';
 		return (true);
@@ -9395,16 +9406,12 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strcmp(act, "input:sd-ep-edge") == 0) {
-		char	url[96];
-
 		snprintf(sd.link_host, sizeof(sd.link_host), "%s", value);
 		sd.link_if[0] = '\0';
 		if (sd.ifs != NULL)
 			ucl_object_unref(sd.ifs);
 		sd.ifs = NULL;
-		sd.ifs_loading = true;
-		snprintf(url, sizeof(url), "/api/servers/%s/net/interfaces", value);
-		api("GET", url, NULL, ifs_cb, NULL);
+		sd_ifs_read(value);
 		return (true);
 	}
 	/* A rate limiter or a virtual topology of the service. */
