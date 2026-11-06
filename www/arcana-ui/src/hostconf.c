@@ -220,7 +220,7 @@ static void
 send(bool dry)
 {
 	ucl_object_t	*b;
-	char		 url[96], *json;
+	char		 url[200], *json;
 	const char	*to;
 
 	to = hc.target[0] != '\0' ? hc.target : hc.sid;
@@ -235,7 +235,7 @@ send(bool dry)
 		ucl_object_unref(b);
 		return;
 	}
-	ucl_object_insert_key(b, ucl_object_frombool(dry), "dry_run", 0, true);
+	ucl_object_insert_key(b, ucl_object_frombool(dry), "dry-run", 0, true);
 	ucl_object_insert_key(b, ucl_object_frombool(hc.anyway), "anyway", 0,
 	    true);
 	if (hc.hostname[0] != '\0')
@@ -243,12 +243,13 @@ send(bool dry)
 		    "hostname", 0, true);
 	json = (char *)ucl_object_emit(b, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(b);
-	snprintf(url, sizeof(url), "/api/servers/%s/config", to);
+	rc_c(url, sizeof(url), "hosts/host=%s/apply-configuration",
+	    rc_key(to));
 	snprintf(hc.rsid, sizeof(hc.rsid), "%s", to);
 	hc.rdry = dry;
 	hc.busy = true;
 	hc.error[0] = '\0';
-	api("POST", url, json, apply_cb, NULL);
+	rc_verb(url, json, NULL, apply_cb, NULL);
 	free(json);
 }
 
@@ -467,7 +468,7 @@ bool
 hostconf_action(const char *act, const char *arg, const char *value)
 {
 	struct server	*s, *t;
-	char		 url[96], why2[300];
+	char		 url[200], why2[300];
 
 	if (strncmp(act, "hc-", 3) != 0 && strncmp(act, "input:hc-", 9) != 0 &&
 	    strcmp(act, "file:hc-bundle") != 0)
@@ -489,10 +490,10 @@ hostconf_action(const char *act, const char *arg, const char *value)
 			    "named with letters, digits, . _ and -");
 			return (true);
 		}
-		snprintf(url, sizeof(url), "/api/servers/%s/config/export",
-		    s->id);
+		rc_c(url, sizeof(url), "hosts/host=%s/export-configuration",
+		    rc_key(s->id));
 		hc.busy = true;
-		api("POST", url, "{}", template_cb, strdup(hc.tname));
+		rc_verb(url, NULL, NULL, template_cb, strdup(hc.tname));
 	} else if (strcmp(act, "input:hc-hostname") == 0)
 		snprintf(hc.hostname, sizeof(hc.hostname), "%s", value);
 	else if (strcmp(act, "input:hc-target") == 0) {
@@ -501,10 +502,10 @@ hostconf_action(const char *act, const char *arg, const char *value)
 			ucl_object_unref(hc.bundle);
 		hc.bundle = NULL;
 	} else if (strcmp(act, "hc-export") == 0) {
-		snprintf(url, sizeof(url), "/api/servers/%s/config/export",
-		    s->id);
+		rc_c(url, sizeof(url), "hosts/host=%s/export-configuration",
+		    rc_key(s->id));
 		hc.busy = true;
-		api("POST", url, hc.secrets ? "{\"secrets\":true}" : "{}",
+		rc_verb(url, hc.secrets ? "{\"secrets\":true}" : NULL, NULL,
 		    export_cb, strcmp(arg, "yaml") == 0 ? (void *)1 : NULL);
 	} else if (strcmp(act, "hc-check") == 0) {
 		hc.anyway = false;

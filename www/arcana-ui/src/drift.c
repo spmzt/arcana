@@ -53,7 +53,7 @@ drift_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 drift_fetch(struct server *s)
 {
-	char	url[96], *arg;
+	char	url[200], *arg;
 
 	if (dr.loading && strcmp(dr.sid, s->id) == 0)
 		return;
@@ -65,10 +65,10 @@ drift_fetch(struct server *s)
 	}
 	snprintf(dr.sid, sizeof(dr.sid), "%s", s->id);
 	dr.loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/drift", s->id);
+	rc_c(url, sizeof(url), "hosts/host=%s/drift", rc_key(s->id));
 	if ((arg = strdup(s->id)) == NULL)
 		abort();
-	api("GET", url, NULL, drift_cb, arg);
+	rc_get(url, NULL, drift_cb, arg);
 }
 
 /* A row's kind and origin as the table says them. */

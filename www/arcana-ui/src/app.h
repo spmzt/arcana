@@ -158,7 +158,9 @@ const char	*api_etag(void);
  * callback the node read, unwrapped (a list entry's entry); rc_edit()
  * PUT, PATCH, POST or DELETE with If-Match of the tag last read there;
  * rc_action() an action's or rpc's input wrapped and its output
- * unwrapped (NULL on 204), accept the warnings accepted (arcana-accept).
+ * unwrapped (NULL on 204), with a query when not NULL (arcana-accept=
+ * the warnings accepted); rc_verb() the same of a verb of the console's
+ * own that /api's handler answers (cyang.c's bridges), its result.
  * rc_error(): an ietf-restconf:errors' words (message, app-tag, path).
  */
 #define	RC_C		"/restconf/data/arcana-console:"
@@ -171,6 +173,8 @@ int		 rc_get(const char *, const char *, api_cb *, void *);
 int		 rc_edit(const char *, const char *, const char *, api_cb *,
 		    void *);
 int		 rc_action(const char *, const char *, const char *, api_cb *,
+		    void *);
+int		 rc_verb(const char *, const char *, const char *, api_cb *,
 		    void *);
 const char	*rc_error(const ucl_object_t *, char *, size_t);
 const char	*rc_tag(const ucl_object_t *);
@@ -665,6 +669,8 @@ void		 confirm(const char *, const char *, const char *, bool,
 
 /* actions.c: what the buttons do. */
 void		 refresh_servers(void);
+ucl_object_t	*host_conf(const char *);
+void		 host_put(const char *, ucl_object_t *, api_cb *, void *);
 int		 op_quiet_begin(const char *, const char *);
 int		 op_auto(const char *, const char *, int);
 void		 op_quiet_end(int, int);

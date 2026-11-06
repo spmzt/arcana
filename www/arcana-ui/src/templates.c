@@ -203,7 +203,7 @@ static void
 send(bool dry)
 {
 	ucl_object_t	*b;
-	char		 url[96], *json;
+	char		 url[200], *json;
 
 	if (tp.open[0] == '\0' || tp.target[0] == '\0')
 		return;
@@ -212,17 +212,18 @@ send(bool dry)
 	    0, true);
 	ucl_object_insert_key(b, ucl_object_ref(tp.values), "values", 0,
 	    true);
-	ucl_object_insert_key(b, ucl_object_frombool(dry), "dry_run", 0, true);
+	ucl_object_insert_key(b, ucl_object_frombool(dry), "dry-run", 0, true);
 	ucl_object_insert_key(b, ucl_object_frombool(tp.anyway), "anyway", 0,
 	    true);
 	json = (char *)ucl_object_emit(b, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(b);
-	snprintf(url, sizeof(url), "/api/servers/%s/config", tp.target);
+	rc_c(url, sizeof(url), "hosts/host=%s/apply-configuration",
+	    rc_key(tp.target));
 	snprintf(tp.rsid, sizeof(tp.rsid), "%s", tp.target);
 	tp.rdry = dry;
 	tp.busy = true;
 	tp.error[0] = '\0';
-	api("POST", url, json, apply_cb, NULL);
+	rc_verb(url, json, NULL, apply_cb, NULL);
 	free(json);
 }
 

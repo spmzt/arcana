@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "app.h"
 
@@ -1259,11 +1260,12 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	nold = app.nservers;
 	memset(app.servers, 0, sizeof(app.servers));
 	app.nservers = 0;
+	/* arcana-console:hosts. */
 	snprintf(app.local, sizeof(app.local), "%s", jstr(o, "local") != NULL ?
 	    jstr(o, "local") : "");
 	snprintf(app.local_agent, sizeof(app.local_agent), "%s", jstr(o,
-	    "local_agent") != NULL ? jstr(o, "local_agent") : "");
-	a = jget(o, "servers");
+	    "local-agent") != NULL ? jstr(o, "local-agent") : "");
+	a = jget(o, "host");
 	it = NULL;
 	while ((e = ucl_object_iterate(a, &it, true)) != NULL &&
 	    app.nservers < MAX_SERVERS) {
@@ -1279,18 +1281,19 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		}
 		snprintf(s->name, sizeof(s->name), "%s", jstr(e, "name"));
 		snprintf(s->uri, sizeof(s->uri), "%s", jstr(e, "uri"));
-		snprintf(s->peer, sizeof(s->peer), "%s", jstr(e, "peer_name") !=
-		    NULL ? jstr(e, "peer_name") : "");
+		snprintf(s->peer, sizeof(s->peer), "%s", jstr(e, "peer-name") !=
+		    NULL ? jstr(e, "peer-name") : "");
 		s->local = jbool(e, "local");
-		s->safe_wait = (int)jint(e, "safe_wait", 0);
-		s->sampling_off = jbool(e, "sampling_off");
+		s->safe_wait = (int)jint(e, "safe-wait", 0);
+		s->sampling_off = jget(e, "sampled") != NULL && !jbool(e,
+		    "sampled");
 		s->mute = 0;
 		{
 			const ucl_object_t	*m;
 			ucl_object_iter_t	 mit = NULL;
 			const char		*mv;
 
-			while ((m = ucl_object_iterate(jget(e, "notify_mute"),
+			while ((m = ucl_object_iterate(jget(e, "notify-mute"),
 			    &mit, true)) != NULL) {
 				mv = ucl_object_tostring(m);
 				s->mute |= mv == NULL ? 0 : strcmp(mv,
@@ -1336,11 +1339,79 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	plugins_servers();
 }
 
+/* arcana-console:hosts as last read: each host's entry, to change. */
+static ucl_object_t	*hosts_rc;
+
+static void
+hosts_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	if (status == 200) {
+		if (hosts_rc != NULL)
+			ucl_object_unref(hosts_rc);
+		hosts_rc = ucl_object_copy(o);
+	}
+	servers_cb(status, o, err, arg);
+}
+
+/* Host sid's entry as read; NULL: none. */
+static const ucl_object_t *
+host_rc(const char *sid)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+
+	while ((e = ucl_object_iterate(jget(hosts_rc, "host"), &it, true)) !=
+	    NULL)
+		if (jstr(e, "id") != NULL && strcmp(jstr(e, "id"), sid) == 0)
+			return (e);
+	return (NULL);
+}
+
+/* A copy of host sid's configuration, to be changed and put; NULL:
+ * not read. */
+ucl_object_t *
+host_conf(const char *sid)
+{
+	static const char *const state[] = { "local",
+	    "notification-token-set", "sampled", "role" };
+	const ucl_object_t	*e;
+	ucl_object_t		*c;
+	size_t			 i;
+
+	if ((e = host_rc(sid)) == NULL)
+		return (NULL);
+	c = ucl_object_copy(e);
+	for (i = 0; i < sizeof(state) / sizeof(state[0]); i++)
+		ucl_object_delete_key(c, state[i]);
+	return (c);
+}
+
+/* Host entry e (host_conf()'s, changed) put whole, e consumed. */
+void
+host_put(const char *sid, ucl_object_t *e, api_cb *cb, void *arg)
+{
+	ucl_object_t	*top, *a;
+	unsigned char	*json;
+	char		 url[200];
+
+	a = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(a, e);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, a, "arcana-console:host", 0, false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	rc_edit("PUT", rc_c(url, sizeof(url), "hosts/host=%s", rc_key(sid)),
+	    (const char *)json, cb, arg);
+	free(json);
+}
+
 void
 refresh_servers(void)
 {
+	char	url[200];
 
-	api("GET", "/api/servers", NULL, servers_cb, NULL);
+	rc_get(rc_c(url, sizeof(url), "hosts"), NULL, hosts_cb, NULL);
 	/* Settings' rollback timer is told on each host's System tab. */
 	if (app.settings == NULL)
 		load_settings();
@@ -3203,42 +3274,76 @@ server_added_cb(int status, const ucl_object_t *o, const char *err,
     void *arg)
 {
 
+	char	*id = arg;
+	int	 i;
+
 	app.modal_busy = false;
-	if (status != 200) {
+	hosts_cb(status, o, err, NULL);
+	/* The one added shown. */
+	for (i = 0; i < app.nservers; i++)
+		if (strcmp(app.servers[i].id, id) == 0) {
+			app.sel = i;
+			app.node = NODE_HOST;
+			app.tab = TAB_SUMMARY;
+			refresh_stats(&app.servers[i]);
+		}
+	free(id);
+}
+
+static void
+server_made_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+	char	url[200];
+
+	if (status < 200 || status > 299) {
+		app.modal_busy = false;
+		free(arg);
 		snprintf(app.modal_error, sizeof(app.modal_error), "%s",
 		    err != NULL ? err : "not added");
 		return;
 	}
 	app.modal = MODAL_NONE;
 	toast(false, "Server added");
-	servers_cb(status, o, err, arg);
-	if (app.nservers > 0) {
-		app.sel = app.nservers - 1;
-		app.node = NODE_HOST;
-		app.tab = TAB_SUMMARY;
-		refresh_stats(&app.servers[app.sel]);
-	}
+	rc_get(rc_c(url, sizeof(url), "hosts"), NULL, server_added_cb, arg);
 }
 
+/* A host added, an id of 32 bits the page draws for it. */
 void
 add_server(const char *name, const char *uri, const char *peer)
 {
-	char	*qn, *qu, *qp, *body;
+	unsigned char	 r[4];
+	ucl_object_t	*e;
+	char		 id[9], url[200];
+	unsigned char	*json;
+	ucl_object_t	*top, *a;
 
 	app.modal_busy = true;
 	app.modal_error[0] = '\0';
-	qn = json_quote(name);
-	qu = json_quote(uri);
-	qp = json_quote(peer);
-	if (asprintf(&body, "{\"name\":%s,\"uri\":%s%s%s}", qn, qu,
-	    *peer != '\0' ? ",\"peer_name\":" : "", *peer != '\0' ? qp :
-	    "") == -1)
-		abort();
-	api("POST", "/api/servers", body, server_added_cb, NULL);
-	free(qn);
-	free(qu);
-	free(qp);
-	free(body);
+	if (getentropy(r, sizeof(r)) != 0) {
+		app.modal_busy = false;
+		snprintf(app.modal_error, sizeof(app.modal_error), "no random "
+		    "bytes for its id");
+		return;
+	}
+	snprintf(id, sizeof(id), "%02x%02x%02x%02x", r[0], r[1], r[2], r[3]);
+	e = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(e, ucl_object_fromstring(id), "id", 0, true);
+	ucl_object_insert_key(e, ucl_object_fromstring(name), "name", 0,
+	    true);
+	ucl_object_insert_key(e, ucl_object_fromstring(uri), "uri", 0, true);
+	if (*peer != '\0')
+		ucl_object_insert_key(e, ucl_object_fromstring(peer),
+		    "peer-name", 0, true);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(a, e);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, a, "arcana-console:host", 0, false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	rc_edit("POST", rc_c(url, sizeof(url), "hosts"), (const char *)json,
+	    server_made_cb, strdup(id));
+	free(json);
 }
 
 static void
@@ -3281,12 +3386,11 @@ readdressed_cb(int status, const ucl_object_t *o, const char *err,
     void *arg)
 {
 
-	if (status != 200) {
+	if (status < 200 || status > 299) {
 		toast(true, "Not changed: %s", err != NULL ? err : "no answer");
 		return;
 	}
 	toast(false, "The console reaches it at the new address");
-	servers_cb(status, o, err, arg);
 	/* Tried there at once: the host's page reads it again. */
 	refresh_servers();
 }
@@ -3298,26 +3402,37 @@ readdressed_cb(int status, const ucl_object_t *o, const char *err,
 void
 server_readdress(struct server *s, const char *uri, const char *peer)
 {
-	char	url[64], *qu, *qp, *body;
+	ucl_object_t	*e;
 
-	qu = json_quote(uri);
-	qp = json_quote(peer);
-	if (asprintf(&body, "{\"uri\":%s,\"peer_name\":%s}", qu, qp) == -1)
-		abort();
-	free(qu);
-	free(qp);
-	snprintf(url, sizeof(url), "/api/servers/%s", s->id);
-	api("POST", url, body, readdressed_cb, NULL);
-	free(body);
+	if ((e = host_conf(s->id)) == NULL)
+		return;
+	ucl_object_replace_key(e, ucl_object_fromstring(uri), "uri", 0, true);
+	ucl_object_delete_key(e, "peer-name");
+	if (peer[0] != '\0')
+		ucl_object_insert_key(e, ucl_object_fromstring(peer),
+		    "peer-name", 0, true);
+	host_put(s->id, e, readdressed_cb, NULL);
+}
+
+static void
+server_gone_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+
+	if (status < 200 || status > 299) {
+		servers_cb(status, o, err, arg);
+		return;
+	}
+	refresh_servers();
 }
 
 void
 delete_server(const char *id)
 {
-	char	url[64];
+	char	url[200];
 
-	snprintf(url, sizeof(url), "/api/servers/%s", id);
-	api("DELETE", url, NULL, servers_cb, NULL);
+	rc_edit("DELETE", rc_c(url, sizeof(url), "hosts/host=%s", rc_key(id)),
+	    NULL, server_gone_cb, NULL);
 }
 
 /* op waits for request req, which can be given up. */
@@ -3596,7 +3711,7 @@ agent_update(struct server *s, bool restart)
 {
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[128];
+	char		 url[200];
 
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
@@ -3605,8 +3720,8 @@ agent_update(struct server *s, bool restart)
 	    s->name);
 	c->op = op->id;
 	app.trace_op = op->id;
-	snprintf(url, sizeof(url), "/api/servers/%s/agent-update", s->id);
-	api("POST", url, restart ? "{\"restart\":true}" : "{}",
+	rc_c(url, sizeof(url), "hosts/host=%s/agent-update", rc_key(s->id));
+	rc_verb(url, restart ? "{\"restart\":true}" : NULL, NULL,
 	    agent_update_cb, c);
 }
 
@@ -3702,7 +3817,7 @@ agent_build(struct server *s, const char *host_keys, bool console)
 {
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[128], *q, *body;
+	char		 url[200], *q, *body;
 
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
@@ -3712,17 +3827,17 @@ agent_build(struct server *s, const char *host_keys, bool console)
 	c->op = op->id;
 	app.trace_op = op->id;
 	app.dock_open = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/%s", s->id, console ?
+	rc_c(url, sizeof(url), "hosts/host=%s/%s", rc_key(s->id), console ?
 	    "console-update" : "agent-build");
 	if (host_keys == NULL) {
-		api("POST", url, "{}", agent_build_cb, c);
+		rc_verb(url, NULL, NULL, agent_build_cb, c);
 		return;
 	}
 	q = json_quote(host_keys);
-	if (asprintf(&body, "{\"host_keys\":%s}", q) == -1)
+	if (asprintf(&body, "{\"host-keys\":%s}", q) == -1)
 		abort();
 	free(q);
-	api("POST", url, body, agent_build_cb, c);
+	rc_verb(url, body, NULL, agent_build_cb, c);
 	free(body);
 }
 
@@ -3939,10 +4054,11 @@ settings_put_cb(int status, const ucl_object_t *o, const char *err,
 }
 
 /*
- * Merge every setting of the form (PATCH); the console keeps what
- * differs.  The mail's are a form of their own, on the Notifications
- * tab: each form sends its own.  A secret left empty, or a leaf empty
- * that was, is left out: as it is.
+ * Every setting of the form sent, one YANG Patch (RFC 8072): each leaf
+ * merged; the console keeps what differs.  The mail's are a form of
+ * their own, on the Notifications tab: each form sends its own.  A
+ * secret left empty, or a leaf empty that was, is left out: as it is; a
+ * number emptied is removed, web.conf's again.
  */
 void
 save_settings(const ucl_object_t *f, int group)
@@ -3952,11 +4068,12 @@ save_settings(const ucl_object_t *f, int group)
 	struct html		 b;
 	const char		*key, *type, *v;
 	char			*q, name[64], *p, url[200];
-	bool			 first;
+	int			 n;
 
 	memset(&b, 0, sizeof(b));
-	h_raw(&b, "{\"arcana-console:settings\":{");
-	first = true;
+	h_raw(&b, "{\"ietf-yang-patch:yang-patch\":{\"patch-id\":\"settings\","
+	    "\"edit\":[");
+	n = 0;
 	it = NULL;
 	while ((e = ucl_object_iterate(jget(app.settings, "settings"), &it,
 	    true)) != NULL) {
@@ -3973,22 +4090,35 @@ save_settings(const ucl_object_t *f, int group)
 		for (p = name; *p != '\0'; p++)
 			if (*p == '_')
 				*p = '-';
-		h_fmt(&b, "%s\"%s\":", first ? "" : ",", name);
+		n++;
+		if (jbool(e, "number") && v[0] == '\0') {
+			h_fmt(&b, "%s{\"edit-id\":\"%d\",\"operation\":\"remove\","
+			    "\"target\":\"/%s\"}", n > 1 ? "," : "", n, name);
+			continue;
+		}
+		h_fmt(&b, "%s{\"edit-id\":\"%d\",\"operation\":\"merge\","
+		    "\"target\":\"/%s\",\"value\":{\"arcana-console:%s\":",
+		    n > 1 ? "," : "", n, name, name);
 		if (strcmp(type, "bool") == 0)
 			h_raw(&b, jbool(f, key) ? "true" : "false");
-		else if (jbool(e, "number") && v[0] != '\0' && strspn(v,
-		    "0123456789") == strlen(v))
+		else if (jbool(e, "number") && strspn(v, "0123456789") ==
+		    strlen(v))
 			h_raw(&b, v);
 		else {
 			q = json_quote(v);
 			h_raw(&b, q);
 			free(q);
 		}
-		first = false;
+		h_raw(&b, "}}");
 	}
-	h_raw(&b, "}}");
+	h_raw(&b, "]}}");
 	app.modal_busy = true;
 	app.modal_error[0] = '\0';
+	if (n == 0) {
+		settings_put_cb(204, NULL, NULL, NULL);
+		free(b.s);
+		return;
+	}
 	rc_edit("PATCH", rc_c(url, sizeof(url), "settings"), b.s,
 	    settings_put_cb, NULL);
 	free(b.s);
@@ -4249,15 +4379,19 @@ load_push(void)
 const char *
 pkg_repo_kept(const struct server *s, const char *jail, const char *action)
 {
-	const ucl_object_t	*o;
-	const char		*v;
+	const ucl_object_t	*h, *e;
+	ucl_object_iter_t	 it = NULL;
+	const char		*key, *v;
 
-	if (s == NULL || s->list == NULL || (o = jget(s->list, "pkg_repos")) ==
-	    NULL)
+	if (s == NULL || (h = host_rc(s->id)) == NULL)
 		return ("");
-	o = ucl_object_lookup(o, jail != NULL && jail[0] != '\0' ? jail : ".");
-	v = o != NULL ? jstr(o, action) : NULL;
-	return (v != NULL ? v : "");
+	key = jail != NULL && jail[0] != '\0' ? jail : ".";
+	while ((e = ucl_object_iterate(jget(h, "pkg-repos"), &it, true)) !=
+	    NULL)
+		if (jstr(e, "jail") != NULL && strcmp(jstr(e, "jail"), key) ==
+		    0)
+			return ((v = jstr(e, action)) != NULL ? v : "");
+	return ("");
 }
 
 static void
@@ -4266,9 +4400,11 @@ repo_kept_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	(void)o;
 	(void)arg;
-	if (status != 200)
+	if (status < 200 || status > 299)
 		toast(true, "The repository chosen was not kept by the "
 		    "console: %s", err != NULL ? err : "no answer");
+	else
+		refresh_servers();
 }
 
 /* The choice made now, kept with the server for the next time. */
@@ -4276,36 +4412,34 @@ void
 pkg_repo_keep(struct server *s, const char *jail, const char *action,
     const char *repo)
 {
-	ucl_object_t	*all, *jo;
-	const char	*key;
-	char		*json, url[64], *body;
+	ucl_object_t		*e, *all, *jo;
+	const ucl_object_t	*j;
+	ucl_object_iter_t	 it = NULL;
+	const char		*key;
 
-	if (s == NULL || s->list == NULL)
+	if (s == NULL)
 		return;
 	repo = repo != NULL ? repo : "";
-	if (strcmp(pkg_repo_kept(s, jail, action), repo) == 0)
+	if (strcmp(pkg_repo_kept(s, jail, action), repo) == 0 ||
+	    (e = host_conf(s->id)) == NULL)
 		return;
 	key = jail != NULL && jail[0] != '\0' ? jail : ".";
-	if ((all = (ucl_object_t *)(uintptr_t)jget(s->list, "pkg_repos")) ==
-	    NULL) {
-		all = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key((ucl_object_t *)(uintptr_t)s->list, all,
-		    "pkg_repos", 0, false);
+	if ((all = (ucl_object_t *)(uintptr_t)jget(e, "pkg-repos")) == NULL) {
+		all = ucl_object_typed_new(UCL_ARRAY);
+		ucl_object_insert_key(e, all, "pkg-repos", 0, false);
 	}
-	if ((jo = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all, key)) ==
-	    NULL) {
+	jo = NULL;
+	while ((j = ucl_object_iterate(all, &it, true)) != NULL)
+		if (jstr(j, "jail") != NULL && strcmp(jstr(j, "jail"), key) ==
+		    0)
+			jo = (ucl_object_t *)(uintptr_t)j;
+	if (jo == NULL) {
 		jo = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(all, jo, key, 0, true);
+		ucl_object_insert_key(jo, ucl_object_fromstring(key), "jail", 0,
+		    true);
+		ucl_array_append(all, jo);
 	}
 	ucl_object_replace_key(jo, ucl_object_fromstring(repo), action, 0,
 	    true);
-	if ((json = (char *)ucl_object_emit(all, UCL_EMIT_JSON_COMPACT)) ==
-	    NULL)
-		return;
-	if (asprintf(&body, "{\"pkg_repos\":%s}", json) == -1)
-		abort();
-	free(json);
-	snprintf(url, sizeof(url), "/api/servers/%s", s->id);
-	api("POST", url, body, repo_kept_cb, NULL);
-	free(body);
+	host_put(s->id, e, repo_kept_cb, NULL);
 }

@@ -233,7 +233,7 @@ synced_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	const char	*r;
 
 	(void)arg;
-	r = jstr(o, "result.data.result");
+	r = jstr(o, "data.result");
 	if (status != 200 || r == NULL) {
 		us.sync_n[3]++;
 		snprintf(us.sync_err, sizeof(us.sync_err), "%s", err != NULL ?
@@ -1085,7 +1085,7 @@ user_action(const char *act, const char *arg)
 			rc_c(url, sizeof(url), "hosts/host=%s/nacm-sync",
 			    rc_key(app.servers[i].id));
 			us.sync_left++;
-			rc_action(url, NULL, NULL, synced_cb, NULL);
+			rc_verb(url, NULL, NULL, synced_cb, NULL);
 		}
 		if (us.sync_left == 0)
 			toast(false, "No host to synchronize the roles to");

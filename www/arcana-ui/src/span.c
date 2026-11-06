@@ -77,11 +77,12 @@ cap_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 capture_send(struct server *s, const char *body)
 {
-	char	url[400];
+	char	url[400], q[200];
 
-	snprintf(url, sizeof(url), "/api/servers/%s/capture%s%s", s->id,
-	    sp.jail[0] != '\0' ? "?jail=" : "", sp.jail);
-	api("POST", url, body, body[1] == '}' ? src_cb : cap_cb, NULL);
+	rc_c(url, sizeof(url), "hosts/host=%s/capture", rc_key(s->id));
+	snprintf(q, sizeof(q), "jail=%s", rc_key(sp.jail));
+	rc_verb(url, body[1] == '}' ? NULL : body, sp.jail[0] != '\0' ? q :
+	    NULL, body[1] == '}' ? src_cb : cap_cb, NULL);
 }
 
 /* The rules and the sources, read with the bridges. */

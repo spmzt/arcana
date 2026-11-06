@@ -656,6 +656,7 @@ view_sysctl(struct html *h, struct server *s)
 
 static void	safe_cb(int, const ucl_object_t *, const char *, void *);
 static void	mute_cb(int, const ucl_object_t *, const char *, void *);
+static void	safe_put(const char *, int);
 static void	transport_cb(int, const ucl_object_t *, const char *, void *);
 
 static void
@@ -765,17 +766,17 @@ sysctl_form(const char *form, const ucl_object_t *f)
 		return (true);
 	}
 	if (strcmp(form, "tr-also") == 0) {
-		char	url[96], *q, *body;
+		char	url[200], *q, *body;
 
 		q = json_quote(jstr(f, "also") != NULL ? jstr(f, "also") : "");
-		if (asprintf(&body, "{\"sctp_also\":%s}", q) == -1)
+		if (asprintf(&body, "{\"sctp-also\":%s}", q) == -1)
 			abort();
 		free(q);
-		snprintf(url, sizeof(url), "/api/servers/%s/transport", s->id);
+		rc_c(url, sizeof(url), "hosts/host=%s/listen", rc_key(s->id));
 		tr.busy = true;
 		snprintf(tr.sid, sizeof(tr.sid), "%s", s->id);
 		tr.loading = true;
-		api("POST", url, body, transport_cb, strdup(s->id));
+		rc_verb(url, body, NULL, transport_cb, strdup(s->id));
 		free(body);
 		return (true);
 	}
@@ -804,20 +805,28 @@ sysctl_form(const char *form, const ucl_object_t *f)
 		return (true);
 	}
 	if (strcmp(form, "tr-mute") == 0) {
-		char	url[64], body[96];
+		static const char *const what[] = { "utilization", "sessions",
+		    "all" };
+		ucl_object_t	*e, *m;
+		size_t		 i;
 
-		snprintf(url, sizeof(url), "/api/servers/%s", s->id);
-		snprintf(body, sizeof(body), "{\"notify_mute\":[%s%s%s%s%s]}",
-		    jbool(f, "utilization") ? "\"utilization\"" : "",
-		    jbool(f, "utilization") && (jbool(f, "sessions") ||
-		    jbool(f, "all")) ? "," : "", jbool(f, "sessions") ?
-		    "\"sessions\"" : "", jbool(f, "sessions") && jbool(f, "all") ?
-		    "," : "", jbool(f, "all") ? "\"all\"" : "");
-		api("POST", url, body, mute_cb, NULL);
+		if ((e = host_conf(s->id)) == NULL)
+			return (true);
+		m = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < sizeof(what) / sizeof(what[0]); i++)
+			if (jbool(f, what[i]))
+				ucl_array_append(m, ucl_object_fromstring(
+				    what[i]));
+		ucl_object_delete_key(e, "notify-mute");
+		if (ucl_array_size(m) > 0)
+			ucl_object_insert_key(e, m, "notify-mute", 0, false);
+		else
+			ucl_object_unref(m);
+		host_put(s->id, e, mute_cb, NULL);
 		return (true);
 	}
 	if (strcmp(form, "tr-safe") == 0) {
-		char	*end, url[64], body[48];
+		char	*end;
 		long	 k;
 
 		v = jstr(f, "wait") != NULL ? jstr(f, "wait") : "";
@@ -828,9 +837,7 @@ sysctl_form(const char *form, const ucl_object_t *f)
 			    "or empty for the agent's own");
 			return (true);
 		}
-		snprintf(url, sizeof(url), "/api/servers/%s", s->id);
-		snprintf(body, sizeof(body), "{\"safe_wait\":%ld}", k);
-		api("POST", url, body, safe_cb, NULL);
+		safe_put(s->id, (int)k);
 		return (true);
 	}
 	if (strcmp(form, "sy-from") == 0) {
@@ -921,7 +928,7 @@ transport_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 void
 refresh_transport(struct server *s, bool again, bool retry)
 {
-	char	url[96];
+	char	url[200];
 
 	if (!app.online || (tr.loading && strcmp(tr.sid, s->id) == 0))
 		return;
@@ -934,9 +941,13 @@ refresh_transport(struct server *s, bool again, bool retry)
 		return;
 	snprintf(tr.sid, sizeof(tr.sid), "%s", s->id);
 	tr.loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/transport", s->id);
-	api(retry ? "POST" : "GET", url, retry ? "{\"retry\":true}" : NULL,
-	    transport_cb, strdup(s->id));
+	if (retry)
+		rc_verb(rc_c(url, sizeof(url), "hosts/host=%s/listen",
+		    rc_key(s->id)), "{\"retry\":true}", NULL, transport_cb,
+		    strdup(s->id));
+	else
+		rc_get(rc_c(url, sizeof(url), "hosts/host=%s/transport",
+		    rc_key(s->id)), NULL, transport_cb, strdup(s->id));
 }
 
 /* The sessions change by themselves: read again while they are shown. */
@@ -1015,26 +1026,41 @@ static void
 safe_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
-	if (status != 200) {
+	if (status < 200 || status > 299) {
 		toast(true, "The rollback timer was not saved: %s", err != NULL ?
 		    err : "the console refused");
 		return;
 	}
 	toast(false, "Rollback timer saved");
-	servers_cb(status, o, err, arg);
+	refresh_servers();
+}
+
+/* Host sid's rollback timer, 0: the agent's own. */
+static void
+safe_put(const char *sid, int k)
+{
+	ucl_object_t	*e;
+
+	if ((e = host_conf(sid)) == NULL)
+		return;
+	ucl_object_delete_key(e, "safe-wait");
+	if (k > 0)
+		ucl_object_insert_key(e, ucl_object_fromint(k), "safe-wait", 0,
+		    false);
+	host_put(sid, e, safe_cb, NULL);
 }
 
 static void
 mute_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
-	if (status != 200) {
+	if (status < 200 || status > 299) {
 		toast(true, "What the alerts leave out was not saved: %s", err !=
 		    NULL ? err : "the console refused");
 		return;
 	}
 	toast(false, "Alerts of the host saved");
-	servers_cb(status, o, err, arg);
+	refresh_servers();
 }
 
 /*
@@ -1171,7 +1197,7 @@ tls_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 tls_fetch(struct server *s, bool renew)
 {
-	char	url[96], *arg;
+	char	url[200], *arg;
 
 	if (tc.loading && strcmp(tc.sid, s->id) == 0)
 		return;
@@ -1184,10 +1210,14 @@ tls_fetch(struct server *s, bool renew)
 	snprintf(tc.sid, sizeof(tc.sid), "%s", s->id);
 	tc.loading = true;
 	tc.busy = renew;
-	snprintf(url, sizeof(url), "/api/servers/%s/tls", s->id);
 	if (asprintf(&arg, "%s%s", renew ? "+" : "", s->id) == -1)
 		abort();
-	api(renew ? "POST" : "GET", url, renew ? "{}" : NULL, tls_cb, arg);
+	if (renew)
+		rc_verb(rc_c(url, sizeof(url), "hosts/host=%s/renew-tls",
+		    rc_key(s->id)), NULL, NULL, tls_cb, arg);
+	else
+		rc_get(rc_c(url, sizeof(url), "hosts/host=%s/tls",
+		    rc_key(s->id)), NULL, tls_cb, arg);
 }
 
 static void
@@ -1527,12 +1557,11 @@ bool
 sysctl_action(const char *act, const char *arg, const char *value)
 {
 	struct server	*s;
-	char		 url[96], body[64], text[400];
+	char		 url[200], body[64], text[400];
 
 	/* Settings' table: a host's own timer let go, for every host's. */
 	if (strcmp(act, "safe-follow") == 0) {
-		snprintf(url, sizeof(url), "/api/servers/%.16s", arg);
-		api("POST", url, "{\"safe_wait\":0}", safe_cb, NULL);
+		safe_put(arg, 0);
 		return (true);
 	}
 	if (strncmp(act, "sy-", 3) != 0 && strncmp(act, "tr-", 3) != 0 &&
@@ -1590,18 +1619,18 @@ sysctl_action(const char *act, const char *arg, const char *value)
 		char	*q;
 
 		tr.busy = true;
-		snprintf(url, sizeof(url), "/api/servers/%s/move", s->id);
+		rc_c(url, sizeof(url), "hosts/host=%s/move", rc_key(s->id));
 		q = json_quote(arg);
 		snprintf(text, sizeof(text), "{\"uri\":%s}", q);
 		free(q);
-		api("POST", url, text, move_cb, NULL);
+		rc_verb(url, text, NULL, move_cb, NULL);
 	} else if (strcmp(act, "do-tr-switch") == 0 && (strcmp(arg, "sctp") ==
 	    0 || strcmp(arg, "tcp") == 0)) {
 		tr.busy = true;
-		snprintf(url, sizeof(url), "/api/servers/%s/transport/switch",
-		    s->id);
+		rc_c(url, sizeof(url), "hosts/host=%s/switch-transport",
+		    rc_key(s->id));
 		snprintf(body, sizeof(body), "{\"transport\":\"%s\"}", arg);
-		api("POST", url, body, switch_cb, strdup(arg[0] == 's' ?
+		rc_verb(url, body, NULL, switch_cb, strdup(arg[0] == 's' ?
 		    "SCTP" : "TCP"));
 	}
 	(void)value;

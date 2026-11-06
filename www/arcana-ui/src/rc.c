@@ -44,7 +44,7 @@ struct rcreq {
 	int	 kind;		/* RK_* */
 };
 
-enum { RK_GET, RK_EDIT, RK_ACTION };
+enum { RK_GET, RK_EDIT, RK_ACTION, RK_VERB };
 
 static void
 tag_keep(const char *path, const char *tag)
@@ -153,17 +153,32 @@ rc_key(const char *key)
 	return (b);
 }
 
+/* The first error of a reply: ietf-restconf's, or a YANG Patch's
+ * (RFC 8072), the patch's or an edit's. */
+static const ucl_object_t *
+first_error(const ucl_object_t *o)
+{
+	const ucl_object_t	*e;
+
+	if ((e = jget(o, "ietf-restconf:errors.error.0")) != NULL ||
+	    (e = jget(o, "ietf-yang-patch:yang-patch-status.errors.error.0")) !=
+	    NULL)
+		return (e);
+	return (jget(o, "ietf-yang-patch:yang-patch-status.edit-status.edit.0."
+	    "errors.error.0"));
+}
+
 /* error's words: its message, and where it is (error-path) if said. */
 const char *
 rc_error(const ucl_object_t *o, char *buf, size_t len)
 {
-	const char	*m, *at;
+	const ucl_object_t	*e;
+	const char		*m, *at;
 
-	if ((m = jstr(o, "ietf-restconf:errors.error.0.error-message")) ==
-	    NULL && (m = jstr(o, "ietf-restconf:errors.error.0.error-tag")) ==
-	    NULL)
+	if ((e = first_error(o)) == NULL || ((m = jstr(e, "error-message")) ==
+	    NULL && (m = jstr(e, "error-tag")) == NULL))
 		return (NULL);
-	at = jstr(o, "ietf-restconf:errors.error.0.error-path");
+	at = jstr(e, "error-path");
 	snprintf(buf, len, "%s%s%s%s", m, at != NULL ? " (at " : "", at !=
 	    NULL ? at : "", at != NULL ? ")" : "");
 	return (buf);
@@ -173,7 +188,7 @@ const char *
 rc_tag(const ucl_object_t *o)
 {
 
-	return (jstr(o, "ietf-restconf:errors.error.0.error-app-tag"));
+	return (jstr(first_error(o), "error-app-tag"));
 }
 
 /* A yang:date-and-time as seconds since the epoch; 0: none or not one. */
@@ -239,9 +254,11 @@ done_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			tag_forget();
 		break;
 	default:
-		if (status == 200)
+		if (status == 200) {
 			o = inner(o, false);
-		else if (status == 204)
+			if (r.kind == RK_VERB)
+				o = jget(o, "result");
+		} else if (status == 204)
 			o = NULL;
 		break;
 	}
@@ -311,24 +328,47 @@ module_of(const char *path, char *buf, size_t len)
 	}
 }
 
-/* Action or rpc path invoked, input a JSON object or NULL. */
-int
-rc_action(const char *path, const char *input, const char *accept,
+static int
+invoke(int kind, const char *path, const char *input, const char *query,
     api_cb *cb, void *arg)
 {
 	struct rcreq	*r;
 	char		 mod[64], *body, url[1024];
 	int		 id;
 
-	r = req_new(RK_ACTION, cb, arg);
+	r = req_new(kind, cb, arg);
 	module_of(path, mod, sizeof(mod));
 	if (asprintf(&body, "{\"%s:input\":%s}", mod, input != NULL ? input :
 	    "{}") == -1)
 		abort();
-	snprintf(url, sizeof(url), "%s%s%s", path, accept != NULL &&
-	    accept[0] != '\0' ? "?arcana-accept=" : "", accept != NULL ?
-	    accept : "");
+	snprintf(url, sizeof(url), "%s%s%s", path, query != NULL &&
+	    query[0] != '\0' ? "?" : "", query != NULL ? query : "");
 	id = api("POST", url, body, done_cb, r);
 	free(body);
 	return (id);
+}
+
+/*
+ * Action or rpc path invoked, input a JSON object or NULL, query
+ * ("arcana-accept=rc-conf-files") when not NULL.
+ */
+int
+rc_action(const char *path, const char *input, const char *query,
+    api_cb *cb, void *arg)
+{
+
+	return (invoke(RK_ACTION, path, input, query, cb, arg));
+}
+
+/*
+ * The same of a verb the console answers with /api's handler
+ * (arcana-console's, cyang.c's bridges): the callback gets its output's
+ * result, the handler's document.
+ */
+int
+rc_verb(const char *path, const char *input, const char *query,
+    api_cb *cb, void *arg)
+{
+
+	return (invoke(RK_VERB, path, input, query, cb, arg));
 }
