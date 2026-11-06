@@ -822,7 +822,8 @@ addToLibrary({
 		 * closes a dialog, else goes back; the bumpers go to the tab
 		 * before or after, else to the side bar's page before or
 		 * after; the right stick scrolls, or pans the network map;
-		 * the triggers zoom it.  The standard mapping's buttons.
+		 * the triggers zoom it, or go to the tab's section before
+		 * or after.  The standard mapping's buttons.
 		 *
 		 * Its first press is told to the plugins (gamepad-first); one
 		 * that takes it has it alone.  A plugin's screen reads the
@@ -890,10 +891,14 @@ addToLibrary({
 			if (best !== null)
 				padFocus(best);
 		}
-		/* A tab, else a side bar's page, before (-1) or after (1). */
-		function padTab(dir) {
-			var tabs = document.querySelector("nav.tabs"), list, i;
+		/* A tab, else a side bar's page, before (-1) or after (1);
+		 * with sect, a section of the tab (nav.tabs.sub). */
+		function padTab(dir, sect) {
+			var tabs = document.querySelector(sect ? "nav.tabs.sub" :
+			    "nav.tabs"), list, i;
 
+			if (sect && tabs === null)
+				return;
 			list = tabs !== null ? tabs.querySelectorAll("button.tab") :
 			    document.querySelectorAll("aside.rail li.titem");
 			list = Array.prototype.filter.call(list, padVisible);
@@ -1067,11 +1072,12 @@ addToLibrary({
 				padTab(-1);
 			if (padOnce("rb", b(5)))
 				padTab(1);
-			/* The triggers zoom, the right stick scrolls or pans. */
-			if (padEdge("lt", b(6), now))
-				padMap(100, 0, 0);
-			if (padEdge("rt", b(7), now))
-				padMap(-100, 0, 0);
+			/* The triggers zoom, else go between the tab's
+			 * sections; the right stick scrolls or pans. */
+			if (padEdge("lt", b(6), now) && !padMap(100, 0, 0))
+				padTab(-1, true);
+			if (padEdge("rt", b(7), now) && !padMap(-100, 0, 0))
+				padTab(1, true);
 			if (ax(2) !== 0 || ax(3) !== 0) {
 				if (!padMap(0, ax(2) * 12, ax(3) * 12))
 					(document.scrollingElement || document.body)
@@ -1091,7 +1097,7 @@ addToLibrary({
 				    "<span><b>A</b> Press</span><span><b>B</b> " +
 				    "Back</span><span><b>LB RB</b> Tabs</span>" +
 				    "<span><b>R stick</b> Scroll</span><span><b>" +
-				    "LT RT</b> Zoom the map</span><span><b>Steam + " +
+				    "LT RT</b> Sections, or zoom the map</span><span><b>Steam + " +
 				    "X</b> Keyboard</span>";
 				document.body.appendChild(pad.hint);
 			} else if (!on && pad.hint !== null) {

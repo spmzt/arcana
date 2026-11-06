@@ -3807,6 +3807,7 @@ form.sy-set input[name=value] { flex: 1 1 14rem; min-width: 0; }
 .sy-kept .chip { cursor: pointer; }
 .transport { margin-top: 1.4rem; }
 .transport h3 { margin: 0 0 .3rem; font-size: 1rem; }
+.mute form > .toolbar { margin-top: .8rem; }
 dl.tlsinfo { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .25rem .9rem; margin: .5rem 0; }
 dl.tlsinfo dt { color: var(--fg-2); }
 dl.tlsinfo dd { margin: 0; overflow-wrap: anywhere; }
@@ -5716,3 +5717,13 @@ section.ra { margin: 1rem 0; }
 .ra-state h5, section.ra h4 { margin: .8rem 0 .3rem; }
 .ra-list { font-size: .8rem; }
 @media (max-width: 60rem) { .ra-two { grid-template-columns: minmax(0, 1fr); } .ra-state { position: static; } }
+
+/* A host not sampled, folded to a line on the fleet's page. */
+.hostcard header .chip { font-size: .68rem; }
+.hostcard header button.fold { padding: 0 .45rem; min-height: 0; line-height: 1.4; }
+.hostcard.folded { grid-column: 1 / -1; padding-top: .45rem; padding-bottom: .45rem; }
+.hostcard.folded header { margin-bottom: 0; }
+
+/* A host's Monitoring tab: its plots, then how it is sampled. */
+section.hutil section.ucard h4 .uname { cursor: default; color: inherit; }
+section.usampling form.usample { margin-top: .5rem; }

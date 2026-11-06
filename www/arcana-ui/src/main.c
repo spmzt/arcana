@@ -98,9 +98,10 @@ render(void)
 /*
  * The page's address names what it shows: #/ the fleet, #/network,
  * #/usage, #/workflows, #/sdwan, #/api, #/settings/<tab>, a host as
- * #/hosts/<id> or #/hosts/<id>/<tab>, and a jail as
- * #/hosts/<id>/jails/<name>.  A link, a reload, the browser's back and
- * forward, and the Android app land where it says.
+ * #/hosts/<id>, #/hosts/<id>/<tab> or #/hosts/<id>/<tab>/<section>
+ * (hosttab.c), and a jail as #/hosts/<id>/jails/<name>.  A link, a
+ * reload, the browser's back and forward, and the Android app land
+ * where it says; a tab of before, where it is now.
  */
 static const char *const tabnames[] = {
 	[TAB_SUMMARY] = "summary", [TAB_JAILS] = "jails",
@@ -113,6 +114,7 @@ static const char *const tabnames[] = {
 	[TAB_SSH] = "ssh",
 	[TAB_PROCESSES] = "processes",
 	[TAB_LOG] = "log", [TAB_JOBS] = "jobs",
+	[TAB_MONITORING] = "monitoring", [TAB_ALERTS] = "monitoring/alerts",
 };
 
 /* A jail's name in the address: what is not a letter, a digit or ._- in
@@ -220,9 +222,14 @@ loc_of(char *buf, size_t len)
 		/* FALLTHROUGH */
 	case NODE_HOST:
 		if (s != NULL) {
+			char	sect[48];
+
+			if (!hosttab_loc(sect, sizeof(sect)))
+				snprintf(sect, sizeof(sect), "%s",
+				    tabnames[app.tab]);
 			snprintf(buf, len, "#/hosts/%s%s%s", s->id,
 			    app.tab != TAB_SUMMARY ? "/" : "",
-			    app.tab != TAB_SUMMARY ? tabnames[app.tab] : "");
+			    app.tab != TAB_SUMMARY ? sect : "");
 			break;
 		}
 		/* FALLTHROUGH */
@@ -343,7 +350,15 @@ loc_go(const char *r)
 			loc_dec(arg, sizeof(arg), f[3]);
 			dispatch("open-jail", arg, id);
 		} else {
+			/* A tab and its section: "system/kernel". */
+			char	tab[sizeof(arg)];
+
 			loc_dec(arg, sizeof(arg), np > 2 ? f[2] : "summary");
+			if (np > 3) {
+				loc_dec(tab, sizeof(tab), f[3]);
+				strlcat(arg, "/", sizeof(arg));
+				strlcat(arg, tab, sizeof(arg));
+			}
 			dispatch("tab", arg, "");
 		}
 	} else
@@ -1186,6 +1201,8 @@ dispatch(const char *act, const char *arg, const char *value)
 				refresh_storage(s, false);
 			if (app.tab == TAB_SYSTEM || app.tab == TAB_SECURITY)
 				refresh_system(s, false);
+			if (app.tab == TAB_MONITORING)
+				usage_host_open(s);
 			if (app.tab == TAB_NETWORK && (strcmp(app.net.sid,
 			    s->id) != 0 || (app.net.data == NULL &&
 			    !app.net.loading)))
@@ -1196,15 +1213,25 @@ dispatch(const char *act, const char *arg, const char *value)
 				refresh_packages(s, false);
 		}
 	} else if (strcmp(act, "tab") == 0 && s != NULL) {
-		/* A plugin's tab is its view of the host's network; so is
-		 * WireGuard, under Network (the base system's), where an
-		 * address of before still leads. */
+		static int	net_base = NET_INTERFACES;
+		char		leaf[32];
+
+		/* A tab's section, or the section a tab of before is now. */
+		arg = hosttab_resolve(arg, leaf, sizeof(leaf));
+		/* A plugin's section is its view of the host's network; so
+		 * are the tunnels measured, and WireGuard, under the base
+		 * system's, where an address of before still leads.  The
+		 * base system's is as it was left. */
+		if (app.tab == TAB_NETWORK && !NET_PLUGIN(app.net.kind) &&
+		    app.net.kind != NET_MONITORS)
+			net_base = app.net.kind;
 		if (strcmp(arg, "wireguard") == 0 || strcmp(arg, "bird") == 0 ||
-		    strcmp(arg, "ipsec") == 0 ||
-		    (strcmp(arg, "network") == 0 && NET_PLUGIN(app.net.kind))) {
+		    strcmp(arg, "ipsec") == 0 || strcmp(arg, "monitors") == 0 ||
+		    (strcmp(arg, "network") == 0 && (NET_PLUGIN(app.net.kind) ||
+		    app.net.kind == NET_MONITORS))) {
 			app.net.kind = arg[0] == 'w' ? NET_WIREGUARD : arg[0] ==
-			    'b' ? NET_BIRD : arg[0] == 'i' ? NET_IPSEC :
-			    NET_INTERFACES;
+			    'b' ? NET_BIRD : arg[0] == 'i' ? NET_IPSEC : arg[0] ==
+			    'm' ? NET_MONITORS : (enum netkind)net_base;
 			/* Opened where the plugin is, when not here. */
 			if (kind_plugin(app.net.kind) != NULL && s->list !=
 			    NULL && !has_plugin(s, kind_plugin(app.net.kind))) {
@@ -1221,8 +1248,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		}
 		app.tab = strcmp(arg, "services") == 0 ? TAB_SERVICES :
 		    strcmp(arg, "network") == 0 || strcmp(arg, "wireguard") ==
-		    0 || strcmp(arg, "bird") == 0 || strcmp(arg, "ipsec") == 0 ?
-		    TAB_NETWORK :
+		    0 || strcmp(arg, "bird") == 0 || strcmp(arg, "ipsec") == 0 ||
+		    strcmp(arg, "monitors") == 0 ? TAB_NETWORK :
+		    strcmp(arg, "monitoring") == 0 ? TAB_MONITORING :
+		    strcmp(arg, "alerts") == 0 ? TAB_ALERTS :
 		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES :
 		    strcmp(arg, "kernel") == 0 ? TAB_KERNEL :
 		    strcmp(arg, "sysctl") == 0 ? TAB_SYSCTL :
@@ -1262,6 +1291,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_storage(s, true);
 		if (app.tab == TAB_SYSTEM || app.tab == TAB_SECURITY)
 			refresh_system(s, true);
+		if (app.tab == TAB_MONITORING)
+			usage_host_open(s);
 		close_service();
 		if (app.tab == TAB_SERVICES && s->services == NULL)
 			refresh_services(s, true);
@@ -1892,6 +1923,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			mail_refresh();
 		} else if (app.tab == TAB_RELAY) {
 			relay_refresh();
+		} else if (app.tab == TAB_MONITORING) {
+			usage_host_open(s);
 		} else if (app.tab == TAB_PACKAGES) {
 			app.pkg.loading = false;
 			refresh_packages(s, true);

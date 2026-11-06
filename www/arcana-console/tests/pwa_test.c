@@ -261,6 +261,36 @@ host_open(const char *name)
 	wait_js(expr, 10);
 }
 
+/* A host's tab by its name of before: a section of the tab it is in
+ * now ("kernel" System's), or a tab. */
+static void
+host_tab(const char *name)
+{
+	static const struct {
+		const char	*name, *tab;
+	} in[] = {
+		{ "sysctl", "system" }, { "kernel", "system" },
+		{ "processes", "system" }, { "ssh", "security" },
+		{ "certificates", "security" }, { "bird", "network" },
+		{ "ipsec", "network" }, { "relay", "network" },
+		{ "alerts", "monitoring" }, { "utilization", "monitoring" },
+		{ "tunnels", "monitoring" },
+	};
+	char	sel[128];
+	size_t	i;
+
+	for (i = 0; i < nitems(in) && strcmp(in[i].name, name) != 0; i++)
+		;
+	snprintf(sel, sizeof(sel), "nav.tabs:not(.sub) button.tab[data-arg="
+	    "%s]", i < nitems(in) ? in[i].tab : name);
+	click_when(sel, 10);
+	if (i == nitems(in))
+		return;
+	snprintf(sel, sizeof(sel), "nav.hsects button.tab[data-arg='%s/%s']",
+	    in[i].tab, name);
+	click_when(sel, 10);
+}
+
 static double
 js_num(const char *expr)
 {
@@ -1737,7 +1767,7 @@ part_nettab(void)
 	    "window.mset = r.ok; });");
 	wait_js("window.mset === true", 10);
 	run("document.querySelector('button.tab[data-arg=network]').click()");
-	click_when("button[data-act=net-kind][data-arg=monitors]", 10);
+	host_tab("tunnels");
 	wait_js("[...document.querySelectorAll('table.mon tbody tr.mon')]"
 	    ".some(r => r.textContent.includes('gre9') && r.textContent."
 	    "includes('192.0.2.9'))", 20);
@@ -2463,9 +2493,7 @@ part_nettab(void)
 		size_t t;
 
 		for (t = 0; t < 9; t++) {
-			snprintf(script, sizeof(script), "document.querySelector("
-			    "'button.tab[data-arg=%s]').click()", tabs[t]);
-			run(script);
+			host_tab(tabs[t]);
 			usleep(700000);
 			snprintf(name, sizeof(name), "m%zu-%s", t, tabs[t]);
 			shot(name);
@@ -2480,8 +2508,7 @@ part_nettab(void)
 			    "clientWidth + 1)"), "a table of the %s tab is not "
 			    "cards", tabs[t]);
 		}
-		run("document.querySelector('button.tab[data-arg=processes]')"
-		    ".click()");
+		host_tab("processes");
 		wait_js("document.querySelector('table.procs.cards tbody tr td"
 		    "[data-label=PID]')", 10);
 		/* A card is titled by the command, not by its number. */
@@ -2510,8 +2537,7 @@ part_nettab(void)
 		wait_js("document.querySelector('.fw-strip button.on') && document"
 		    ".querySelector('.fw-strip button.on').textContent === "
 		    "'Overview'", 10);
-		run("document.querySelector('button.tab[data-arg=processes]')"
-		    ".click()");
+		host_tab("processes");
 		wait_js("document.querySelector('table.procs.cards')", 10);
 	}
 	/* The tree is one line until unfolded, and folds again when
@@ -2779,9 +2805,8 @@ part_plugins(void)
 	ATF_REQUIRE(rename("fake-swanctl", "fake-swanctl.off") == 0);
 	run("document.querySelector('button[data-act=refresh]').click()");
 	wait_js("document.querySelector('button.tab.plugin.missing[data-arg="
-	    "ipsec]')", 20);
-	run("document.querySelector('button.tab.plugin[data-arg=ipsec]')"
-	    ".click()");
+	    "\"network/ipsec\"]')", 20);
+	host_tab("ipsec");
 	wait_js("document.querySelector('.plugin-missing button[data-act="
 	    "plugin-install][data-arg=strongswan]')", 10);
 	ATF_CHECK(js_true("document.querySelector('.plugin-missing')."
@@ -2811,7 +2836,8 @@ part_plugins(void)
 	ATF_CHECK(js_true("!document.querySelector('button.tab.plugin"
 	    "[data-arg=wireguard]') && !document.querySelector('button"
 	    "[data-act=net-kind][data-arg=bird]') && document.querySelector("
-	    "'button.tab.plugin[data-arg=bird]') && document.querySelector("
+	    "'button.tab.plugin[data-arg=\"network/bird\"]') && "
+	    "document.querySelector("
 	    "'button[data-act=net-kind][data-arg=netgraph] + button[data-act="
 	    "net-kind][data-arg=wireguard]')"));
 	run("document.querySelector('button[data-act=net-kind]"
@@ -2949,8 +2975,7 @@ part_plugins(void)
 	 * shown; a connection is made with the form, IKEv2, and its SA is
 	 * there.
 	 */
-	run("document.querySelector('button.tab.plugin[data-arg=ipsec]')"
-	    ".click()");
+	host_tab("ipsec");
 	wait_js("document.querySelector('.pane.ipsec button[data-act="
 	    "ipsec-init]')", 20);
 	ATF_CHECK(js_true("document.querySelector('.pane.ipsec').textContent."
@@ -3057,8 +3082,7 @@ part_plugins(void)
 	    "requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("!document.querySelector('table.ipsec')", 20);
-	run("document.querySelector('button.tab.plugin[data-arg=bird]')"
-	    ".click()");
+	host_tab("bird");
 	wait_js("document.querySelectorAll('table.bird tbody tr').length === 4",
 	    20);
 	ATF_CHECK(js_true("document.querySelector('.pane.bird').textContent."
@@ -3429,8 +3453,7 @@ part_certs(void)
 	    "CN=Arcana ${n%:*} CA\" 2>/dev/null || exit 1; done; cp root.pem "
 	    "soon.pem $R/usr/share/certs/trusted/ && tools/certctl -D $R "
 	    "rehash") == 0);
-	run("document.querySelector('button.tab[data-arg=certificates]')"
-	    ".click()");
+	host_tab("certificates");
 	wait_js("location.hash.endsWith('/certificates') && [...document."
 	    "querySelectorAll('table.certs tbody tr')].some(r => r.textContent"
 	    ".includes('Arcana root CA') && r.textContent.includes('EC "
@@ -3531,7 +3554,7 @@ part_ssh(void)
 	    "-f $R/etc/ssh/ssh_host_ed25519_key && ssh-keygen -q -t ed25519 -N "
 	    "'' -C alice@lab -f alice_key && ssh-keygen -q -t ed25519 -N '' -C "
 	    "lab-ca -f lab_ca") == 0);
-	run("document.querySelector('button.tab[data-arg=ssh]').click()");
+	host_tab("ssh");
 	wait_js("location.hash.endsWith('/ssh') && [...document."
 	    "querySelectorAll('table.ssh-set tbody tr')].some(r => r."
 	    "textContent.includes('PermitRootLogin') && r.textContent."
@@ -3727,7 +3750,7 @@ part_relay(void)
 	FILE	*fp;
 	int	 i;
 
-	run("document.querySelector('button.tab[data-arg=relay]').click()");
+	host_tab("relay");
 	wait_js("document.querySelector('section.relayview form[data-form="
 	    "rl-conf]')", 20);
 	run("const f = document.querySelector('form[data-form=rl-conf]'); "
@@ -4107,7 +4130,7 @@ part_system(void)
 	ATF_CHECK_MSG(i < 300, "syslog.conf is not written");
 	click_when("button[data-act=sv-show][data-arg=logconf]", 10);
 	/* Hardening: the sysctls this kernel has, one applied. */
-	run("document.querySelector('button.tab[data-arg=sysctl]').click()");
+	host_tab("sysctl");
 	click_when("button[data-act=sv-show][data-arg=hardening]", 10);
 	wait_js("document.querySelector('table.hardening') && document."
 	    "querySelector('table.hardening').textContent.includes("
@@ -4124,6 +4147,108 @@ part_system(void)
 	dock_closed();
 	shot("7r-hardening");
 	click_when("button[data-act=sv-show][data-arg=hardening]", 10);
+}
+
+/*
+ * A host's tabs of several sections (Monitoring, Network, System,
+ * Security), a row of them under the tabs, an address each and the
+ * old addresses led there; and a host not sampled, a line on the
+ * fleet's page until unfolded, as this browser keeps it.
+ */
+static void
+part_hosttabs(void)
+{
+
+	host_tab("utilization");
+	wait_js("location.hash.endsWith('/monitoring/utilization') && "
+	    "document.querySelector('nav.hsects button.tab.on[data-arg="
+	    "\"monitoring/utilization\"]') && document.querySelector("
+	    "'section.hutil section.ucard') && document.querySelector("
+	    "'section.usampling form[data-form=usage-set] input[name=hold]')",
+	    20);
+	ATF_CHECK(js_true("document.querySelectorAll('nav.tabs:not(.sub) "
+	    "button.tab').length === 13 && !document.querySelector('nav.tabs:"
+	    "not(.sub) button.tab[data-arg=kernel]')"));
+	shot("8h-monitoring");
+	/* The alerts' Save under the toggles, at their left. */
+	host_tab("alerts");
+	wait_js("document.querySelector('form[data-form=tr-mute] .toolbar "
+	    "button')", 10);
+	ATF_CHECK(js_true("(() => { const f = document.querySelector("
+	    "'form[data-form=tr-mute] fieldset').getBoundingClientRect(), "
+	    "b = document.querySelector('form[data-form=tr-mute] .toolbar "
+	    "button').getBoundingClientRect(); return Math.abs(f.left - "
+	    "b.left) < 2 && b.top >= f.bottom; })()"));
+	shot("8h-monitoring-alerts");
+	click_when("nav.hsects button.tab[data-arg='monitoring/tunnels']", 10);
+	wait_js("document.querySelector('nav.tabs:not(.sub) button.tab.on"
+	    "[data-arg=monitoring]') && location.hash.endsWith("
+	    "'/monitoring/tunnels') && !document.querySelector('button"
+	    "[data-act=net-kind]')", 10);
+	host_tab("kernel");
+	wait_js("document.querySelectorAll('nav.hsects button.tab').length "
+	    "=== 4 && location.hash.endsWith('/system/kernel')", 10);
+	shot("8h-system-kernel");
+	host_tab("ssh");
+	wait_js("location.hash.endsWith('/security/ssh')", 10);
+	shot("8h-security-ssh");
+	host_tab("relay");
+	wait_js("location.hash.endsWith('/network/relay') && document."
+	    "querySelector('nav.hsects button.tab.plugin.on[data-arg="
+	    "\"network/relay\"]')", 10);
+	shot("8h-network-relay");
+	/* Network as it was left: its base system's view. */
+	click_when("nav.tabs:not(.sub) button.tab[data-arg=network]", 10);
+	wait_js("location.hash.endsWith('/network/base') && document."
+	    "querySelector('button[data-act=net-kind]')", 10);
+	ATF_CHECK(js_true("document.documentElement.scrollWidth <= "
+	    "window.innerWidth + 1"));
+	shot("8h-network");
+	/* An address of before: where it is now, in its place. */
+	run("window.hl = history.length; location.hash = location.hash."
+	    "replace(/\\/network\\/base$/, '/sysctl')");
+	wait_js("location.hash.endsWith('/system/sysctl') && history.length "
+	    "=== window.hl + 1", 10);
+
+	/* Sampling off: the host a line on the fleet's page. */
+	host_tab("utilization");
+	wait_js("document.querySelector('section.usampling input[name="
+	    "enabled]:checked')", 20);
+	run("const f = document.querySelector('form[data-form=usage-set]'); "
+	    "f.enabled.checked = false; f.requestSubmit();");
+	wait_js("document.querySelector('section.ucard.uoff')", 20);
+	run("window.fh = location.hash.split('/')[2]; document.querySelector("
+	    "'li[data-act=select-fleet]').click()");
+	wait_js("document.querySelector('article.hostcard.folded[data-arg=\"'"
+	    " + window.fh + '\"] button.fold') && !document.querySelector("
+	    "'article.hostcard.folded .bar')", 40);
+	shot("8h-fleet-folded");
+	run("document.querySelector('article.hostcard.folded[data-arg=\"' + "
+	    "window.fh + '\"] button.fold').click()");
+	wait_js("document.querySelector('article.hostcard:not(.folded)"
+	    "[data-arg=\"' + window.fh + '\"] .bar') && JSON.parse("
+	    "localStorage.getItem('arc_open')).includes('open:card:' + "
+	    "window.fh)", 10);
+	run("document.querySelector('li[data-act=select-usage]').click()");
+	wait_js("document.querySelector('section.ucard.uoff h4.boxhead."
+	    "shut')", 20);
+	shot("8h-usage-folded");
+	run("document.querySelector('li[data-act=select-fleet]').click()");
+	wait_js("document.querySelector('article.hostcard:not(.folded)"
+	    "[data-arg=\"' + window.fh + '\"] button.fold')", 10);
+	run("document.querySelector('article.hostcard[data-arg=\"' + "
+	    "window.fh + '\"] button.fold').click()");
+	wait_js("document.querySelector('article.hostcard.folded[data-arg="
+	    "\"' + window.fh + '\"]')", 10);
+	/* Sampled again. */
+	run("document.querySelector('article.hostcard.folded[data-arg=\"' + "
+	    "window.fh + '\"]').click()");
+	host_tab("utilization");
+	wait_js("document.querySelector('section.usampling input[name="
+	    "enabled]')", 20);
+	run("const f = document.querySelector('form[data-form=usage-set]'); "
+	    "f.enabled.checked = true; f.requestSubmit();");
+	wait_js("!document.querySelector('section.ucard.uoff')", 20);
 }
 
 static void
@@ -4515,7 +4640,7 @@ part_storage(void)
 	 * holds, what its memory went to, a module loaded and one
 	 * unloaded, kept in rc.conf's kld_list or taken out of it.
 	 */
-	run("document.querySelector('button.tab[data-arg=kernel]').click()");
+	host_tab("kernel");
 	wait_js("document.querySelector('table.kmods tr[data-kld=kernel]') && "
 	    "document.querySelectorAll('table.kmem tbody tr').length > 3", 20);
 	ATF_CHECK(js_true("!document.querySelector('table.kmods tr[data-kld="
@@ -4591,7 +4716,7 @@ part_storage(void)
 	 * The kernel's state: a part of the tree, read from the kernel;
 	 * another part named; one value set in its row, and kept.
 	 */
-	run("document.querySelector('button.tab[data-arg=sysctl]').click()");
+	host_tab("sysctl");
 	wait_js("document.querySelectorAll('table.sysctl tbody tr').length > "
 	    "20 && [...document.querySelectorAll('table.sysctl tbody tr b')]."
 	    "some(b => b.textContent === 'kern.ostype')", 20);
@@ -4729,8 +4854,7 @@ part_storage(void)
 		ATF_REQUIRE(fgets(pid, sizeof(pid), fp) != NULL);
 		fclose(fp);
 		pid[strcspn(pid, "\n")] = '\0';
-		run("document.querySelector('button.tab[data-arg=processes]')"
-		    ".click()");
+		host_tab("processes");
 		snprintf(script, sizeof(script), "document.querySelectorAll("
 		    "'table.procs tbody tr').length > 3 && document."
 		    "querySelector('table.procs tr[data-arg=\"%s\"]')", pid);
@@ -4958,6 +5082,7 @@ part_storage(void)
 	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
 	part_certs();
 	part_ssh();
+	part_hosttabs();
 }
 
 static void
@@ -5707,7 +5832,7 @@ part_firewall(void)
 	wait_js("![...document.querySelectorAll('table.safehosts tbody tr')]."
 	    "some(r => r.textContent.includes('45 s'))", 10);
 	host_open(NULL);
-	click_when("button.tab[data-arg=summary]", 10);
+	host_tab("alerts");
 
 	/* What of the host the alerts leave out: its utilization ticked,
 	 * said on Settings' table, and nothing again. */
@@ -5727,7 +5852,7 @@ part_firewall(void)
 	    "'utilization'))", 10);
 	shot("1g-alert-mutes");
 	host_open(NULL);
-	click_when("button.tab[data-arg=summary]", 10);
+	host_tab("alerts");
 	wait_js("document.querySelector('form[data-form=tr-mute] "
 	    "input[name=utilization]:checked')", 10);
 	run("var f = document.querySelector('form[data-form=tr-mute]'); "
@@ -5735,6 +5860,7 @@ part_firewall(void)
 	    "f.requestSubmit();");
 	wait_js("!document.querySelector('form[data-form=tr-mute] "
 	    "input[name=utilization]:checked')", 10);
+	host_tab("summary");
 
 	/*
 	 * The host as a whole: saved as a bundle, JSON and YAML, the files
@@ -7504,7 +7630,8 @@ part_netsect(void)
 	wait_js("document.querySelector('table.rt-bgp tbody tr')", 10);
 	run("[...document.querySelectorAll('table.rt-bgp tbody tr')].find(r => "
 	    "r.dataset.value === 'bgp_core').click()");
-	wait_js("document.querySelector('button.tab.plugin[data-arg=bird].on') "
+	wait_js("document.querySelector('button.tab.plugin[data-arg="
+	    "\"network/bird\"].on') "
 	    "&& document.querySelector('form[data-form=bird-block] h2') && "
 	    "document.querySelector('form[data-form=bird-block] h2')"
 	    ".textContent.includes('bgp_core')", 20);
@@ -7588,9 +7715,9 @@ part_routes(void)
 	/* An address given, as a link in the page would: followed. */
 	snprintf(path, sizeof(path), "/#/hosts/%s/processes", id);
 	go(path);
-	snprintf(expr, sizeof(expr), "location.hash === '#/hosts/%s/processes' "
-	    "&& document.querySelector('button[data-act=tab]"
-	    "[data-arg=processes].on')", id);
+	snprintf(expr, sizeof(expr), "location.hash === "
+	    "'#/hosts/%s/system/processes' && document.querySelector("
+	    "'button[data-act=tab][data-arg=\"system/processes\"].on')", id);
 	wait_js(expr, 20);
 	go("/#/settings/aaa/tokens");
 	wait_js("location.hash === '#/settings/aaa/tokens' && document."
@@ -8798,7 +8925,7 @@ part_safefuse(void)
 	run("document.querySelector('.tree .titem.fleet').click()");
 	click_when(".hosts .hostcard", 10);
 	wait_js("document.querySelector('.hostbar[data-server]')", 10);
-	run("document.querySelector('button.tab[data-arg=relay]').click()");
+	host_tab("relay");
 	wait_js("document.querySelector('section.relayview form[data-form="
 	    "rl-conf]')", 20);
 	ATF_REQUIRE(rename("jgd.sock", "jgd.sock.away") == 0);

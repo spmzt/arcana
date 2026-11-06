@@ -979,101 +979,91 @@ stage(struct html *h)
 	}
 	hostbar(h, s);
 	{
+		/* The leaves' names, for the export of what is shown. */
+		static const char *const leaf[] = {
+			[TAB_SUMMARY] = "summary", [TAB_JAILS] = "jails",
+			[TAB_SERVICES] = "services", [TAB_NETWORK] = "network",
+			[TAB_FIREWALL] = "firewall", [TAB_PACKAGES] = "packages",
+			[TAB_STORAGE] = "storage", [TAB_KERNEL] = "kernel",
+			[TAB_SYSCTL] = "sysctl", [TAB_CERTS] = "certificates",
+			[TAB_SSH] = "ssh", [TAB_PROCESSES] = "processes",
+			[TAB_LOG] = "log",
+		};
+		/* The tabs; those of several sections (hosttab.c) have a
+		 * row of them under these. */
 		static const struct {
 			const char	*arg, *title;
+			int		 tab, tab2, tab3, tab4;
 		} tabs[] = {
-			{ "summary", "Summary" }, { "jails", "Jails" },
-			{ "services", "Services" }, { "network", "Network" },
-			{ "firewall", "Firewall" },
-			{ "packages", "Packages" }, { "storage", "Storage" },
-			{ "system", "System" }, { "security", "Security" },
-			{ "mail", "Mail" }, { "relay", "FEC relay" },
-			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
-			{ "certificates", "Certificates" }, { "ssh", "SSH" },
-			{ "processes", "Processes" }, { "log", "Log" },
-			{ "jobs", "Jobs" },
+			{ "summary", "Summary", TAB_SUMMARY, -1, -1, -1 },
+			{ "monitoring", "Monitoring", TAB_MONITORING, TAB_ALERTS,
+			    -1, -1 },
+			{ "jails", "Jails", TAB_JAILS, -1, -1, -1 },
+			{ "services", "Services", TAB_SERVICES, -1, -1, -1 },
+			{ "network", "Network", TAB_NETWORK, TAB_RELAY, -1, -1 },
+			{ "firewall", "Firewall", TAB_FIREWALL, -1, -1, -1 },
+			{ "packages", "Packages", TAB_PACKAGES, -1, -1, -1 },
+			{ "storage", "Storage", TAB_STORAGE, -1, -1, -1 },
+			{ "system", "System", TAB_SYSTEM, TAB_SYSCTL, TAB_KERNEL,
+			    TAB_PROCESSES },
+			{ "security", "Security", TAB_SECURITY, TAB_SSH,
+			    TAB_CERTS, -1 },
+			{ "log", "Log", TAB_LOG, -1, -1, -1 },
+			{ "jobs", "Jobs", TAB_JOBS, -1, -1, -1 },
 		};
-		/*
-		 * A plugin has a tab of its own on every host: what was
-		 * installed there, not the base system's.  Where neither
-		 * the host nor a vnet jail of it has it, the tab says how
-		 * to install it.
-		 */
-		static const struct {
-			const char	*arg, *title;
-			int		 kind;
-		} plugins[] = {
-			{ "bird", "BIRD", NET_BIRD },
-			{ "ipsec", "IPsec", NET_IPSEC },
-		};
-		bool	plug;
-		int	t;
+		const char	*at;
+		size_t		 t;
+		bool		 on, mon;
 
-		plug = app.tab == TAB_NETWORK && NET_PLUGIN(app.net.kind);
+		/* The tunnels measured are Monitoring's, not Network's. */
+		mon = app.tab == TAB_NETWORK && app.net.kind == NET_MONITORS;
 		h_raw(h, "<nav class=\"tabs\">");
-		for (t = 0; t < (int)(sizeof(tabs) / sizeof(tabs[0])); t++) {
-			/* Mail and the relay are plugins': drawn with them. */
-			if (t == TAB_MAIL || t == TAB_RELAY)
-				continue;
+		for (t = 0; t < nitems(tabs); t++) {
+			on = (int)app.tab == tabs[t].tab || (int)app.tab ==
+			    tabs[t].tab2 || (int)app.tab == tabs[t].tab3 ||
+			    (int)app.tab == tabs[t].tab4;
+			if (mon)
+				on = tabs[t].tab == TAB_MONITORING;
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
-			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
-			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
-			    tabs[t].title);
-		}
-		for (t = 0; t < (int)(sizeof(plugins) / sizeof(plugins[0]));
-		    t++) {
-			bool	there = s->list == NULL || plugin_where(s,
-			    kind_plugin(plugins[t].kind)) != NULL;
-
-			h_fmt(h, "<button class=\"tab plugin%s%s\" "
-			    "data-act=\"tab\" data-arg=\"%s\" title=\"%s\">"
-			    "%s</button>", plug && (int)app.net.kind ==
-			    plugins[t].kind ? " on" : "", there ? "" :
-			    " missing", plugins[t].arg, there ? "A plugin: "
-			    "installed on this host or a jail of it, not the "
-			    "base system's" : "A plugin, not installed here: "
-			    "open it to install its package", plugins[t].title);
+			    "data-arg=\"%s\">%s</button>", on ? " on" : "",
+			    tabs[t].arg, tabs[t].title);
 		}
 		/* OpenSMTPD: a plugin of the host or of a jail of it, with the
 		 * host's network or its own. */
-		{
-			const char	*at = plugin_anywhere(s, "smtpd");
-
-			h_fmt(h, "<button class=\"tab plugin%s%s\" data-act=\"tab\" "
-			    "data-arg=\"mail\" title=\"%s%s\">Mail</button>",
-			    app.tab == TAB_MAIL ? " on" : "", s->list != NULL && at
-			    == NULL ? " missing" : "", at == NULL ? "A plugin, not "
-			    "installed here: open it to install its package" :
-			    "OpenSMTPD, a plugin, on ", at != NULL && at[0] != '\0' ?
-			    at : at != NULL ? "the host" : "");
-		}
-		/* UDPspeeder's FEC relay, likewise. */
-		{
-			const char	*at = plugin_anywhere(s, "speederv2");
-
-			h_fmt(h, "<button class=\"tab plugin%s%s\" data-act=\"tab\" "
-			    "data-arg=\"relay\" title=\"%s%s\">FEC relay</button>",
-			    app.tab == TAB_RELAY ? " on" : "", s->list != NULL && at
-			    == NULL ? " missing" : "", at == NULL ? "A plugin, not "
-			    "installed here: open it to install its package" :
-			    "UDPspeeder, a plugin, on ", at != NULL && at[0] != '\0' ?
-			    at : at != NULL ? "the host" : "");
-		}
-		if (app.tab != TAB_JOBS && app.tab != TAB_SYSTEM && app.tab !=
-		    TAB_SECURITY && app.tab != TAB_MAIL && app.tab != TAB_RELAY)
-			export_bar(h, plug ? (app.net.kind == NET_BIRD ? "bird" :
-			    "ipsec") : tabs[app.tab].arg);
+		at = plugin_anywhere(s, "smtpd");
+		h_fmt(h, "<button class=\"tab plugin%s%s\" data-act=\"tab\" "
+		    "data-arg=\"mail\" title=\"%s%s\">Mail</button>",
+		    app.tab == TAB_MAIL ? " on" : "", s->list != NULL && at ==
+		    NULL ? " missing" : "", at == NULL ? "A plugin, not "
+		    "installed here: open it to install its package" :
+		    "OpenSMTPD, a plugin, on ", at != NULL && at[0] != '\0' ?
+		    at : at != NULL ? "the host" : "");
+		if ((size_t)app.tab < nitems(leaf) && leaf[app.tab] != NULL &&
+		    !mon)
+			export_bar(h, app.tab == TAB_NETWORK &&
+			    NET_PLUGIN(app.net.kind) ? (app.net.kind == NET_BIRD ?
+			    "bird" : "ipsec") : leaf[app.tab]);
 		h_raw(h, "</nav>");
+		hosttab_nav(h, s);
 	}
 	if (app.tab == TAB_SUMMARY) {
 		view_summary(h, s);
 		view_transport(h, s);
 		view_tlscert(h, s);
 		view_safe(h, s);
-		view_mute(h, s);
 		view_drift(h, s);
 		view_hostconf(h, s);
 		peek_box(h);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_MONITORING) {
+		view_usage_host(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_ALERTS) {
+		view_mute(h, s);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -1635,7 +1625,7 @@ mute_hosts(struct html *h)
 
 	h_raw(h, "<h3 class=\"set-sub\">Hosts left out</h3><p class=\"dim\">"
 	    "What of each host is neither mailed nor sent to Telegram, as its "
-	    "Summary tab sets it; its alarms are kept and shown all the same. "
+	    "Monitoring tab sets it; its alarms are kept and shown all the same. "
 	    "A host not sampled has no utilization to tell.</p>");
 	if (app.nservers == 0) {
 		h_raw(h, "<p class=\"dim mutehosts-none\">No host yet.</p>");
@@ -3438,6 +3428,40 @@ box_head(struct html *h, const char *key, const char *tag)
 	h_attr(h, "data-arg", k);
 	h_fmt(h, " title=\"Fold, or unfold\"><i class=\"chev\">%s</i>",
 	    arc_open_get(k) != 0 ? "▸" : "▾");
+}
+
+/*
+ * The same, of a box shut until it is opened when shut says so (a host
+ * not sampled): its key is kept while it is open.
+ */
+bool
+box_shut_def(const char *key, bool shut)
+{
+	char	k[96];
+
+	if (!shut)
+		return (box_shut(key));
+	snprintf(k, sizeof(k), "open:%s", key);
+	return (arc_open_get(k) == 0);
+}
+
+void
+box_head_def(struct html *h, const char *key, const char *tag, bool shut)
+{
+	char	k[96];
+	bool	closed;
+
+	if (!shut) {
+		box_head(h, key, tag);
+		return;
+	}
+	snprintf(k, sizeof(k), "open:%s", key);
+	closed = arc_open_get(k) == 0;
+	h_fmt(h, "<%s class=\"boxhead%s\" data-act=\"fold\"", tag, closed ?
+	    " shut" : "");
+	h_attr(h, "data-arg", k);
+	h_fmt(h, " title=\"Fold, or unfold\"><i class=\"chev\">%s</i>",
+	    closed ? "▸" : "▾");
 }
 
 /* Is the service drawer open?  The body lays out differently. */

@@ -1070,18 +1070,17 @@ view_mute(struct html *h, struct server *s)
 	    "and the Telegram messages (Settings, Notifications); its alarms "
 	    "are kept and shown all the same.");
 	if (s->sampling_off)
-		h_raw(h, " It is not sampled (its Usage tab): it has no "
+		h_raw(h, " It is not sampled (Monitoring, Utilization): it has no "
 		    "utilization to tell.");
-	h_raw(h, "</p><form class=\"toolbar\" data-form=\"tr-mute\">"
-	    "<fieldset class=\"toggles\">");
+	h_raw(h, "</p><form data-form=\"tr-mute\"><fieldset class=\"toggles\">");
 	for (i = 0; i < nitems(m); i++) {
 		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" "
 		    "name=\"%s\"%s><span>Leave out %s <em>%s</em></span>"
 		    "</label>", m[i].name, (s->mute & m[i].bit) != 0 ?
 		    " checked" : "", m[i].title, m[i].what);
 	}
-	h_raw(h, "</fieldset><button class=\"ghost small\">Save</button>"
-	    "</form></section>");
+	h_raw(h, "</fieldset><div class=\"toolbar\"><button class=\"ghost "
+	    "small\">Save</button></div></form></section>");
 }
 
 /* Settings' rollback timer for every host, 0 when there is none. */
@@ -1397,7 +1396,7 @@ view_transport(struct html *h, struct server *s)
 	if (has_sctp && !sctp_up)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"tr-retry\"%s "
 		    "title=\"The agent does not try by itself again: once the "
-		    "sctp module is loaded (the Kernel tab), have it try\">Try "
+		    "sctp module is loaded (System, Kernel), have it try\">Try "
 		    "SCTP again</button>", tr.busy ? " disabled" : "");
 	if (tcp && sctp_up)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"tr-switch\" "
@@ -1409,7 +1408,7 @@ view_transport(struct html *h, struct server *s)
 		    " disabled" : "");
 	if (tcp && has_sctp && !jbool(d, "sctp"))
 		h_raw(h, "<span class=\"dim\">The kernel has no SCTP: load "
-		    "the <code>sctp</code> module from the Kernel tab.</span>");
+		    "the <code>sctp</code> module from System, Kernel.</span>");
 	h_raw(h, "</div>");
 	/* Another address: listened on beside, tried, then the old let go. */
 	if (tcp || sctp) {

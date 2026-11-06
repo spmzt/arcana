@@ -263,16 +263,37 @@ view_fleet(struct html *h)
 	tile(h, buf, "tasks this session", "");
 	h_raw(h, "</div><div class=\"hosts\">");
 	for (i = 0; i < app.nservers; i++) {
+		char	key[32];
+		bool	shut;
+
 		s = &app.servers[i];
-		h_fmt(h, "<article class=\"hostcard %s\" data-act=\"select-server\"",
-		    s->failed ? "down" : s->list != NULL ? "up" : "unknown");
+		/* A host not sampled: a line, until it is unfolded. */
+		snprintf(key, sizeof(key), "card:%s", s->id);
+		shut = s->sampling_off && box_shut_def(key, true);
+		h_fmt(h, "<article class=\"hostcard %s%s\" data-act=\""
+		    "select-server\"", s->failed ? "down" : s->list != NULL ?
+		    "up" : "unknown", shut ? " folded" : "");
 		h_attr(h, "data-arg", s->id);
 		h_raw(h, "><header><i class=\"led\"></i><h3>");
 		h_txt(h, s->name);
 		h_raw(h, "</h3><span class=\"dim\">");
 		h_txt(h, s->list != NULL && jstr(s->list, "host.release") !=
 		    NULL ? jstr(s->list, "host.release") : s->uri);
-		h_raw(h, "</span></header>");
+		h_raw(h, "</span>");
+		if (s->sampling_off) {
+			h_fmt(h, "<span class=\"chip\" title=\"Its agent "
+			    "samples nothing\">not sampled</span><button "
+			    "class=\"ghost small fold\" data-act=\"fold\" "
+			    "data-arg=\"open:%s\" title=\"%s\" aria-expanded="
+			    "\"%s\">%s</button>", key, shut ? "Show its usage" :
+			    "Fold it to a line", shut ? "false" : "true",
+			    shut ? "▸" : "▾");
+		}
+		h_raw(h, "</header>");
+		if (shut) {
+			h_raw(h, "</article>");
+			continue;
+		}
 		if (s->failed) {
 			h_raw(h, "<p class=\"err\">");
 			h_txt(h, s->error);

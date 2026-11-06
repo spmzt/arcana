@@ -782,17 +782,19 @@ view_network(struct html *h, struct server *s)
 	ucl_object_iter_t	 it;
 	char			 age[32];
 	int			 i, n, shown;
-	bool			 mine, plug, nh, rt;
+	bool			 mine, plug, alone, nh, rt;
 
 	/* What was read for this view: another's is not drawn as it. */
 	mine = app.net.data != NULL && strcmp(app.net.sid, s->id) == 0 &&
 	    strcmp(app.net.jail, net_scope()) == 0 && app.net.data_kind ==
 	    (int)app.net.kind;
 	/*
-	 * A plugin's view stands by itself: it is a tab of its own, and
-	 * what the base system has is not offered beside it.
+	 * A plugin's view stands by itself: it is a section of its own,
+	 * and what the base system has is not offered beside it; so are
+	 * the tunnels measured, Monitoring's.
 	 */
 	plug = NET_PLUGIN(app.net.kind);
+	alone = plug || app.net.kind == NET_MONITORS;
 	h_raw(h, "<div class=\"toolbar\">");
 	net_jail_pick(h, s);
 	h_raw(h, "<nav class=\"sub\">");
@@ -801,15 +803,16 @@ view_network(struct html *h, struct server *s)
 	/* What rc.conf keeps is of the Routes, not a tab of its own. */
 	rt = app.net.kind == NET_ROUTES || app.net.kind == NET_KEPT;
 	/* Routes to WireGuard, the base system's. */
-	for (i = 0; i <= NET_WIREGUARD && !plug; i++)
+	for (i = 0; i <= NET_WIREGUARD && !alone; i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ||
 		    (i == NET_NEXTHOPS && nh) || (i == NET_ROUTES && rt) ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
 	/* What is of the base system too, and came later. */
-	for (i = 8; i < (int)(sizeof(kinds) / sizeof(kinds[0])) && !plug;
+	for (i = 8; i < (int)(sizeof(kinds) / sizeof(kinds[0])) && !alone;
 	    i++)
-		if (i != NET_NHGROUPS && i != NET_KEPT && !NET_PLUGIN(i))
+		if (i != NET_NHGROUPS && i != NET_KEPT && i != NET_MONITORS &&
+		    !NET_PLUGIN(i))
 			h_fmt(h, "<button class=\"ghost small%s\" data-act=\""
 			    "net-kind\" data-arg=\"%s\">%s</button>",
 			    (int)app.net.kind == i ? " on" : "", kinds[i].arg,

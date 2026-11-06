@@ -2364,7 +2364,7 @@ view_qos(struct html *h)
 	    "queue. Each is kept in the kept rules, before the rules.</p>");
 	if (q == NULL) {
 		h_raw(h, "<p class=\"notice\">dummynet is not in the kernel: it "
-		    "is loaded on the Kernel tab (<code>dummynet</code>).</p>");
+		    "is loaded on System, Kernel (<code>dummynet</code>).</p>");
 		return;
 	}
 	h_raw(h, "<div class=\"toolbar\"><button class=\"ghost small\" "
@@ -3738,7 +3738,7 @@ view_firewall(struct html *h, struct server *s)
 	if (!loaded)
 		h_raw(h, "<div class=\"notice info\">ipfw is not in this "
 		    "host's kernel. Arcana loads no module by itself: load "
-		    "<code>ipfw</code> from the Kernel tab, with <code>"
+		    "<code>ipfw</code> from System, Kernel, with <code>"
 		    "net.inet.ip.fw.default_to_accept=1</code> set in the "
 		    "loader first if the host is reached over the network, "
 		    "since an empty ipfw denies everything. The kept rules "

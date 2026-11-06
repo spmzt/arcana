@@ -91,6 +91,9 @@ tab_help(void)
 		return ("sections/log.html");
 	case TAB_JOBS:
 		return ("sections/packages-jobs.html#jobs");
+	case TAB_MONITORING:
+	case TAB_ALERTS:
+		return ("sections/utilization.html");
 	default:
 		return ("sections/host.html");
 	}

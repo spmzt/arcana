@@ -163,6 +163,11 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	u->has_hold = jget(d, "hold") != NULL;
 	u->hold = (int)jint(d, "hold", 0);
 	u->off = jget(d, "enabled") != NULL && !jbool(d, "enabled");
+	/* As the console keeps it, until its list is read again. */
+	for (k = 0; k < app.nservers; k++)
+		if (jget(d, "enabled") != NULL && strcmp(app.servers[k].id,
+		    u->sid) == 0)
+			app.servers[k].sampling_off = u->off;
 	keep = (int)jint(d, "keep", 720);
 	other = devs(jget(d, "nets"), u->nets, &u->nn);
 	other = devs(jget(d, "disks"), u->disks, &u->nd) || other;
@@ -257,12 +262,19 @@ void
 usage_tick(double now)
 {
 	struct uhost	*u;
+	struct server	*one;
 	int		 i;
 
-	/* Also while a nexthop group's shares are drawn from them. */
-	if ((app.node != NODE_USAGE && !ecmp_shown()) || !app.visible)
+	/* Also while a nexthop group's shares are drawn from them, and
+	 * a host's alone on its Monitoring tab. */
+	one = app.node == NODE_HOST && app.tab == TAB_MONITORING ?
+	    cur_server() : NULL;
+	if ((app.node != NODE_USAGE && one == NULL && !ecmp_shown()) ||
+	    !app.visible)
 		return;
 	for (i = 0; i < app.nservers; i++) {
+		if (one != NULL && !ecmp_shown() && &app.servers[i] != one)
+			continue;
 		u = uhost(app.servers[i].id, false);
 		/* A request nobody answered is given up after a while. */
 		if (u != NULL && u->loading && now - u->asked > 30000)
@@ -681,7 +693,7 @@ relay_picker(struct html *h, const struct uhost *u, int on, double t1)
 
 /* How the agent samples the host, said and set. */
 static void
-sampling(struct html *h, const struct uhost *u)
+sampling(struct html *h, const struct uhost *u, bool alone)
 {
 	char	buf[32];
 
@@ -723,11 +735,15 @@ sampling(struct html *h, const struct uhost *u)
 	    "disk, bytes a second read and written; <code>jail-cpu:</code> "
 	    "and a jail, percent of one CPU; <code>jail-mem:</code> and a "
 	    "jail, bytes.</small></label><button class=\"small\">Set"
-	    "</button><button type=\"button\" class=\"ghost small\" "
-	    "data-act=\"usage-cfg\"");
-	h_attr(h, "data-arg", u->sid);
+	    "</button>");
+	if (!alone) {
+		h_raw(h, "<button type=\"button\" class=\"ghost small\" "
+		    "data-act=\"usage-cfg\"");
+		h_attr(h, "data-arg", u->sid);
+		h_raw(h, ">Close</button>");
+	}
 	fmt_size(buf, sizeof(buf), u->bytes);
-	h_fmt(h, ">Close</button><small class=\"dim\">Now %s of the agent's "
+	h_fmt(h, "<small class=\"dim\">Now %s of the agent's "
 	    "memory: 8 bytes a sample, and 4 for each figure in it, of "
 	    "which there are %d here with %d interfaces, %d disks, %d "
 	    "jails and %d FEC relays. With 0 kept the agent does not sample and holds nothing. "
@@ -737,44 +753,42 @@ sampling(struct html *h, const struct uhost *u)
 	    u->nn, u->nd, u->nj, u->nr);
 }
 
-void
-view_usage(struct html *h)
+/* The windows the plots span, chosen. */
+static void
+windows_nav(struct html *h)
 {
 	static const struct {
 		int		 secs;
 		const char	*title;
 	} windows[] = { { 300, "5 min" }, { 900, "15 min" },
 	    { 3600, "1 hour" }, { 0, "all kept" } };
-	struct uhost		*u;
-	struct server		*s;
-	char			 key_[32], buf[48], label[64];
-	double			 t1;
-	size_t			 w;
-	int			 i, have, k;
+	size_t	w;
 
-	h_raw(h, "<section class=\"util\"><div class=\"toolbar\"><h3>"
-	    "Utilization</h3><nav class=\"sub\">");
+	h_raw(h, "<nav class=\"sub\">");
 	for (w = 0; w < nitems(windows); w++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"usage-"
 		    "window\" data-arg=\"%d\">%s</button>", window ==
 		    windows[w].secs ? " on" : "", windows[w].secs,
 		    windows[w].title);
-	h_raw(h, "</nav><span class=\"age\">each agent samples its host by "
-	    "itself; how often and how much is set at each host</span>"
-	    "</div>");
-	if (app.nservers == 0) {
-		h_raw(h, "<div class=\"empty\"><p>No host yet.</p></div>"
-		    "</section>");
-		return;
-	}
-	/* The plots end now, by the newest sample any host has. */
+	h_raw(h, "</nav>");
+}
+
+/* When the plots end, the newest sample of the hosts (of one, or
+ * all), and how far back they go. */
+static double
+ends(const struct uhost *one, int *have)
+{
+	struct uhost	*u;
+	double		 t1;
+	int		 i;
+
 	t1 = 0;
-	have = 0;
+	*have = 0;
 	span = window;
 	for (i = 0; i < app.nservers; i++)
 		if ((u = uhost(app.servers[i].id, false)) != NULL && u->n >
-		    0) {
-			have++;
+		    0 && (one == NULL || u == one)) {
+			(*have)++;
 			if (T(u, u->n - 1)[F_T] > t1)
 				t1 = T(u, u->n - 1)[F_T];
 			if (window == 0 && u->step * u->keep > span)
@@ -785,6 +799,199 @@ view_usage(struct html *h)
 		}
 	if (span <= 0)
 		span = 900;
+	return (t1);
+}
+
+/*
+ * One host's card: its head, its plots.  On the fleet's page it folds,
+ * shut at first when the host is not sampled, and how it is sampled is
+ * opened from its head; alone, on the host's Monitoring tab, that is
+ * under it (view_usage_host()).
+ */
+static void
+ucard(struct html *h, struct server *s, double t1, bool alone)
+{
+	struct uhost	*u;
+	char		 key_[32], buf[48], label[64];
+	int		 k;
+	bool		 off;
+
+	u = uhost(s->id, false);
+	snprintf(key_, sizeof(key_), "usage:%s", s->id);
+	off = s->sampling_off || (u != NULL && u->known && u->off);
+	h_fmt(h, "<section class=\"pane ucard%s\">", off ? " uoff" : "");
+	if (alone)
+		h_raw(h, "<h4><span class=\"uname\">Utilization</span>");
+	else {
+		box_head_def(h, key_, "h4", off);
+		h_raw(h, "<span class=\"uname\" data-act=\"select-server\"");
+		h_attr(h, "data-arg", s->id);
+		h_raw(h, " title=\"Open the host\">");
+		h_txt(h, s->name);
+		h_raw(h, "</span>");
+	}
+	if (u != NULL && u->known) {
+		fmt_size(buf, sizeof(buf), u->bytes);
+		if (u->off)
+			h_raw(h, "<small class=\"dim usoff\">sampling is "
+			    "off</small>");
+		else if (u->keep > 0)
+			h_fmt(h, "<small class=\"dim\">%d CPUs · every "
+			    "%d s, %d kept (%.3g h) · %s in the agent"
+			    "</small>", u->ncpu, u->step, u->keep,
+			    (double)u->step * u->keep / 3600, buf);
+		else
+			h_raw(h, "<small class=\"dim\">not sampled"
+			    "</small>");
+		if (!alone) {
+			h_fmt(h, "<button class=\"ghost small%s\" data-act="
+			    "\"usage-cfg\"", u->cfg ? " on" : "");
+			h_attr(h, "data-arg", s->id);
+			h_raw(h, " title=\"How often the agent samples this "
+			    "host, and how much it keeps\">Sampling</button>");
+		}
+	}
+	h_raw(h, "</h4>");
+	if (!alone && box_shut_def(key_, off)) {
+		h_raw(h, "</section>");
+		return;
+	}
+	if (!alone && u != NULL && u->known && (u->cfg || u->keep == 0))
+		sampling(h, u, false);
+	if (u != NULL && u->known && u->off) {
+		h_raw(h, "<p class=\"notice usoff\">Sampling is off: the "
+		    "agent takes no sample of this host, judges no limit "
+		    "and tells nothing of its utilization. Switch it on "
+		    "under Sampling.");
+		if (u->n > 0)
+			h_raw(h, " What it kept before is below.");
+		h_raw(h, "</p>");
+		if (u->n == 0) {
+			h_raw(h, "</section>");
+			return;
+		}
+	}
+	if (u == NULL || u->n == 0) {
+		h_raw(h, "<p class=\"dim\">");
+		h_txt(h, u != NULL && u->error[0] != '\0' ? u->error :
+		    s->failed ? "The host does not answer." :
+		    u != NULL && u->known && u->keep == 0 ?
+		    "The agent keeps no samples of this host: say "
+		    "how many it should." : u != NULL && u->known ?
+		    "No sample yet." : "Reading…");
+		h_raw(h, "</p></section>");
+		return;
+	}
+	if (u->error[0] != '\0') {
+		h_raw(h, "<p class=\"dim\">Not read since: ");
+		h_txt(h, u->error);
+		h_raw(h, "</p>");
+	}
+	h_raw(h, "<div class=\"uplots\">");
+	single(h, u, "CPU", F_CPU, "busy", -1, NULL, t1, 0);
+	single(h, u, "Memory", F_MEM, "in use", F_SWAP, "swap", t1, 0);
+	single(h, u, "Load", F_LOAD, "1 min", -1, NULL, t1, 1);
+	h_raw(h, "</div><div class=\"uplots wide\"><div>");
+	k = picked_at(u->nets, u->nn, u->net);
+	if (k >= 0)
+		snprintf(label, sizeof(label), "Network · %s",
+		    u->nets[k]);
+	else
+		snprintf(label, sizeof(label), "Network · all %d "
+		    "interfaces", u->nn);
+	single(h, u, label, k >= 0 ? NF + 2 * k : F_RX, "in", k >= 0 ?
+	    NF + 2 * k + 1 : F_TX, "out", t1, 2);
+	picker(h, u, "usage-net", u->nets, u->nn, NF, k >= 0 ? u->net :
+	    "", t1, true);
+	h_raw(h, "</div><div>");
+	k = picked_at(u->disks, u->nd, u->disk);
+	if (k >= 0)
+		snprintf(label, sizeof(label), "Disks · %s",
+		    u->disks[k]);
+	else
+		snprintf(label, sizeof(label), "Disks · all %d",
+		    u->nd);
+	single(h, u, label, k >= 0 ? NF + 2 * (u->nn + k) : F_RD,
+	    "read", k >= 0 ? NF + 2 * (u->nn + k) + 1 : F_WR,
+	    "written", t1, 3);
+	picker(h, u, "usage-disk", u->disks, u->nd, NF + 2 * u->nn,
+	    k >= 0 ? u->disk : "", t1, false);
+	h_raw(h, "</div></div>");
+	/* Each jail's own, as the kernel accounts for it. */
+	if (!u->racct)
+		h_raw(h, "<p class=\"dim ujails\">Each jail's share of "
+		    "the CPUs and its memory are shown once the kernel "
+		    "accounts for them: <code>kern.racct.enable=1</code> "
+		    "in <code>/boot/loader.conf</code>, and a reboot.</p>");
+	else if (u->nj > 0) {
+		k = picked_at(u->jails, u->nj, u->jail);
+		if (k < 0)
+			k = 0;
+		h_raw(h, "<div class=\"uplots wide ujails\"><div>");
+		snprintf(label, sizeof(label), "Jail CPU · %s",
+		    u->jails[k]);
+		single(h, u, label, NF + 2 * (u->nn + u->nd + k), "busy",
+		    -1, NULL, t1, 4);
+		h_raw(h, "</div><div>");
+		snprintf(label, sizeof(label), "Jail memory · %s",
+		    u->jails[k]);
+		single(h, u, label, NF + 2 * (u->nn + u->nd + k) + 1,
+		    "in use", -1, NULL, t1, 5);
+		h_raw(h, "</div></div>");
+		jail_picker(h, u, k, t1);
+	}
+	/* Each FEC relay's: the tunnel's rate it carries, and what
+	 * its FEC adds to it. */
+	if (u->nr > 0) {
+		double	oh;
+		int	base;
+
+		k = picked_at(u->relays, u->nr, u->relay);
+		if (k < 0)
+			k = 0;
+		base = NF + 2 * (u->nn + u->nd + u->nj + k);
+		h_raw(h, "<div class=\"uplots wide urelays\"><div>");
+		snprintf(label, sizeof(label), "FEC relay · %s",
+		    u->relays[k]);
+		single(h, u, label, base, "carried", base + 1,
+		    "added by FEC", t1, 2);
+		h_raw(h, "</div></div>");
+		relay_picker(h, u, k, t1);
+		oh = overhead(u, base, t1);
+		h_raw(h, "<p class=\"dim ujails\">");
+		if (oh >= 0) {
+			snprintf(buf, sizeof(buf), "%.1f%%", oh);
+			h_raw(h, "Overhead over the window: <b>");
+			h_txt(h, buf);
+			h_raw(h, "</b> of the bytes carried. ");
+		}
+		h_raw(h, "UDPspeeder's own counters, both ways, from its "
+		    "<code>--report</code> lines in syslog: what it took "
+		    "in plain is the tunnel's rate as the relay carries "
+		    "it, beside its interface's above.</p>");
+	}
+	h_raw(h, "</section>");
+}
+
+void
+view_usage(struct html *h)
+{
+	double	t1;
+	int	i, have;
+
+	h_raw(h, "<section class=\"util\"><div class=\"toolbar\"><h3>"
+	    "Utilization</h3>");
+	windows_nav(h);
+	h_raw(h, "<span class=\"age\">each agent samples its host by "
+	    "itself; how often and how much is set at each host</span>"
+	    "</div>");
+	if (app.nservers == 0) {
+		h_raw(h, "<div class=\"empty\"><p>No host yet.</p></div>"
+		    "</section>");
+		return;
+	}
+	/* The plots end now, by the newest sample any host has. */
+	t1 = ends(NULL, &have);
 	if (have > 1) {
 		h_raw(h, "<h4 class=\"family\">All hosts, over one another"
 		    "</h4><div class=\"uplots compare\">");
@@ -793,158 +1000,45 @@ view_usage(struct html *h)
 		compare(h, "Load", F_LOAD, t1, false);
 		h_raw(h, "</div>");
 	}
-	for (i = 0; i < app.nservers; i++) {
-		s = &app.servers[i];
-		u = uhost(s->id, false);
-		snprintf(key_, sizeof(key_), "usage:%s", s->id);
-		h_raw(h, "<section class=\"pane ucard\">");
-		box_head(h, key_, "h4");
-		h_raw(h, "<span class=\"uname\" data-act=\"select-server\"");
-		h_attr(h, "data-arg", s->id);
-		h_raw(h, " title=\"Open the host\">");
-		h_txt(h, s->name);
-		h_raw(h, "</span>");
-		if (u != NULL && u->known) {
-			fmt_size(buf, sizeof(buf), u->bytes);
-			if (u->off)
-				h_raw(h, "<small class=\"dim usoff\">sampling is "
-				    "off</small>");
-			else if (u->keep > 0)
-				h_fmt(h, "<small class=\"dim\">%d CPUs · every "
-				    "%d s, %d kept (%.3g h) · %s in the agent"
-				    "</small>", u->ncpu, u->step, u->keep,
-				    (double)u->step * u->keep / 3600, buf);
-			else
-				h_raw(h, "<small class=\"dim\">not sampled"
-				    "</small>");
-			h_fmt(h, "<button class=\"ghost small%s\" data-act=\""
-			    "usage-cfg\"", u->cfg ? " on" : "");
-			h_attr(h, "data-arg", s->id);
-			h_raw(h, " title=\"How often the agent samples this "
-			    "host, and how much it keeps\">Sampling</button>");
-		}
-		h_raw(h, "</h4>");
-		if (box_shut(key_)) {
-			h_raw(h, "</section>");
-			continue;
-		}
-		if (u != NULL && u->known && (u->cfg || u->keep == 0))
-			sampling(h, u);
-		if (u != NULL && u->known && u->off) {
-			h_raw(h, "<p class=\"notice usoff\">Sampling is off: the "
-			    "agent takes no sample of this host, judges no limit "
-			    "and tells nothing of its utilization. Switch it on "
-			    "under Sampling.");
-			if (u->n > 0)
-				h_raw(h, " What it kept before is below.");
-			h_raw(h, "</p>");
-			if (u->n == 0) {
-				h_raw(h, "</section>");
-				continue;
-			}
-		}
-		if (u == NULL || u->n == 0) {
-			h_raw(h, "<p class=\"dim\">");
-			h_txt(h, u != NULL && u->error[0] != '\0' ? u->error :
-			    s->failed ? "The host does not answer." :
-			    u != NULL && u->known && u->keep == 0 ?
-			    "The agent keeps no samples of this host: say "
-			    "how many it should." : u != NULL && u->known ?
-			    "No sample yet." : "Reading…");
-			h_raw(h, "</p></section>");
-			continue;
-		}
-		if (u->error[0] != '\0') {
-			h_raw(h, "<p class=\"dim\">Not read since: ");
-			h_txt(h, u->error);
-			h_raw(h, "</p>");
-		}
-		h_raw(h, "<div class=\"uplots\">");
-		single(h, u, "CPU", F_CPU, "busy", -1, NULL, t1, 0);
-		single(h, u, "Memory", F_MEM, "in use", F_SWAP, "swap", t1, 0);
-		single(h, u, "Load", F_LOAD, "1 min", -1, NULL, t1, 1);
-		h_raw(h, "</div><div class=\"uplots wide\"><div>");
-		k = picked_at(u->nets, u->nn, u->net);
-		if (k >= 0)
-			snprintf(label, sizeof(label), "Network · %s",
-			    u->nets[k]);
-		else
-			snprintf(label, sizeof(label), "Network · all %d "
-			    "interfaces", u->nn);
-		single(h, u, label, k >= 0 ? NF + 2 * k : F_RX, "in", k >= 0 ?
-		    NF + 2 * k + 1 : F_TX, "out", t1, 2);
-		picker(h, u, "usage-net", u->nets, u->nn, NF, k >= 0 ? u->net :
-		    "", t1, true);
-		h_raw(h, "</div><div>");
-		k = picked_at(u->disks, u->nd, u->disk);
-		if (k >= 0)
-			snprintf(label, sizeof(label), "Disks · %s",
-			    u->disks[k]);
-		else
-			snprintf(label, sizeof(label), "Disks · all %d",
-			    u->nd);
-		single(h, u, label, k >= 0 ? NF + 2 * (u->nn + k) : F_RD,
-		    "read", k >= 0 ? NF + 2 * (u->nn + k) + 1 : F_WR,
-		    "written", t1, 3);
-		picker(h, u, "usage-disk", u->disks, u->nd, NF + 2 * u->nn,
-		    k >= 0 ? u->disk : "", t1, false);
-		h_raw(h, "</div></div>");
-		/* Each jail's own, as the kernel accounts for it. */
-		if (!u->racct)
-			h_raw(h, "<p class=\"dim ujails\">Each jail's share of "
-			    "the CPUs and its memory are shown once the kernel "
-			    "accounts for them: <code>kern.racct.enable=1</code> "
-			    "in <code>/boot/loader.conf</code>, and a reboot.</p>");
-		else if (u->nj > 0) {
-			k = picked_at(u->jails, u->nj, u->jail);
-			if (k < 0)
-				k = 0;
-			h_raw(h, "<div class=\"uplots wide ujails\"><div>");
-			snprintf(label, sizeof(label), "Jail CPU · %s",
-			    u->jails[k]);
-			single(h, u, label, NF + 2 * (u->nn + u->nd + k), "busy",
-			    -1, NULL, t1, 4);
-			h_raw(h, "</div><div>");
-			snprintf(label, sizeof(label), "Jail memory · %s",
-			    u->jails[k]);
-			single(h, u, label, NF + 2 * (u->nn + u->nd + k) + 1,
-			    "in use", -1, NULL, t1, 5);
-			h_raw(h, "</div></div>");
-			jail_picker(h, u, k, t1);
-		}
-		/* Each FEC relay's: the tunnel's rate it carries, and what
-		 * its FEC adds to it. */
-		if (u->nr > 0) {
-			double	oh;
-			int	base;
-
-			k = picked_at(u->relays, u->nr, u->relay);
-			if (k < 0)
-				k = 0;
-			base = NF + 2 * (u->nn + u->nd + u->nj + k);
-			h_raw(h, "<div class=\"uplots wide urelays\"><div>");
-			snprintf(label, sizeof(label), "FEC relay · %s",
-			    u->relays[k]);
-			single(h, u, label, base, "carried", base + 1,
-			    "added by FEC", t1, 2);
-			h_raw(h, "</div></div>");
-			relay_picker(h, u, k, t1);
-			oh = overhead(u, base, t1);
-			h_raw(h, "<p class=\"dim ujails\">");
-			if (oh >= 0) {
-				snprintf(buf, sizeof(buf), "%.1f%%", oh);
-				h_raw(h, "Overhead over the window: <b>");
-				h_txt(h, buf);
-				h_raw(h, "</b> of the bytes carried. ");
-			}
-			h_raw(h, "UDPspeeder's own counters, both ways, from its "
-			    "<code>--report</code> lines in syslog: what it took "
-			    "in plain is the tunnel's rate as the relay carries "
-			    "it, beside its interface's above.</p>");
-		}
-		h_raw(h, "</section>");
-	}
+	for (i = 0; i < app.nservers; i++)
+		ucard(h, &app.servers[i], t1, false);
 	h_raw(h, "</section>");
+}
+
+/*
+ * A host's Monitoring tab: its utilization, and how its agent samples
+ * it, its limits and the rules of its devices and jails.
+ */
+void
+view_usage_host(struct html *h, struct server *s)
+{
+	struct uhost	*u;
+	double		 t1;
+	int		 have;
+
+	u = uhost(s->id, false);
+	h_raw(h, "<section class=\"util hutil\"><div class=\"toolbar\">");
+	windows_nav(h);
+	h_raw(h, "<span class=\"age\">sampled by the host's agent itself"
+	    "</span></div>");
+	t1 = ends(u, &have);
+	ucard(h, s, t1, true);
+	h_raw(h, "<section class=\"transport usampling\"><h3>Sampling</h3>");
+	if (u != NULL && u->known)
+		sampling(h, u, true);
+	else
+		h_raw(h, u != NULL && u->error[0] != '\0' ? "<p class=\"dim\">"
+		    "Not read: the host does not answer.</p>" : "<div class=\""
+		    "loader\"></div>");
+	h_raw(h, "</section></section>");
+}
+
+/* The host's Monitoring tab opened: read at once. */
+void
+usage_host_open(struct server *s)
+{
+
+	usage_poll(s, arc_now());
 }
 
 bool

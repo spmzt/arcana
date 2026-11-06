@@ -204,6 +204,8 @@ enum tab {
 	TAB_PROCESSES,
 	TAB_LOG,
 	TAB_JOBS,
+	TAB_MONITORING,		/* utilization, sampling and limits */
+	TAB_ALERTS,		/* what the alerts leave out */
 };
 
 /* The packages tab: pending upgrades of the host or of one jail. */
@@ -640,6 +642,14 @@ void		 ops_save(void);
 void		 op_retry(int);
 bool		 box_shut(const char *);
 void		 box_head(struct html *, const char *, const char *);
+/* ... and one shut until opened: a host not sampled. */
+bool		 box_shut_def(const char *, bool);
+void		 box_head_def(struct html *, const char *, const char *, bool);
+/* hosttab.c: a host's tabs, and the sections of those that have them. */
+const char	*hosttab_resolve(const char *, char *, size_t);
+bool		 hosttab_loc(char *, size_t);
+void		 hosttab_nav(struct html *, struct server *);
+bool		 hosttab_sectioned(void);
 /* drift.c: what the host has otherwise than running says. */
 void		 view_drift(struct html *, struct server *);
 void		 ops_load(void);
@@ -939,6 +949,7 @@ void		 view_logs(struct html *, struct server *);
 bool		 logs_form(const char *, const ucl_object_t *);
 bool		 logs_action(const char *, const char *, const char *);
 void		 usage_open(void);
+void		 usage_host_open(struct server *);
 void		 usage_tick(double);
 int		 usage_if_rates(const char *, const char *, bool, double,
 		    double *, double *, int);
@@ -998,6 +1009,7 @@ int		 topo_if_mtu(int, const char *);
 const char	*topo_host_addr(int, int);
 bool		 ecmp_action(const char *, const char *, const char *);
 void		 view_usage(struct html *);
+void		 view_usage_host(struct html *, struct server *);
 bool		 usage_action(const char *, const char *, const char *);
 bool		 usage_form(const char *, const ucl_object_t *);
 void		 fmt_size(char *, size_t, double);
