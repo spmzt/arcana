@@ -2241,14 +2241,14 @@ EOT
 	# The proxies and the IDS: SD-WAN's and the Security section's
 	# (sec-) in one list, each group's set apart.
 	cat > proxy.json <<'EOT'
-{"instances":[{"name":"svc1","fib":1,"mode":"inspect","host":"edge-a","spec":{"flavor":"sdwan","zones":[]},"lists":{"zone-block":"bad.example\n"}},{"name":"sec-web","fib":0,"mode":"sni","spec":{"listen":["10.1.0.1"]}}]}
+{"instances":[{"name":"svc1","fib":1,"mode":"inspect","host":"edge-a","spec":{"flavor":"sdwan","zones":[]},"lists":{"zone-block":"bad.example\n"}},{"name":"sec-web","fib":0,"mode":"sni","stopped":true,"spec":{"listen":["10.1.0.1"]}}]}
 EOT
 	cat > want <<'EOT'
 proxy svc1 fib=1 mode=inspect host=edge-a spec={"flavor":"sdwan","zones":[]} list zone-block=12
-proxy sec-web fib=0 mode=sni host=- spec={"listen":["10.1.0.1"]}
+proxy sec-web fib=0 mode=sni host=- spec={"listen":["10.1.0.1"]} stopped=yes
 set {"instances":[{"name":"svc1","fib":1,"mode":"inspect","host":"edge-a","lists":{"zone-block":"bad.example\n"},"spec":{"flavor":"sdwan","zones":[]}}]}
-set {"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","lists":{},"spec":{"listen":["10.1.0.1"]}}]}
-yang-cbor 130 bytes, the same back
+set {"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","lists":{},"stopped":true,"spec":{"listen":["10.1.0.1"]}}]}
+yang-cbor 134 bytes, the same back
 EOT
 	atf_check -o file:want "$y" proxy proxy.json
 	cat > ids.json <<'EOT'
@@ -7786,6 +7786,35 @@ sdwan_proxy_body()
 	atf_check -o inline:'.bad.example\n' cat "$(dirname "$f")/sdwan-proxy-sec-web.deny"
 	atf_check -o match:'"name":"sw1",[^]]*"group":"sdwan"' -o match:'"name":"sec-web",[^]]*"group":"security"' \
 	    -o match:'"security_proxy":\[\{"name":"sec-web","listen":\["10.1.0.1"\],"allow":\["10.1.0.0/24"\],"deny":\[".bad.example"\]\}\]' "$JGC" -c "$SOCK" sdwan
+	# Stopped by the admin: it and its c-icap stopped, its files kept,
+	# kept stopped for the next start; started again, both run.
+	webm='{"name":"sec-web","listen":["10.1.0.1"],"allow":["10.1.0.0/24"],"deny":[".bad.example"],"malware":true}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","host":"edge-a","spec":'"$webm"'}]}'
+	qpid=$(cat "$(dirname "$f")/sdwan-proxy-sec-web.pid")
+	ipid=$(cat "$(dirname "$f")/sdwan-icap-sec-web.pid")
+	alive "$qpid" || atf_fail "squid sec-web does not run"
+	alive "$ipid" || atf_fail "its c-icap does not run"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","host":"edge-a","stopped":true,"spec":'"$webm"'}]}'
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		alive "$qpid" || alive "$ipid" || break
+		sleep 0.3
+	done
+	alive "$qpid" && atf_fail "squid sec-web still runs"
+	alive "$ipid" && atf_fail "its c-icap still runs"
+	atf_check -o match:'^acl denied_site' cat "$(dirname "$f")/sdwan-proxy-sec-web.conf"
+	atf_check -o match:'^PidFile' cat "$(dirname "$f")/sdwan-icap-sec-web.conf"
+	atf_check -o inline:'.bad.example\n' cat "$(dirname "$f")/sdwan-proxy-sec-web.deny"
+	atf_check -o match:'"name":"sec-web",[^]]*"stopped":true,"spec"' cat "$(dirname "$f")/security-proxy.json"
+	atf_check -o match:'"name":"sec-web","fib":0,"mode":"sni","running":false' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","host":"edge-a","spec":'"$webm"'}]}'
+	alive "$(cat "$(dirname "$f")/sdwan-proxy-sec-web.pid")" || atf_fail "squid sec-web was not started again"
+	alive "$(cat "$(dirname "$f")/sdwan-icap-sec-web.pid")" || atf_fail "its c-icap was not started again"
+	atf_check -o match:'"name":"sec-web","fib":0,"mode":"sni","running":true,"icap":true' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","host":"edge-a","spec":'"$web"'}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"instances":[]}'
 	atf_check -o match:'"proxy":\[\{"name":"sec-web"' "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"group":"security","instances":[]}'

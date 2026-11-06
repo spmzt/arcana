@@ -45,15 +45,16 @@ module: arcana-sdwan
      |  +--rw host?   string
      |  +--rw spec?   string
      +--rw proxy-instance* [name]
-     |  +--rw name    string
-     |  +--rw fib?    uint16
-     |  +--ro conf?   string
-     |  +--rw host?   string
-     |  +--rw spec?   string
-     |  +--rw mode?   enumeration
+     |  +--rw name       string
+     |  +--rw fib?       uint16
+     |  +--ro conf?      string
+     |  +--rw host?      string
+     |  +--rw spec?      string
+     |  +--rw mode?      enumeration
      |  +--rw named-list* [name]
-     |     +--rw name    string
-     |     +--rw text?   string
+     |  |  +--rw name    string
+     |  |  +--rw text?   string
+     |  +--rw stopped?   boolean
      +--rw ids-instance* [name]
      |  +--rw name          string
      |  +--rw interface*    string

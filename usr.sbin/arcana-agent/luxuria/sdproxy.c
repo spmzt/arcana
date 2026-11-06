@@ -22,7 +22,9 @@
  * by ICAP on the loopback, in the same table, and is started first.
  * Like the DNS filters of sddns.c: those named are started or told to
  * reconfigure, those not named any more are stopped, and the list is
- * kept for the next start.
+ * kept for the next start.  One the admin stopped (stopped: true) stays
+ * in the list, its files kept, but neither it nor its c-icap runs, now
+ * or at the next start, until it is started again.
  */
 
 #include <sys/param.h>
@@ -64,6 +66,7 @@ struct instance {
 	char	mode[12];
 	int	fib;
 	bool	icap;		/* scans for malware: c-icap beside it */
+	bool	stopped;	/* by the admin: kept, not run */
 };
 
 static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
@@ -612,8 +615,9 @@ parse(const char *json)
  * changed; host names the host in their comments.  Squid must be there
  * (a plugin); each instance's CA is made once; its file is checked by
  * squid -k parse before it is made the instance's; a running one is
- * told to reconfigure, one not yet is started in its table; those not
- * named any more are stopped.  Kept for the next start.
+ * told to reconfigure, one not yet is started in its table; one stopped
+ * (stopped: true) is stopped, its files kept; those not named any more
+ * are stopped, their files gone.  Kept for the next start.
  */
 int
 do_sdwan_proxy(struct work *w, const char *json, const char **errp)
@@ -681,6 +685,15 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		snprintf(ni[n].mode, sizeof(ni[n].mode), "%s", mode);
 		ni[n].fib = (int)ucl_object_toint(ucl_object_lookup(in, "fib"));
 		ni[n].icap = squid_conf_icap(ucl_object_lookup(in, "spec"));
+		if ((v = ucl_object_lookup(in, "stopped")) != NULL) {
+			if (ucl_object_type(v) != UCL_BOOLEAN) {
+				ucl_object_unref(top);
+				*errp = wfmt(w, "%s: stopped is true or false",
+				    ni[n].name);
+				return (-1);
+			}
+			ni[n].stopped = ucl_object_toboolean(v);
+		}
 		/* Its files made of its form, here: what squid refuses is
 		 * said before any instance is touched. */
 		host = ucl_object_type(ucl_object_lookup(in, "host")) ==
@@ -767,6 +780,15 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 	for (k = 0; k < n; k++) {
 		in = ucl_object_iterate(ucl_object_lookup(top, "instances"), &it,
 		    true);
+		/* Stopped by the admin: it and its c-icap, files kept. */
+		if (ni[k].stopped) {
+			step = step_begin(w, STEP_DAEMON, "arcana-agent",
+			    "squid %s stopped, kept", ni[k].name);
+			inst_stop(w, ni[k].name);
+			icap_stop(w, ni[k].name);
+			step_end(w, step, true, NULL);
+			continue;
+		}
 		was = inst_pid(w, ni[k].name) != 0;
 		step = step_begin(w, STEP_DAEMON, "arcana-agent",
 		    "squid %s in fib %d, %s: %s", ni[k].name, ni[k].fib, ni[k].mode,

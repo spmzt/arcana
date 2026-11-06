@@ -305,6 +305,8 @@ main(int argc, char **argv)
 			for (size_t k = 0; k < p->named_list.n; k++)
 				printf(" list %s=%zu", p->named_list.v[k].name,
 				    strlen(p->named_list.v[k].text));
+			if (p->has_stopped)
+				printf(" stopped=%s", p->stopped ? "yes" : "no");
 			printf("\n");
 		}
 		/* Each group's apart, as the setter keeps them. */

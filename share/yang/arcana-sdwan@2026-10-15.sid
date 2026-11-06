@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-sdwan",
     "module-revision": "2026-10-15",
-    "sid-file-version": 6,
+    "sid-file-version": 7,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 72 100, 200, and 81 000, 200.",
     "dependency-revision": [
       {
@@ -1645,6 +1645,11 @@
         "namespace": "data",
         "identifier": "/arcana-sdwan:sdwan/apply/output",
         "sid": "81121"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/proxy-instance/stopped",
+        "sid": "81122"
       }
     ]
   }

@@ -536,6 +536,11 @@ module arcana-sdwan {
             "Its text.";
         }
       }
+      leaf stopped {
+        type boolean;
+        description
+          "Stopped by the admin: kept, not run, nor its c-icap.";
+      }
     }
     list ids-instance {
       key "name";

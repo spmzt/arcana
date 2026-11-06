@@ -319,10 +319,10 @@ ysd_steer_from_json(const char *json, cbl_yarena *a,
 
 /*
  * The instances of one kind, as the setters keep them: name, fib, host
- * and spec, the form, as JSON text; the proxy's mode and lists beside;
- * the ids' interfaces, conf, rules, divert, capture, offload, lua,
- * plugins, stopped and thresholds.  BIRD's, dnsmasq's and unbound's
- * entries have one layout.
+ * and spec, the form, as JSON text; the proxy's mode, lists and
+ * stopped beside; the ids' interfaces, conf, rules, divert, capture,
+ * offload, lua, plugins, stopped and thresholds.  BIRD's, dnsmasq's
+ * and unbound's entries have one layout.
  */
 int
 ysd_instances_from_json(const char *json, int kind, cbl_yarena *a,
@@ -361,6 +361,7 @@ ysd_instances_from_json(const char *json, int kind, cbl_yarena *a,
 			    &v[n].named_list.n, (const struct named **)(void *)
 			    &v[n].named_list.v) != 0)
 				goto nomem;
+			v[n].stopped = yj_yes(e, "stopped", &v[n].has_stopped);
 			n++;
 		}
 		*vp = v;
@@ -712,6 +713,8 @@ ysd_instances_json(int kind, const char *jail, int group, size_t n,
 			put(o, "lists", named_object(v->named_list.n,
 			    (const struct named *)(const void *)
 			    v->named_list.v));
+			if (v->has_stopped)
+				put(o, "stopped", ucl_object_frombool(v->stopped));
 		} else {
 			const struct arcana_sdwan_bird_instance *v =
 			    &((const struct arcana_sdwan_bird_instance *)vp)[i];
