@@ -8,7 +8,7 @@
  * banner; its host keys, their fingerprints and the certificates a CA
  * key signed for them; and who signs in, with which keys.  Each change
  * is a job: sshd -t reads it before it is put in place, and sshd is
- * reloaded.
+ * reloaded.  arcana-sshd's read, through the fleet mount.
  */
 
 #include <stdio.h>
@@ -143,6 +143,86 @@ kopt_next(const char **pp, char *name, size_t nlen, char *val, size_t vlen,
 	return (true);
 }
 
+static const char *const key_map[] = { "type", "type", "fingerprint",
+    "fingerprint", "options", "options", "comment", "comment", "bits", "bits",
+    NULL };
+
+static void
+put(ucl_object_t *o, const char *key, ucl_object_t *v)
+{
+
+	ucl_object_replace_key(o, v, key, 0, true);
+}
+
+/* A yang:date-and-time as seconds; none: -1, forever. */
+static ucl_object_t *
+when(const ucl_object_t *o, const char *key)
+{
+
+	return (ucl_object_fromint(jstr(o, key) != NULL ? rc_time(jstr(o,
+	    key)) : -1));
+}
+
+/* arcana-sshd's read as the tab draws it. */
+static ucl_object_t *
+ssh_conv(const ucl_object_t *o)
+{
+	static const char *const top_map[] = { "config", "config",
+	    "settings-from-file", "settings_from_file", "banner",
+	    "banner_text", "user-cas-text", "user_cas_text", NULL };
+	static const char *const user_map[] = { "name", "name", "uid", "uid",
+	    "home", "home", "shell", "shell", "keys-file", "keys_file", NULL };
+	static const char *const cert_map[] = { "serial", "serial", "kind",
+	    "kind", "id", "id", "principal", "principals", "ca", "ca", NULL };
+	const ucl_object_t	*e, *c;
+	ucl_object_t		*r, *a, *k, *ce, *set;
+	ucl_object_iter_t	 it = NULL;
+
+	r = jmap(o, top_map);
+	put(r, "before_kept", ucl_object_frombool(jbool(o, "before-kept")));
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(jget(o, "host-key"), &it, true)) !=
+	    NULL) {
+		k = jmap(e, key_map);
+		if (jstr(e, "path") != NULL)
+			put(k, "path", ucl_object_fromstring(jstr(e, "path")));
+		if ((c = jget(e, "certificate")) != NULL) {
+			ce = jmap(c, cert_map);
+			if (jstr(c, "valid-after") != NULL) {
+				put(ce, "valid_after", when(c, "valid-after"));
+				put(ce, "valid_before", when(c, "valid-before"));
+			}
+			put(k, "certificate", ce);
+		}
+		if (jget(e, "certificate-used") != NULL)
+			put(k, "certificate_used", ucl_object_frombool(jbool(e,
+			    "certificate-used")));
+		ucl_array_append(a, k);
+	}
+	put(r, "host_keys", a);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(o, "user"), &it, true)) != NULL) {
+		k = jmap(e, user_map);
+		if (jget(k, "keys_file") == NULL)
+			put(k, "keys_file", ucl_object_fromstring(""));
+		put(k, "keys", jmap_each(jget(e, "key"), key_map));
+		ucl_array_append(a, k);
+	}
+	put(r, "users", a);
+	if (jget(o, "user-ca-key") != NULL || jget(o, "user-cas-text") != NULL)
+		put(r, "user_cas", jmap_each(jget(o, "user-ca-key"), key_map));
+	set = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(o, "setting"), &it, true)) != NULL)
+		if (jstr(e, "name") != NULL)
+			put(set, jstr(e, "name"), jget(e, "value") != NULL ?
+			    ucl_object_copy(jget(e, "value")) :
+			    ucl_object_typed_new(UCL_ARRAY));
+	put(r, "settings", set);
+	return (r);
+}
+
 static void
 ssh_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -155,23 +235,22 @@ ssh_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	free(sid);
 	sh.loading = false;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
-		snprintf(sh.error, sizeof(sh.error), "%s", status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
-		    err : "no answer");
+	if (status != 200 || o == NULL) {
+		snprintf(sh.error, sizeof(sh.error), "%s", err != NULL ? err :
+		    "no answer");
 		return;
 	}
 	sh.error[0] = '\0';
 	if (sh.data != NULL)
 		ucl_object_unref(sh.data);
-	sh.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	sh.data = ssh_conv(o);
 	sh.fetched = arc_now();
 }
 
 void
 refresh_ssh(struct server *s, bool again)
 {
-	char	path[300];
+	char	in[400], *q;
 
 	/* One for this host on its way is waited for, not another's. */
 	if (!app.online || (sh.loading && strcmp(sh.sid, s->id) == 0))
@@ -186,9 +265,12 @@ refresh_ssh(struct server *s, bool again)
 		return;
 	snprintf(sh.sid, sizeof(sh.sid), "%s", s->id);
 	sh.loading = true;
-	snprintf(path, sizeof(path), "ssh%s%s", sh.jail[0] != '\0' ?
-	    "?jail=" : "", sh.jail);
-	host_read(s, path, "read sshd", true, ssh_cb, strdup(s->id));
+	q = json_quote(sh.jail);
+	snprintf(in, sizeof(in), "{%s%s}", sh.jail[0] != '\0' ? "\"jail\":" :
+	    "", sh.jail[0] != '\0' ? q : "");
+	free(q);
+	host_yread(s, "arcana-sshd:sshd/read", in, "read sshd", true, ssh_cb,
+	    strdup(s->id));
 }
 
 /* A job: verb, and each of the rest only when it is given. */

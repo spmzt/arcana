@@ -8,7 +8,7 @@
  * certctl(8) keeps them, and those it does not; each read with OpenSSL
  * on the host, for whom it is, its key and when it ends.  One is given
  * to the host, not trusted, or trusted again: a job, which certctl
- * rehash ends.
+ * rehash ends.  arcana-host's read-certificates, through the fleet mount.
  */
 
 #include <stdio.h>
@@ -30,6 +30,60 @@ static struct {
 	char		 error[300];
 } ct;
 
+/* The certificates of a list, times in seconds. */
+static ucl_object_t *
+certs_of(const ucl_object_t *list)
+{
+	static const char *const map[] = { "file", "file", "subject",
+	    "subject", "common-name", "cn", "organization", "org", "country",
+	    "country", "issuer", "issuer", "sha256", "sha256", "key", "key",
+	    "local", "local", NULL };
+	const ucl_object_t	*e;
+	ucl_object_t		*arr, *c;
+	ucl_object_iter_t	 it = NULL;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(list, &it, true)) != NULL) {
+		c = jmap(e, map);
+		ucl_object_insert_key(c, ucl_object_fromint(rc_time(jstr(e,
+		    "not-before"))), "not_before", 0, false);
+		ucl_object_insert_key(c, ucl_object_fromint(rc_time(jstr(e,
+		    "not-after"))), "not_after", 0, false);
+		ucl_object_insert_key(c, ucl_object_frombool(jbool(e, "ca")),
+		    "ca", 0, false);
+		ucl_object_insert_key(c, ucl_object_frombool(jbool(e,
+		    "self-signed")), "self_signed", 0, false);
+		ucl_array_append(arr, c);
+	}
+	return (arr);
+}
+
+/* arcana-host's read-certificates as the tab draws it; the store's own
+ * two directories are the same everywhere. */
+static ucl_object_t *
+certs_conv(const ucl_object_t *o)
+{
+	static const char *const map[] = { "localbase", "localbase",
+	    "added-dir", "added_dir", "distrusted-dir", "distrusted_dir",
+	    NULL };
+	ucl_object_t	*r;
+
+	r = jmap(o, map);
+	ucl_object_insert_key(r, ucl_object_fromstring("/etc/ssl/certs"),
+	    "trusted_dir", 0, false);
+	ucl_object_insert_key(r, ucl_object_fromstring("/etc/ssl/untrusted"),
+	    "untrusted_dir", 0, false);
+	ucl_object_insert_key(r, ucl_object_frombool(jbool(o, "certctl")),
+	    "certctl", 0, false);
+	ucl_object_insert_key(r, ucl_object_fromint(rc_time(jstr(o, "now"))),
+	    "now", 0, false);
+	ucl_object_insert_key(r, certs_of(jget(o, "trusted")), "trusted", 0,
+	    false);
+	ucl_object_insert_key(r, certs_of(jget(o, "untrusted")), "untrusted",
+	    0, false);
+	return (r);
+}
+
 static void
 certs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -42,16 +96,15 @@ certs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	free(sid);
 	ct.loading = false;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
-		snprintf(ct.error, sizeof(ct.error), "%s", status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
-		    err : "no answer");
+	if (status != 200 || o == NULL) {
+		snprintf(ct.error, sizeof(ct.error), "%s", err != NULL ? err :
+		    "no answer");
 		return;
 	}
 	ct.error[0] = '\0';
 	if (ct.data != NULL)
 		ucl_object_unref(ct.data);
-	ct.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	ct.data = certs_conv(o);
 	ct.fetched = arc_now();
 }
 
@@ -59,7 +112,7 @@ certs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 void
 refresh_certs(struct server *s, bool again)
 {
-	char	path[300];
+	char	in[400], *q;
 
 	/* One for this host on its way is waited for, not another's. */
 	if (!app.online || (ct.loading && strcmp(ct.sid, s->id) == 0))
@@ -74,9 +127,12 @@ refresh_certs(struct server *s, bool again)
 		return;
 	snprintf(ct.sid, sizeof(ct.sid), "%s", s->id);
 	ct.loading = true;
-	snprintf(path, sizeof(path), "certs%s%s", ct.jail[0] != '\0' ?
-	    "?jail=" : "", ct.jail);
-	host_read(s, path, "read the certificates", true, certs_cb, strdup(s->id));
+	q = json_quote(ct.jail);
+	snprintf(in, sizeof(in), "{%s%s}", ct.jail[0] != '\0' ? "\"jail\":" :
+	    "", ct.jail[0] != '\0' ? q : "");
+	free(q);
+	host_yread(s, "arcana-host:host/read-certificates", in,
+	    "read the certificates", true, certs_cb, strdup(s->id));
 }
 
 static void
