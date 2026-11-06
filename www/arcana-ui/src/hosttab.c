@@ -5,7 +5,8 @@
  */
 
 /*
- * The sections of a host's tabs that hold several: Network (the base
+ * The sections of a host's tabs that hold several: Services (the base
+ * system's, OpenSMTPD's mail), Network (the base
  * system's, BIRD, IPsec, the FEC relay), Monitoring (utilization,
  * alerts, the tunnels measured), System (with sysctl, the kernel, the
  * processes) and Security (with SSH and the certificates).  Each is a
@@ -29,6 +30,9 @@ static const struct hsect {
 	const char	*plugin;	/* its package's, drawn as a plugin */
 	const char	*tip;
 } hs[] = {
+	{ "services", "general", "General", "services", TAB_SERVICES, -1,
+	    NULL, NULL },
+	{ "services", "mail", "Mail", "mail", TAB_MAIL, -1, "smtpd", NULL },
 	{ "network", "base", "Base system", "network", TAB_NETWORK, -1, NULL,
 	    "Routes, interfaces, sockets: the base system's" },
 	{ "network", "bird", "BIRD", "bird", TAB_NETWORK, NET_BIRD, "bird",
@@ -82,7 +86,12 @@ cur(void)
 			return ((int)i);
 	}
 	/* The Network tab's base system: any kind but those above. */
-	return (app.tab == TAB_NETWORK ? 0 : -1);
+	if (app.tab != TAB_NETWORK)
+		return (-1);
+	for (i = 0; i < nitems(hs); i++)
+		if (hs[i].tab == TAB_NETWORK && hs[i].kind == -1)
+			return ((int)i);
+	return (-1);
 }
 
 bool

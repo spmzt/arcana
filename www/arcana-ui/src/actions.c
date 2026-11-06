@@ -347,6 +347,51 @@ op_quiet_begin(const char *method, const char *url)
 	return (o->id);
 }
 
+/*
+ * A change no part made a task for: one made of its request, so that
+ * every change done is seen in the task list, ended by its answer.
+ * Its title is what it changes (/api/servers/<id>/<what>, or RESTCONF's
+ * node), its server by the id in the path.
+ */
+int
+op_auto(const char *method, const char *url, int req)
+{
+	struct op	*o;
+	const char	*p, *q, *verb;
+	char		 title[160], sid[16], server[64], what[120];
+	int		 i;
+
+	server[0] = sid[0] = '\0';
+	verb = strcmp(method, "DELETE") == 0 ? "remove" :
+	    strcmp(method, "PATCH") == 0 ? "change" : "set";
+	snprintf(what, sizeof(what), "%s", url);
+	if ((p = strstr(url, "/api/servers/")) != NULL)
+		p += strlen("/api/servers/");
+	else if ((p = strstr(url, "/host=")) != NULL)
+		p += strlen("/host=");
+	if (p != NULL) {
+		q = strchr(p, '/');
+		snprintf(sid, sizeof(sid), "%.*s", (int)(q != NULL ? q - p :
+		    (ptrdiff_t)strlen(p)), p);
+		snprintf(what, sizeof(what), "%s", q != NULL ? q + 1 : "the host");
+	} else if ((p = strstr(url, "/restconf/data/")) != NULL)
+		snprintf(what, sizeof(what), "%s", p + strlen("/restconf/data/"));
+	else if (strncmp(url, "/api/", 5) == 0)
+		snprintf(what, sizeof(what), "%s", url + 5);
+	what[strcspn(what, "?")] = '\0';
+	for (i = 0; sid[0] != '\0' && i < app.nservers; i++)
+		if (strcmp(app.servers[i].id, sid) == 0)
+			snprintf(server, sizeof(server), "%s",
+			    app.servers[i].name);
+	snprintf(title, sizeof(title), "%s %s", verb, what);
+	o = op_new(title, server);
+	o->await = false;
+	o->req = req;
+	snprintf(o->method, sizeof(o->method), "%s", method);
+	snprintf(o->url, sizeof(o->url), "%s", url);
+	return (o->id);
+}
+
 void
 op_quiet_end(int id, int status)
 {

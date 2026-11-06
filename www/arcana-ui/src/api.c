@@ -99,6 +99,11 @@ api(const char *method, const char *url, const char *body, api_cb *cb,
 		p->op = app.ops[0].id;
 		p->awaited = true;
 		app.ops[0].req = id;
+	} else if (strcmp(method, "GET") != 0 && strncmp(url, "/api/auth/",
+	    10) != 0 && strcmp(url, "/api/health") != 0) {
+		/* A change no part made a task for: one of its own. */
+		p->op = op_auto(method, url, id);
+		p->awaited = true;
 	} else if (app.quiet && strcmp(method, "GET") == 0)
 		/* The page's own poll: a task too, shown apart from what
 		 * was asked for, so that every exchange can be seen. */

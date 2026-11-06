@@ -637,6 +637,7 @@ void		 confirm(const char *, const char *, const char *, bool,
 /* actions.c: what the buttons do. */
 void		 refresh_servers(void);
 int		 op_quiet_begin(const char *, const char *);
+int		 op_auto(const char *, const char *, int);
 void		 op_quiet_end(int, int);
 void		 ops_save(void);
 void		 op_retry(int);

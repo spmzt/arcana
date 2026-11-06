@@ -999,7 +999,8 @@ stage(struct html *h)
 			{ "monitoring", "Monitoring", TAB_MONITORING, TAB_ALERTS,
 			    -1, -1 },
 			{ "jails", "Jails", TAB_JAILS, -1, -1, -1 },
-			{ "services", "Services", TAB_SERVICES, -1, -1, -1 },
+			{ "services", "Services", TAB_SERVICES, TAB_MAIL, -1,
+			    -1 },
 			{ "network", "Network", TAB_NETWORK, TAB_RELAY, -1, -1 },
 			{ "firewall", "Firewall", TAB_FIREWALL, -1, -1, -1 },
 			{ "packages", "Packages", TAB_PACKAGES, -1, -1, -1 },
@@ -1011,7 +1012,6 @@ stage(struct html *h)
 			{ "log", "Log", TAB_LOG, -1, -1, -1 },
 			{ "jobs", "Jobs", TAB_JOBS, -1, -1, -1 },
 		};
-		const char	*at;
 		size_t		 t;
 		bool		 on, mon;
 
@@ -1028,16 +1028,6 @@ stage(struct html *h)
 			    "data-arg=\"%s\">%s</button>", on ? " on" : "",
 			    tabs[t].arg, tabs[t].title);
 		}
-		/* OpenSMTPD: a plugin of the host or of a jail of it, with the
-		 * host's network or its own. */
-		at = plugin_anywhere(s, "smtpd");
-		h_fmt(h, "<button class=\"tab plugin%s%s\" data-act=\"tab\" "
-		    "data-arg=\"mail\" title=\"%s%s\">Mail</button>",
-		    app.tab == TAB_MAIL ? " on" : "", s->list != NULL && at ==
-		    NULL ? " missing" : "", at == NULL ? "A plugin, not "
-		    "installed here: open it to install its package" :
-		    "OpenSMTPD, a plugin, on ", at != NULL && at[0] != '\0' ?
-		    at : at != NULL ? "the host" : "");
 		if ((size_t)app.tab < nitems(leaf) && leaf[app.tab] != NULL &&
 		    !mon)
 			export_bar(h, app.tab == TAB_NETWORK &&

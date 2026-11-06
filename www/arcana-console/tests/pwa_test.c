@@ -277,7 +277,7 @@ host_tab(const char *name)
 		{ "certificates", "security" }, { "bird", "network" },
 		{ "ipsec", "network" }, { "relay", "network" },
 		{ "alerts", "monitoring" }, { "utilization", "monitoring" },
-		{ "tunnels", "monitoring" },
+		{ "tunnels", "monitoring" }, { "mail", "services" },
 	};
 	char	sel[128];
 	size_t	i;
@@ -3964,7 +3964,7 @@ part_mail(void)
 {
 	int	i;
 
-	run("document.querySelector('button.tab[data-arg=mail]').click()");
+	host_tab("mail");
 	wait_js("document.querySelector('section.mailview') && document."
 	    "querySelector('button[data-act=ml-conf]')", 20);
 	click_when("button[data-act=ml-conf]", 10);
@@ -4222,8 +4222,9 @@ part_hosttabs(void)
 	    "'section.usampling form[data-form=usage-set] input[name=hold]')",
 	    20);
 	ATF_CHECK(js_true("document.querySelectorAll('nav.tabs:not(.sub) "
-	    "button.tab').length === 13 && !document.querySelector('nav.tabs:"
-	    "not(.sub) button.tab[data-arg=kernel]')"));
+	    "button.tab').length === 12 && !document.querySelector('nav.tabs:"
+	    "not(.sub) button.tab[data-arg=kernel]') && !document."
+	    "querySelector('nav.tabs:not(.sub) button.tab[data-arg=mail]')"));
 	shot("8h-monitoring");
 	/* The alerts' Save under the toggles, at their left. */
 	host_tab("alerts");
@@ -4272,6 +4273,10 @@ part_hosttabs(void)
 	run("const f = document.querySelector('form[data-form=usage-set]'); "
 	    "f.enabled.checked = false; f.requestSubmit();");
 	wait_js("document.querySelector('section.ucard.uoff')", 20);
+	/* A change no part made a task for has one all the same: in the
+	 * dock's recent tasks, done. */
+	wait_js("[...document.querySelectorAll('.dock .recent .last.o-ok')]"
+	    ".some(o => o.textContent.includes('set history'))", 10);
 	run("window.fh = location.hash.split('/')[2]; document.querySelector("
 	    "'li[data-act=select-fleet]').click()");
 	wait_js("document.querySelector('article.hostcard.folded[data-arg=\"'"
