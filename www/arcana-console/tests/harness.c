@@ -51,6 +51,7 @@ bool		 harness_other_agent;
 bool		 harness_newer_agent;
 /* The agent beside the console is looked for, as outside the tests. */
 bool		 harness_local_agent;
+bool		 harness_bird_watch;
 /* web.conf's local_agent is the test's own line. */
 bool		 harness_webconf_only_local;
 char		 harness_telegram_api[128];	/* the agent's Bot API, or "" */
@@ -664,8 +665,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "rpki1 RPKI --- up 2026-10-01 Established\\n"
 	    "  Cache server:     rpki.example.net\\n' ;;\n"
 	    "'show ospf neighbors') printf 'ospf1:\\nRouter ID Pri State DTime "
-	    "Interface Router IP\\n10.0.0.2 1 Full/PtP 00:00:35 gif0 "
-	    "10.255.0.2\\n' ;;\n"
+	    "Interface Router IP\\n'; [ -f ospf.down ] || printf '10.0.0.2 1 "
+	    "Full/PtP 00:00:35 gif0 10.255.0.2\\n' ;;\n"
 	    "'show bfd sessions') printf 'bfd1:\\nIP address Interface State "
 	    "Since Interval Timeout\\nfe80::2 gif0 Up 13:01:27.605 0.200 "
 	    "1.000\\n' ;;\n"
@@ -1369,7 +1370,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* BIRD's sessions are not watched for faults by the tests'
 	 * agents: a fault would come among those a test looks for. */
 	argv[102] = (char *)(uintptr_t)"--bird-watch";
-	argv[103] = (char *)(uintptr_t)"0";
+	argv[103] = (char *)(uintptr_t)(harness_bird_watch ? "1" : "0");
 	argv[104] = NULL;
 	/* Telegram's Bot API: a sink of the test's, or a port nothing
 	 * listens on; never the real one. */

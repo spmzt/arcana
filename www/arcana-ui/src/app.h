@@ -317,7 +317,14 @@ struct server {
 	bool		 services_loading;
 	char		 services_error[256];
 	int		 safe_wait;	/* s, its rollback timer; 0 the agent's */
+	unsigned int	 mute;		/* MUTE_*: left out of the alerts */
+	bool		 sampling_off;	/* its agent samples nothing */
 };
+
+/* What of a host the alerts leave out, as the console says it. */
+#define	MUTE_UTIL	0x1
+#define	MUTE_SESSIONS	0x2
+#define	MUTE_ALL	0x4
 
 enum opstate {
 	OP_RUNNING,
@@ -700,7 +707,7 @@ void		 load_tokens(void);
 void		 token_new(void);
 void		 token_del(const char *);
 /* The forms settings are in. */
-enum { SETG_CONSOLE, SETG_MAIL, SETG_TELEGRAM, SETG_LDAP };
+enum { SETG_CONSOLE, SETG_MAIL, SETG_TELEGRAM, SETG_LDAP, SETG_ALERTS };
 int		 setting_group(const char *);
 void		 save_settings(const ucl_object_t *, int);
 void		 mail_test(void);
@@ -1002,6 +1009,7 @@ void		 view_sysctl(struct html *, struct server *);
 bool		 sysctl_form(const char *, const ucl_object_t *);
 bool		 sysctl_action(const char *, const char *, const char *);
 void		 view_safe(struct html *, struct server *);
+void		 view_mute(struct html *, struct server *);
 void		 view_tlscert(struct html *, struct server *);
 void		 servers_cb(int, const ucl_object_t *, const char *, void *);
 struct plugin_pkg {

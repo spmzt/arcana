@@ -475,6 +475,7 @@ view_sysctl(struct html *h, struct server *s)
 }
 
 static void	safe_cb(int, const ucl_object_t *, const char *, void *);
+static void	mute_cb(int, const ucl_object_t *, const char *, void *);
 static void	transport_cb(int, const ucl_object_t *, const char *, void *);
 
 bool
@@ -486,7 +487,7 @@ sysctl_form(const char *form, const ucl_object_t *f)
 
 	if (strcmp(form, "sy-set") != 0 && strcmp(form, "sy-from") != 0 &&
 	    strcmp(form, "tr-safe") != 0 && strcmp(form, "tr-move") != 0 &&
-	    strcmp(form, "tr-also") != 0)
+	    strcmp(form, "tr-also") != 0 && strcmp(form, "tr-mute") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
@@ -527,6 +528,19 @@ sysctl_form(const char *form, const ucl_object_t *f)
 		    s->uri);
 		confirm("Move the host", text, "Test and move", false, "",
 		    "do-tr-move", v, "");
+		return (true);
+	}
+	if (strcmp(form, "tr-mute") == 0) {
+		char	url[64], body[96];
+
+		snprintf(url, sizeof(url), "/api/servers/%s", s->id);
+		snprintf(body, sizeof(body), "{\"notify_mute\":[%s%s%s%s%s]}",
+		    jbool(f, "utilization") ? "\"utilization\"" : "",
+		    jbool(f, "utilization") && (jbool(f, "sessions") ||
+		    jbool(f, "all")) ? "," : "", jbool(f, "sessions") ?
+		    "\"sessions\"" : "", jbool(f, "sessions") && jbool(f, "all") ?
+		    "," : "", jbool(f, "all") ? "\"all\"" : "");
+		api("POST", url, body, mute_cb, NULL);
 		return (true);
 	}
 	if (strcmp(form, "tr-safe") == 0) {
@@ -735,6 +749,66 @@ safe_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	toast(false, "Rollback timer saved");
 	servers_cb(status, o, err, arg);
+}
+
+static void
+mute_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	if (status != 200) {
+		toast(true, "What the alerts leave out was not saved: %s", err !=
+		    NULL ? err : "the console refused");
+		return;
+	}
+	toast(false, "Alerts of the host saved");
+	servers_cb(status, o, err, arg);
+}
+
+/*
+ * What of the host the mail and Telegram alerts leave out: its
+ * utilization (limits crossed, cpu, memory and storage faults), its
+ * sessions (OSPF, BGP, BFD, tunnels and links going down and up), or
+ * all of it.  Its admins'.
+ */
+void
+view_mute(struct html *h, struct server *s)
+{
+	static const struct {
+		unsigned int	 bit;
+		const char	*name, *title, *what;
+	} m[] = {
+		{ MUTE_UTIL, "utilization", "Utilization", "a limit crossed, "
+		    "and the CPU, memory and storage faults" },
+		{ MUTE_SESSIONS, "sessions", "Sessions", "OSPF neighbours, BGP "
+		    "and BFD sessions, tunnels and links going down and up" },
+		{ MUTE_ALL, "all", "All of it", "but a change that could not be "
+		    "undone, which is always told" },
+	};
+	size_t	i;
+
+	h_raw(h, "<section class=\"transport mute\">");
+	box_head(h, "mute", "h3");
+	h_raw(h, "Alerts</h3>");
+	if (box_shut("mute")) {
+		h_raw(h, "</section>");
+		return;
+	}
+	h_raw(h, "<p class=\"dim\">What of this host is left out of the mail "
+	    "and the Telegram messages (Settings, Notifications); its alarms "
+	    "are kept and shown all the same.");
+	if (s->sampling_off)
+		h_raw(h, " It is not sampled (its Usage tab): it has no "
+		    "utilization to tell.");
+	h_raw(h, "</p><form class=\"toolbar\" data-form=\"tr-mute\">"
+	    "<fieldset class=\"toggles\">");
+	for (i = 0; i < nitems(m); i++) {
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+		    "name=\"%s\"%s><span>Leave out %s <em>%s</em></span>"
+		    "</label>", m[i].name, (s->mute & m[i].bit) != 0 ?
+		    " checked" : "", m[i].title, m[i].what);
+	}
+	h_raw(h, "</fieldset><button class=\"ghost small\">Save</button>"
+	    "</form></section>");
 }
 
 /* Settings' rollback timer for every host, 0 when there is none. */

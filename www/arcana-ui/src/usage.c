@@ -41,6 +41,9 @@ struct uhost {
 	double	 mem_total, swap_total, bytes;
 	int	 ncpu, step, keep;
 	int	 lim[4];	/* cpu, mem, swap, storage, in percent; 0 none */
+	int	 hold;		/* s a crossing lasts before it counts */
+	bool	 has_hold;	/* the agent has hold and the switch */
+	bool	 off;		/* not sampled at all */
 	char	 nets[DEVS][DEVNAME], disks[DEVS][DEVNAME];
 	char	 jails[DEVS][DEVNAME];	/* told apart when racct is on */
 	char	 relays[DEVS][DEVNAME];	/* the FEC relays, by syslog tag */
@@ -156,6 +159,10 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	u->lim[1] = (int)jint(jget(d, "limits"), "mem", 0);
 	u->lim[2] = (int)jint(jget(d, "limits"), "swap", 0);
 	u->lim[3] = (int)jint(jget(d, "limits"), "storage", 0);
+	/* An agent before 0.246.0 says neither. */
+	u->has_hold = jget(d, "hold") != NULL;
+	u->hold = (int)jint(d, "hold", 0);
+	u->off = jget(d, "enabled") != NULL && !jbool(d, "enabled");
 	keep = (int)jint(d, "keep", 720);
 	other = devs(jget(d, "nets"), u->nets, &u->nn);
 	other = devs(jget(d, "disks"), u->disks, &u->nd) || other;
@@ -695,6 +702,16 @@ sampling(struct html *h, const struct uhost *u)
 	    "\"storage\" type=\"number\" min=\"0\" max=\"100\" value=\"%d\">"
 	    "%% full</label>", u->step, u->keep, u->lim[0], u->lim[1],
 	    u->lim[2], u->lim[3]);
+	if (u->has_hold)
+		h_fmt(h, "<label title=\"A figure over its limit for less is "
+		    "no event, nor one under it again: no alert of a burst\">"
+		    "for at least<input name=\"hold\" type=\"number\" "
+		    "min=\"0\" max=\"3600\" value=\"%d\">s</label><label "
+		    "class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "enabled\"%s><span>Sampled <em>off, the agent takes no "
+		    "sample, judges no limit and clears the faults it raised; "
+		    "what it kept stays</em></span></label>", u->hold, u->off ?
+		    "" : " checked");
 	/* The limits of one interface, disk or jail each. */
 	h_raw(h, "<label class=\"rules\">Limits of an interface, a disk or a "
 	    "jail<textarea name=\"rules\" rows=\"3\" spellcheck=\"false\" "
@@ -789,7 +806,10 @@ view_usage(struct html *h)
 		h_raw(h, "</span>");
 		if (u != NULL && u->known) {
 			fmt_size(buf, sizeof(buf), u->bytes);
-			if (u->keep > 0)
+			if (u->off)
+				h_raw(h, "<small class=\"dim usoff\">sampling is "
+				    "off</small>");
+			else if (u->keep > 0)
 				h_fmt(h, "<small class=\"dim\">%d CPUs · every "
 				    "%d s, %d kept (%.3g h) · %s in the agent"
 				    "</small>", u->ncpu, u->step, u->keep,
@@ -810,6 +830,19 @@ view_usage(struct html *h)
 		}
 		if (u != NULL && u->known && (u->cfg || u->keep == 0))
 			sampling(h, u);
+		if (u != NULL && u->known && u->off) {
+			h_raw(h, "<p class=\"notice usoff\">Sampling is off: the "
+			    "agent takes no sample of this host, judges no limit "
+			    "and tells nothing of its utilization. Switch it on "
+			    "under Sampling.");
+			if (u->n > 0)
+				h_raw(h, " What it kept before is below.");
+			h_raw(h, "</p>");
+			if (u->n == 0) {
+				h_raw(h, "</section>");
+				continue;
+			}
+		}
 		if (u == NULL || u->n == 0) {
 			h_raw(h, "<p class=\"dim\">");
 			h_txt(h, u != NULL && u->error[0] != '\0' ? u->error :
@@ -964,9 +997,22 @@ usage_form(const char *form, const ucl_object_t *f)
 		snprintf(url, sizeof(url), "/api/servers/%s/history", u->sid);
 		snprintf(body, sizeof(body), "{\"step\":%d,\"keep\":%d,"
 		    "\"cpu\":%d,\"mem\":%d,\"swap\":%d,\"storage\":%d,"
-		    "\"rules\":%s}", step, keep, lim[0], lim[1], lim[2], lim[3],
+		    "\"rules\":%s", step, keep, lim[0], lim[1], lim[2], lim[3],
 		    q);
 		free(q);
+		/* Only to an agent that has them. */
+		if (u->has_hold) {
+			k = jstr(f, "hold") != NULL && jstr(f, "hold")[0] !=
+			    '\0' ? atoi(jstr(f, "hold")) : 60;
+			if (k < 0 || k > 3600) {
+				toast(true, "A limit is held 0 to 3600 seconds");
+				return (true);
+			}
+			snprintf(body + strlen(body), sizeof(body) - strlen(body),
+			    ",\"hold\":%d,\"enabled\":%s", k, jbool(f,
+			    "enabled") ? "true" : "false");
+		}
+		strlcat(body, "}", sizeof(body));
 	}
 	u->loading = true;
 	u->asked = arc_now();

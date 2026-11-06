@@ -1080,6 +1080,8 @@ submit_form(const char *form, const ucl_object_t *f)
 		save_settings(f, SETG_TELEGRAM);
 	} else if (strcmp(form, "settings-ldap") == 0) {
 		save_settings(f, SETG_LDAP);
+	} else if (strcmp(form, "settings-alerts") == 0) {
+		save_settings(f, SETG_ALERTS);
 	} else if (strcmp(form, "agent-update") == 0) {
 		app.modal = MODAL_NONE;
 		for (i = 0; i < app.nservers; i++) {

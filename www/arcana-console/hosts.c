@@ -208,6 +208,8 @@ struct call {
 	bool			 config_only;
 	bool			 yang;		/* by the standard models */
 	int			 safe_wait;	/* s, the host's rollback timer */
+	int			 hold;		/* history: s, -1 as it is */
+	int			 sampling;	/* history: 0 off, 1 on, -1 */
 	char			 jail[256];
 	uint8_t			 action;
 	bool			 addr_remove, addr_live, addr_persist;
@@ -2879,14 +2881,19 @@ connected:
 
 			for (size_t k = 0; c->names != NULL && k < 3; k++)
 				lim[k] = (uint32_t)atoi(c->names[k]);
-			ok = ygula_history_set(conn, c->fib, c->offset, -1, -1,
-			    c->names != NULL ? lim : NULL, c->names != NULL &&
+			ok = ygula_history_set(conn, c->fib, c->offset,
+			    c->hold, c->sampling, c->names != NULL ? lim : NULL,
+			    c->names != NULL &&
 			    c->nnames == 4 ? atoi(c->names[3]) : -1, c->text,
 			    ywhy, sizeof(ywhy)) == 0;
 		}
 		if (ok)
 			ok = ygula_history(conn, c->has_pos, c->pos, &e,
 			    ywhy, sizeof(ywhy)) == 0;
+		/* Whether it is sampled, for the alerts (mail.c). */
+		if (ok && e != NULL && ucl_object_lookup(e, "enabled") != NULL)
+			servers_sampling(c->sid, !ucl_object_toboolean(
+			    ucl_object_lookup(e, "enabled")));
 		ysteps_end(conn, &ys, &steps, &nsteps);
 		if (!ok)
 			put_str(top, "error", ywhy);
@@ -4759,8 +4766,9 @@ api_log(struct http_request *req)
 
 /*
  * GET /api/servers/<id>/history[?after=time]: how busy it has been.
- * POST {"step": seconds, "keep": samples}: how its agent samples it
- * from now on; the reply is as the GET's.
+ * POST {"step": seconds, "keep": samples[, "hold": seconds][,
+ * "enabled": bool]}: how its agent samples it from now on; the reply is
+ * as the GET's.
  */
 /* ?after=N: what comes after the position N. */
 static const char *
@@ -4811,6 +4819,17 @@ api_history(struct http_request *req)
 			snprintf(c->names[k], 8, "%lld", (long long)l[k]);
 		}
 	}
+	/* {"hold": seconds}, {"enabled": false}: an agent of 0.246.0 on. */
+	c->hold = -1;
+	c->sampling = -1;
+	if (body != NULL && ucl_object_lookup(body, "hold") != NULL) {
+		c->hold = (int)ucl_object_toint(ucl_object_lookup(body, "hold"));
+		if (c->hold < 0 || c->hold > 3600)
+			step = 0;
+	}
+	if (body != NULL && ucl_object_lookup(body, "enabled") != NULL)
+		c->sampling = ucl_object_toboolean(ucl_object_lookup(body,
+		    "enabled"));
 	/* "net:igb0=125000000,jail-cpu:web=80": the agent checks them. */
 	if (body != NULL && ucl_str(body, "rules") != NULL && strlen(
 	    ucl_str(body, "rules")) <= 2048)
@@ -4827,7 +4846,8 @@ api_history(struct http_request *req)
 		free(c->peer);
 		free(c);
 		return (reply_error(req, 400, "invalid", "step is 1 to 3600 "
-		    "seconds, keep 0 to 5000 samples"));
+		    "seconds, keep 0 to 5000 samples, hold 0 to 3600 "
+		    "seconds"));
 	}
 	c->retry = true;
 	c->fib = (uint32_t)step;

@@ -5236,8 +5236,8 @@ ATF_TC_BODY(workflows, tc)
 	/* A tick to learn where the events are; then the threshold. */
 	sleep(7);
 	snprintf(path, sizeof(path), "/api/servers/%s/history", sid);
-	http("POST", path, "{\"step\":1,\"keep\":10,\"cpu\":90,\"mem\":1,"
-	    "\"swap\":90}", &r);
+	http("POST", path, "{\"step\":1,\"keep\":10,\"hold\":0,\"cpu\":90,"
+	    "\"mem\":1,\"swap\":90}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
 	/* The next tick's, which a busy host makes late. */
@@ -7344,6 +7344,201 @@ ATF_TC_BODY(mail, tc)
 	resp_free(&r);
 }
 
+static void	cc_user(struct authn *, const char *, const char *, int);
+
+/* id's memory limit set to lim, at once (hold 0), sampled each second. */
+static void
+mem_limit(const char *id, int lim)
+{
+	struct resp	r;
+	char		path[160], body[160];
+
+	snprintf(path, sizeof(path), "/api/servers/%s/history", id);
+	snprintf(body, sizeof(body), "{\"step\":1,\"keep\":20,\"cpu\":0,"
+	    "\"mem\":%d,\"swap\":0,\"hold\":0}", lim);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"hold\":0") != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
+/* How many lines of the mails' bodies match the basic regular
+ * expression re: a mail of one line has it as its subject too. */
+static int
+mailed(const char *re)
+{
+	char	cmd[512];
+	FILE	*fp;
+	int	n = -1;
+
+	snprintf(cmd, sizeof(cmd), "grep -v '^Subject: ' mail.out | "
+	    "grep -c -- '%s'", re);
+	if ((fp = popen(cmd, "r")) != NULL) {
+		if (fscanf(fp, "%d", &n) != 1)
+			n = 0;
+		pclose(fp);
+	}
+	return (n);
+}
+
+CONSOLE_TC_LONG(notify_cooldown, "Of one thing on one host, the first "
+    "change mailed at once, those within the cool-down held and said in "
+    "one line at its end; a host's mutes leave its utilization or its "
+    "sessions out, its admins' to set, a viewer refused")
+ATF_TC_BODY(notify_cooldown, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN], id[16], path[160];
+	int		i;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	/* Events read each second; a minute of the cool-down a second;
+	 * the agent's BIRD watched each second. */
+	harness_bird_watch = true;
+	snprintf(harness_webconf, sizeof(harness_webconf), "mail_tick = 1;\n"
+	    "cooldown_unit = 1;\n");
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"notify_cooldown\":\"1441\"}}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"mail_to\":\"ops@example.org\","
+	    "\"mail_faults\":\"Major\",\"mail_limits\":true,"
+	    "\"notify_cooldown\":\"10\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/restconf/data/arcana-console:settings/notify-cooldown",
+	    NULL, &r);
+	ATF_CHECK_MSG(r.status == 200 && strstr(r.body, "10") != NULL, "%d %s",
+	    r.status, r.body);
+	resp_free(&r);
+	/* The host's events read from here on. */
+	sleep(3);
+
+	/* Over, under, over, under within the cool-down: the first
+	 * mailed, the rest held; at its end, one line. */
+	for (i = 0; i < 4; i++) {
+		mem_limit(id, i % 2 == 0 ? 1 : 100);
+		sleep(2);
+	}
+	ATF_CHECK_EQ(1, mailed("here: mem over its limit"));
+	ATF_CHECK_EQ(0, mailed("here: mem back under its limit"));
+	for (i = 0; i < 150 && mailed("mem on here: over/under") < 1; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(mailed("mem on here: over/under 4 times in [0-9]* s, "
+	    "now under 95%$") == 1, "no line of what was held");
+	/* Over and under again, ending as it was last told: nothing. */
+	sleep(11);
+	mem_limit(id, 1);
+	sleep(2);
+	ATF_CHECK_EQ(2, mailed("here: mem over its limit"));
+	mem_limit(id, 100);
+	sleep(2);
+	mem_limit(id, 1);
+	sleep(10);
+	ATF_CHECK_EQ(1, mailed("mem on here: over/under"));
+	ATF_CHECK_EQ(0, mailed("here: mem back under its limit"));
+
+	/* Its utilization muted: not mailed; its sessions still are. */
+	snprintf(path, sizeof(path), "/api/servers/%s", id);
+	http("POST", path, "{\"notify_mute\":[\"cpu\"]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", path, "{\"notify_mute\":[\"utilization\"]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("utilization", jstr(&r, "servers.0.notify_mute.0"));
+	resp_free(&r);
+	http("GET", "/restconf/data/arcana-console:hosts", NULL, &r);
+	ATF_CHECK_MSG(strstr(r.body, "\"notify-mute\":[\"utilization\"]") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	sleep(11);
+	mem_limit(id, 100);
+	sleep(2);
+	mem_limit(id, 1);
+	sleep(3);
+	ATF_CHECK_EQ(2, mailed("here: mem over its limit"));
+	ATF_CHECK_EQ(0, mailed("here: mem back under its limit"));
+	ATF_REQUIRE(system("touch ospf.down") == 0);
+	for (i = 0; i < 100 && mailed("fault, Major: ospf-neighbor") < 1; i++)
+		usleep(100000);
+	ATF_CHECK_EQ(1, mailed("here: fault, Major: ospf-neighbor"));
+	/* And then its sessions: the neighbour back is not mailed. */
+	http("POST", path, "{\"notify_mute\":[\"utilization\",\"sessions\"]}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(unlink("ospf.down") == 0);
+	sleep(4);
+	ATF_CHECK_EQ(0, mailed("here: cleared: ospf-neighbor"));
+
+	/* A viewer of the host may not change them. */
+	cc_user(&b, "vic", "{\"roles\":[\"viewer\"]}", -8);
+	http("POST", path, "{\"notify_mute\":[]}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("PATCH", "/restconf/data/arcana-console:hosts", "{\"arcana-console:"
+	    "hosts\":{\"host\":[{\"id\":\"00000000\"}]}}", &r);
+	ATF_CHECK(r.status >= 400);
+	resp_free(&r);
+}
+
+CONSOLE_TC(sampling_switch, "A host's sampling switched off through the "
+    "console: said by its history, kept by the registry for the alerts; "
+    "on again")
+ATF_TC_BODY(sampling_switch, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN], id[16], path[160];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/history", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.enabled"));
+	ATF_CHECK_STREQ("60", jstr(&r, "data.hold"));
+	resp_free(&r);
+	http("POST", path, "{\"step\":5,\"keep\":720,\"hold\":3601}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", path, "{\"step\":5,\"keep\":720,\"enabled\":false}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "data.enabled"));
+	ATF_CHECK_STREQ("60", jstr(&r, "data.hold"));
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "servers.0.sampling_off"));
+	resp_free(&r);
+	http("GET", "/restconf/data/arcana-console:hosts", NULL, &r);
+	ATF_CHECK_MSG(strstr(r.body, "\"sampled\":false") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	http("POST", path, "{\"step\":5,\"keep\":720,\"enabled\":true}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.enabled"));
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	ATF_CHECK(jstr(&r, "servers.0.sampling_off") == NULL);
+	resp_free(&r);
+}
+
 CONSOLE_TC(services, "Services listed, acted on and configured through "
     "arcana-services: a GET, its actions, its configuration committed with "
     "the warnings accepted")
@@ -9368,7 +9563,7 @@ static pid_t
 agent_spawn(const char *prog, const char *listen, const char *tcp,
     const char *installed)
 {
-	char	*argv[24];
+	char	*argv[28];
 	FILE	*fp;
 	pid_t	 pid;
 	int	 i;
@@ -9396,6 +9591,9 @@ agent_spawn(const char *prog, const char *listen, const char *tcp,
 	argv[i++] = (char *)(uintptr_t)"./fake-sysrc";
 	argv[i++] = (char *)(uintptr_t)"-U";
 	argv[i++] = (char *)(uintptr_t)installed;
+	/* How it samples kept here, not where the program would. */
+	argv[i++] = (char *)(uintptr_t)"-1";
+	argv[i++] = (char *)(uintptr_t)"history.conf";
 	argv[i] = NULL;
 	pid = spawn_server(argv, "arcana-agent2.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent2.pid", "w")) != NULL);
@@ -9933,6 +10131,48 @@ ATF_TC_BODY(restconf_actions_old, tc)
 			    "%d %s", r.status, r.body);
 		resp_free(&r);
 	}
+}
+
+/*
+ * An agent of a release before (ARCANA_OLD_AGENT): its sampling neither
+ * held nor switched off, refused with the version that has them; the
+ * rest of its history set as before.
+ */
+CONSOLE_TC(sampling_old, "An older agent's sampling switch and hold "
+    "refused, naming the agent that has them")
+ATF_TC_BODY(sampling_old, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], uri[MAXPATHLEN + 8], ido[16];
+	char		 path[160];
+	const char	*old;
+
+	if ((old = old_agent(tc)) == NULL)
+		atf_tc_skip("no agent of a release before: set ARCANA_OLD_AGENT "
+		    "or old_agent");
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(uri, sizeof(uri), "unix:%s/old.sock", cwd);
+	(void)agent_spawn(old, uri, NULL, "installed-old");
+	wait_for("old.sock");
+	host_add("old", uri, 0, ido, sizeof(ido));
+	snprintf(path, sizeof(path), "/api/servers/%s/history", ido);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "data.step") != NULL && jstr(&r,
+	    "data.enabled") == NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", path, "{\"step\":5,\"keep\":720,\"enabled\":false}", &r);
+	ATF_CHECK_MSG(strstr(r.body, "arcana-agent 0.246.0 or later") != NULL,
+	    "%d %s", r.status, r.body);
+	resp_free(&r);
+	http("POST", path, "{\"step\":5,\"keep\":700}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "data.keep") != NULL && strcmp(jstr(&r,
+	    "data.keep"), "700") == 0, "%s", r.body);
+	resp_free(&r);
 }
 
 #define	SAPNET	"/restconf/data/ietf-network:networks"
@@ -19115,6 +19355,9 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, monitors);
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, mail);
+	ATF_TP_ADD_TC(tp, notify_cooldown);
+	ATF_TP_ADD_TC(tp, sampling_switch);
+	ATF_TP_ADD_TC(tp, sampling_old);
 	ATF_TP_ADD_TC(tp, telegram);
 	ATF_TP_ADD_TC(tp, local_agent);
 	ATF_TP_ADD_TC(tp, local_same);

@@ -23,6 +23,10 @@
  * tick at a time: those told go out in one message a tick on each way,
  * and twenty an hour at most; the rest wait for the next.  A host first
  * read is read from its newest: what happened before is not mailed.
+ * A change of one thing on one host told, those after it within the
+ * cool-down are held and said in one line at its end (cool_pass()); a
+ * host's mutes (servers.c) leave its utilization, its sessions or all
+ * of it out, and one whose agent samples nothing its utilization.
  */
 
 #include <sys/param.h>
@@ -662,6 +666,154 @@ tg_job(const char *when, const char *host, const ucl_object_t *d,
 		    host, str(d, "id"), str(d, "title"), error, when);
 }
 
+/*
+ * The cool-down (notify_cooldown): of one thing on one host, a way's
+ * first change is told at once, those after it within the cool-down
+ * held and counted; at its end, one line says what happened, unless
+ * it ended as it was last told.  A thing is a figure and its limit
+ * (threshold: what, name) or a fault (its type and object).  The
+ * worker's alone.
+ */
+#define	COOL_MAX	512
+
+static struct cool {
+	bool	 used;
+	int	 ch;
+	char	 key[200];	/* host id, kind, what it is of */
+	char	 host[128];
+	char	 label[160];	/* "cpu", "ospf-neighbor em0@10.0.0.1" */
+	bool	 fault;		/* raised/cleared, else over/under */
+	time_t	 start;		/* when the cool-down began */
+	int	 changes;	/* held since */
+	bool	 told;		/* the state last told */
+	bool	 now;		/* and as it is */
+	char	 nowtext[96];	/* "now under 85%" */
+} cools[COOL_MAX];
+
+/* The cool-down in seconds; 0, none. */
+static time_t
+cool_secs(void)
+{
+	char	*v;
+	long	 n;
+
+	v = settings_peek("notify_cooldown");
+	n = v[0] != '\0' ? strtol(v, NULL, 10) : 30;
+	free(v);
+	if (n < 0 || n > 1440)
+		n = 30;
+	return ((time_t)n * cfg.cooldown_unit);
+}
+
+/* Whether a change of key, now state, is told on way ch now. */
+static bool
+cool_pass(int ch, const char *key, const char *host, const char *label,
+    bool fault, bool state, const char *nowtext)
+{
+	struct cool	*c, *free_one, *oldest;
+	time_t		 cd, t;
+	size_t		 i;
+
+	if ((cd = cool_secs()) == 0)
+		return (true);
+	t = time(NULL);
+	c = free_one = oldest = NULL;
+	for (i = 0; i < COOL_MAX; i++) {
+		if (!cools[i].used) {
+			if (free_one == NULL)
+				free_one = &cools[i];
+			continue;
+		}
+		if (cools[i].ch == ch && strcmp(cools[i].key, key) == 0) {
+			c = &cools[i];
+			break;
+		}
+		if (oldest == NULL || cools[i].start < oldest->start)
+			oldest = &cools[i];
+	}
+	if (c != NULL && (t - c->start < cd || c->changes > 0)) {
+		c->changes++;
+		c->now = state;
+		snprintf(c->nowtext, sizeof(c->nowtext), "%s", nowtext);
+		return (false);
+	}
+	if (c == NULL && (c = free_one) == NULL)
+		c = oldest;		/* full: the oldest goes */
+	memset(c, 0, sizeof(*c));
+	c->used = true;
+	c->ch = ch;
+	snprintf(c->key, sizeof(c->key), "%s", key);
+	snprintf(c->host, sizeof(c->host), "%s", host);
+	snprintf(c->label, sizeof(c->label), "%s", label);
+	c->fault = fault;
+	c->start = t;
+	c->told = c->now = state;
+	return (true);
+}
+
+/* "30 min", "45 s". */
+static void
+cool_span(time_t s, char *buf, size_t len)
+{
+
+	if (s >= 60 && s % 60 == 0)
+		snprintf(buf, len, "%jd min", (intmax_t)(s / 60));
+	else
+		snprintf(buf, len, "%jd s", (intmax_t)s);
+}
+
+/*
+ * The cool-downs that ended: what was held said in one line where it
+ * did not end as last told, a new cool-down begun; one with nothing
+ * held let go.
+ */
+static void
+cool_sweep(void)
+{
+	struct cool	*c;
+	time_t		 cd, t;
+	char		 span[32];
+	size_t		 i;
+
+	cd = cool_secs();
+	t = time(NULL);
+	for (i = 0; i < COOL_MAX; i++) {
+		c = &cools[i];
+		if (!c->used || (cd > 0 && t - c->start < cd))
+			continue;
+		if (c->changes == 0) {
+			c->used = false;
+			continue;
+		}
+		if (c->now != c->told) {
+			cool_span(t - c->start, span, sizeof(span));
+			hold(c->ch, "%s%s on %s: %s %d times in %s, %s",
+			    c->ch == CH_TELEGRAM ? "🔁 " : "", c->label, c->host,
+			    c->fault ? "raised/cleared" : "over/under",
+			    c->changes + 1, span, c->nowtext);
+			c->told = c->now;
+		}
+		c->start = t;
+		c->changes = 0;
+	}
+}
+
+/* The fault types that are utilization, and those that are sessions. */
+static bool
+type_in(const char *t, const char *const *v)
+{
+
+	for (; t != NULL && *v != NULL; v++)
+		if (strcmp(t, *v) == 0)
+			return (true);
+	return (false);
+}
+
+static const char *const util_faults[] = { "cpu", "memory", "storage",
+    NULL };
+static const char *const session_faults[] = { "ospf-neighbor",
+    "bgp-neighbor", "bfd", "tunnel", "interface", "tca", NULL };
+
 /* One event of a host, held when it is one asked for. */
 static void
 event(const struct mailconf *mc, const char *id, const char *host,
@@ -669,10 +821,12 @@ event(const struct mailconf *mc, const char *id, const char *host,
 {
 	const ucl_object_t	*d;
 	const char		*kind;
-	char			 when[32];
+	char			 when[32], key[200], label[160], nowtext[96];
 	struct tm		 tm;
 	time_t			 t;
+	unsigned int		 mute;
 	int			 min, ch;
+	bool			 state, must;
 
 	kind = str(e, "kind");
 	d = ucl_object_lookup(e, "data");
@@ -682,6 +836,60 @@ event(const struct mailconf *mc, const char *id, const char *host,
 	if (strcmp(kind, "sdwan-security") == 0 || strcmp(kind, "sdwan-ids") ==
 	    0)
 		sen_event(id, host, e);
+	/* The host's mutes; what no setting stops goes all the same. */
+	mute = servers_mute(id);
+	must = strcmp(kind, "undo-failed") == 0 || (strcmp(kind, "job") == 0 &&
+	    !ucl_object_toboolean(ucl_object_lookup(d, "ok")) && str(d,
+	    "error") != NULL && strstr(str(d, "error"), "could not be undone") !=
+	    NULL);
+	if ((mute & MUTE_ALL) != 0 && !must)
+		return;
+	if ((mute & MUTE_UTIL) != 0 && (strcmp(kind, "threshold") == 0 ||
+	    (strcmp(kind, "sdwan-fault") == 0 && type_in(str(d, "type"),
+	    util_faults))))
+		return;
+	if ((mute & MUTE_SESSIONS) != 0 && strcmp(kind, "sdwan-fault") == 0 &&
+	    type_in(str(d, "type"), session_faults))
+		return;
+	/* What it is of, for the cool-down. */
+	state = false;
+	key[0] = '\0';
+	if (strcmp(kind, "sdwan-fault") == 0) {
+		state = strcmp(str(d, "state") != NULL ? str(d, "state") : "",
+		    "cleared") != 0 && strcmp(str(d, "severity") != NULL ?
+		    str(d, "severity") : "", "Cleared") != 0;
+		snprintf(key, sizeof(key), "%s fault %s %s", id, str(d, "type"),
+		    str(d, "object"));
+		snprintf(label, sizeof(label), "%s %s", str(d, "type"), str(d,
+		    "object"));
+		if (state)
+			snprintf(nowtext, sizeof(nowtext), "now raised, %s",
+			    str(d, "severity"));
+		else
+			snprintf(nowtext, sizeof(nowtext), "now cleared");
+	} else if (strcmp(kind, "threshold") == 0) {
+		const char	*w = str(d, "what"), *nm = str(d, "name");
+		bool		 pct;
+
+		state = ucl_object_toboolean(ucl_object_lookup(d, "over"));
+		snprintf(key, sizeof(key), "%s threshold %s %s", id, w, nm !=
+		    NULL ? nm : "");
+		snprintf(label, sizeof(label), "%s%s%s", w, nm != NULL ? " " :
+		    "", nm != NULL ? nm : "");
+		/* The host's own limits are percentages; a rule's not. */
+		pct = type_in(w, (const char *const []){ "cpu", "mem", "swap",
+		    "storage", NULL });
+		if (pct && state)
+			snprintf(nowtext, sizeof(nowtext), "now over %s%%", str(d,
+			    "limit"));
+		else if (pct)
+			snprintf(nowtext, sizeof(nowtext), "now under %jd%%",
+			    (intmax_t)ucl_object_toint(ucl_object_lookup(d,
+			    "limit")) - 5);
+		else
+			snprintf(nowtext, sizeof(nowtext), "now %s its limit %s",
+			    state ? "over" : "back under", str(d, "limit"));
+	}
 	t = (time_t)ucl_object_toint(ucl_object_lookup(e, "t"));
 	localtime_r(&t, &tm);
 	strftime(when, sizeof(when), "%H:%M:%S", &tm);
@@ -698,6 +906,11 @@ event(const struct mailconf *mc, const char *id, const char *host,
 		if (strcmp(kind, "sdwan-fault") == 0) {
 			min = severity_rank(faults);
 			if (min < 0)
+				continue;
+			/* Told at all, and not held by the cool-down. */
+			if ((state && severity_rank(str(d, "severity")) < min) ||
+			    !cool_pass(ch, key, host, label, true, state,
+			    nowtext))
 				continue;
 			if (ch == CH_TELEGRAM) {
 				tg_fault(when, host, d, min);
@@ -732,6 +945,9 @@ event(const struct mailconf *mc, const char *id, const char *host,
 				    str(d, "report") != NULL ? str(d, "report") :
 				    "");
 		} else if (strcmp(kind, "threshold") == 0 && limits) {
+			if (!cool_pass(ch, key, host, label, false, state,
+			    nowtext))
+				continue;
 			if (ch == CH_TELEGRAM) {
 				bool	over = ucl_object_toboolean(ucl_object_lookup(d,
 				    "over"));
@@ -987,6 +1203,7 @@ done:
 		free(ans);		/* hosts_events() mallocs it */
 	}
 	sen_end();
+	cool_sweep();
 	free(all);
 	mc_free(&mc);
 	mail_flush();

@@ -4813,8 +4813,8 @@ part_storage(void)
 	    "r.json()).then(j => Promise.all(j.servers.map(s => fetch("
 	    "'/api/servers/' + s.id + '/history', { method: 'POST', headers: "
 	    "{ 'Content-Type': 'application/json', 'X-Arcana': '1' }, body: "
-	    "JSON.stringify({ step: 5, keep: 720, cpu: cpu, mem: mem, swap: "
-	    "50 }) }))));");
+	    "JSON.stringify({ step: 5, keep: 720, hold: 0, cpu: cpu, mem: "
+	    "mem, swap: 50 }) }))));");
 	/* The agent samples every five seconds and the console asks for
 	 * events every five: two clocks in a row, and the page's draw. */
 	run("window.lim(90, 1);");
@@ -5660,6 +5660,33 @@ part_firewall(void)
 	    "some(r => r.textContent.includes('45 s'))", 10);
 	host_open(NULL);
 	click_when("button.tab[data-arg=summary]", 10);
+
+	/* What of the host the alerts leave out: its utilization ticked,
+	 * said on Settings' table, and nothing again. */
+	wait_js("document.querySelector('form[data-form=tr-mute] "
+	    "input[name=utilization]')", 10);
+	run("var f = document.querySelector('form[data-form=tr-mute]'); "
+	    "f.querySelector('input[name=utilization]').checked = true; "
+	    "f.requestSubmit();");
+	wait_js("document.body.textContent.includes('Alerts of the host "
+	    "saved')", 10);
+	run("document.querySelector('.rail-foot li[data-act=settings]')"
+	    ".click()");
+	click_when("button[data-act=set-tab][data-arg=notify]", 10);
+	wait_js("document.querySelector('form[data-form=settings-alerts] "
+	    "input[name=notify_cooldown]') && [...document.querySelectorAll("
+	    "'table.mutehosts tbody tr')].some(r => r.textContent.includes("
+	    "'utilization'))", 10);
+	shot("1g-alert-mutes");
+	host_open(NULL);
+	click_when("button.tab[data-arg=summary]", 10);
+	wait_js("document.querySelector('form[data-form=tr-mute] "
+	    "input[name=utilization]:checked')", 10);
+	run("var f = document.querySelector('form[data-form=tr-mute]'); "
+	    "f.querySelector('input[name=utilization]').checked = false; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=tr-mute] "
+	    "input[name=utilization]:checked')", 10);
 
 	/*
 	 * The host as a whole: saved as a bundle, JSON and YAML, the files

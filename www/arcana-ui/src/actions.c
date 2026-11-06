@@ -1238,6 +1238,22 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		    NULL ? jstr(e, "peer_name") : "");
 		s->local = jbool(e, "local");
 		s->safe_wait = (int)jint(e, "safe_wait", 0);
+		s->sampling_off = jbool(e, "sampling_off");
+		s->mute = 0;
+		{
+			const ucl_object_t	*m;
+			ucl_object_iter_t	 mit = NULL;
+			const char		*mv;
+
+			while ((m = ucl_object_iterate(jget(e, "notify_mute"),
+			    &mit, true)) != NULL) {
+				mv = ucl_object_tostring(m);
+				s->mute |= mv == NULL ? 0 : strcmp(mv,
+				    "utilization") == 0 ? MUTE_UTIL : strcmp(mv,
+				    "sessions") == 0 ? MUTE_SESSIONS : strcmp(mv,
+				    "all") == 0 ? MUTE_ALL : 0;
+			}
+		}
 	}
 	for (i = 0; i < nold; i++) {
 		if (old[i].id[0] == '\0')
@@ -3746,7 +3762,8 @@ setting_group(const char *key)
 
 	return (strncmp(key, "mail_", 5) == 0 ?
 	    SETG_MAIL : strncmp(key, "telegram_", 9) == 0 ? SETG_TELEGRAM :
-	    strncmp(key, "ldap_", 5) == 0 ? SETG_LDAP : SETG_CONSOLE);
+	    strncmp(key, "ldap_", 5) == 0 ? SETG_LDAP : strncmp(key,
+	    "notify_", 7) == 0 ? SETG_ALERTS : SETG_CONSOLE);
 }
 
 void

@@ -55,6 +55,7 @@ extern char		 harness_server[1024];
 extern bool		 harness_other_agent;
 extern bool		 harness_newer_agent;
 extern bool		 harness_local_agent;
+extern bool		 harness_bird_watch;	/* BIRD's sessions watched */
 extern bool		 harness_webconf_only_local;
 extern char		 harness_telegram_api[128];
 extern int		 harness_tls_port;

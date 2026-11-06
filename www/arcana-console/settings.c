@@ -62,6 +62,7 @@ static const char	*v_tgtoken(const char *);
 static const char	*v_chats(const char *);
 static const char	*v_sender(const char *);
 static const char	*v_prefixes(const char *);
+static const char	*v_cooldown(const char *);
 
 static struct setting {
 	const char	*key;
@@ -210,6 +211,14 @@ static struct setting {
 	    "without a timer of its own: 10 to 3600. Sent with each change, "
 	    "so it holds from the next one on. Empty: each agent's own (-w, "
 	    "60 unless its flags say).", v_safe, NULL, NULL },
+	{ "notify_cooldown", K_TEXT, "Cool-down, in minutes",
+	    "Of one thing on one host (CPU over its limit, a fault of an OSPF "
+	    "neighbour), the first change is told at once; those after it "
+	    "within so long are held, and at its end one line says what "
+	    "happened (over and under 7 times, now under), or nothing when it "
+	    "ended as it was last told. By mail and Telegram alike; 0 tells "
+	    "every change. Jobs, runs and security notices are not held.",
+	    v_cooldown, NULL, NULL },
 };
 
 static struct timespec	loaded;		/* settings.json's mtime when read */
@@ -467,6 +476,14 @@ v_safe(const char *s)
 		return (NULL);
 	return (v_count(s, SAFE_WAIT_MIN, SAFE_WAIT_MAX) != NULL ? "a number "
 	    "of seconds, 10 to 3600" : NULL);
+}
+
+static const char *
+v_cooldown(const char *s)
+{
+
+	return (v_count(s, 0, 1440) != NULL ? "a number of minutes, 0 to "
+	    "1440" : NULL);
 }
 
 static const char *
@@ -730,6 +747,7 @@ settings_init(const char *update_check, const char *update_url)
 	find("telegram_jobs")->base = xstrdup("failed");
 	find("telegram_runs")->base = xstrdup("failed");
 	find("telegram_limits")->base = xstrdup("false");
+	find("notify_cooldown")->base = xstrdup("30");
 	find("mail_to")->base = cfg.mail_to;
 	find("mail_from")->base = cfg.mail_from;
 	find("mail_faults")->base = cfg.mail_faults;
@@ -955,7 +973,7 @@ numeric(const struct setting *s)
 {
 
 	return (s->valid == v_minutes || s->valid == v_hours || s->valid ==
-	    v_days || s->valid == v_safe);
+	    v_days || s->valid == v_safe || s->valid == v_cooldown);
 }
 
 /* A setting's value v as its leaf has it; NULL, the leaf left out (a

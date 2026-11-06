@@ -110,6 +110,93 @@ add(const char *id, const char *name, const char *uri, const char *peer,
 	s->safe_wait = 0;
 	s->pkg_repos = NULL;
 	s->notif_token = NULL;
+	s->mute = 0;
+	s->sampling_off = false;
+	pthread_mutex_unlock(&table_lock);
+}
+
+static const char *const mute_names[] = { "utilization", "sessions",
+    "all" };
+
+/*
+ * A list of mutes, ["utilization", "sessions", "all"], as MUTE_* bits;
+ * UINT_MAX with why when it is not one.  NULL is none.
+ */
+unsigned int
+mute_parse(const ucl_object_t *a, const char **why)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	unsigned int		 m = 0;
+	size_t			 k;
+
+	*why = "notify_mute is a list of utilization, sessions and all";
+	if (a == NULL)
+		return (0);
+	if (ucl_object_type(a) != UCL_ARRAY)
+		return (UINT_MAX);
+	while ((e = ucl_object_iterate(a, &it, true)) != NULL) {
+		if (ucl_object_type(e) != UCL_STRING)
+			return (UINT_MAX);
+		for (k = 0; k < nitems(mute_names); k++)
+			if (strcmp(ucl_object_tostring(e), mute_names[k]) == 0)
+				break;
+		if (k == nitems(mute_names))
+			return (UINT_MAX);
+		m |= 1u << k;
+	}
+	return (m);
+}
+
+ucl_object_t *
+mute_list(unsigned int m)
+{
+	ucl_object_t	*a;
+	size_t		 k;
+
+	a = ucl_object_typed_new(UCL_ARRAY);
+	for (k = 0; k < nitems(mute_names); k++)
+		if ((m & (1u << k)) != 0)
+			ucl_array_append(a, ucl_object_fromstring(
+			    mute_names[k]));
+	return (a);
+}
+
+/*
+ * What of host id the alerts leave out: its mutes, and its utilization
+ * when its agent samples nothing.  For any thread.
+ */
+unsigned int
+servers_mute(const char *id)
+{
+	unsigned int	m = 0;
+	int		i;
+
+	pthread_mutex_lock(&table_lock);
+	for (i = 0; i < nservers; i++)
+		if (strcmp(servers[i].id, id) == 0) {
+			m = servers[i].mute | (servers[i].sampling_off ?
+			    MUTE_UTIL : 0);
+			break;
+		}
+	pthread_mutex_unlock(&table_lock);
+	return (m);
+}
+
+/* What host id's agent said of its sampling, kept when it changed. */
+void
+servers_sampling(const char *id, bool off)
+{
+	int	i;
+
+	pthread_mutex_lock(&table_lock);
+	for (i = 0; i < nservers; i++)
+		if (strcmp(servers[i].id, id) == 0 &&
+		    servers[i].sampling_off != off) {
+			servers[i].sampling_off = off;
+			(void)save();
+			break;
+		}
 	pthread_mutex_unlock(&table_lock);
 }
 
@@ -164,6 +251,11 @@ servers_init(void)
 		if ((name = ucl_str(o, "notif_token")) != NULL && strlen(name) ==
 		    64 && strspn(name, "0123456789abcdef") == 64)
 			servers[nservers - 1].notif_token = xstrdup(name);
+		if ((k = mute_parse(ucl_object_lookup(o, "notify_mute"),
+		    &uri)) != UINT_MAX)
+			servers[nservers - 1].mute = (unsigned int)k;
+		servers[nservers - 1].sampling_off = ucl_flag(o,
+		    "sampling_off");
 	}
 	local_done = ucl_flag(doc, "local_done");
 	ucl_object_unref(doc);
@@ -549,6 +641,12 @@ server_object(const struct server *s, bool kept)
 	if (s->pkg_repos != NULL)
 		ucl_object_insert_key(o, ucl_object_ref(s->pkg_repos),
 		    "pkg_repos", 0, false);
+	if (s->mute != 0)
+		ucl_object_insert_key(o, mute_list(s->mute), "notify_mute", 0,
+		    false);
+	if (s->sampling_off)
+		ucl_object_insert_key(o, ucl_object_frombool(true),
+		    "sampling_off", 0, false);
 	/* The token's hash is the file's; the API says there is one. */
 	if (kept && s->notif_token != NULL)
 		ucl_object_insert_key(o, ucl_object_fromstring(s->notif_token),
@@ -716,6 +814,8 @@ api_servers(struct http_request *req)
  * DELETE /api/servers/<id>; POST {safe_wait}: its rollback timer, the
  * seconds a change made in safe mode there waits to be confirmed before
  * the agent undoes it, 0 for the agent's own (-w); {tenant}; {pkg_repos};
+ * {notify_mute}: ["utilization", "sessions", "all"], what of it the
+ * alerts leave out;
  * {uri}: where the console reaches it from now on, the console's alone
  * (the host asked nothing, so a host that cannot be reached at the old
  * address can be at another; the Transport tab's move is the agent's).
@@ -802,6 +902,39 @@ api_server(struct http_request *req)
 			    ucl_object_lookup(body, "safe_wait") == NULL &&
 			    ucl_object_lookup(body, "pkg_repos") == NULL) {
 				ucl_object_unref(body);
+				req->method = HTTP_METHOD_GET;
+				return (api_servers(req));
+			}
+		}
+		/* {notify_mute}: what of it is not mailed nor sent. */
+		if ((v = ucl_object_lookup(body, "notify_mute")) != NULL) {
+			const char	*why;
+			unsigned int	 m, mwas;
+
+			if ((m = mute_parse(v, &why)) == UINT_MAX) {
+				ucl_object_unref(body);
+				return (reply_error(req, 400, "invalid", "%s",
+				    why));
+			}
+			pthread_mutex_lock(&table_lock);
+			mwas = servers[i].mute;
+			servers[i].mute = m;
+			pthread_mutex_unlock(&table_lock);
+			if (ucl_object_lookup(body, "tenant") == NULL &&
+			    ucl_object_lookup(body, "safe_wait") == NULL &&
+			    ucl_object_lookup(body, "pkg_repos") == NULL) {
+				ucl_object_unref(body);
+				if (save() == -1) {
+					pthread_mutex_lock(&table_lock);
+					servers[i].mute = mwas;
+					pthread_mutex_unlock(&table_lock);
+					return (reply_error(req, 500, "store",
+					    "cannot save"));
+				}
+				log_msg(LOG_NOTICE, "server %s: alerts muted: %s%s%s",
+				    id, m & MUTE_UTIL ? "utilization " : "",
+				    m & MUTE_SESSIONS ? "sessions " : "",
+				    m & MUTE_ALL ? "all" : m == 0 ? "none" : "");
 				req->method = HTTP_METHOD_GET;
 				return (api_servers(req));
 			}
@@ -1172,6 +1305,11 @@ servers_yang(struct http_request *req)
 		ucl_object_insert_key(e, ucl_object_frombool(
 		    servers[i].notif_token != NULL), "notification-token-set", 0,
 		    false);
+		if (servers[i].mute != 0)
+			ucl_object_insert_key(e, mute_list(servers[i].mute),
+			    "notify-mute", 0, false);
+		ucl_object_insert_key(e, ucl_object_frombool(
+		    !servers[i].sampling_off), "sampled", 0, false);
 		if (u != NULL)
 			ucl_object_insert_key(e, ucl_object_fromstring(role_name(
 			    user_host(u, servers[i].id))), "role", 0, false);
@@ -1229,6 +1367,8 @@ entry_why(const ucl_object_t *e)
 	if ((s = ucl_str(e, "tenant")) != NULL && !user_name_ok(s))
 		return ("a tenant is named by letters, digits, _ . @ and -, 64 "
 		    "at most");
+	if (mute_parse(ucl_object_lookup(e, "notify-mute"), &why) == UINT_MAX)
+		return ("notify-mute is utilization, sessions or all");
 	why = NULL;
 	if ((pr = pkg_repos_of(e)) != NULL) {
 		why = pkg_repos_why(pr);
@@ -1418,6 +1558,8 @@ servers_yang_set(struct http_request *req, const ucl_object_t *was,
 		if (servers[i].pkg_repos != NULL)
 			ucl_object_unref(servers[i].pkg_repos);
 		servers[i].pkg_repos = pkg_repos_of(e);
+		servers[i].mute = mute_parse(ucl_object_lookup(e,
+		    "notify-mute"), &w);
 		old = NULL;
 		if (strcmp(nu, servers[i].uri) != 0) {
 			old = servers[i].uri;

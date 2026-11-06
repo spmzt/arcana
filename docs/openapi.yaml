@@ -640,6 +640,16 @@ paths:
               type: object
               properties:
                 safe_wait: { type: integer, minimum: 0, maximum: 3600 }
+                notify_mute:
+                  type: array
+                  description: What of the host is neither mailed nor sent
+                    to Telegram (its alarms are kept all the same) -
+                    utilization, a limit crossed and the cpu, memory and
+                    storage faults; sessions, the ospf-neighbor,
+                    bgp-neighbor, bfd, tunnel, interface and tca faults;
+                    all, but a change that could not be undone. Its
+                    admins'.
+                  items: { type: string, enum: [utilization, sessions, all] }
                 tenant: { type: string, description: "the fleet it is in; \"\" for none" }
                 uri: { type: string, maxLength: 255, description: "tcp://host:port, sctp://host:port or unix:/path" }
                 peer_name: { type: string, maxLength: 64, description: "the name its certificate is checked for; \"\" the address's own" }
@@ -2168,6 +2178,18 @@ paths:
                     net:igb0=125000000, disk:ada0=50000000,
                     jail-cpu:web=80, jail-mem:web=1073741824. Empty
                     takes them away." }
+                hold: { type: integer, minimum: 0, maximum: 3600,
+                    description: "Seconds a figure stays over its limit
+                    before it is over (an event, a fault), and under it
+                    before it is back under; 0 at the first sample.
+                    Without it, as it was (60 at first). Refused by an
+                    agent before 0.246.0." }
+                enabled: { type: boolean, description: "Whether the host
+                    is sampled at all. false: no sample, no limit
+                    judged, the faults the sampler raised cleared once;
+                    the samples kept stay. The console tells no
+                    utilization of a host not sampled. Refused by an
+                    agent before 0.246.0." }
       responses:
         "200":
           description: ok and data, or error

@@ -1065,6 +1065,7 @@ stage(struct html *h)
 		view_transport(h, s);
 		view_tlscert(h, s);
 		view_safe(h, s);
+		view_mute(h, s);
 		view_drift(h, s);
 		view_hostconf(h, s);
 		peek_box(h);
@@ -1613,6 +1614,73 @@ set_look(struct html *h)
 
 static void	settings_fields(struct html *, int);
 
+/* What each host leaves out of the alerts, and whether it is sampled. */
+static const struct tcol	mutecols[] = {
+	{ "Host", "name", false }, { "Left out", "mute", false },
+	{ "Sampled", "sampled", false },
+};
+
+static void
+mute_hosts(struct html *h)
+{
+	const ucl_object_t	**rows, *r;
+	ucl_object_t		 *arr, *o;
+	char			  m[64];
+	int			  i;
+
+	h_raw(h, "<h3 class=\"set-sub\">Hosts left out</h3><p class=\"dim\">"
+	    "What of each host is neither mailed nor sent to Telegram, as its "
+	    "Summary tab sets it; its alarms are kept and shown all the same. "
+	    "A host not sampled has no utilization to tell.</p>");
+	if (app.nservers == 0) {
+		h_raw(h, "<p class=\"dim mutehosts-none\">No host yet.</p>");
+		return;
+	}
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < app.nservers; i++) {
+		const struct server	*s = &app.servers[i];
+
+		snprintf(m, sizeof(m), "%s", (s->mute & MUTE_ALL) != 0 ? "all" :
+		    (s->mute & (MUTE_UTIL | MUTE_SESSIONS)) == (MUTE_UTIL |
+		    MUTE_SESSIONS) ? "utilization, sessions" : (s->mute &
+		    MUTE_UTIL) != 0 ? "utilization" : (s->mute & MUTE_SESSIONS) !=
+		    0 ? "sessions" : "");
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(s->name), "name",
+		    0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(s->id), "id", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(m), "mute", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(s->sampling_off ?
+		    "no" : "yes"), "sampled", 0, false);
+		ucl_array_append(arr, o);
+	}
+	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
+	    "data-input=\"filter\" placeholder=\"Filter\" autocomplete=\"off\" "
+	    "spellcheck=\"false\"");
+	h_attr(h, "value", app.filter);
+	h_raw(h, "></div><table class=\"net mutehosts\">");
+	tbl_head(h, "mutehosts", mutecols, 3, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("mutehosts", arr, mutecols, 3, app.filter);
+	for (i = 0; (r = rows[i]) != NULL; i++) {
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, jstr(r, "name"));
+		h_raw(h, "</b></td><td>");
+		if (jstr(r, "mute")[0] != '\0')
+			h_txt(h, jstr(r, "mute"));
+		else
+			h_raw(h, "<span class=\"dim\">nothing</span>");
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(r, "sampled"));
+		h_raw(h, "</td></tr>");
+	}
+	free(rows);
+	ucl_object_unref(arr);
+	h_raw(h, "</tbody></table>");
+}
+
 static void
 set_notify(struct html *h)
 {
@@ -1687,6 +1755,13 @@ set_notify(struct html *h)
 	    "telegram-test\"%s>Send a test message</button></div></form>",
 	    app.modal_busy ? " disabled" : "", app.modal_busy ? " disabled" :
 	    "");
+	/* Both ways: how often one thing is told, and what is not. */
+	h_raw(h, "<h3>Flapping and quiet hosts</h3><form data-form=\""
+	    "settings-alerts\" class=\"settings set-form mail\">");
+	settings_fields(h, SETG_ALERTS);
+	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
+	    "</button></div></form>", app.modal_busy ? " disabled" : "");
+	mute_hosts(h);
 }
 
 void

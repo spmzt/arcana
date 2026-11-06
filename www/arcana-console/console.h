@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.370.0"
+#define	ARCW_VERSION		"0.371.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -94,6 +94,7 @@ struct config {
 					 * certificate, token or either */
 	char		*sendmail;	/* what mail is sent by */
 	int		 mail_tick;	/* s between reads of the events */
+	int		 cooldown_unit;	/* s a cool-down's minute lasts */
 	/* web.conf's for the mail; what is in force: settings_peek(). */
 	char		*mail_to;	/* addresses, "" for none */
 	char		*mail_from;	/* "": arcana@ the host */
@@ -341,7 +342,18 @@ struct server {
 	ucl_object_t *pkg_repos;	/* {"jail, or . the host": {upgrade, install, base}}: pkg -r
 				 * chosen there per action, or NULL */
 	char	*notif_token;	/* SHA-256 of its receiver token, hex, or NULL */
+	unsigned int mute;	/* MUTE_*: what is not mailed or sent */
+	bool	 sampling_off;	/* its agent said it samples nothing */
 };
+
+/* What of a host is neither mailed nor sent to Telegram (mail.c). */
+#define	MUTE_UTIL	0x1	/* thresholds; cpu, memory, storage faults */
+#define	MUTE_SESSIONS	0x2	/* adjacencies, tunnels and links */
+#define	MUTE_ALL	0x4	/* all of it but what no setting stops */
+unsigned int	 mute_parse(const ucl_object_t *, const char **);
+ucl_object_t	*mute_list(unsigned int);
+unsigned int	 servers_mute(const char *);
+void		 servers_sampling(const char *, bool);
 
 void		 servers_init(void);
 int		 servers_add(const char *, const char *, const char *);

@@ -329,6 +329,18 @@ module arcana-console {
          console before the host undoes it; left out, each agent's
          own.";
     }
+    leaf notify-cooldown {
+      type uint16 {
+        range "0..1440";
+      }
+      units "minutes";
+      description
+        "Of one thing on one host (a figure and its limit, a fault
+         and what it is of), the first change is told at once and
+         those after it within so long held; at its end one line
+         says what happened, unless it ended as it was last told.
+         Each way alike; 0, every change told.  30 unless set.";
+    }
     list source {
       key "name";
       config false;
@@ -2443,6 +2455,37 @@ module arcana-console {
         description
           "The host as a bundle (config-export), its secrets not in
            it.";
+      }
+      leaf-list notify-mute {
+        type enumeration {
+          enum utilization {
+            description
+              "A limit crossed (threshold) and the cpu, memory and
+               storage faults.";
+          }
+          enum sessions {
+            description
+              "Its adjacencies, tunnels and links going down and up:
+               the ospf-neighbor, bgp-neighbor, bfd, tunnel,
+               interface and tca faults.";
+          }
+          enum all {
+            description
+              "All of it, but what no setting stops: a commit or a
+               job that could not be undone.";
+          }
+        }
+        description
+          "What of the host is neither mailed nor sent to Telegram;
+           the alarms are kept and shown all the same.  Its
+           admins'.";
+      }
+      leaf sampled {
+        type boolean;
+        config false;
+        description
+          "Whether its agent samples it, as it last said: one that
+           does not has its utilization told to nobody.";
       }
       action move {
         description

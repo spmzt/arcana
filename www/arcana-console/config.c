@@ -55,7 +55,8 @@ get(const ucl_object_t *top, const char *path, const char *def)
  * update_check = false stops the release checks; update_url names
  * another feed in GitHub's releases/latest shape.  sendmail names what
  * mail goes out by (/usr/sbin/sendmail), mail_tick the seconds between
- * reads of the hosts' events for it (15); mail_to, mail_from,
+ * reads of the hosts' events for it (15), cooldown_unit the seconds a
+ * minute of the cool-down lasts (60; fewer for a test); mail_to, mail_from,
  * mail_faults, mail_jobs, mail_runs and mail_limits what Settings
  * starts from.  notif_base is where the hosts reach the console's
  * HTTPS-notif receiver (notif.c), "https://host[:port]"; the origin
@@ -122,6 +123,9 @@ config_load(const char *path)
 	o = ucl_object_lookup(top, "mail_tick");
 	cfg.mail_tick = o != NULL && ucl_object_toint(o) >= 1 &&
 	    ucl_object_toint(o) <= 3600 ? (int)ucl_object_toint(o) : 15;
+	o = ucl_object_lookup(top, "cooldown_unit");
+	cfg.cooldown_unit = o != NULL && ucl_object_toint(o) >= 1 &&
+	    ucl_object_toint(o) <= 60 ? (int)ucl_object_toint(o) : 60;
 	/* Empty says: do not look for an agent beside the console. */
 	cfg.local_agent = get(top, "local_agent", ARCW_LOCAL_AGENT);
 	cfg.notif_base = get(top, "notif_base", NULL);
