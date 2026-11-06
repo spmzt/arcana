@@ -422,6 +422,13 @@ module arcana-host {
         uses trust-store;
       }
     }
+    leaf reboot-required {
+      type boolean;
+      description
+        "A tunable Arcana sets for the next boot differs from the
+         kernel's value now (arcana-sysctl's boot): the host needs a
+         reboot for it.";
+    }
   }
 
   augment "/arcj:jails/arcj:jail" {

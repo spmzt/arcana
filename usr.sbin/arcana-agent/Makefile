@@ -6,7 +6,7 @@ SRCS=		main.c handlers.c work.c
 SRCS+=		yjson.c
 # Superbia: identity, configuration, what is true of the host.
 SRCS+=		admit.c ynacm.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c bundle.c l2.c ipfw.c netstore.c sysfiles.c geomjob.c \
-		yagent.c yhost.c yhw.c ysshd.c ysystem.c ysysedit.c yreads.c
+		yagent.c yhost.c yhw.c ysshd.c ysystem.c ysysedit.c yboot.c yreads.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwmatch.c pathcheck.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		routes.c rtimes.c scope.c sdwan.c vnet.c wireguard.c feeds.c \

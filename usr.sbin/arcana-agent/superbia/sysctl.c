@@ -302,6 +302,26 @@ one(struct work *w, int *oid, size_t nlen, const char *name,
 }
 
 /*
+ * name as the kernel has it, into *v, in w's pool, its CTLTYPE in
+ * *type: what loader.conf may set it to (yboot.c).  false: a sysctl the
+ * kernel does not know, a node, or opaque.
+ */
+bool
+sysctl_tunable(struct work *w, const char *name, struct sysctl_value *v,
+    u_int *type)
+{
+	int	oid[CTL_MAXNAME + 2];
+	size_t	nlen = CTL_MAXNAME;
+	u_int	kind;
+
+	if (!sysctl_name_ok(name) || sysctlnametomib(name, oid + 2, &nlen) ==
+	    -1 || !kind_of(oid, nlen, &kind))
+		return (false);
+	*type = kind & CTLTYPE;
+	return (one(w, oid, nlen, name, wcalloc(w, SYSCTL_VALUE + 1, 1), v));
+}
+
+/*
  * The kernel's values whose names begin with prefix (none: all of
  * them), in the kernel's order from the one after after (NULL: the
  * first), count of them at most (0: all), each to fn.  *total is how

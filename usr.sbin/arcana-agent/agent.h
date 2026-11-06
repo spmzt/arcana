@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.246.0"
+#define	ARCANA_AGENT_VERSION	"0.247.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -1118,6 +1118,8 @@ int		 sysctl_read(struct work *, const char *, const char *,
 int		 sysctl_read_jail(struct work *, const char *,
 		    sysctl_value_f *, void *, const char **);
 bool		 sysctl_flags(const char *, bool *, bool *);
+bool		 sysctl_tunable(struct work *, const char *,
+		    struct sysctl_value *, unsigned int *);
 const char	*sysctl_conf_path(char *, size_t);
 void		 sysctl_conf_lock(void);
 void		 sysctl_conf_unlock(void);

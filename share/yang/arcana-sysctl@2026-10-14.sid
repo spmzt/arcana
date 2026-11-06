@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-sysctl",
     "module-revision": "2026-10-14",
-    "sid-file-version": 2,
+    "sid-file-version": 3,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 63 600, 100.",
     "assignment-range": [
       {
@@ -155,6 +155,36 @@
         "namespace": "data",
         "identifier": "/arcana-sysctl:sysctl/value/tunable",
         "sid": "63628"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:boot",
+        "sid": "63629"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:boot/tunable",
+        "sid": "63630"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:boot/tunable/name",
+        "sid": "63631"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:boot/tunable/pending",
+        "sid": "63632"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:boot/tunable/running",
+        "sid": "63633"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:boot/tunable/value",
+        "sid": "63634"
       }
     ]
   }

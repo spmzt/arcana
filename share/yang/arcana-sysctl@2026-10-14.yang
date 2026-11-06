@@ -172,4 +172,51 @@ module arcana-sysctl {
       }
     }
   }
+  container boot {
+    description
+      "What the loader sets for the next boot (loader.conf(5)): kernel
+       tunables, kept in /boot/loader.conf.d/arcana.conf, Arcana's
+       file, every other line kept.  The loader reads it after
+       /boot/loader.conf, so a tunable set in both is ours, and
+       before /boot/loader.conf.local, which wins over it.";
+    list tunable {
+      key "name";
+      description
+        "A tunable of the kernel's environment, set by the loader.  A
+         name without a dot is the loader's own (a module's _load) and
+         is left as it is, not listed.  net.fibs is never lowered: the
+         FIBs the kernel has stay.";
+      leaf name {
+        type string {
+          length "1..200";
+          pattern '[A-Za-z0-9][A-Za-z0-9_-]*([.][A-Za-z0-9_-]+)+';
+        }
+        description
+          "The tunable, as the kernel names it (kern.racct.enable).";
+      }
+      leaf value {
+        type string {
+          length "0..1024";
+        }
+        mandatory true;
+        description
+          "Its value, as the loader takes it: a number of the kernel's
+           type (with a k, m, g or t after it), or text.";
+      }
+      leaf running {
+        type string;
+        config false;
+        description
+          "The kernel's value now, as sysctl(8) prints it; none where
+           the kernel has no such sysctl.";
+      }
+      leaf pending {
+        type boolean;
+        config false;
+        description
+          "The value differs from running: it takes hold at the next
+           boot.";
+      }
+    }
+  }
 }

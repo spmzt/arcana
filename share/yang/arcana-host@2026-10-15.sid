@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-host",
     "module-revision": "2026-10-15",
-    "sid-file-version": 4,
+    "sid-file-version": 5,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -647,6 +647,11 @@
         "namespace": "identity",
         "identifier": "speederv2",
         "sid": "82016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/reboot-required",
+        "sid": "82017"
       },
       {
         "namespace": "data",

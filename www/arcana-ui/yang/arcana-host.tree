@@ -34,6 +34,7 @@ module: arcana-host
      |     +--ro allocated?   uint64
      |     +--ro free?        uint64
      |     +--ro health?      string
+     +--ro reboot-required?     boolean
      +---x read-certificates
         +---w input
         |  +---w jail?   string

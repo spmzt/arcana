@@ -13640,6 +13640,115 @@ datastores_sysctl_cleanup()
 	stop_daemon
 }
 
+# arcana-sysctl's boot: the kernel's tunables for the next boot, kept
+# in Arcana's /boot/loader.conf.d/arcana.conf, every other line kept;
+# running and pending against the kernel's value now, which is not
+# touched.  A value checked for the kernel's type; a name the kernel
+# does not know, and one another loader file sets, warned of to be
+# accepted; net.fibs never lowered nor taken out; one taken out its
+# line gone.  The stand-in root's /boot alone.
+atf_test_case datastores_boot cleanup
+datastores_boot_head()
+{
+	atf_set "descr" "Loader tunables for the next boot committed to" \
+	    "Arcana's loader.conf.d file"
+}
+datastores_boot_body()
+{
+	local run want n
+
+	run=$(sysctl -n kern.racct.enable)
+	want=$((1 - run))
+	n=$(sysctl -n net.fibs)
+	mkdir -p root/etc/defaults root/usr/local/etc root/boot/loader.conf.d
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\n' > root/etc/rc.conf
+	printf '# Kept.\nif_wg_load="YES"\nnet.fibs="%d"\n' "$n" \
+	    > root/boot/loader.conf.d/arcana.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	# Running: the file's tunables, the loader's own line not.
+	atf_check -o inline:"{\"arcana-sysctl:boot\":{\"tunable\":[{\"name\":\"net.fibs\",\"value\":\"$n\"}]}}\n" \
+	    "$JGC" -c "$SOCK" get -d running boot
+	atf_check -o match:"\"name\":\"net.fibs\",\"pending\":false,\"running\":\"$n\"" \
+	    "$JGC" -c "$SOCK" get boot
+	atf_check -o match:'"reboot-required":false' "$JGC" -c "$SOCK" get host
+	# Set for the next boot: the line appended, pending, the kernel's
+	# value as it was.
+	atf_check "$JGC" -c "$SOCK" edit boot \
+	    "{\"tunable\":[{\"name\":\"net.fibs\",\"value\":\"$n\"},{\"name\":\"kern.racct.enable\",\"value\":\"$want\"}]}"
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o inline:"# Kept.\nif_wg_load=\"YES\"\nnet.fibs=\"$n\"\nkern.racct.enable=\"$want\"\n" \
+	    cat root/boot/loader.conf.d/arcana.conf
+	atf_check -o match:"\"name\":\"kern.racct.enable\",\"pending\":true,\"running\":\"$run\",\"value\":\"$want\"" \
+	    "$JGC" -c "$SOCK" get boot
+	atf_check -o inline:"$run\n" sysctl -n kern.racct.enable
+	atf_check -o match:'"reboot-required":true' "$JGC" -c "$SOCK" get host
+	cp root/boot/loader.conf.d/arcana.conf before
+	# The kernel's type: a number, and in its range.
+	atf_check "$JGC" -c "$SOCK" edit boot \
+	    "{\"tunable\":[{\"name\":\"net.fibs\",\"value\":\"$n\"},{\"name\":\"kern.racct.enable\",\"value\":\"yes\"}]}"
+	atf_check -s exit:1 -e match:'kern.racct.enable="yes": not a number' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check "$JGC" -c "$SOCK" edit boot \
+	    "{\"tunable\":[{\"name\":\"net.fibs\",\"value\":\"$n\"},{\"name\":\"kern.maxusers\",\"value\":\"4g\"}]}"
+	atf_check -s exit:1 -e match:"kern.maxusers=\"4g\": out of its type's range" \
+	    "$JGC" -c "$SOCK" commit
+	atf_check cmp before root/boot/loader.conf.d/arcana.conf
+	atf_check "$JGC" -c "$SOCK" discard
+	# A name the kernel does not know: kept only when accepted.
+	atf_check "$JGC" -c "$SOCK" edit boot \
+	    "{\"tunable\":[{\"name\":\"net.fibs\",\"value\":\"$n\"},{\"name\":\"kern.racct.enable\",\"value\":\"$want\"},{\"name\":\"arcana.nosuch.knob\",\"value\":\"7\"}]}"
+	atf_check -s exit:1 -e match:'no tunable arcana.nosuch.knob.*unknown-tunable' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check cmp before root/boot/loader.conf.d/arcana.conf
+	atf_check "$JGC" -c "$SOCK" commit -a unknown-tunable
+	atf_check -o match:'^arcana.nosuch.knob="7"$' \
+	    cat root/boot/loader.conf.d/arcana.conf
+	atf_check -o match:'"name":"arcana.nosuch.knob","value":"7"' \
+	    -o not-match:'"name":"arcana.nosuch.knob","pending"' \
+	    "$JGC" -c "$SOCK" get boot
+	# One the admin's loader.conf sets too: theirs named, ours wins;
+	# loader.conf.local's wins over ours.
+	printf 'kern.maxusers="384"\n' > root/boot/loader.conf
+	printf 'kern.maxusers=400\n' > root/boot/loader.conf.local
+	cp root/boot/loader.conf.d/arcana.conf before
+	atf_check "$JGC" -c "$SOCK" edit boot \
+	    "{\"tunable\":[{\"name\":\"net.fibs\",\"value\":\"$n\"},{\"name\":\"kern.racct.enable\",\"value\":\"$want\"},{\"name\":\"arcana.nosuch.knob\",\"value\":\"7\"},{\"name\":\"kern.maxusers\",\"value\":\"512\"}]}"
+	atf_check -s exit:1 \
+	    -e match:'/boot/loader.conf sets kern.maxusers="384": arcana.conf is read after it and wins' \
+	    -e match:'/boot/loader.conf.local sets kern.maxusers="400": it is read last' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check cmp before root/boot/loader.conf.d/arcana.conf
+	atf_check "$JGC" -c "$SOCK" commit -a loader-conf-conflict
+	atf_check -o match:'^kern.maxusers="512"$' \
+	    cat root/boot/loader.conf.d/arcana.conf
+	atf_check -o inline:'kern.maxusers="384"\n' cat root/boot/loader.conf
+	# net.fibs: never below the kernel's, never taken out.
+	if [ "$n" -ge 2 ]; then
+		atf_check "$JGC" -c "$SOCK" edit boot \
+		    "{\"tunable\":[{\"name\":\"net.fibs\",\"value\":\"$((n - 1))\"}]}"
+		atf_check -s exit:1 -e match:"net.fibs=$((n - 1)): the kernel has $n FIBs" \
+		    "$JGC" -c "$SOCK" commit
+		atf_check "$JGC" -c "$SOCK" edit boot \
+		    "{\"tunable\":[{\"name\":\"kern.racct.enable\",\"value\":\"$want\"}]}"
+		atf_check -s exit:1 -e match:'net.fibs stays' \
+		    "$JGC" -c "$SOCK" commit
+		atf_check "$JGC" -c "$SOCK" discard
+	fi
+	# Taken out: their lines gone, the rest as they were.
+	atf_check "$JGC" -c "$SOCK" edit boot \
+	    "{\"tunable\":[{\"name\":\"net.fibs\",\"value\":\"$n\"}]}"
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o inline:"# Kept.\nif_wg_load=\"YES\"\nnet.fibs=\"$n\"\n" \
+	    cat root/boot/loader.conf.d/arcana.conf
+	atf_check -o match:'"reboot-required":false' "$JGC" -c "$SOCK" get host
+}
+datastores_boot_cleanup()
+{
+	stop_daemon
+}
+
 # arcana-services (PLAN-SDN-YANG 3.1.2): running is each script with
 # its rcvar and rc.conf variables from the files rc(8) reads; a commit
 # writes what differs to Arcana's rc.conf file by rcarcana.c's rules,
@@ -14090,6 +14199,7 @@ atf_init_test_cases()
 	atf_add_test_case datastores_syslog
 	atf_add_test_case datastores_ra
 	atf_add_test_case datastores_sysctl
+	atf_add_test_case datastores_boot
 	atf_add_test_case datastores_services
 	atf_add_test_case datastores_jails
 	atf_add_test_case datastores_kernel

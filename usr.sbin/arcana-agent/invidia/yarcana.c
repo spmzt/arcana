@@ -4390,6 +4390,8 @@ arcana_host_host_get(cbl_req *req, struct arcana_host *data, cbl_yarena *a)
 		return (ENOMEM);
 	if ((error = yhost_from(&h, &st, a, o)) != 0)
 		return (error);
+	o->has_reboot_required = true;
+	o->reboot_required = yboot_reboot_required(a);
 	data->host = o;
 	return (0);
 }

@@ -350,6 +350,9 @@ int	ysysctl_conf_write(struct vc_file *f,
 	    const struct arcana_sysctl_sysctl *want, char *err, size_t errlen);
 int	ykernel_kld_write(struct vc_file *f,
 	    const struct arcana_kernel_kernel *want, char *err, size_t errlen);
+/* arcana-sysctl's boot (superbia/yboot.c): whether a tunable kept for
+ * the next boot is not the kernel's value now. */
+bool	yboot_reboot_required(cbl_yarena *a);
 
 /*
  * arcana-processes (gula/yprocs.c): do_processes()' JSON in OpenConfig
