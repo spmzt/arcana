@@ -241,12 +241,12 @@ report_out(struct html *h, const char *report)
 	h_raw(h, "\">Open an issue with it</a></details>");
 }
 
+static void	logs_take(const ucl_object_t *);
+
 static void
 logs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	const ucl_object_t	*d, *l;
-	ucl_object_iter_t	 it;
-	ucl_object_t		*c;
+	const ucl_object_t	*d;
 	char			*sid;
 
 	sid = arg;
@@ -263,6 +263,100 @@ logs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		    err : "no answer");
 		return;
 	}
+	logs_take(d);
+}
+
+/* A line's level as syslogd -vv writes it, of RFC 5424's facility and
+ * severity (security is its audit). */
+static void
+line_level(ucl_object_t *c, const ucl_object_t *l)
+{
+	static const char *const sev[][2] = { { "emergency", "emerg" },
+	    { "alert", "alert" }, { "critical", "crit" }, { "error", "err" },
+	    { "warning", "warn" }, { "notice", "notice" }, { "info", "info" },
+	    { "debug", "debug" } };
+	const char	*f, *s, *p;
+	char		 lv[64];
+
+	if ((f = jstr(l, "facility")) == NULL || (s = jstr(l, "severity")) ==
+	    NULL)
+		return;
+	if ((p = strchr(f, ':')) != NULL)
+		f = p + 1;
+	for (size_t i = 0; i < nitems(sev); i++)
+		if (strcmp(s, sev[i][0]) == 0) {
+			snprintf(lv, sizeof(lv), "%s.%s", strcmp(f, "audit") ==
+			    0 ? "security" : f, sev[i][1]);
+			ucl_object_insert_key(c, ucl_object_fromstring(lv),
+			    "level", 0, true);
+		}
+}
+
+/* arcana-log's read: its files and lines as the tab has them. */
+static void
+ylog_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	static const char *const top_map[] = { "name", "name", "size", "size",
+	    "position", "position", "rotated", "rotated", NULL };
+	static const char *const file_map[] = { "name", "name", "size",
+	    "size", "packed", "packed", NULL };
+	static const char *const line_map[] = { "time", "time", "host",
+	    "host", "tag", "tag", "pid", "pid", "text", "text", "sequence",
+	    "seq", NULL };
+	const ucl_object_t	*e;
+	ucl_object_t		*d, *a, *c;
+	ucl_object_iter_t	 it;
+	char			*sid = arg;
+
+	if (strcmp(sid, lg.sid) != 0) {
+		free(sid);
+		return;
+	}
+	free(sid);
+	lg.loading = false;
+	if (status != 200 || o == NULL) {
+		snprintf(lg.error, sizeof(lg.error), "%s", err != NULL ? err :
+		    "no answer");
+		return;
+	}
+	d = jmap(o, top_map);
+	if (jget(o, "file") != NULL) {
+		a = ucl_object_typed_new(UCL_ARRAY);
+		it = NULL;
+		while ((e = ucl_object_iterate(jget(o, "file"), &it, true)) !=
+		    NULL) {
+			c = jmap(e, file_map);
+			if (jstr(e, "modified") != NULL)
+				ucl_object_insert_key(c, ucl_object_fromint(
+				    rc_time(jstr(e, "modified"))), "mtime", 0,
+				    false);
+			ucl_array_append(a, c);
+		}
+		ucl_object_insert_key(d, a, "files", 0, false);
+	}
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(o, "line"), &it, true)) != NULL) {
+		c = jmap(e, line_map);
+		line_level(c, e);
+		if (jstr(e, "seen") != NULL)
+			ucl_object_insert_key(c, ucl_object_fromint(rc_time(
+			    jstr(e, "seen"))), "seen", 0, false);
+		ucl_array_append(a, c);
+	}
+	ucl_object_insert_key(d, a, "lines", 0, false);
+	logs_take(d);
+	ucl_object_unref(d);
+}
+
+/* What was read (lines or the agent's events), taken in. */
+static void
+logs_take(const ucl_object_t *d)
+{
+	const ucl_object_t	*l;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*c;
+
 	lg.error[0] = '\0';
 	lg.fetched = arc_now();
 	/* A file turned over is read from its start: what was is old. */
@@ -313,7 +407,7 @@ static void
 logs_read(struct server *s, bool follow)
 {
 	struct html	 u;
-	const char	*p;
+	char		*q;
 	char		*url;
 
 	if (!app.online || lg.loading)
@@ -347,22 +441,27 @@ logs_read(struct server *s, bool follow)
 		free(url);
 		return;
 	}
-	h_fmt(&u, "log?lines=%d", follow ? LOGS_MAX : lg.want);
-	if (lg.name[0] != '\0')
-		h_fmt(&u, "&name=%s", lg.name);
-	if (lg.jail[0] != '\0')
-		h_fmt(&u, "&jail=%s", lg.jail);
+	h_fmt(&u, "{\"lines\":%d", follow ? LOGS_MAX : lg.want);
+	q = json_quote(lg.name[0] != '\0' ? lg.name : "messages");
+	h_fmt(&u, ",\"name\":%s", q);
+	free(q);
+	if (lg.jail[0] != '\0') {
+		q = json_quote(lg.jail);
+		h_fmt(&u, ",\"jail\":%s", q);
+		free(q);
+	}
 	if (lg.text[0] != '\0') {
-		/* Any text: escaped, as a URL has it. */
-		h_raw(&u, "&filter=");
-		for (p = lg.text; *p != '\0'; p++)
-			h_fmt(&u, "%%%02X", (unsigned int)(unsigned char)*p);
+		q = json_quote(lg.text);
+		h_fmt(&u, ",\"filter\":%s", q);
+		free(q);
 	}
 	if (follow)
-		h_fmt(&u, "&position=%lld", lg.position);
+		h_fmt(&u, ",\"position\":\"%lld\"", lg.position);
+	h_raw(&u, "}");
 	url = h_take(&u);
 	/* Followed, it is read on by itself: no task. */
-	host_read(s, url, "read the log", !follow, logs_cb, strdup(s->id));
+	host_yread(s, "arcana-log:logs/read", url, "read the log", !follow,
+	    ylog_cb, strdup(s->id));
 	free(url);
 }
 
