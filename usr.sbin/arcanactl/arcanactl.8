@@ -13,6 +13,7 @@
 .Nm
 .Op Fl -libxo Ar options
 .Op Fl nqst
+.Op Fl T Ar seconds
 .Op Fl W Ar seconds
 .Op Fl u Ar user
 .Op Fl c Ar uri
@@ -96,6 +97,14 @@ Queue the change as a job; see the end of the command list.
 .It Fl s
 Make the change in safe mode; see
 .Cm route .
+.It Fl T Ar seconds
+How long an answer is waited for, from 1 to 86400 seconds: by default
+two hours for
+.Cm console-update ,
+.Cm agent-build
+and
+.Cm agent-update ,
+which build on the host, and 15 minutes for the rest.
 .It Fl W Ar seconds
 With
 .Fl s ,

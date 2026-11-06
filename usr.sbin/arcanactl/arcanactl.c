@@ -54,6 +54,8 @@
 #define	MAX_ATTRS	(1024 * 1024)
 #define	MAX_DEPTH	32	/* a jail's root, its instances' routing in it */
 #define	TIMEOUT_MS	(15 * 60 * 1000)
+/* A build on the host (console-update, agent-build, agent-update). */
+#define	BUILD_TIMEOUT_MS	(2 * 60 * 60 * 1000)
 
 static const char *state_names[] = {
 	[ARC_JAIL_STATE_RUNNING] = "running",
@@ -81,6 +83,8 @@ static bool	queue;		/* -q: submit as a job */
 static bool	dryrun;		/* -n: run dry, nothing done */
 static bool	safe;		/* -s: undo the change unless confirmed */
 static uint32_t	safe_wait;	/* -W: for how long, 0 the agent's own */
+static int	request_ms;	/* -T: an answer waited for so long, 0 as
+				 * the command's own */
 static bool	persist;	/* -p: keep the change in rc.conf too */
 static uint32_t	fib;		/* -F: the routing table */
 static const char *netjail;	/* -j: the vnet jail whose network it is */
@@ -152,7 +156,8 @@ static void
 usage(void)
 {
 
-	xo_error("usage: arcanactl [-npqst] [-F fib] [-j jail] [-W seconds] "
+	xo_error("usage: arcanactl [-npqst] [-F fib] [-j jail] [-T seconds] "
+	    "[-W seconds] "
 	    "[-c uri] [-u user] "
 	    "[-A cafile -C certfile\n                 -K keyfile] [-N name] "
 	    "command\n"
@@ -7549,7 +7554,7 @@ main(int argc, char *argv[])
 	}
 	uri = PATH_SOCKET;
 	cafile = certfile = keyfile = name = user = NULL;
-	while ((ch = getopt(argc, argv, "+A:C:c:F:j:K:N:npqstu:W:")) != -1) {
+	while ((ch = getopt(argc, argv, "+A:C:c:F:j:K:N:npqsT:tu:W:")) != -1) {
 		switch (ch) {
 		case 'n':
 			/* As a job, run dry: what does the change at once
@@ -7587,6 +7592,12 @@ main(int argc, char *argv[])
 			break;
 		case 's':
 			safe = true;
+			break;
+		case 'T':
+			request_ms = (int)strtonum(optarg, 1, 86400, &errstr) *
+			    1000;
+			if (errstr != NULL)
+				xo_errx(2, "-T %s: %s", optarg, errstr);
 			break;
 		case 'W':
 			safe_wait = (uint32_t)strtonum(optarg, 10, 3600,
@@ -7635,7 +7646,13 @@ main(int argc, char *argv[])
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_FRAME, MAX_FRAME);
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_ATTRS, MAX_ATTRS);
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_DEPTH, MAX_DEPTH);
-	(void)cbl_ctx_set_limit(ctx, CBL_LIM_REQUEST_MS, TIMEOUT_MS);
+	/* A build on the host is waited for longer than the rest. */
+	if (request_ms == 0)
+		request_ms = strcmp(argv[0], "console-update") == 0 ||
+		    strcmp(argv[0], "agent-build") == 0 ||
+		    strcmp(argv[0], "agent-update") == 0 ? BUILD_TIMEOUT_MS :
+		    TIMEOUT_MS;
+	(void)cbl_ctx_set_limit(ctx, CBL_LIM_REQUEST_MS, request_ms);
 	if ((error = cbl_conn_new(ctx, uri, 0, &conn)) != 0)
 		xo_errx(1, "%s: %s", uri, strerror(error));
 	if (user != NULL && (error = cbl_conn_set_user(conn, user)) != 0)
