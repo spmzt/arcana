@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "app.h"
 
@@ -124,13 +125,21 @@ devs(const ucl_object_t *arr, char v[DEVS][DEVNAME], int *n)
 	return (other);
 }
 
-static void	usage_set_cb(int, const ucl_object_t *, const char *, void *);
+static void	usage_saved(struct ycommit *, int);
+static bool	rules_json(struct html *, const char *);
+static void	usage_poll(struct server *, double);
+
+/* The sampling saved: arcana-history in the candidate, committed. */
+static struct ycommit uyc = { .act = "usage-yc", .saved = "Saved: the "
+    "agent samples so.", .undone = "Undone: the sampling is as it was.",
+    .done = usage_saved };
+static void	sample_row(double *, const ucl_object_t *);
 
 static void
 usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	const ucl_object_t	*d, *row, *f;
-	ucl_object_iter_t	 it, fit;
+	const ucl_object_t	*d, *row;
+	ucl_object_iter_t	 it;
 	struct uhost		*u;
 	char			*sid;
 	double			*s;
@@ -143,38 +152,37 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (u == NULL)
 		return;
 	u->loading = false;
-	if (status != 200 || !jbool(o, "ok") || (d = jget(o, "data")) ==
-	    NULL) {
-		snprintf(u->error, sizeof(u->error), "%s", status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
-		    err : "no answer");
+	if (status != 200 || (d = o) == NULL) {
+		snprintf(u->error, sizeof(u->error), "%s", err != NULL ? err :
+		    "no answer");
 		return;
 	}
 	u->error[0] = '\0';
 	u->known = true;
-	u->mem_total = jnum(d, "mem_total", 0);
-	u->swap_total = jnum(d, "swap_total", 0);
+	u->mem_total = jnum(d, "memory-total", 0);
+	u->swap_total = jnum(d, "swap-total", 0);
 	u->bytes = jnum(d, "bytes", 0);
 	u->ncpu = (int)jint(d, "ncpu", 1);
-	u->step = (int)jint(d, "step", 5);
+	u->step = (int)jint(d, "sampling.step", 5);
 	u->lim[0] = (int)jint(jget(d, "limits"), "cpu", 0);
-	u->lim[1] = (int)jint(jget(d, "limits"), "mem", 0);
+	u->lim[1] = (int)jint(jget(d, "limits"), "memory", 0);
 	u->lim[2] = (int)jint(jget(d, "limits"), "swap", 0);
 	u->lim[3] = (int)jint(jget(d, "limits"), "storage", 0);
 	/* An agent before 0.246.0 says neither. */
-	u->has_hold = jget(d, "hold") != NULL;
-	u->hold = (int)jint(d, "hold", 0);
-	u->off = jget(d, "enabled") != NULL && !jbool(d, "enabled");
+	u->has_hold = jget(d, "sampling.hold") != NULL;
+	u->hold = (int)jint(d, "sampling.hold", 0);
+	u->off = jget(d, "sampling.enabled") != NULL && !jbool(d,
+	    "sampling.enabled");
 	/* As the console keeps it, until its list is read again. */
 	for (k = 0; k < app.nservers; k++)
-		if (jget(d, "enabled") != NULL && strcmp(app.servers[k].id,
-		    u->sid) == 0)
+		if (jget(d, "sampling.enabled") != NULL && strcmp(
+		    app.servers[k].id, u->sid) == 0)
 			app.servers[k].sampling_off = u->off;
-	keep = (int)jint(d, "keep", 720);
-	other = devs(jget(d, "nets"), u->nets, &u->nn);
-	other = devs(jget(d, "disks"), u->disks, &u->nd) || other;
-	other = devs(jget(d, "jails"), u->jails, &u->nj) || other;
-	other = devs(jget(d, "relays"), u->relays, &u->nr) || other;
+	keep = (int)jint(d, "sampling.keep", 720);
+	other = devs(jget(d, "interface"), u->nets, &u->nn);
+	other = devs(jget(d, "disk"), u->disks, &u->nd) || other;
+	other = devs(jget(d, "jail"), u->jails, &u->nj) || other;
+	other = devs(jget(d, "relay"), u->relays, &u->nr) || other;
 	u->racct = jbool(d, "racct");
 	/* The rules as they are typed: "net:igb0=125000000", a line each. */
 	{
@@ -184,7 +192,7 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 		u->rules[0] = '\0';
 		rit = NULL;
-		while ((r = ucl_object_iterate(jget(d, "rules"), &rit,
+		while ((r = ucl_object_iterate(jget(d, "rule"), &rit,
 		    true)) != NULL) {
 			len = strlen(u->rules);
 			snprintf(u->rules + len, sizeof(u->rules) - len,
@@ -212,9 +220,13 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		}
 	}
 	it = NULL;
-	while (u->keep > 0 && (row = ucl_object_iterate(jget(d, "samples"),
+	while (u->keep > 0 && (row = ucl_object_iterate(jget(d, "sample"),
 	    &it, true)) != NULL) {
-		if ((int)ucl_array_size(row) != u->stride)
+		/* Of another width: not of these devices. */
+		if ((int)(ucl_array_size(jget(row, "interface")) +
+		    ucl_array_size(jget(row, "disk")) + ucl_array_size(jget(row,
+		    "jail")) + ucl_array_size(jget(row, "relay"))) != u->nn +
+		    u->nd + u->nj + u->nr)
 			continue;
 		if (u->n == u->keep) {
 			memmove(u->v, u->v + u->stride, (size_t)(u->keep - 1) *
@@ -222,13 +234,43 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			u->n--;
 		}
 		s = u->v + (size_t)u->n * (size_t)u->stride;
-		fit = NULL;
-		for (k = 0; k < u->stride && (f = ucl_object_iterate(row,
-		    &fit, true)) != NULL; k++)
-			s[k] = ucl_object_todouble(f);
+		sample_row(s, row);
 		if (u->n > 0 && s[F_T] <= s[F_T - u->stride])
 			continue;
 		u->n++;
+	}
+}
+
+/*
+ * A sample of arcana-history's as a row: its time, CPU, load, memory,
+ * swap, bytes in, out, read and written, then each interface's in and
+ * out, each disk's read and written, each jail's CPU (whole percents)
+ * and memory, each relay's plain and added.
+ */
+static void
+sample_row(double *s, const ucl_object_t *row)
+{
+	static const char *const top[] = { "cpu", "load", "memory", "swap",
+	    "received", "sent", "read", "written" };
+	static const char *const each[][3] = { { "interface", "received",
+	    "sent" }, { "disk", "read", "written" }, { "jail", "cpu",
+	    "memory" }, { "relay", "plain", "added" } };
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	int			 k = 0;
+
+	s[k++] = (double)rc_time(jstr(row, "time"));
+	for (size_t i = 0; i < nitems(top); i++)
+		s[k++] = jnum(row, top[i], 0);
+	for (size_t i = 0; i < nitems(each); i++) {
+		it = NULL;
+		while ((e = ucl_object_iterate(jget(row, each[i][0]), &it,
+		    true)) != NULL) {
+			s[k++] = jnum(e, each[i][1], 0);
+			s[k++] = jnum(e, each[i][2], 0);
+			if (i == 2)
+				s[k - 2] = (double)(long long)(s[k - 2] + 0.5);
+		}
 	}
 }
 
@@ -236,15 +278,20 @@ static void
 usage_poll(struct server *s, double now)
 {
 	struct uhost	*u;
-	char		 url[96];
+	struct tm	 tm;
+	time_t		 t;
+	char		 in[64];
 
 	if ((u = uhost(s->id, true)) == NULL || u->loading)
 		return;
 	u->loading = true;
 	u->asked = now;
-	snprintf(url, sizeof(url), "/api/servers/%s/history?after=%.0f", s->id,
-	    u->n > 0 ? u->v[(u->n - 1) * u->stride + F_T] : 0.0);
-	api("GET", url, NULL, usage_cb, strdup(s->id));
+	/* What came after the last sample here. */
+	t = (time_t)(u->n > 0 ? u->v[(u->n - 1) * u->stride + F_T] : 0.0);
+	gmtime_r(&t, &tm);
+	strftime(in, sizeof(in), "{\"after\":\"%Y-%m-%dT%H:%M:%SZ\"}", &tm);
+	host_yread(s, "arcana-history:history/read", in, NULL, false,
+	    usage_cb, strdup(s->id));
 }
 
 /* Called when the section is opened: ask every host at once. */
@@ -267,6 +314,7 @@ usage_tick(double now)
 	struct server	*one;
 	int		 i;
 
+	ycommit_tick(&uyc, now);
 	/* Also while a nexthop group's shares are drawn from them, and
 	 * a host's alone on its Monitoring tab. */
 	one = app.node == NODE_HOST && app.tab == TAB_MONITORING ?
@@ -699,6 +747,8 @@ sampling(struct html *h, const struct uhost *u, bool alone)
 {
 	char	buf[32];
 
+	if (strcmp(uyc.sid, u->sid) == 0)
+		ycommit_note(h, &uyc);
 	h_raw(h, "<form data-form=\"usage-set\" class=\"usample\"><input "
 	    "type=\"hidden\" name=\"sid\"");
 	h_attr(h, "value", u->sid);
@@ -1047,9 +1097,10 @@ bool
 usage_form(const char *form, const ucl_object_t *f)
 {
 	struct uhost	*u;
+	struct html	 b;
 	const char	*sid;
-	char		 url[96], body[1300];
-	int		 step, keep, lim[4], k;
+	char		 url[300], *body;
+	int		 step, keep, lim[4], k, hold;
 
 	if (strcmp(form, "usage-set") != 0)
 		return (false);
@@ -1073,62 +1124,102 @@ usage_form(const char *form, const ucl_object_t *f)
 			return (true);
 		}
 	}
-	/* The rules a line each, as the agent takes them: with commas. */
-	{
-		const char	*r;
-		char		 list[1100], *q;
-		size_t		 n;
-
-		r = jstr(f, "rules") != NULL ? jstr(f, "rules") : "";
-		for (n = 0; *r != '\0' && n < sizeof(list) - 1; r++)
-			if (*r == '\n' || *r == '\r' || *r == ',') {
-				if (n > 0 && list[n - 1] != ',')
-					list[n++] = ',';
-			} else if (*r != ' ' && *r != '\t')
-				list[n++] = *r;
-		while (n > 0 && list[n - 1] == ',')
-			n--;
-		list[n] = '\0';
-		q = json_quote(list);
-		snprintf(url, sizeof(url), "/api/servers/%s/history", u->sid);
-		snprintf(body, sizeof(body), "{\"step\":%d,\"keep\":%d,"
-		    "\"cpu\":%d,\"mem\":%d,\"swap\":%d,\"storage\":%d,"
-		    "\"rules\":%s", step, keep, lim[0], lim[1], lim[2], lim[3],
-		    q);
-		free(q);
-		/* Only to an agent that has them. */
-		if (u->has_hold) {
-			k = jstr(f, "hold") != NULL && jstr(f, "hold")[0] !=
-			    '\0' ? atoi(jstr(f, "hold")) : 60;
-			if (k < 0 || k > 3600) {
-				toast(true, "A limit is held 0 to 3600 seconds");
-				return (true);
-			}
-			snprintf(body + strlen(body), sizeof(body) - strlen(body),
-			    ",\"hold\":%d,\"enabled\":%s", k, jbool(f,
-			    "enabled") ? "true" : "false");
+	/* Only to an agent that has them. */
+	hold = 60;
+	if (u->has_hold) {
+		hold = jstr(f, "hold") != NULL && jstr(f, "hold")[0] != '\0' ?
+		    atoi(jstr(f, "hold")) : 60;
+		if (hold < 0 || hold > 3600) {
+			toast(true, "A limit is held 0 to 3600 seconds");
+			return (true);
 		}
-		strlcat(body, "}", sizeof(body));
 	}
-	u->loading = true;
-	u->asked = arc_now();
+	memset(&b, 0, sizeof(b));
+	h_fmt(&b, "{\"arcana-history:history\":{\"sampling\":{\"step\":%d,"
+	    "\"keep\":%d", step, keep);
+	if (u->has_hold)
+		h_fmt(&b, ",\"hold\":%d,\"enabled\":%s", hold, jbool(f,
+		    "enabled") ? "true" : "false");
+	h_fmt(&b, "},\"limits\":{\"cpu\":%d,\"memory\":%d,\"swap\":%d,"
+	    "\"storage\":%d},\"rule\":[", lim[0], lim[1], lim[2], lim[3]);
+	if (!rules_json(&b, jstr(f, "rules") != NULL ? jstr(f, "rules") :
+	    "")) {
+		free(b.s);
+		toast(true, "A rule is net:, disk:, jail-cpu: or jail-mem:, a "
+		    "name, = and its limit");
+		return (true);
+	}
+	h_raw(&b, "]}}");
+	body = h_take(&b);
+	rc_ds(url, sizeof(url), "candidate", u->sid, "arcana-history:history");
 	u->cfg = false;
-	api("POST", url, body, usage_set_cb, strdup(u->sid));
+	if (!ycommit_save(&uyc, u->sid, "PUT", url, body))
+		toast(true, "A change of the sampling is on its way already");
+	free(body);
 	return (true);
 }
 
-/* A Set's answer: said either way, then read as any other. */
-static void
-usage_set_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+/*
+ * The rules typed, a line each or by commas ("net:igb0=125000000"), as
+ * arcana-history's rule list; false: one is not one.
+ */
+static bool
+rules_json(struct html *b, const char *text)
 {
+	static const char *const kinds[] = { "net", "disk", "jail-cpu",
+	    "jail-mem" };
+	char			*copy, *p, *tok, *colon, *eq, *end, *q;
+	unsigned long long	 lim;
+	size_t			 k;
+	int			 n = 0;
 
-	if (status != 200 || !jbool(o, "ok"))
-		toast(true, "Sampling not set: %s", status == 200 && jstr(o,
-		    "error") != NULL ? jstr(o, "error") : err != NULL ? err :
-		    "no answer");
-	else
+	if ((copy = strdup(text)) == NULL)
+		abort();
+	for (p = copy; (tok = strsep(&p, ",\n\r")) != NULL;) {
+		tok += strspn(tok, " \t");
+		tok[strcspn(tok, " \t")] = '\0';
+		if (tok[0] == '\0')
+			continue;
+		colon = strchr(tok, ':');
+		eq = colon != NULL ? strchr(colon, '=') : NULL;
+		for (k = 0; colon != NULL && k < nitems(kinds); k++)
+			if (strlen(kinds[k]) == (size_t)(colon - tok) &&
+			    strncmp(tok, kinds[k], (size_t)(colon - tok)) == 0)
+				break;
+		end = NULL;
+		lim = eq != NULL && eq[1] != '-' ? strtoull(eq + 1, &end, 10) :
+		    0;
+		if (colon == NULL || eq == NULL || k == nitems(kinds) || eq ==
+		    colon + 1 || end == NULL || end == eq + 1 || *end != '\0' ||
+		    lim == 0 || n == 32) {
+			free(copy);
+			return (false);
+		}
+		*eq = '\0';
+		q = json_quote(colon + 1);
+		h_fmt(b, "%s{\"kind\":\"%s\",\"name\":%s,\"limit\":\"%llu\"}",
+		    n++ > 0 ? "," : "", kinds[k], q, lim);
+		free(q);
+	}
+	free(copy);
+	return (true);
+}
+
+/* The sampling saved, or not: said, then read as any other. */
+static void
+usage_saved(struct ycommit *yc, int how)
+{
+	struct server	*s;
+
+	if (how == YC_SAVED)
 		toast(false, "Sampling set");
-	usage_cb(status, o, err, arg);
+	else if (how == YC_REFUSED)
+		toast(true, "Sampling not set: %s", yc->note);
+	for (int i = 0; i < app.nservers; i++) {
+		s = &app.servers[i];
+		if (strcmp(s->id, yc->sid) == 0)
+			usage_poll(s, arc_now());
+	}
 }
 
 bool
@@ -1142,6 +1233,8 @@ usage_action(const char *act, const char *arg, const char *value)
 	}
 	if (strncmp(act, "usage-", 6) != 0)
 		return (false);
+	if (ycommit_action(&uyc, act))
+		return (true);
 	if (strcmp(act, "usage-window") == 0) {
 		if (atoi(arg) == 300 || atoi(arg) == 900 || atoi(arg) ==
 		    3600 || atoi(arg) == 0)

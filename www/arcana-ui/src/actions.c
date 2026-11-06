@@ -2021,12 +2021,21 @@ service_commit_tick(double now)
 	ycommit_tick(&svc_yc, now);
 }
 
+static const char *const stats_map[] = { "cpu", "cpu_pct", "load1",
+    "load1", "load5", "load5", "load15", "load15", "memory-total",
+    "mem_total", "memory-used", "mem_used", "memory-inactive",
+    "mem_inactive", "memory-free", "mem_free", "swap-total", "swap_total",
+    "swap-used", "swap_used", NULL };
+static const char *const pool_map[] = { "name", "name", "size", "size",
+    "allocated", "alloc", "free", "free", "health", "health", NULL };
+
 static void
 stats_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	struct ctx		*c;
 	struct server		*s;
 	const ucl_object_t	*st, *p;
+	ucl_object_t		*sm;
 	ucl_object_iter_t	 it;
 	double			 total, alloc, size, used;
 	int			 i;
@@ -2037,15 +2046,20 @@ stats_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	}
 	s->stats_loading = false;
-	if (status != 200 || !jbool(o, "ok")) {
+	if (status != 200 || o == NULL) {
 		free(c);
 		return;
 	}
 	if (s->stats != NULL)
 		ucl_object_unref(s->stats);
-	s->stats = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	/* arcana-host's stats as the cards draw them. */
+	s->stats = ucl_object_typed_new(UCL_OBJECT);
+	sm = jmap(o, stats_map);
+	ucl_object_insert_key(sm, jmap_each(jget(o, "pool"), pool_map),
+	    "pools", 0, false);
+	ucl_object_insert_key(s->stats, sm, "stats", 0, false);
+	st = sm;
 	s->stats_fetched = arc_now();
-	st = jget(o, "stats");
 	/* One sample each: CPU %, memory in use %, ZFS allocated %. */
 	if (s->nhist == HISTORY) {
 		for (i = 0; i < 3; i++)
@@ -2173,15 +2187,14 @@ void
 refresh_stats(struct server *s)
 {
 	struct ctx	*c;
-	char		 url[128];
 
 	if (!app.online || s->stats_loading)
 		return;
 	s->stats_loading = true;
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
-	snprintf(url, sizeof(url), "/api/servers/%s/stats", s->id);
-	api("GET", url, NULL, stats_cb, c);
+	host_yread(s, "arcana-host:host/stats", NULL, NULL, false, stats_cb,
+	    c);
 }
 
 /*

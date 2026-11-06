@@ -4276,7 +4276,8 @@ part_hosttabs(void)
 	/* A change no part made a task for has one all the same: in the
 	 * dock's recent tasks, done. */
 	wait_js("[...document.querySelectorAll('.dock .recent .last.o-ok')]"
-	    ".some(o => o.textContent.includes('set history'))", 10);
+	    ".some(o => o.textContent.includes('set arcana-history:history'))",
+	    10);
 	run("window.fh = location.hash.split('/')[2]; document.querySelector("
 	    "'li[data-act=select-fleet]').click()");
 	wait_js("document.querySelector('article.hostcard.folded[data-arg=\"'"
