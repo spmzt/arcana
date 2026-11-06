@@ -57,7 +57,7 @@ ca_load(void)
 	if (ca.loading || !app.online)
 		return;
 	ca.loading = true;
-	api("GET", "/api/ca", NULL, ca_cb, NULL);
+	rc_get(RC_C "ca/state", NULL, ca_cb, NULL);
 }
 
 /* While a change runs, what it has done is read again. */
@@ -72,12 +72,15 @@ ca_tick(double now)
 		ca_load();
 }
 
+/* A step of the change: ca's action step, its input json or NULL. */
 static void
-ca_post(const char *json)
+ca_post(const char *step, const char *json)
 {
+	char	url[200];
 
 	ca.loading = true;
-	api("POST", "/api/ca", json, ca_cb, (void *)1);
+	snprintf(url, sizeof(url), RC_C "ca/%s", step);
+	rc_verb(url, json, NULL, ca_cb, (void *)1);
 }
 
 /* A time as its day, UTC: 2026-10-27. */
@@ -263,9 +266,9 @@ ca_form(const char *form, const ucl_object_t *f)
 
 	if (strcmp(form, "ca-make") == 0) {
 		q1 = json_quote(jstr(f, "cn") != NULL ? jstr(f, "cn") : "");
-		if (asprintf(&json, "{\"action\":\"make\",\"cn\":%s}", q1) == -1)
+		if (asprintf(&json, "{\"cn\":%s}", q1) == -1)
 			abort();
-		ca_post(json);
+		ca_post("make", json);
 		free(q1);
 		free(json);
 		return (true);
@@ -273,10 +276,9 @@ ca_form(const char *form, const ucl_object_t *f)
 	if (strcmp(form, "ca-import") == 0) {
 		q1 = json_quote(jstr(f, "cert") != NULL ? jstr(f, "cert") : "");
 		q2 = json_quote(jstr(f, "key") != NULL ? jstr(f, "key") : "");
-		if (asprintf(&json, "{\"action\":\"import\",\"cert\":%s,\"key\":"
-		    "%s}", q1, q2) == -1)
+		if (asprintf(&json, "{\"cert\":%s,\"key\":%s}", q1, q2) == -1)
 			abort();
-		ca_post(json);
+		ca_post("import", json);
 		/* The key is in no copy kept by the page. */
 		explicit_bzero(q2, strlen(q2));
 		explicit_bzero(json, strlen(json));
@@ -297,9 +299,9 @@ ca_action(const char *act, const char *arg, const char *value)
 	if (strncmp(act, "ca-", 3) != 0 && strncmp(act, "do-ca-", 6) != 0)
 		return (false);
 	if (strcmp(act, "ca-request") == 0)
-		ca_post("{\"action\":\"request\",\"cn\":\"arcana CA\"}");
+		ca_post("request", "{\"cn\":\"arcana CA\"}");
 	else if (strcmp(act, "ca-discard") == 0)
-		ca_post("{\"action\":\"discard\"}");
+		ca_post("discard", NULL);
 	else if (strcmp(act, "ca-rollout") == 0)
 		confirm("Roll out the next CA", "Each host is given both CAs to "
 		    "trust and a certificate from the next one; once every host "
@@ -323,12 +325,12 @@ ca_action(const char *act, const char *arg, const char *value)
 		    "it until enrolled again.", "Finish", true, "",
 		    "do-ca-finish-force", "", "");
 	else if (strcmp(act, "do-ca-rollout") == 0)
-		ca_post("{\"action\":\"rollout\"}");
+		ca_post("rollout", NULL);
 	else if (strcmp(act, "do-ca-rollout-force") == 0)
-		ca_post("{\"action\":\"rollout\",\"force\":true}");
+		ca_post("rollout", "{\"force\":true}");
 	else if (strcmp(act, "do-ca-finish") == 0)
-		ca_post("{\"action\":\"finish\"}");
+		ca_post("finish", NULL);
 	else if (strcmp(act, "do-ca-finish-force") == 0)
-		ca_post("{\"action\":\"finish\",\"force\":true}");
+		ca_post("finish", "{\"force\":true}");
 	return (true);
 }

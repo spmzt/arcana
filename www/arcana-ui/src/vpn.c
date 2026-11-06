@@ -526,7 +526,8 @@ client_form(const ucl_object_t *f)
 		return (true);
 	}
 	app.modal_error[0] = '\0';
-	api("POST", "/api/wg/keypair", "{}", client_keys_cb, NULL);
+	rc_verb("/restconf/operations/arcana-console:wireguard-keypair", NULL,
+	    NULL, client_keys_cb, NULL);
 	return (true);
 }
 

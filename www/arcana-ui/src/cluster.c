@@ -54,7 +54,7 @@ cl_load(void)
 	if (cl.loading || !app.online)
 		return;
 	cl.loading = true;
-	api("GET", "/api/cluster", NULL, cl_cb, NULL);
+	rc_get(RC_C "cluster", NULL, cl_cb, NULL);
 }
 
 /* Read again every CL_POLL_MS while it is shown: an election is seen. */

@@ -142,42 +142,55 @@ addToLibrary({
 		 * rejected with .status 412.
 		 */
 		store: function (shared, method, obj, etag) {
-			var id = arcPlug.caller(), o, url;
+			var id = arcPlug.caller(), o, url, node, b;
 
 			if (!id)
 				return (Promise.reject(new Error("Arcana.store: "
 				    + "from a plugin's own code only")));
-			url = "/api/plugins/" + encodeURIComponent(id) +
-			    "/store" + (shared ? "/shared" : "");
+			/* arcana-console's plugin=<id>/store or shared-store,
+			 * its tag the ETag; none stored, 404. */
+			node = shared ? "shared-store" : "store";
+			url = "/restconf/data/arcana-console:plugins/plugin=" +
+			    encodeURIComponent(id) + "/" + node;
 			o = { method: method, credentials: "same-origin",
 			    cache: "no-store", headers: { "X-Arcana": "1",
-			    Accept: "application/json" } };
+			    Accept: "application/yang-data+json" } };
 			if (method === "PUT") {
 				if (obj === null || typeof obj !== "object" ||
 				    Array.isArray(obj))
 					return (Promise.reject(new Error(
 					    "Arcana.store.put: an object")));
-				o.headers["Content-Type"] = "application/json";
-				o.body = JSON.stringify(obj);
+				o.headers["Content-Type"] =
+				    "application/yang-data+json";
+				b = {};
+				b["arcana-console:" + node] = obj;
+				o.body = JSON.stringify(b);
 				if (etag)
 					o.headers["If-Match"] = etag;
 			}
 			return (fetch(url, o).then(function (r) {
 				return (r.text().then(function (t) {
-					var j = null, e;
+					var j = null, e, x;
 
 					try {
 						j = t ? JSON.parse(t) : null;
-					} catch (x) {
+					} catch (y) {
 					}
-					if (r.ok && j !== null)
+					if (method !== "PUT" && r.status === 404 &&
+					    j && j["ietf-restconf:errors"] &&
+					    /nothing is stored/.test(t))
+						return ({ data: null, etag: null });
+					if (r.ok)
 						return (method === "PUT" ?
-						    { etag: j.etag } : {
-						    data: j.data,
-						    etag: j.etag });
-					e = new Error(j && j.error ?
-					    j.error.message || String(j.error) :
-					    "HTTP " + r.status);
+						    { etag: r.headers.get("ETag") } :
+						    { data: j ? j["arcana-console:" +
+						    node] : null, etag:
+						    r.headers.get("ETag") });
+					x = j && j["ietf-restconf:errors"] ?
+					    j["ietf-restconf:errors"].error[0] :
+					    null;
+					e = new Error(x ? x["error-message"] ||
+					    x["error-tag"] : "HTTP " + r.status);
 					e.status = r.status;
 					throw e;
 				}));

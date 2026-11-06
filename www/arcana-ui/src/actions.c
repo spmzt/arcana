@@ -35,6 +35,7 @@ struct ctx {
 
 static void	osversion_ask(const char *, bool, bool);
 static void	 who_set(const ucl_object_t *);
+static void	 kput(ucl_object_t *, const char *, ucl_object_t *);
 static struct ctx *ctx_new(void);
 static struct op *op_new(const char *, const char *);
 static struct server *server_by_id(const char *);
@@ -1220,7 +1221,7 @@ void
 check_update(void)
 {
 
-	api("GET", "/api/update", NULL, update_cb, NULL);
+	rc_get(RC_C "update", NULL, update_cb, NULL);
 }
 
 void
@@ -3242,22 +3243,48 @@ static void
 keys_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	ucl_object_t		*k;
+
 	if (app.keys != NULL)
 		ucl_object_unref(app.keys);
 	app.keys = NULL;
-	if (status == 200 && jget(o, "credentials") != NULL)
-		app.keys = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o,
-		    "credentials"));
-	else if (status != 401)
-		snprintf(app.modal_error, sizeof(app.modal_error), "%s",
-		    err != NULL ? err : "cannot load keys");
+	if (status != 200) {
+		if (status != 401)
+			snprintf(app.modal_error, sizeof(app.modal_error), "%s",
+			    err != NULL ? err : "cannot load keys");
+		return;
+	}
+	/* arcana-console's credentials: {id, name, user, alg, last_used}. */
+	app.keys = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(jget(o, "credential"), &it, true)) !=
+	    NULL) {
+		k = ucl_object_copy(e);
+		ucl_object_delete_key(k, "last-used");
+		if (jstr(e, "last-used") != NULL)
+			kput(k, "last_used", ucl_object_fromint(rc_time(jstr(e,
+			    "last-used"))));
+		ucl_array_append(app.keys, k);
+	}
 }
 
 void
 load_keys(void)
 {
 
-	api("GET", "/api/auth/credentials", NULL, keys_cb, NULL);
+	rc_get(RC_C "credentials", NULL, keys_cb, NULL);
+}
+
+static void
+key_gone_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	if (status < 200 || status > 299) {
+		keys_cb(status, o, err, arg);
+		return;
+	}
+	load_keys();
 }
 
 void
@@ -3265,8 +3292,8 @@ delete_key(const char *id)
 {
 	char	url[600];
 
-	snprintf(url, sizeof(url), "/api/auth/credentials/%s", id);
-	api("DELETE", url, NULL, keys_cb, NULL);
+	rc_edit("DELETE", rc_c(url, sizeof(url), "credentials/credential=%s",
+	    rc_key(id)), NULL, key_gone_cb, NULL);
 }
 
 static void
@@ -3799,9 +3826,9 @@ notes_load(const char *component, const char *from, const char *to,
 {
 	char	url[256];
 
-	snprintf(url, sizeof(url), "/api/update/notes?component=%s&from=%s%s%s"
-	    "%s", component, from != NULL ? from : "", to != NULL && to[0] !=
-	    '\0' ? "&to=" : "", to != NULL ? to : "", fresh ? "&fresh=1" : "");
+	snprintf(url, sizeof(url), "component=%s&from=%s%s%s%s", component,
+	    from != NULL ? from : "", to != NULL && to[0] != '\0' ? "&to=" :
+	    "", to != NULL ? to : "", fresh ? "&fresh=1" : "");
 	snprintf(app.notes_for, sizeof(app.notes_for), "%s", component);
 	app.notes_busy = true;
 	app.notes_error[0] = '\0';
@@ -3809,7 +3836,7 @@ notes_load(const char *component, const char *from, const char *to,
 		ucl_object_unref(app.notes);
 		app.notes = NULL;
 	}
-	api("GET", url, NULL, notes_cb, NULL);
+	rc_get(RC_C "update-notes", url, notes_cb, NULL);
 }
 
 void

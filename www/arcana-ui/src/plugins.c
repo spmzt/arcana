@@ -57,18 +57,42 @@ static void
 list_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	ucl_object_t		*m, *a, *p;
+
 	pl.loading = false;
 	pl.busy[0] = '\0';
 	if (status != 200 || o == NULL) {
-		snprintf(pl.error, sizeof(pl.error), "%s", jstr(o,
-		    "error.message") != NULL ? jstr(o, "error.message") : err !=
-		    NULL ? err : "no answer");
+		snprintf(pl.error, sizeof(pl.error), "%s", err != NULL ? err :
+		    "no answer");
 		return;
 	}
 	pl.error[0] = '\0';
+	/* arcana-console's plugins as bridge.js takes them: {dir, plugins:
+	 * [{id, ..., provides, files}]}. */
+	m = ucl_object_typed_new(UCL_OBJECT);
+	if (jstr(o, "directory") != NULL)
+		ucl_object_insert_key(m, ucl_object_fromstring(jstr(o,
+		    "directory")), "dir", 0, false);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(jget(o, "plugin"), &it, true)) !=
+	    NULL) {
+		p = ucl_object_copy(e);
+		if (jget(p, "provides") == NULL)
+			ucl_object_insert_key(p, ucl_object_typed_new(
+			    UCL_ARRAY), "provides", 0, false);
+		if (jget(e, "file") != NULL) {
+			ucl_object_insert_key(p, ucl_object_copy(jget(e,
+			    "file")), "files", 0, false);
+			ucl_object_delete_key(p, "file");
+		}
+		ucl_array_append(a, p);
+	}
+	ucl_object_insert_key(m, a, "plugins", 0, false);
 	if (pl.o != NULL)
 		ucl_object_unref(pl.o);
-	pl.o = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	pl.o = m;
 	pl.fetched = arc_now();
 	give();
 }
@@ -80,7 +104,20 @@ list_load(void)
 	if (pl.loading || !app.online)
 		return;
 	pl.loading = true;
-	api("GET", "/api/plugins", NULL, list_cb, NULL);
+	rc_get(RC_C "plugins", NULL, list_cb, NULL);
+}
+
+/* One enabled or not (204): the list read again. */
+static void
+enabled_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	if (status < 200 || status > 299) {
+		list_cb(status, o, err, arg);
+		return;
+	}
+	pl.loading = false;
+	list_load();
 }
 
 /*
@@ -289,7 +326,7 @@ menu_set(const char *id, const char *json)
 bool
 plugins_action(const char *act, const char *arg, const char *value)
 {
-	char	body[32], url[96];
+	char	body[48], url[200];
 
 	if (strcmp(act, "plugin-open") == 0) {
 		plugins_open(arg);
@@ -323,11 +360,12 @@ plugins_action(const char *act, const char *arg, const char *value)
 		    40)
 			return (true);
 		snprintf(pl.busy, sizeof(pl.busy), "%s", arg);
-		snprintf(url, sizeof(url), "/api/plugins/%s", arg);
-		snprintf(body, sizeof(body), "{\"enabled\":%s}",
+		rc_c(url, sizeof(url), "plugins/plugin=%s/enabled",
+		    rc_key(arg));
+		snprintf(body, sizeof(body), "{\"arcana-console:enabled\":%s}",
 		    strcmp(value, "1") == 0 ? "true" : "false");
 		pl.loading = true;
-		api("POST", url, body, list_cb, NULL);
+		rc_edit("PUT", url, body, enabled_cb, NULL);
 	} else
 		return (false);
 	return (true);

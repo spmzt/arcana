@@ -118,8 +118,8 @@ ask(void)
 	ucl_object_unref(b);
 	ts.busy = true;
 	ts.error[0] = '\0';
-	api("POST", "/api/troubleshoot/path", json, path_cb, (void *)(uintptr_t)
-	    ++ts.asked);
+	rc_verb("/restconf/operations/arcana-console:trace-path", json, NULL,
+	    path_cb, (void *)(uintptr_t)++ts.asked);
 	free(json);
 }
 
