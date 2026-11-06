@@ -1195,7 +1195,7 @@ part_hosts(void)
 	 * read again every few seconds while the page is in view.
 	 */
 	run("window.listed = 0; const of2 = window.fetch; window.fetch = "
-	    "function (u, o) { if (String(u).endsWith('/jails')) "
+	    "function (u, o) { if (String(u).endsWith(':jails')) "
 	    "window.listed++; return of2.call(this, u, o); };");
 	wait_js("window.listed >= 1", 15);
 

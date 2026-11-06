@@ -189,14 +189,35 @@ jm_reset(struct server *s)
 static void
 got_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	ucl_object_t	**where = arg;
+	static const char *const nt[] = { "name", "name", "text", "text",
+	    NULL };
+	ucl_object_t	**where = arg, *d;
 
 	(void)err;
-	if (status != 200 || jget(o, "data") == NULL)
+	if (status != 200 || o == NULL)
 		return;
+	/* Each as the forms read it: the files by jail-files' names, the
+	 * snapshots and interfaces their lists. */
+	d = ucl_object_typed_new(UCL_OBJECT);
+	if (where == &jm.files) {
+		ucl_object_insert_key(d, jget(o, "defaults") != NULL ?
+		    ucl_object_copy(jget(o, "defaults")) : ucl_object_typed_new(
+		    UCL_OBJECT), "defaults", 0, false);
+		if (jstr(o, "directory") != NULL)
+			ucl_object_insert_key(d, ucl_object_fromstring(jstr(o,
+			    "directory")), "dir", 0, false);
+		ucl_object_insert_key(d, jmap_each(jget(o, "template"), nt),
+		    "templates", 0, false);
+		ucl_object_insert_key(d, jmap_each(jget(o, "jail"), nt),
+		    "jails", 0, false);
+	} else if (jget(o, where == &jm.snaps ? "snapshot" : "interface") !=
+	    NULL)
+		ucl_object_insert_key(d, ucl_object_copy(jget(o, where ==
+		    &jm.snaps ? "snapshot" : "interface")), where == &jm.snaps ?
+		    "snapshots" : "interfaces", 0, false);
 	if (*where != NULL)
 		ucl_object_unref(*where);
-	*where = ucl_object_copy(jget(o, "data"));
+	*where = d;
 	if (app.modal == MODAL_JAIL_NEW || app.modal == MODAL_JAIL_DEFAULTS ||
 	    app.modal == MODAL_JAIL_FILES || app.modal == MODAL_JAIL_TEMPLATE)
 		render();
@@ -206,15 +227,14 @@ got_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 jm_load(struct server *s)
 {
-	char	url[128];
 
 	jm_reset(s);
-	snprintf(url, sizeof(url), "/api/servers/%s/jails/files", s->id);
-	api("GET", url, NULL, got_cb, &jm.files);
-	snprintf(url, sizeof(url), "/api/servers/%s/storage/snapshots", s->id);
-	api("GET", url, NULL, got_cb, &jm.snaps);
-	snprintf(url, sizeof(url), "/api/servers/%s/net/interfaces", s->id);
-	api("GET", url, NULL, got_cb, &jm.ifs);
+	host_yread(s, "arcana-jails:jails/arcana-jail-files:read-files", "{}",
+	    NULL, false, got_cb, &jm.files);
+	host_yread(s, "arcana-storage:storage/read", "{\"kind\":\"snapshots\"}",
+	    NULL, false, got_cb, &jm.snaps);
+	host_yread(s, "ietf-interfaces:interfaces?fields=interface/name", NULL,
+	    NULL, false, got_cb, &jm.ifs);
 }
 
 /* The jails list's buttons. */

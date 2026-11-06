@@ -31,6 +31,7 @@ struct ctx {
 	int	net_kind;	/* the network table asked for */
 	bool	more;		/* rows to add to those there are */
 	int	op_family;	/* and its family */
+	ucl_object_t *held;	/* a first read's, while a second is asked */
 };
 
 static void	osversion_ask(const char *, bool, bool);
@@ -1584,8 +1585,114 @@ refresh_servers(void)
 		load_settings();
 }
 
+/* A jail of arcana-jails' as the pages have it. */
+static ucl_object_t *
+jail_row(const ucl_object_t *j)
+{
+	static const char *const map[] = { "name", "name", "state", "state",
+	    "jid", "jid", "configured", "configured", "scope", "scope",
+	    "hostname", "hostname", "path", "path", "ip4", "ip4", "ip6", "ip6",
+	    "vnet", "vnet", "plugin", "plugins", "osrelease", "osrelease",
+	    "persist", "persist", "boot", "boot", "allow", "allow",
+	    "interface", "interface", "nproc", "nproc", "rss", "rss_kb", "cpu",
+	    "cpu_pct", "securelevel", "securelevel", "children", "children",
+	    NULL };
+	static const char *const pmap[] = { "name", "key", "value", "values",
+	    NULL };
+	const ucl_object_t	*p;
+	ucl_object_t		*r, *ps, *e;
+	ucl_object_iter_t	 it = NULL;
+
+	r = jmap(j, map);
+	if (jstr(r, "state") == NULL)
+		kput(r, "state", ucl_object_fromstring("unknown"));
+	if (jget(r, "jid") == NULL)
+		kput(r, "jid", ucl_object_typed_new(UCL_NULL));
+	if (jget(r, "ip4") == NULL)
+		kput(r, "ip4", ucl_object_typed_new(UCL_ARRAY));
+	if (jget(r, "ip6") == NULL)
+		kput(r, "ip6", ucl_object_typed_new(UCL_ARRAY));
+	ps = ucl_object_typed_new(UCL_ARRAY);
+	while ((p = ucl_object_iterate(jget(j, "param"), &it, true)) != NULL) {
+		e = jmap(p, pmap);
+		if (jget(e, "values") == NULL)
+			kput(e, "values", ucl_object_typed_new(UCL_ARRAY));
+		ucl_array_append(ps, e);
+	}
+	kput(r, "params", ps);
+	return (r);
+}
+
+/*
+ * The host as its list has it, of arcana-host's host: its agent's
+ * version, build, timer and features beside the host's own.
+ */
+static ucl_object_t *
+host_row(const ucl_object_t *h)
+{
+	static const char *const map[] = { "hostname", "hostname", "sysname",
+	    "sysname", "release", "release", "machine", "machine", "ncpu",
+	    "ncpu", "physmem", "physmem", "securelevel", "securelevel",
+	    "privileged", "privileged", "reboot-required", "reboot_required",
+	    "agent.version", "version", "agent.build", "build",
+	    "agent.safe-wait", "safe_wait", "agent.feature", "features", NULL };
+	const ucl_object_t	*p;
+	ucl_object_t		*r, *pl;
+	ucl_object_iter_t	 it = NULL;
+	const char		*n;
+
+	r = jmap(h, map);
+	kput(r, "boottime", ucl_object_fromint(rc_time(jstr(h, "boot-time"))));
+	kput(r, "time", ucl_object_fromint(rc_time(jstr(h, "time"))));
+	if (jget(r, "features") == NULL)
+		kput(r, "features", ucl_object_typed_new(UCL_ARRAY));
+	/* Its plugins by their names, without their identities' module. */
+	pl = ucl_object_typed_new(UCL_ARRAY);
+	while ((p = ucl_object_iterate(jget(h, "plugin"), &it, true)) !=
+	    NULL) {
+		n = ucl_object_tostring_forced(p);
+		ucl_array_append(pl, ucl_object_fromstring(strchr(n, ':') !=
+		    NULL ? strchr(n, ':') + 1 : n));
+	}
+	kput(r, "plugins", pl);
+	return (r);
+}
+
+static void	jails_host_cb(int, const ucl_object_t *, const char *, void *);
+
+/* arcana-jails' jails read: the host's own asked next. */
 static void
 jails_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx		*c = arg;
+	struct server		*s;
+	const ucl_object_t	*e;
+	ucl_object_t		*l, *rows, *errs;
+	ucl_object_iter_t	 it = NULL;
+
+	if (status != 200 || (s = server_by_id(c->sid)) == NULL) {
+		jails_host_cb(status, NULL, err, c);
+		return;
+	}
+	l = ucl_object_typed_new(UCL_OBJECT);
+	rows = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(jget(o, "jail"), &it, true)) != NULL)
+		ucl_array_append(rows, jail_row(e));
+	kput(l, "jails", rows);
+	kput(l, "scopes", jget(o, "scope") != NULL ? ucl_object_copy(jget(o,
+	    "scope")) : ucl_object_typed_new(UCL_ARRAY));
+	errs = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(o, "conf-error"), &it, true)) !=
+	    NULL)
+		ucl_array_append(errs, ucl_object_copy(e));
+	kput(l, "conf_errors", errs);
+	c->held = l;
+	host_yread(s, "arcana-host:host", NULL, NULL, false, jails_host_cb, c);
+}
+
+static void
+jails_host_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	struct ctx	*c;
 	struct server	*s;
@@ -1594,25 +1701,33 @@ jails_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	c = arg;
 	op = c->op != 0 ? op_find(c->op) : NULL;
 	if ((s = server_by_id(c->sid)) == NULL) {
+		if (c->held != NULL)
+			ucl_object_unref(c->held);
 		free(c);
 		return;
 	}
 	s->loading = false;
 	/* Given up here: that says nothing about the host. */
 	if (status == 0 && err != NULL && strcmp(err, "cancelled") == 0) {
-		op_done(op, false, o, err);
+		op_done(op, false, NULL, err);
+		if (c->held != NULL)
+			ucl_object_unref(c->held);
 		free(c);
 		return;
 	}
-	if (status == 200) {
+	if (status == 200 && c->held != NULL) {
 		if (s->list != NULL)
 			ucl_object_unref(s->list);
-		s->list = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+		kput(c->held, "host", host_row(o));
+		s->list = c->held;
+		c->held = NULL;
 		s->fetched = arc_now();
 		s->failed = false;
 		s->error[0] = '\0';
-		op_done(op, jbool(o, "ok"), o, jstr(o, "error"));
+		op_done(op, true, NULL, NULL);
 	} else {
+		if (c->held != NULL)
+			ucl_object_unref(c->held);
 		/* Whether the console is away is the health check's to say. */
 		if (status == 0)
 			check_health();
@@ -1636,7 +1751,6 @@ refresh_jails(struct server *s, bool user)
 {
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[128], title[160];
 
 	if (!app.online || (s->loading && !user))
 		return;
@@ -1646,16 +1760,12 @@ refresh_jails(struct server *s, bool user)
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	c->user = user = user && !app.quiet;
-	snprintf(url, sizeof(url), "/api/servers/%s/jails", s->id);
 	/* Asked for: a task, its steps drawn as the host takes them. */
 	if (user) {
-		snprintf(title, sizeof(title), "list jails");
-		op = op_new(title, s->name);
+		op = op_new("list jails", s->name);
 		c->op = op->id;
-		live_read(s->id, "jails", url, c->op, jails_cb, c);
-		return;
 	}
-	op_wait(c->op, api("GET", url, NULL, jails_cb, c));
+	host_yread(s, "arcana-jails:jails", NULL, NULL, user, jails_cb, c);
 }
 
 /* A tab's read asked for: its task, then what the tab does with it. */
@@ -3097,10 +3207,8 @@ address_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	c = arg;
 	op = op_find(c->op);
-	ok = status == 200 && jbool(o, "ok");
-	if (status == 200 && !ok)
-		err = jstr(o, "error");
-	op_done(op, ok, o, err);
+	ok = status == 200 || status == 204;
+	op_done(op, ok, NULL, err);
 	diff = jstr(o, "diff");
 	if (op != NULL && diff != NULL)
 		op->diff = strdup(diff);
@@ -3183,16 +3291,16 @@ address_change(const char *jail, const char *address, bool remove, bool live,
 		jailui(s, jail)->pending = PEND_ADDRESS;
 	app.modal_busy = true;
 	app.modal_error[0] = '\0';
-	snprintf(url, sizeof(url), "/api/servers/%s/jails/%s/address", s->id,
-	    url_word(jail) ? jail : "-");
+	/* The preview: arcana-network's address on the jail, a dry run. */
+	rc_h(url, sizeof(url), s->id, "arcana-jails:jails/jail=%s/"
+	    "arcana-network:address", rc_key(jail));
 	qa = json_quote(address);
 	if (asprintf(&body, "{\"address\":%s,\"remove\":%s,\"live\":%s,"
-	    "\"persist\":%s,\"dry_run\":%s}", qa, remove ? "true" : "false",
-	    live ? "true" : "false", persist ? "true" : "false",
-	    dry_run ? "true" : "false") == -1)
+	    "\"persist\":%s,\"dry-run\":true}", qa, remove ? "true" : "false",
+	    live ? "true" : "false", persist ? "true" : "false") == -1)
 		abort();
 	free(qa);
-	api("POST", url, body, address_cb, c);
+	rc_action(url, body, NULL, address_cb, c);
 	free(body);
 }
 
