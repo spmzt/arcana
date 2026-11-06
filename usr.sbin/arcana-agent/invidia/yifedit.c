@@ -893,9 +893,12 @@ keep_made(struct work *w, struct rca *x, const char *ri,
 	if (error != 0 || sp->tunnel_local == NULL)
 		return (error);
 	wv = words(w, rca_get(x, name), &n);
+	/* The old ends dropped, and the loop past them: not read again. */
 	for (size_t i = 0; i + 2 < n; i++)
-		if (strcmp(wv[i], "tunnel") == 0)
+		if (strcmp(wv[i], "tunnel") == 0) {
 			wv[i] = wv[i + 1] = wv[i + 2] = NULL;
+			i += 2;
+		}
 	return (rca_set(x, name, wfmt(w, "tunnel %s %s%s%s", sp->tunnel_local,
 	    sp->tunnel_remote, n > 0 ? " " : "", joined(w, wv, n)), err,
 	    errlen));

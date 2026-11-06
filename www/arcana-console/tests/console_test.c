@@ -14355,6 +14355,30 @@ sdwan_apply_done(void)
 	resp_free(&r);
 }
 
+CONSOLE_TC_LONG(sdwan_apply_fresh, "SD-WAN applied, then made all again "
+    "(fresh): the tunnels kept in rc.conf made again, the agents alive")
+ATF_TC_BODY(sdwan_apply_fresh, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		sa[16], sb[16];
+	char		doc[8192], lifn[32], laddr[64];
+
+	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
+	    sizeof(lifn), laddr, sizeof(laddr));
+	sdwan_apply_done();
+	/* ifconfig_gif102 holds its tunnel's ends and more: replaced, the
+	 * rest kept (the agent once read the words it had dropped). */
+	http("POST", "/api/sdwan/apply", accepting(true), &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
+	    r.body);
+	resp_free(&r);
+	ATF_CHECK(system("! grep -Ei 'signal|core' arcana-agent.out") == 0);
+}
+
 CONSOLE_TC(sdwan_apply_plan, "SD-WAN planned for the edges: the lists "
     "fetched and kept, the plan's tunnels, rules, instances and edits; a "
     "policy that requires encryption, IPv6 without inner addresses, a "
@@ -15754,9 +15778,7 @@ ATF_TC_BODY(sdwan_apply_rollback, tc)
 	    sizeof(lifn), laddr, sizeof(laddr));
 	sdwan_apply_done();
 	/* Kept with the MPLS tunnel a geneve one, as sdwan_apply_plan's
-	 * last, as sdwan_apply's rollback had it.  (gif102 made again by a
-	 * fresh apply crashes the agent: keep_made, yifedit.c, compares
-	 * the words of ifconfig_gif102 it has just nulled.) */
+	 * last, as sdwan_apply's rollback had it. */
 	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"", "\"kind\":\"geneve\"", t1,
 	    sizeof(t1)));
 	ATF_REQUIRE(swap_in(t1, "\"version\":0", "\"version\":1", doc,
@@ -19982,6 +20004,7 @@ ATF_TP_ADD_TCS(tp)
 {
 	/* The longest first: kyua starts them in this order. */
 	ATF_TP_ADD_TC(tp, sdwan_apply_rollback);
+	ATF_TP_ADD_TC(tp, sdwan_apply_fresh);
 	ATF_TP_ADD_TC(tp, troubleshoot_hang);
 	ATF_TP_ADD_TC(tp, sdwan_apply_identities);
 	ATF_TP_ADD_TC(tp, notify_cooldown_again);
