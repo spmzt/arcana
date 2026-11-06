@@ -2319,6 +2319,54 @@ bad:
 	    "is {\"%s\": {...}}, or none", key));
 }
 
+/* Member name of o, bare or qualified by arcana-jobs. */
+static ucl_object_t *
+job_member(const ucl_object_t *o, const char *name)
+{
+	const ucl_object_t	*v;
+	char			 key[64];
+
+	if ((v = ucl_object_lookup(o, name)) == NULL) {
+		snprintf(key, sizeof(key), "arcana-jobs:%s", name);
+		v = ucl_object_lookup(o, key);
+	}
+	return (__DECONST(ucl_object_t *, v));
+}
+
+int
+restconf_safe_wait(struct rcreq *r, int wait, const char **why)
+{
+	const ucl_object_t	*in, *v;
+	ucl_object_t		*ch;
+	ucl_object_iter_t	 it = NULL;
+	int64_t			 k;
+
+	if (r == NULL || r->act == NULL || r->act->kind != CBL_YN_RPC ||
+	    strcmp(r->act->module->name, "arcana-jobs") != 0 ||
+	    (strcmp(r->act->name, "submit") != 0 &&
+	    strcmp(r->act->name, "dry-run") != 0) ||
+	    (in = ucl_object_lookup(r->body, "arcana-jobs:input")) == NULL)
+		return (0);
+	while ((ch = __DECONST(ucl_object_t *, ucl_object_iterate(
+	    job_member(in, "change"), &it, true))) != NULL) {
+		if ((v = job_member(ch, "safe-wait")) != NULL) {
+			/* Its own, within /api's bounds (servers.c). */
+			if (ucl_object_type(v) != UCL_INT ||
+			    (k = ucl_object_toint(v)) < SAFE_WAIT_MIN ||
+			    k > SAFE_WAIT_MAX)
+				return (refuse(r, 400, "invalid-value", why,
+				    "safe-wait is %d to %d seconds",
+				    SAFE_WAIT_MIN, SAFE_WAIT_MAX));
+			continue;
+		}
+		v = job_member(ch, "safe");
+		if (wait > 0 && v != NULL && ucl_object_toboolean(v))
+			ucl_object_insert_key(ch, ucl_object_fromint(wait),
+			    "safe-wait", 0, true);
+	}
+	return (0);
+}
+
 /*
  * The role on its host r's action needs (PLAN-SDN-YANG 4.3.4): a
  * viewer's what only reads, as /api's routes have them; an admin's the

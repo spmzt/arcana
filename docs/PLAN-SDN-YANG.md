@@ -1813,8 +1813,15 @@ whose first part is served.
   restconf_actions (a jail started, a sysctl read and a job
   submitted as /api's, bad input by the host's schema, the roles,
   tokens, CSRF, YANG-CBOR), restconf_actions_old (ARCANA_OLD_AGENT:
-  an rpc and an action it lacks, 404).  Open: the job's safe-wait
-  /api fills from the host's timer is the client's to give.
+  an rpc and an action it lacks, 404).  A job's safe-wait as /api's:
+  arcana-jobs' submit and dry-run through the mount (a page's, or the
+  console's own, hosts_restconf()) give each safe change that says
+  none the host's timer, else Settings' (servers_safe_wait()); one it
+  says wins, 10 to 3600 s as /api's server timer, else 400
+  invalid-value (console 0.380.1, restconf_safe_wait()); check:
+  console_test restconf_jobs_safe_wait (the host's 15 s and
+  Settings' 25 s in the job's trace, its own 40 s, 3601 and 5
+  refused).
 - 4.4.1 done (console cyang.c, share/yang arcana-console at SIDs
   91800-92099): the console's own as `/restconf/data/arcana-console:`
   settings, tokens, users, roles, groups, enrolment, workflows and

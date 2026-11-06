@@ -4221,8 +4221,11 @@ api_restconf_host(struct http_request *req)
 			    "not JSON"));
 		}
 	}
+	/* A job's safe-wait the host's timer, as /api's (OP_JOB_SUBMIT). */
 	if ((st = restconf_prepare(c->rc, req->method, ctype, body,
-	    &why)) == 0 && (st = restconf_media(c->rc, accept, &why)) == 0)
+	    &why)) == 0 && (st = restconf_safe_wait(c->rc,
+	    servers_safe_wait(c->uri), &why)) == 0 &&
+	    (st = restconf_media(c->rc, accept, &why)) == 0)
 		st = restconf_precondition(req, c->rc, c->uri);
 	if (st != 0) {
 		(void)restconf_refuse(req, c->rc, c->uri, st, why);
@@ -6477,7 +6480,8 @@ hosts_restconf(const char *sid, const char *uri, const char *peer,
 	if ((st = restconf_prepare(c->rc, method, body == NULL ? NULL :
 	    ucl_object_lookup(body, "ietf-yang-patch:yang-patch") != NULL ?
 	    "application/yang-patch+json" : "application/yang-data+json", body,
-	    &why)) != 0) {
+	    &why)) != 0 || (st = restconf_safe_wait(c->rc,
+	    servers_safe_wait(uri), &why)) != 0) {
 		restconf_free(c->rc);
 		free(c);
 		*status = st;

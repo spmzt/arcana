@@ -10586,6 +10586,80 @@ ATF_TC_BODY(stream_restconf, tc)
 	close(ws);
 }
 
+/* A safe if-address job submitted through the fleet mount, its
+ * safe-wait (0: none) said; the timer its trace says, -1 refused. */
+static int
+rc_safe_job(const char *data, const char *id, const char *addr, int wait)
+{
+	struct resp	 r;
+	char		 path[512], body[512], sw[32];
+	const char	*t;
+	int		 i, timer = -1;
+
+	snprintf(sw, sizeof(sw), ",\"safe-wait\":%d", wait);
+	snprintf(body, sizeof(body), "{\"arcana-jobs:input\":{\"change\":[{"
+	    "\"if-address\":{\"interface\":\"lo0\",\"address\":\"%s\"},"
+	    "\"safe\":true%s}]}}", addr, wait > 0 ? sw : "");
+	snprintf(path, sizeof(path), "%s/arcana-jobs:submit", data);
+	http("POST", path, body, &r);
+	if (r.status != 200) {
+		ATF_CHECK_MSG(r.status == 400 && jstr(&r, ERROR_TAG) != NULL &&
+		    strcmp(jstr(&r, ERROR_TAG), "invalid-value") == 0, "%d %s",
+		    r.status, r.body);
+		resp_free(&r);
+		return (-1);
+	}
+	ATF_REQUIRE_MSG(jstr(&r, "arcana-jobs:output.id.0") != NULL, "%s",
+	    r.body);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs/%s", id, jstr(&r,
+	    "arcana-jobs:output.id.0"));
+	resp_free(&r);
+	/* /api's read confirms it. */
+	for (i = 0; i < 200; i++) {
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		if (strcmp(jstr(&r, "job.state"), "done") == 0)
+			break;
+		resp_free(&r);
+		usleep(50000);
+	}
+	ATF_REQUIRE_MSG(i < 200, "the safe job did not finish");
+	if ((t = strstr(r.body, "the timer was ")) != NULL)
+		timer = atoi(t + strlen("the timer was "));
+	ATF_CHECK_MSG(timer > 0, "%s", r.body);
+	resp_free(&r);
+	return (timer);
+}
+
+CONSOLE_TC(restconf_jobs_safe_wait, "arcana-jobs:submit through the fleet "
+    "mount: a safe change with no safe-wait takes the host's timer, else "
+    "Settings', as /api's job does; its own wins, out of /api's bounds 400")
+ATF_TC_BODY(restconf_jobs_safe_wait, tc)
+{
+	struct resp	 r;
+	char		 data[256], cand[256], api[128], id[16];
+
+	rc_lab(tc, data, cand, sizeof(cand));
+	snprintf(id, sizeof(id), "%s", strrchr(data, '=') + 1);
+	snprintf(api, sizeof(api), "/api/servers/%s", id);
+	http("POST", api, "{\"safe_wait\":15}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK_EQ(15, rc_safe_job(data, id, "10.9.1.1/24", 0));
+	ATF_CHECK_EQ(40, rc_safe_job(data, id, "10.9.1.2/24", 40));
+	/* None of the host's: Settings'. */
+	http("POST", api, "{\"safe_wait\":0}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"safe_wait\":\"25\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK_EQ(25, rc_safe_job(data, id, "10.9.1.3/24", 0));
+	/* /api's bounds, 10 to 3600 s. */
+	ATF_CHECK_EQ(-1, rc_safe_job(data, id, "10.9.1.4/24", 3601));
+	ATF_CHECK_EQ(-1, rc_safe_job(data, id, "10.9.1.4/24", 5));
+}
+
 /*
  * An agent of a release before (ARCANA_OLD_AGENT) lacks actions the
  * console's tables have: a clean 404, its module there all the same.
@@ -20909,6 +20983,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf_actions_old);
 	ATF_TP_ADD_TC(tp, stream_restconf);
 	ATF_TP_ADD_TC(tp, restconf_job_confirm);
+	ATF_TP_ADD_TC(tp, restconf_jobs_safe_wait);
 	ATF_TP_ADD_TC(tp, sapnet);
 	ATF_TP_ADD_TC(tp, sapnet_attach);
 	ATF_TP_ADD_TC(tp, enrol);

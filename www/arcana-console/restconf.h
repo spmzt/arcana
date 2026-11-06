@@ -52,6 +52,13 @@ int		 restconf_precondition(struct http_request *req,
 int		 restconf_refuse(struct http_request *req, struct rcreq *r,
 		    const char *uri, int status, const char *why);
 bool		 restconf_confirms(const struct rcreq *r);
+/*
+ * arcana-jobs' submit and dry-run: each safe change saying no
+ * safe-wait given wait (the host's timer, servers_safe_wait(); 0 the
+ * agent's own), one it says checked as /api's; 0, or 400 and *why.
+ */
+int		 restconf_safe_wait(struct rcreq *r, int wait,
+		    const char **why);
 void		 restconf_run(cbl_conn *conn, struct rcreq *r, const char *id,
 		    const char *name, const char *uri, char **json,
 		    int *status);
