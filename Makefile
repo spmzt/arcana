@@ -102,22 +102,39 @@ _deps-build: .PHONY
 	    ${.OBJDIR}/deps.out 2>&1 || { cat ${.OBJDIR}/deps.out; \
 	    echo "The build needs what is missing above." >&2; exit 1; }
 
-TESTDIRS=	lib/libjailconf/tests \
-		lib/libvarconf/tests \
-		usr.sbin/jailconf/tests \
-		usr.sbin/arcana-agent/tests
+# The longest first: kyua starts the cases in this order.
+TESTDIRS=
 .if ${MK_CONSOLE} != "no"
 TESTDIRS+=	www/arcana-console/tests
 .endif
+TESTDIRS+=	usr.sbin/arcana-agent/tests \
+		lib/libjailconf/tests \
+		lib/libvarconf/tests \
+		usr.sbin/jailconf/tests
 
-# A failed or broken test fails the target, with kyua's report on it
-# (less the environment, which can hold secrets).  The suites run at
-# the same time, and the cases of each side by side, CHECK_JOBS of them
-# at once: each has a directory and sockets of its own.  Each suite's
-# lines carry its name, as they come interleaved; the build before it
-# is made with as many jobs.  kyua's directories under $HOME are made
-# first: four kyua starting at once on a fresh home race for them.
+# Every suite under one kyua, its Kyuafile in obj/ including theirs:
+# CHECK_PARALLEL cases side by side, each with a directory and sockets
+# of its own; one that needs the machine to itself says so
+# (is.exclusive).  The build before is made with CHECK_JOBS jobs.  A
+# failed or broken test fails the target, with kyua's report on it
+# (less the environment, which can hold secrets).  Each line names its
+# suite's directory, then its case.  One and a half cases a CPU: most
+# wait on a daemon or a browser; at two, the browsers' waits run out.
 CHECK_JOBS?=	12
+.if !defined(CHECK_PARALLEL)
+CHECK_PARALLEL!=	echo $$(($$(sysctl -n hw.ncpu) * 3 / 2))
+.endif
+# check-root's cases: those of the host's shared state are exclusive.
+CHECK_ROOT_PARALLEL?=	6
+_KYUA_TOP=	${.OBJDIR}/Kyuafile
+_KYUA_OUT=	sed -n '/->/p;$$p' | sed -E 's|^([^ ]*/tests)/|\1: |'
+_KYUA_FAIL=	kyua report --results-file="$$db" --verbose \
+		    --results-filter broken,failed | awk '/^===> /{ \
+		    ctx = $$0 == "===> Execution context" } !ctx'
+kyuafile: .PHONY
+	@{ echo 'syntax(2)'; echo 'test_suite("arcana")'; \
+	    for d in ${TESTDIRS}; do echo "include(\"$$d/Kyuafile\")"; \
+	    done; } > ${_KYUA_TOP}
 # The wire: the YANG modules share/arcana/wire.awk writes from the specs
 # and their .sid files, committed in share/yang; regen-wire remakes them
 # (a new item gets the next SID, nothing is renumbered) and check-wire
@@ -153,41 +170,30 @@ check: .PHONY
 .if ${CBLINK_SUBMODULE} == "yes"
 	@${MAKE} -C ${.CURDIR}/www/arcana-ui check-yang
 .endif
-	@${MAKE} -C ${.CURDIR} check-wire
-	@mkdir -p "$${HOME}/.kyua/logs" "$${HOME}/.kyua/store"
-	@rc=0; pids=""; \
-	for d in ${TESTDIRS}; do \
-	    ( set -o pipefail; cd ${.OBJDIR}/$$d && kyua \
-	        -v parallelism=${CHECK_JOBS} \
-	        test -k Kyuafile 2>&1 | sed -n '/->/p;$$p' | \
-	        sed "s|^|$$d: |" || { kyua report --verbose \
-	        --results-filter broken,failed | awk '/^===> /{ \
-	        ctx = $$0 == "===> Execution context" } !ctx'; \
-	        exit 1; } ) & pids="$$pids $$!"; \
-	done; \
-	for p in $$pids; do wait $$p || rc=1; done; \
-	exit $$rc
+	@${MAKE} -C ${.CURDIR} check-wire kyuafile
+	@db=${.OBJDIR}/check.db; rm -f "$$db"; set -o pipefail; \
+	cd ${.OBJDIR} && kyua -v parallelism=${CHECK_PARALLEL} test \
+	    --results-file="$$db" -k Kyuafile 2>&1 | ${_KYUA_OUT} || \
+	    { ${_KYUA_FAIL}; exit 1; }
 
 # The cases that need root (vnet jails, routes, carp), as root through
-# mdo(1).  tools/closefds runs kyua with no descriptor above stderr:
-# jail_attach(2) refuses a process holding an open directory.  One case
-# at a time: they share the host's jails, epairs and routing tables.
+# mdo(1), side by side as check's: each names its jails, epairs and
+# addresses for itself.  tools/closefds runs kyua with no descriptor
+# above stderr: jail_attach(2) refuses a process holding an open
+# directory.
+_ROOT_CASES=	usr.sbin/arcana-agent/tests/agent_root_test
+.if ${MK_CONSOLE} != "no"
+_ROOT_CASES+=	www/arcana-console/tests/console_test:sdwan_lab
+.endif
 check-root: .PHONY
-	@${MAKE} -j${CHECK_JOBS} -C ${.CURDIR} all
+	@${MAKE} -j${CHECK_JOBS} -C ${.CURDIR} all kyuafile
 	@${CC} -O2 -Wall -Werror -o ${.OBJDIR}/closefds \
 	    ${.CURDIR}/tools/closefds.c
-	@set -o pipefail; cd ${.OBJDIR}/usr.sbin/arcana-agent/tests && \
-	    mdo ${.OBJDIR}/closefds kyua test -k Kyuafile agent_root_test \
-	    2>&1 | sed -n '/->/p;$$p' || { kyua report --verbose \
-	    --results-filter broken,failed | awk '/^===> /{ \
-	    ctx = $$0 == "===> Execution context" } !ctx'; exit 1; }
-.if !defined(WITHOUT_CONSOLE)
-	@set -o pipefail; cd ${.OBJDIR}/www/arcana-console/tests && \
-	    mdo ${.OBJDIR}/closefds kyua test -k Kyuafile \
-	    console_test:sdwan_lab 2>&1 | sed -n '/->/p;$$p' || { kyua report \
-	    --verbose --results-filter broken,failed | awk '/^===> /{ \
-	    ctx = $$0 == "===> Execution context" } !ctx'; exit 1; }
-.endif
+	@db=${.OBJDIR}/check-root.db; mdo rm -f "$$db"*; set -o pipefail; \
+	cd ${.OBJDIR} && mdo ${.OBJDIR}/closefds kyua \
+	    -v parallelism=${CHECK_ROOT_PARALLEL} test --results-file="$$db" \
+	    -k Kyuafile ${_ROOT_CASES} 2>&1 | ${_KYUA_OUT} || \
+	    { ${_KYUA_FAIL}; exit 1; }
 
 # Everything built is under obj/, cblink's under its own.
 clean cleandir: .PHONY

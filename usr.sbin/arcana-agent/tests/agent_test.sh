@@ -395,6 +395,22 @@ stop_daemon()
 	true
 }
 
+# Wait until what "$@" prints matches $1 (grep -E, as atf_check's
+# match does): a minute at most, a loaded run being slow.  The check
+# that follows says what did not come.
+wait_match()
+{
+	local re i
+
+	re=$1
+	shift
+	for i in $(seq 1 600); do
+		"$@" 2>/dev/null | grep -Eq -e "$re" && return 0
+		sleep 0.1
+	done
+	return 1
+}
+
 atf_test_case hello cleanup
 hello_head()
 {
@@ -1137,7 +1153,9 @@ EOF
 	for i in $(ifconfig -l | tr ' ' '\n' | sort | uniq -u); do
 		t=$(awk -v i="$i" '$1 == i { for (k = 2; k <= NF; k++)
 		    if ($k ~ /^type=/) print substr($k, 6) }' ifs)
-		ifconfig -m -D "$i" | awk -v type="$t" -f ifc.awk > exp
+		# Gone since it was listed: another's to make and destroy.
+		ifconfig -m -D "$i" > ifc.out 2>/dev/null || continue
+		awk -v type="$t" -f ifc.awk ifc.out > exp
 		grep "^$i " a | awk -f mine.awk > got
 		cmp -s exp got || atf_fail "$i: ifconfig says $(cat exp), the collector $(cat got)"
 	done
@@ -4828,12 +4846,10 @@ ipsec_cleanup()
 	stop_daemon
 }
 
-atf_test_case vpn cleanup
-vpn_head()
-{
-	atf_set "descr" "WireGuard interfaces and their peers, with keys that stay on the host; BIRD through birdc"
-}
-vpn_body()
+# wg(8), birdc(8) and bird(8) as stand-ins, an ifconfig(8) that notes
+# what it was told, and a BIRD configuration with a file it includes;
+# then the agent.
+vpn_start()
 {
 	PEER='xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg='
 	PUB='HIgo9xNzJMWLKASShiTqIybxZ0U3wGLiUeJ1PKf8ykw='
@@ -4974,6 +4990,17 @@ EOS
 	printf 'protocol bgp bgp_edge { neighbor 198.51.100.7 as 65002; }\n' > bird/peers/edge.conf
 	chmod +x fake-ifconfig fake-wg fake-birdc fake-bird
 	start_daemon
+}
+
+atf_test_case vpn_wireguard cleanup
+vpn_wireguard_head()
+{
+	atf_set "descr" "WireGuard interfaces and their peers, with keys that stay on the host"
+	atf_set "timeout" "60"
+}
+vpn_wireguard_body()
+{
+	vpn_start
 
 	# An interface without a key, and one to be given one: made on
 	# the host, read by wg(8) from a file that is gone afterwards.
@@ -5060,6 +5087,21 @@ EOS
 	    "$JGC" -p -c "$SOCK" interface wg0 destroy
 	atf_check test ! -e wg/wg0.conf
 	atf_check -o not-match:'wg0' cat rc.conf
+}
+vpn_wireguard_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case vpn_bird cleanup
+vpn_bird_head()
+{
+	atf_set "descr" "BIRD through birdc: what it says of itself and its protocols, told what to do, its configuration put back whole once it parses, its routes and OSPF"
+	atf_set "timeout" "60"
+}
+vpn_bird_body()
+{
+	vpn_start
 
 	# BIRD: what it says of itself and of its protocols, asked for
 	# without the right to change anything: arcana-bird's read action,
@@ -5184,6 +5226,23 @@ EOS
 	    "$JGC" -c "$SOCK" bird routes protocol 'bgp;down'
 	atf_check -s exit:1 -e match:"in birdc's words" -o ignore \
 	    "$JGC" -c "$SOCK" bird routes table
+}
+vpn_bird_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case vpn_bird_safe cleanup
+vpn_bird_safe_head()
+{
+	atf_set "descr" "BIRD's configuration in safe mode: taken back at its timeout unless confirmed, and stays when confirmed"
+	atf_set "timeout" "60"
+}
+vpn_bird_safe_body()
+{
+	vpn_start
+	# Its filter as a commit before left it.
+	sed -i '' -e 's/accept;/reject;/' bird/bird.conf
 
 	# In safe mode a confirmed commit: BIRD is told to take the change
 	# back by itself a little after the commit's timeout, should the
@@ -5222,6 +5281,23 @@ EOS
 	atf_check -o match:'^configure confirm$' cat birdc.log
 	sleep 3
 	atf_check -o match:'# safe' cat bird/bird.conf
+}
+vpn_bird_safe_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case vpn_bird_gone cleanup
+vpn_bird_gone_head()
+{
+	atf_set "descr" "BIRD's configuration when BIRD does not take it, goes away, does not run, or a change waits to be confirmed"
+	atf_set "timeout" "90"
+}
+vpn_bird_gone_body()
+{
+	vpn_start
+	# A change confirmed before in it.
+	sed -i '' -e 's/accept;/accept; # safe/' bird/bird.conf
 
 	# What BIRD itself does not take does not stay in the file: what
 	# it says of a file it cannot read has no word "error" in it.
@@ -5312,7 +5388,7 @@ EOS
 	sleep 4
 	atf_check -o match:'# three' -o match:'# somebody else' cat bird/bird.conf
 }
-vpn_cleanup()
+vpn_bird_gone_cleanup()
 {
 	stop_daemon
 }
@@ -5812,7 +5888,6 @@ notify_cleanup()
 	stop_daemon
 }
 
-atf_test_case safe_mode cleanup
 atf_test_case safe_sysctl cleanup
 safe_sysctl_head()
 {
@@ -6613,12 +6688,9 @@ safe_l2_cleanup()
 	stop_daemon
 }
 
-safe_mode_head()
-{
-	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
-	atf_set "timeout" "60"
-}
-safe_mode_body()
+# An ifconfig(8) that notes what it was told, and a root whose rc.conf
+# Arcana's file is in; then the agent.
+safe_mode_start()
 {
 	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
 	chmod +x fake-ifconfig
@@ -6631,6 +6703,17 @@ safe_mode_body()
 	cp root/etc/rc.conf rc.conf.root
 	DAEMON_ARGS="--root $(pwd)/root"
 	start_daemon
+}
+
+atf_test_case safe_mode_confirm cleanup
+safe_mode_confirm_head()
+{
+	atf_set "descr" "A safe change stays when confirmed; what cannot be taken back is refused, a warning not accepted too; a variable that is more than a name never gets to sysrc"
+	atf_set "timeout" "60"
+}
+safe_mode_confirm_body()
+{
+	safe_mode_start
 
 	# A client that waits for the job is heard from again: it stays.
 	atf_check -o match:'done' -o match:'safe mode' \
@@ -6646,14 +6729,64 @@ safe_mode_body()
 	atf_check -s exit:2 -e match:'too small' \
 	    "$JGC" -s -W 5 -c "$SOCK" interface lo0 add 10.9.0.7/24
 
+	# A warning not accepted refuses the job, as it does a commit.
+	atf_check -s exit:1 -o match:'accept rc-conf-conflict' \
+	    "$JGC" -s -c "$SOCK" service sshd config sshd_flags=-6
+	atf_check cmp rc.conf.root root/etc/rc.conf
+	# And stays when confirmed.
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" \
+	    service -a rc-conf-conflict sshd config sshd_flags=-6
+	atf_check -o match:'^sshd_flags="-6"$' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^#sshd_flags="-4"  # taken by Arcana$' \
+	    cat root/etc/rc.conf
+	# What cannot be taken back is not taken in safe mode.
+	atf_check -s exit:1 -e match:'cannot be undone' -o ignore \
+	    "$JGC" -q -s -c "$SOCK" service sshd restart
+	atf_check -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" interface gif4 destroy
+	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
+	    "$JGC" -q -s -c "$SOCK" ng shutdown em0:
+
+	# A variable's name is given to sysrc(8), which evaluates it: one
+	# that is more than a name never gets there in a job (without one,
+	# arcana-services' commit: service_config's case); nor does a value
+	# rc.conf would read as more than a value.
+	: > sysrc.log
+	atf_check -s exit:1 -e match:"name is letters, digits and _" -o ignore \
+	    "$JGC" -q -s -c "$SOCK" service sshd config 'x:-$(id)=1'
+	atf_check -s exit:1 -e match:"name is letters, digits and _" -o ignore \
+	    "$JGC" -q -s -c "$SOCK" service sshd config -x '-a'
+	atf_check -s exit:1 -e match:'rc.conf would read it as more' -o ignore \
+	    "$JGC" -q -c "$SOCK" service sshd config 'sshd_flags=a"; id; "'
+	atf_check -o not-match:'id' cat rc.conf
+	atf_check -o not-match:'id' cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o not-match:'id' -o not-match:'x:' cat sysrc.log
+}
+safe_mode_confirm_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case safe_mode_undo cleanup
+safe_mode_undo_head()
+{
+	atf_set "descr" "A safe change not confirmed is undone, each change taken back; a route that cannot be put back is not deleted; one cancelled while it waits is undone at once"
+	atf_set "timeout" "90"
+}
+safe_mode_undo_body()
+{
+	safe_mode_start
+
 	# One that is not heard from again: each change is taken back.
-	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 add 10.9.0.8/24
+	atf_check -o match:'queued' -o save:q1.out "$JGC" -q -s -c "$SOCK" \
+	    interface lo0 add 10.9.0.8/24
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 down
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 remove 127.0.0.1
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" route delete 10.78.0.0/16 10.0.0.1
 	# While the first waits, it says so, and until when.
-	sleep 1
+	wait_match unconfirmed "$JGC" -c "$SOCK" jobs
 	atf_check -o match:'unconfirmed' "$JGC" -c "$SOCK" jobs
 	for i in $(seq 1 200); do
 		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
@@ -6661,7 +6794,7 @@ safe_mode_body()
 		sleep 0.1
 	done
 	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
-	    "$JGC" -c "$SOCK" job 3
+	    "$JGC" -c "$SOCK" job "$(queued_id q1.out)"
 	atf_check -o match:'^lo0 inet 10.9.0.8/24 alias$' \
 	    -o match:'^lo0 inet 10.9.0.8 -alias$' \
 	    -o match:'^lo0 down$' -o match:'^lo0 up$' \
@@ -6700,6 +6833,21 @@ safe_mode_body()
 	atf_check -o match:'^lo0 inet 10.9.0.9 -alias$' cat ifconfig.log
 	# One at work, or done, is not taken back, and says which.
 	atf_check -s exit:1 -e match:'has finished' "$JGC" -c "$SOCK" job-cancel "$id"
+}
+safe_mode_undo_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case safe_mode_restore cleanup
+safe_mode_restore_head()
+{
+	atf_set "descr" "What a safe change not confirmed made is put back as it was: an interface made, a service stopped, its variables, the addressing; what was so already is left so"
+	atf_set "timeout" "90"
+}
+safe_mode_restore_body()
+{
+	safe_mode_start
 
 	# The same for what else can be taken back: an interface made, a
 	# service stopped, its variables, each put back as it was; and
@@ -6758,39 +6906,21 @@ safe_mode_body()
 	atf_check -o match:'^ifconfig_lo0_ipv6="inet6 accept_rtadv"$' \
 	    -o not-match:'DHCP' cat rc.conf
 	atf_check -o match:'^lo0 inet6 accept_rtadv -ifdisabled$' cat ifconfig.log
-	# A warning not accepted refuses the job, as it does a commit.
-	atf_check -s exit:1 -o match:'accept rc-conf-conflict' \
-	    "$JGC" -s -c "$SOCK" service sshd config sshd_flags=-6
-	atf_check cmp rc.conf.root root/etc/rc.conf
-	# And stays when confirmed.
-	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" \
-	    service -a rc-conf-conflict sshd config sshd_flags=-6
-	atf_check -o match:'^sshd_flags="-6"$' \
-	    cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o match:'^#sshd_flags="-4"  # taken by Arcana$' \
-	    cat root/etc/rc.conf
-	# What cannot be taken back is not taken in safe mode.
-	atf_check -s exit:1 -e match:'cannot be undone' -o ignore \
-	    "$JGC" -q -s -c "$SOCK" service sshd restart
-	atf_check -o match:'confirmed: it stays' \
-	    "$JGC" -s -c "$SOCK" interface gif4 destroy
-	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
-	    "$JGC" -q -s -c "$SOCK" ng shutdown em0:
+}
+safe_mode_restore_cleanup()
+{
+	stop_daemon
+}
 
-	# A variable's name is given to sysrc(8), which evaluates it: one
-	# that is more than a name never gets there in a job (without one,
-	# arcana-services' commit: service_config's case); nor does a value
-	# rc.conf would read as more than a value.
-	: > sysrc.log
-	atf_check -s exit:1 -e match:"name is letters, digits and _" -o ignore \
-	    "$JGC" -q -s -c "$SOCK" service sshd config 'x:-$(id)=1'
-	atf_check -s exit:1 -e match:"name is letters, digits and _" -o ignore \
-	    "$JGC" -q -s -c "$SOCK" service sshd config -x '-a'
-	atf_check -s exit:1 -e match:'rc.conf would read it as more' -o ignore \
-	    "$JGC" -q -c "$SOCK" service sshd config 'sshd_flags=a"; id; "'
-	atf_check -o not-match:'id' cat rc.conf
-	atf_check -o not-match:'id' cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o not-match:'id' -o not-match:'x:' cat sysrc.log
+atf_test_case safe_mode_queue cleanup
+safe_mode_queue_head()
+{
+	atf_set "descr" "The queue of jobs has an end"
+	atf_set "timeout" "60"
+}
+safe_mode_queue_body()
+{
+	safe_mode_start
 
 	# The queue has an end: jobs that wait hold memory.  The first holds
 	# the runner while it waits to be confirmed, longer than queueing the
@@ -6803,7 +6933,7 @@ safe_mode_body()
 	atf_check -s exit:1 -e match:'too many jobs wait already' -o ignore \
 	    "$JGC" -q -c "$SOCK" interface lo0 up
 }
-safe_mode_cleanup()
+safe_mode_queue_cleanup()
 {
 	stop_daemon
 }
@@ -7016,12 +7146,10 @@ EOS
 	    tools/security_file_certgen tools/c-icap
 }
 
-atf_test_case sdwan cleanup
-sdwan_head()
-{
-	atf_set "descr" "The tunnels to measure: set, kept for the next start, read back with their state; without root each says so"
-}
-sdwan_body()
+# ipfw(8), kldload(8) and the SD-WAN services' daemons as stand-ins,
+# Suricata's among them; then the agent.  It keeps its files beside
+# history.conf, here: $f is one of them.
+sdwan_start()
 {
 	# ipfw(8) as a stand-in: what it was run with, and the file it was
 	# given to read.
@@ -7038,7 +7166,125 @@ EOS
 	chmod +x fake-kldload
 	mkdir -p root/var/db/clamav
 	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib -2 $(pwd)/tools --suricata-rules $(pwd)/rules --root $(pwd)/root"
+	sdwan_daemons
+	# suricata: -T checks, and refuses BROKEN, and a ruleset whose rule
+	# negates any as Suricata does; run, it writes an alert and a flow
+	# to eve.json in its log directory, says its pid, and notes a USR2.
+	# Suricata's command socket, as it answers: a version, then a
+	# command a line; gone by itself after two minutes.
+	cat > tools/scsrv.py <<'EOS'
+import json, os, signal, socket, sys
+signal.alarm(120)
+p = sys.argv[1]
+try:
+    os.unlink(p)
+except OSError:
+    pass
+s = socket.socket(socket.AF_UNIX)
+s.bind(p)
+s.listen(4)
+r = {"uptime": {"message": 42, "return": "OK"},
+     "memcap-list": {"message": [{"name": "flow", "value": "32mb"}], "return": "OK"},
+     "ruleset-stats": {"message": [{"id": 0, "rules_loaded": 2, "rules_failed": 1, "rules_skipped": 0}], "return": "OK"},
+     "ruleset-profile": {"message": "Unknown command", "return": "NOK"},
+     "iface-stat": {"message": {"pkts": 7, "invalid-checksums": 0, "drop": 1, "bypassed": 0}, "return": "OK"}}
+while True:
+    c, _ = s.accept()
+    f = c.makefile("rwb")
+    for line in f:
+        o = json.loads(line)
+        a = {"return": "OK"} if "version" in o else dict(r.get(o.get("command"), {"message": "Unknown command", "return": "NOK"}))
+        if o.get("command") == "iface-stat":
+            a["message"] = dict(a["message"], iface=o["arguments"]["iface"])
+        f.write((json.dumps(a) + "\n").encode())
+        f.flush()
+    c.close()
+EOS
+	cat > tools/suricata <<EOS
+#!/bin/sh
+# Started: the daemon, under its own name, its pid in the file given.
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; trap "echo usr2 >> $(pwd)/suricata.log" USR2; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
+echo "suricata \$*" >> $(pwd)/suricata.log
+# A capture replayed (-r, -l its directory): an alert of it.
+[ "\$3" = -r ] && { printf '%s\\n' '{"timestamp":"2026-10-19T11:00:00.000000+0000","event_type":"alert","src_ip":"10.1.1.1","src_port":1,"dest_ip":"10.2.2.2","dest_port":2,"proto":"TCP","alert":{"action":"allowed","signature_id":2000009,"rev":1,"signature":"ET REPLAYED","category":"","severity":1}}' >> "\$6/eve.json"; exit 0; }
+[ "\$1" = --build-info ] && { printf 'This is Suricata version 8.0.7 RELEASE\nFeatures: IPFW NETMAP HAVE_LUA RUST\n  IPFW support:                            yes\n  Netmap support:                          yes v14+\n  Hyperscan support:                       no\n  Profiling enabled:                       no\n  Profiling rules enabled:                 no\n  Plugin support (experimental):           yes\n'; exit 0; }
+k=\$(sed -n 's/^  filename: \(.*\.sock\)\$/\1/p' "\$2" 2>/dev/null)
+[ -n "\$k" ] && [ "\$1" != -T ] && /usr/local/bin/python3 $(pwd)/tools/scsrv.py "\$k" > /dev/null 2>&1 &
+[ "\$1" = -T ] && { grep -q BROKEN "\$3" && { [ "\$5" = logging.outputs.0.console.enabled=yes ] && echo "E: detect: rule BROKEN at line 1" >&2; exit 1; }
+r=\$(sed -n 's/^  - \(.*\/suricata.rules\)\$/\\1/p' "\$3")
+[ -n "\$r" ] && grep -q NEGATED "\$r" && { echo "i: suricata: This is Suricata"; { echo "E: detect: Complete IP space negated. Rule address range is NIL."; echo "E: detect: error parsing signature \\"alert\\" from file \$r at line 1"; echo "E: suricata: Loading signatures failed."; } >&2; exit 1; }
+exit 0; }
+d=\$(sed -n 's/^default-log-dir: //p' "\$2")
+printf '%s\\n' '{"timestamp":"2026-10-12T18:00:00.000000+0000","event_type":"flow","src_ip":"10.30.0.2"}' \\
+    '{"timestamp":"2026-10-12T18:00:01.000000+0000","in_iface":"wg5","event_type":"alert","src_ip":"10.30.0.2","src_port":40000,"dest_ip":"10.20.0.1","dest_port":80,"proto":"TCP","alert":{"action":"allowed","signature_id":1000001,"rev":1,"signature":"ARCANA test \\"quoted\\"","category":"","severity":2}}' >> "\$d/eve.json"
+# As Suricata does: a pid file there refuses the start, said in its log;
+# FAILSTART in the configuration fails it.
+[ -f "\$4" ] && { echo "[1 - Main] 2026-10-19 Error: pidfile: pid file '\$4' exists but appears stale" >> "\$d/suricata.log"; exit 1; }
+grep -q FAILSTART "\$2" && { echo "[1 - Main] 2026-10-19 Error: suricata: this start fails" >> "\$d/suricata.log"; exit 1; }
+# DIESTART: daemonized, its pid file written, then its engine fails (as
+# a divert port it cannot open does), the rules it left out said first.
+grep -q DIESTART "\$2" && { sh -c 'echo \$\$ > "\$0"; sleep 1' "\$4" & { echo "[1 - Main] 2026-10-19 Error: detect: Complete IP space negated."; echo "[1 - Main] 2026-10-19 Error: detect: error parsing signature \\"alert\\" from file x at line 1"; echo "[2 - RX] 2026-10-19 Error: ipfw: Can't create divert socket: Address family not supported by protocol family"; echo "[1 - Main] 2026-10-19 Error: suricata: Engine initialization failed, aborting..."; } >> "\$d/suricata.log"; exit 0; }
+"\$0" --hold "\$4" &
+echo "[1 - Main] 2026-10-19 Notice: threads: Threads created -> W: 1 FM: 1 FR: 1   Engine started." >> "\$d/suricata.log"
+exit 0
+EOS
+	# suricata-update: the ruleset written where -o says, a rule
+	# disabled as it ships; the sids of --enable-conf, --disable-conf
+	# and --drop-conf turned on, off and to drop, as it does.
+	cat > tools/suricata-update <<'EOS'
+#!/bin/sh
+echo "suricata-update $*" >> @LOG@
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-o) out=$2; shift ;;
+	-D) data=$2; shift ;;
+	update-sources)
+		mkdir -p "$data/update/cache"; echo 'sources: {}' > "$data/update/cache/index.yaml"
+		exit 0 ;;
+	list-sources)
+		printf '\033[1;36mName\033[0m: \033[1;35met/open\033[0m\n  \033[1;36mVendor\033[0m: \033[1;35mProofpoint\033[0m\n  \033[1;36mSummary\033[0m: \033[1;35mEmerging Threats Open Ruleset\033[0m\n  \033[1;36mLicense\033[0m: \033[1;35mMIT\033[0m\n'
+		printf '\033[1;36mName\033[0m: \033[1;35met/pro\033[0m\n  \033[1;36mVendor\033[0m: \033[1;35mProofpoint\033[0m\n  \033[1;36mSummary\033[0m: \033[1;35mEmerging Threats Pro Ruleset\033[0m\n  \033[1;36mLicense\033[0m: \033[1;35mCommercial\033[0m\n  \033[1;36mParameters\033[0m: \033[1;35msecret-code\033[0m\n'
+		exit 0 ;;
+	--enable-conf) en=$2; shift ;;
+	--disable-conf) dis=$2; shift ;;
+	--drop-conf) drop=$2; shift ;;
+	esac
+	shift
+done
+mkdir -p "$out"
+f=$out/suricata.rules
+{
+	echo '# Emerging Threats Open'
+	echo 'alert tcp any any -> any 22 (msg:"ET"; sid:2000001;)'
+	echo '# alert http any any -> any any (msg:"ET INFO curl \"UA\""; flow:established; classtype:policy-violation; sid:2000005; rev:2; metadata:signature_severity Minor, created_at 2020_01_01;)'
+	echo 'alert dns any any -> any any (msg:"ET DNS query of a bad name"; classtype:bad-unknown; sid:2000006; rev:4;)'
+} > "$f"
+for s in $(grep -v '^#' "${en:-/dev/null}"); do
+	sed -i '' "/sid:$s;/s/^# //" "$f"
+done
+for s in $(grep -v '^#' "${dis:-/dev/null}"); do
+	sed -i '' "/sid:$s;/s/^alert/# alert/" "$f"
+done
+for s in $(grep -v '^#' "${drop:-/dev/null}"); do
+	sed -i '' "/sid:$s;/s/alert /drop /" "$f"
+done
+EOS
+	sed -i '' "s|@LOG@|$(pwd)/suricata-update.log|" tools/suricata-update
+	chmod +x tools/squid tools/security_file_certgen tools/c-icap tools/suricata tools/suricata-update
+	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	start_daemon
+	f=$(pwd)/sdwan-probes.json
+}
+
+atf_test_case sdwan_probes cleanup
+sdwan_probes_head()
+{
+	atf_set "descr" "The tunnels to measure: set, kept for the next start, read back with their state; without root each says so"
+	atf_set "timeout" "60"
+}
+sdwan_probes_body()
+{
+	sdwan_start
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
 	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0,"counters":\[\]\}' \
 	    -o match:'"steer":\[\],"steered":false' "$JGC" -c "$SOCK" sdwan
@@ -7075,6 +7321,21 @@ EOS
 	# All of them stopped.
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '[]'
 	atf_check -o match:'"targets":\[\]' "$JGC" -c "$SOCK" sdwan
+}
+sdwan_probes_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sdwan_rules cleanup
+sdwan_rules_head()
+{
+	atf_set "descr" "The SD-WAN ruleset: applied in its set, its tables and objects; the steering and the console's pin, kept for the next start; the counters; taken away"
+	atf_set "timeout" "60"
+}
+sdwan_rules_body()
+{
+	sdwan_start
 
 	# The rules: what is not a ruleset; one applied, its set emptied
 	# and filled while disabled, the tables made, the file loaded.
@@ -7197,115 +7458,41 @@ EOS
 	    -o match:'^ipfw -q set 30 table sw1_known swap sw1_known_alt$' \
 	    -o not-match:'set disable 30' -o not-match:'^add 12 ' cat ipfw.log
 	atf_check -o match:'"objects":3' "$JGC" -c "$SOCK" sdwan
+	# The counters of the set's rules, as ipfw -S show has them, in the
+	# read: the console counts what a security policy denied by them.
+	atf_check -o match:'"counters":\[\{"rule":12,"pkts":2,"bytes":168,"text":"deny log tcp from any to table\(sw1_s0d4\) 80,443"\},\{"rule":999,"pkts":5,"bytes":500,"text":"count ip from any to any"\}\]' \
+	    "$JGC" -c "$SOCK" sdwan
+	# No rules: the set emptied, the tables gone, the objects deleted.
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'
+	atf_check -o match:'^ipfw -q set 30 table sw1_known destroy$' \
+	    -o match:'^ipfw -q nat 3001 delete$' \
+	    -o match:'^ipfw -q queue 3001 delete$' \
+	    -o match:'^ipfw -q pipe 3000 delete$' cat ipfw.log
+	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^ipfw -q queue 3001 delete' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^ipfw -q pipe 3000 delete' ipfw.log | cut -d: -f1 | head -1) && echo yes"
+	atf_check -o match:'"rules":\{"set":0,' "$JGC" -c "$SOCK" sdwan
+}
+sdwan_rules_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sdwan_bird cleanup
+sdwan_bird_head()
+{
+	atf_set "descr" "BIRD instances of the SD-WAN, on the host and in a vnet jail; BFD's word in the steering, its faults; the breakout's default route steered"
+	atf_set "timeout" "60"
+}
+sdwan_bird_body()
+{
+	sdwan_start
+	# The rules, with the table the steering fills.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[{"name":"sw1_known","valtype":"legacy","entries":[["10.1.0.0/24","0"],["10.2.0.0/24","0"]]}],"objects":["pipe 3000 config bw 5000000bit/s","queue 3001 config pipe 3000 weight 75","nat 3001 config ip 198.51.100.1"],"rules":["11 nat 3001 ip4 from table(sw1_known) to not table(sw1_known) out xmit vtnet0","12 queue 3001 ip from any to any","99 count ip from any to any"]}'
+
 	# BIRD instances: a bad list refused; one started in its table by
 	# setfib once its file parses, told to read it again when running,
 	# stopped when not named; listed with its protocols.
-	sdwan_daemons
-	# suricata: -T checks, and refuses BROKEN, and a ruleset whose rule
-	# negates any as Suricata does; run, it writes an alert and a flow
-	# to eve.json in its log directory, says its pid, and notes a USR2.
-	# Suricata's command socket, as it answers: a version, then a
-	# command a line; gone by itself after two minutes.
-	cat > tools/scsrv.py <<'EOS'
-import json, os, signal, socket, sys
-signal.alarm(120)
-p = sys.argv[1]
-try:
-    os.unlink(p)
-except OSError:
-    pass
-s = socket.socket(socket.AF_UNIX)
-s.bind(p)
-s.listen(4)
-r = {"uptime": {"message": 42, "return": "OK"},
-     "memcap-list": {"message": [{"name": "flow", "value": "32mb"}], "return": "OK"},
-     "ruleset-stats": {"message": [{"id": 0, "rules_loaded": 2, "rules_failed": 1, "rules_skipped": 0}], "return": "OK"},
-     "ruleset-profile": {"message": "Unknown command", "return": "NOK"},
-     "iface-stat": {"message": {"pkts": 7, "invalid-checksums": 0, "drop": 1, "bypassed": 0}, "return": "OK"}}
-while True:
-    c, _ = s.accept()
-    f = c.makefile("rwb")
-    for line in f:
-        o = json.loads(line)
-        a = {"return": "OK"} if "version" in o else dict(r.get(o.get("command"), {"message": "Unknown command", "return": "NOK"}))
-        if o.get("command") == "iface-stat":
-            a["message"] = dict(a["message"], iface=o["arguments"]["iface"])
-        f.write((json.dumps(a) + "\n").encode())
-        f.flush()
-    c.close()
-EOS
-	cat > tools/suricata <<EOS
-#!/bin/sh
-# Started: the daemon, under its own name, its pid in the file given.
-[ "\$1" = --hold ] && { echo \$\$ > "\$2"; trap "echo usr2 >> $(pwd)/suricata.log" USR2; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
-echo "suricata \$*" >> $(pwd)/suricata.log
-# A capture replayed (-r, -l its directory): an alert of it.
-[ "\$3" = -r ] && { printf '%s\\n' '{"timestamp":"2026-10-19T11:00:00.000000+0000","event_type":"alert","src_ip":"10.1.1.1","src_port":1,"dest_ip":"10.2.2.2","dest_port":2,"proto":"TCP","alert":{"action":"allowed","signature_id":2000009,"rev":1,"signature":"ET REPLAYED","category":"","severity":1}}' >> "\$6/eve.json"; exit 0; }
-[ "\$1" = --build-info ] && { printf 'This is Suricata version 8.0.7 RELEASE\nFeatures: IPFW NETMAP HAVE_LUA RUST\n  IPFW support:                            yes\n  Netmap support:                          yes v14+\n  Hyperscan support:                       no\n  Profiling enabled:                       no\n  Profiling rules enabled:                 no\n  Plugin support (experimental):           yes\n'; exit 0; }
-k=\$(sed -n 's/^  filename: \(.*\.sock\)\$/\1/p' "\$2" 2>/dev/null)
-[ -n "\$k" ] && [ "\$1" != -T ] && /usr/local/bin/python3 $(pwd)/tools/scsrv.py "\$k" > /dev/null 2>&1 &
-[ "\$1" = -T ] && { grep -q BROKEN "\$3" && { [ "\$5" = logging.outputs.0.console.enabled=yes ] && echo "E: detect: rule BROKEN at line 1" >&2; exit 1; }
-r=\$(sed -n 's/^  - \(.*\/suricata.rules\)\$/\\1/p' "\$3")
-[ -n "\$r" ] && grep -q NEGATED "\$r" && { echo "i: suricata: This is Suricata"; { echo "E: detect: Complete IP space negated. Rule address range is NIL."; echo "E: detect: error parsing signature \\"alert\\" from file \$r at line 1"; echo "E: suricata: Loading signatures failed."; } >&2; exit 1; }
-exit 0; }
-d=\$(sed -n 's/^default-log-dir: //p' "\$2")
-printf '%s\\n' '{"timestamp":"2026-10-12T18:00:00.000000+0000","event_type":"flow","src_ip":"10.30.0.2"}' \\
-    '{"timestamp":"2026-10-12T18:00:01.000000+0000","in_iface":"wg5","event_type":"alert","src_ip":"10.30.0.2","src_port":40000,"dest_ip":"10.20.0.1","dest_port":80,"proto":"TCP","alert":{"action":"allowed","signature_id":1000001,"rev":1,"signature":"ARCANA test \\"quoted\\"","category":"","severity":2}}' >> "\$d/eve.json"
-# As Suricata does: a pid file there refuses the start, said in its log;
-# FAILSTART in the configuration fails it.
-[ -f "\$4" ] && { echo "[1 - Main] 2026-10-19 Error: pidfile: pid file '\$4' exists but appears stale" >> "\$d/suricata.log"; exit 1; }
-grep -q FAILSTART "\$2" && { echo "[1 - Main] 2026-10-19 Error: suricata: this start fails" >> "\$d/suricata.log"; exit 1; }
-# DIESTART: daemonized, its pid file written, then its engine fails (as
-# a divert port it cannot open does), the rules it left out said first.
-grep -q DIESTART "\$2" && { sh -c 'echo \$\$ > "\$0"; sleep 1' "\$4" & { echo "[1 - Main] 2026-10-19 Error: detect: Complete IP space negated."; echo "[1 - Main] 2026-10-19 Error: detect: error parsing signature \\"alert\\" from file x at line 1"; echo "[2 - RX] 2026-10-19 Error: ipfw: Can't create divert socket: Address family not supported by protocol family"; echo "[1 - Main] 2026-10-19 Error: suricata: Engine initialization failed, aborting..."; } >> "\$d/suricata.log"; exit 0; }
-"\$0" --hold "\$4" &
-echo "[1 - Main] 2026-10-19 Notice: threads: Threads created -> W: 1 FM: 1 FR: 1   Engine started." >> "\$d/suricata.log"
-exit 0
-EOS
-	# suricata-update: the ruleset written where -o says, a rule
-	# disabled as it ships; the sids of --enable-conf, --disable-conf
-	# and --drop-conf turned on, off and to drop, as it does.
-	cat > tools/suricata-update <<'EOS'
-#!/bin/sh
-echo "suricata-update $*" >> @LOG@
-while [ $# -gt 0 ]; do
-	case "$1" in
-	-o) out=$2; shift ;;
-	-D) data=$2; shift ;;
-	update-sources)
-		mkdir -p "$data/update/cache"; echo 'sources: {}' > "$data/update/cache/index.yaml"
-		exit 0 ;;
-	list-sources)
-		printf '\033[1;36mName\033[0m: \033[1;35met/open\033[0m\n  \033[1;36mVendor\033[0m: \033[1;35mProofpoint\033[0m\n  \033[1;36mSummary\033[0m: \033[1;35mEmerging Threats Open Ruleset\033[0m\n  \033[1;36mLicense\033[0m: \033[1;35mMIT\033[0m\n'
-		printf '\033[1;36mName\033[0m: \033[1;35met/pro\033[0m\n  \033[1;36mVendor\033[0m: \033[1;35mProofpoint\033[0m\n  \033[1;36mSummary\033[0m: \033[1;35mEmerging Threats Pro Ruleset\033[0m\n  \033[1;36mLicense\033[0m: \033[1;35mCommercial\033[0m\n  \033[1;36mParameters\033[0m: \033[1;35msecret-code\033[0m\n'
-		exit 0 ;;
-	--enable-conf) en=$2; shift ;;
-	--disable-conf) dis=$2; shift ;;
-	--drop-conf) drop=$2; shift ;;
-	esac
-	shift
-done
-mkdir -p "$out"
-f=$out/suricata.rules
-{
-	echo '# Emerging Threats Open'
-	echo 'alert tcp any any -> any 22 (msg:"ET"; sid:2000001;)'
-	echo '# alert http any any -> any any (msg:"ET INFO curl \"UA\""; flow:established; classtype:policy-violation; sid:2000005; rev:2; metadata:signature_severity Minor, created_at 2020_01_01;)'
-	echo 'alert dns any any -> any any (msg:"ET DNS query of a bad name"; classtype:bad-unknown; sid:2000006; rev:4;)'
-} > "$f"
-for s in $(grep -v '^#' "${en:-/dev/null}"); do
-	sed -i '' "/sid:$s;/s/^# //" "$f"
-done
-for s in $(grep -v '^#' "${dis:-/dev/null}"); do
-	sed -i '' "/sid:$s;/s/^alert/# alert/" "$f"
-done
-for s in $(grep -v '^#' "${drop:-/dev/null}"); do
-	sed -i '' "/sid:$s;/s/alert /drop /" "$f"
-done
-EOS
-	sed -i '' "s|@LOG@|$(pwd)/suricata-update.log|" tools/suricata-update
-	chmod +x tools/squid tools/security_file_certgen tools/c-icap tools/suricata tools/suricata-update
-	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"../x","fib":1,"spec":{"router_id":"1.1.1.1"}}]}'
 	atf_check -s exit:1 -e match:'twice' -o ignore "$JGC" -c "$SOCK" sdwan bird \
@@ -7410,19 +7597,22 @@ EOS
 	atf_check -o match:'down$' cat birdc.log
 	test ! -f "$(dirname "$f")/sdwan-bird-sw1.conf" || atf_fail "the instance's file stayed"
 	atf_check -o match:'"bird":\[\]' "$JGC" -c "$SOCK" sdwan
-	# The counters of the set's rules, as ipfw -S show has them, in the
-	# read: the console counts what a security policy denied by them.
-	atf_check -o match:'"counters":\[\{"rule":12,"pkts":2,"bytes":168,"text":"deny log tcp from any to table\(sw1_s0d4\) 80,443"\},\{"rule":999,"pkts":5,"bytes":500,"text":"count ip from any to any"\}\]' \
-	    "$JGC" -c "$SOCK" sdwan
-	# No rules: the set emptied, the tables gone, the objects deleted.
-	: > ipfw.log
-	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'
-	atf_check -o match:'^ipfw -q set 30 table sw1_known destroy$' \
-	    -o match:'^ipfw -q nat 3001 delete$' \
-	    -o match:'^ipfw -q queue 3001 delete$' \
-	    -o match:'^ipfw -q pipe 3000 delete$' cat ipfw.log
-	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^ipfw -q queue 3001 delete' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^ipfw -q pipe 3000 delete' ipfw.log | cut -d: -f1 | head -1) && echo yes"
-	atf_check -o match:'"rules":\{"set":0,' "$JGC" -c "$SOCK" sdwan
+}
+sdwan_bird_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sdwan_dhcp_dns cleanup
+sdwan_dhcp_dns_head()
+{
+	atf_set "descr" "The SD-WAN's DHCP (dnsmasq) and DNS filters (local-unbound): checked, rendered, started in their table, listed, stopped"
+	atf_set "timeout" "60"
+}
+sdwan_dhcp_dns_body()
+{
+	sdwan_start
+
 	# DHCP instances (dnsmasq): a bad list refused, one not taken by
 	# dnsmasq --test not run; one rendered from its form, started in
 	# its table with the pid and lease files added to its file; listed
@@ -7483,6 +7673,22 @@ EOS
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns '{"instances":[]}'
 	test ! -f "$(dirname "$f")/sdwan-dns-sw1.conf" || atf_fail "the dns instance's file stayed"
 	atf_check -o match:'"dns":\[\]' "$JGC" -c "$SOCK" sdwan
+}
+sdwan_dhcp_dns_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sdwan_proxy cleanup
+sdwan_proxy_head()
+{
+	atf_set "descr" "The SD-WAN's proxies (Squid) and the Security section's: checked, rendered, their CA and lists, c-icap and ClamAV's hashes, stopped"
+	atf_set "timeout" "60"
+}
+sdwan_proxy_body()
+{
+	sdwan_start
+
 	# The proxies (Squid, a plugin): one not taken by squid -k parse not
 	# run; one rendered from its form, started in its table with the
 	# agent's paths in it, its CA made by openssl once and told; the
@@ -7584,6 +7790,22 @@ EOS
 	atf_check -o match:'"proxy":\[\{"name":"sec-web"' "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"group":"security","instances":[]}'
 	atf_check -o match:'"proxy":\[\]' -o match:'"security_proxy":\[\]' "$JGC" -c "$SOCK" sdwan
+}
+sdwan_proxy_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sdwan_ids cleanup
+sdwan_ids_head()
+{
+	atf_set "descr" "Suricata of the SD-WAN: checked, started, its alerts read; one that prevents, its faults; its statistics; the Security section's beside it"
+	atf_set "timeout" "120"
+}
+sdwan_ids_body()
+{
+	sdwan_start
+
 	# Intrusion detection: Suricata of each instance checked,
 	# started on its interfaces, its alerts read into events and the
 	# read; the same files again leave it be; gone with the instance.
@@ -7604,7 +7826,7 @@ EOS
 	    -o match:'^reference-config-file: /usr/local/etc/suricata/reference.config' \
 	    cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -o match:'sid:1000001' cat "$(dirname "$f")/sdwan-ids-sw1.rules"
-	sleep 2
+	wait_match '"alerts_seen":1,' "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"ids":\[\{"name":"sw1","interfaces":\["wg5"\],"mode":"detect","running":true,"alerts_seen":1,"alerts":\[\{"name":"sw1","time":"2026-10-12T18:00:01' \
 	    -o match:'"signature":"ARCANA test quoted","category":"","severity":2' "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"kind":"sdwan-ids","data":\{"name":"sw1",.*"src":"10.30.0.2","sport":40000,"dst":"10.20.0.1","dport":80,"proto":"TCP","iface":"wg5","sid":1000001' \
@@ -7626,18 +7848,19 @@ EOS
 	atf_check -o match:'"ids":\[\{"name":"sw1","interfaces":\["wg5"\],"mode":"prevent","divert":8001,"running":true' \
 	    "$JGC" -c "$SOCK" sdwan
 	kill "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
-	sleep 2
+	wait_match '"type":"ids","severity":"Warning","object":"sw1"' "$JGC" -c "$SOCK" events
 	# No rule of ipfw's diverts to it: nothing held up, a Warning;
 	# one that does, read again, makes it Critical.
 	atf_check -o match:'"kind":"sdwan-fault","data":\{"type":"ids","severity":"Warning","object":"sw1","by":"suricata","description":"Suricata sw1, which prevents, is not running; no rule of ipfw' \
 	    -o not-match:'"severity":"Critical","object":"sw1"' "$JGC" -c "$SOCK" events
+	# Read again every 10 s.
 	touch diverting
-	sleep 11
+	wait_match '"type":"ids","severity":"Critical","object":"sw1"' "$JGC" -c "$SOCK" events
 	rm diverting
 	atf_check -o match:'"kind":"sdwan-fault","data":\{"type":"ids","severity":"Critical","object":"sw1","by":"suricata","description":"Suricata sw1, which prevents, is not running: what ipfw diverts' \
 	    "$JGC" -c "$SOCK" events
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$ipsd"
-	sleep 2
+	wait_match '"description":"Suricata sw1 runs again"' "$JGC" -c "$SOCK" events
 	atf_check -o match:'"kind":"sdwan-fault","data":\{"type":"ids","severity":"Cleared","object":"sw1","description":"Suricata sw1 runs again"' \
 	    "$JGC" -c "$SOCK" events
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
@@ -7647,7 +7870,7 @@ EOS
 	# Made again, its old alerts are not told again: the one it writes
 	# now is.
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$ids"
-	sleep 2
+	wait_match '"alerts_seen":[1-9]' "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"alerts_seen":1,' "$JGC" -c "$SOCK" sdwan
 	atf_check -o inline:'4\n' sh -c "grep -c '\"event_type\":\"alert\"' '$(dirname "$f")/sdwan-ids-sw1.d/eve.json'"
 	# Its statistics: each stats record of eve.json a point, Suricata's
@@ -7657,7 +7880,7 @@ EOS
 	    '"timestamp":"2026-10-19T10:00:10.000000+0000","event_type":"stats","stats":{"uptime":20,"capture":{"kernel_packets":3000,"kernel_drops":5},"decoder":{"pkts":2995,"bytes":1800000,"invalid":2},"detect":{"alert":4},"tcp":{"sessions":90,"memuse":1000,"reassembly_memuse":2000},"flow":{"total":130,"memuse":4000},"app_layer":{"flow":{"http":9,"tls":20,"dns_udp":4}}}'; do
 		echo "{$st}" >> "$(dirname "$f")/sdwan-ids-sw1.d/eve.json"
 	done
-	sleep 2
+	wait_match '"dns_udp":4' "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"alerts_seen":1,' \
 	    -o match:'"stats":\{"fields":\["t","uptime","packets","drops","bytes","alerts","invalid","sessions","flows","memuse"\],"series":\[\[1792404000,10,1000,5,600000,3,2,40,60,7000\],\[1792404010,20,3000,5,1800000,4,2,90,130,7000\]\],"flows":\{"http":9,"tls":20,"dns_udp":4\}\}' \
 	    "$JGC" -c "$SOCK" sdwan
@@ -7671,6 +7894,22 @@ EOS
 	atf_check -o match:'"ids":\[\{"name":"sec-lan"' "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"group":"security","instances":[]}'
 	atf_check -o match:'"ids":\[\]' "$JGC" -c "$SOCK" sdwan
+}
+sdwan_ids_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sdwan_ids_rules cleanup
+sdwan_ids_rules_head()
+{
+	atf_set "descr" "Suricata's ruleset: fetched by suricata-update, its rules listed and set by sid and by group, modify.conf, its sources; a rule that negates any left out"
+	atf_set "timeout" "60"
+}
+sdwan_ids_rules_body()
+{
+	sdwan_start
+
 	# The ruleset suricata-update keeps: not fetched yet, its line is
 	# left out and the instance runs on its own rules, saying so.
 	rs='{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"default-log-dir: @LOGDIR@\nrule-files:\n  - @RULES@\n  - @RULESET@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
@@ -7778,7 +8017,7 @@ EOS
 	atf_check -o match:"^  - $(pwd)/rules/suricata.rules\$" cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -o match:'"ids_ruleset":\{"path":"[^"]*/rules/suricata.rules","at":[0-9]+,"size":[0-9]+\}' \
 	    "$JGC" -c "$SOCK" sdwan
-	sleep 2
+	wait_match '^usr2$' cat suricata.log
 	atf_check -o match:'^usr2$' cat suricata.log
 	# A rule of the ruleset that negates a HOME_NET of any is left out,
 	# as Suricata does running; one of the instance's own is refused.
@@ -7786,6 +8025,22 @@ EOS
 	rs2=$(echo "$rs" | sed 's/sid:1000001;/sid:1000002;/')
 	atf_check -o match:'1 rule of the ruleset left out, as Suricata does when it runs: they say what is outside HOME_NET, and with home any nothing is' \
 	    "$JGC" -t -c "$SOCK" sdwan ids "$rs2"
+}
+sdwan_ids_rules_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sdwan_ids_run cleanup
+sdwan_ids_run_head()
+{
+	atf_set "descr" "A Suricata instance run: any interface, a stale pid file, thresholds, netmap, its command socket, Lua and plugins"
+	atf_set "timeout" "60"
+}
+sdwan_ids_run_body()
+{
+	sdwan_start
+
 	# Interface any: FreeBSD's libpcap has none, so each interface up
 	# but the loopback, pflog, pfsync and enc.
 	rs3='{"instances":[{"name":"sw1","interfaces":["any"],"conf":"default-log-dir: @LOGDIR@\npcap:\n  - interface: any\nrule-files:\n  - @RULES@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
@@ -7793,8 +8048,7 @@ EOS
 	atf_check -o not-match:'interface: any' -o not-match:'interface: lo[0-9]' \
 	    -o match:'^  - interface: [a-z]+[0-9]+$' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	# A pid file left by a start that failed or a crash: taken away, the
-	# instance started; and why a start fails is what that start
-	# logged, not an older error of the log.
+	# instance started.
 	kill "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
 	sleep 1
 	echo 99999 > "$(dirname "$f")/sdwan-ids-sw1.pid"
@@ -7802,8 +8056,6 @@ EOS
 	atf_check -o match:'suricata sw1 on [0-9]+ interfaces?, detects: started' \
 	    "$JGC" -t -c "$SOCK" sdwan ids "$rs4"
 	atf_check -s exit:0 kill -0 "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
-	echo "[1 - Main] 2026-10-18 Error: an old one" >> "$(dirname "$f")/sdwan-ids-sw1.d/suricata.log"
-	rs5=$(echo "$rs3" | sed 's/rule-files:/# FAILSTART\\nrule-files:/')
 	# Its thresholds and suppressions: its own file, where the
 	# configuration says; changed, it starts again; not a string,
 	# refused.
@@ -7885,6 +8137,26 @@ EOS
 		atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids \
 		    "$(echo "$rs4" | sed 's|"rules":|"plugins":["/usr/local/lib/libucl.so"],"rules":|')"
 	fi
+}
+sdwan_ids_run_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sdwan_ids_pcap cleanup
+sdwan_ids_pcap_head()
+{
+	atf_set "descr" "A Suricata instance's captures: one replayed through it, the packets of its alerts read back, one sent to the host in parts; what its profiling wrote"
+	atf_set "timeout" "60"
+}
+sdwan_ids_pcap_body()
+{
+	sdwan_start
+	# An instance running on any interface, as the one before left it.
+	rs3='{"instances":[{"name":"sw1","interfaces":["any"],"conf":"default-log-dir: @LOGDIR@\npcap:\n  - interface: any\nrule-files:\n  - @RULES@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
+	rs4=$(echo "$rs3" | sed 's/sid:1000001;/sid:1000004;/')
+	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs4"
+
 	# A capture replayed through it, offline: its alerts kept for the
 	# read; a link, a path not whole, an instance not here, refused.
 	printf 'PCAP' > lab.pcap
@@ -7960,6 +8232,32 @@ EOS
 	    cat prof.json
 	atf_check -s exit:1 -e match:'no instance nosuch here' "$JGC" -c "$SOCK" suricata rules instance=nosuch profiling=1
 	atf_check -s exit:1 -e match:'read by instance= and profiling=1' "$JGC" -c "$SOCK" suricata rules profiling=1
+}
+sdwan_ids_pcap_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sdwan_ids_forms cleanup
+sdwan_ids_forms_head()
+{
+	atf_set "descr" "A Suricata instance stopped by the admin and started again; rendered from its settings, SD-WAN's and the Security section's; a start that fails says why"
+	atf_set "timeout" "60"
+}
+sdwan_ids_forms_body()
+{
+	sdwan_start
+	# An instance running on any interface, as the one before left it;
+	# an older error in its log: why a start fails is what that start
+	# logged, not this.
+	rs3='{"instances":[{"name":"sw1","interfaces":["any"],"conf":"default-log-dir: @LOGDIR@\npcap:\n  - interface: any\nrule-files:\n  - @RULES@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
+	rs4=$(echo "$rs3" | sed 's/sid:1000001;/sid:1000004;/')
+	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs4"
+	echo "[1 - Main] 2026-10-18 Error: an old one" >> "$(dirname "$f")/sdwan-ids-sw1.d/suricata.log"
+	rs5=$(echo "$rs3" | sed 's/rule-files:/# FAILSTART\\nrule-files:/')
+	printf '#!/bin/sh\necho "ifconfig $*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	chmod +x fake-ifconfig
+
 	# Stopped by the admin: not run, its files and its place kept;
 	# started again as it was.
 	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs4"
@@ -8034,7 +8332,7 @@ EOS
 	    -e not-match:'IP space' -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs6"
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 }
-sdwan_cleanup()
+sdwan_ids_run_cleanup()
 {
 	stop_daemon
 }
@@ -9936,14 +10234,10 @@ l2_cleanup()
 	stop_daemon
 }
 
-atf_test_case history_hold cleanup
-history_hold_head()
+# zpool(8): a pool as full as ./pct says, 95% to begin with; then the
+# agent.
+history_hold_start()
 {
-	atf_set "descr" "a limit counts when it lasts: a burst shorter than the hold raises nothing, a sustained one raises once and clears once; sampling switched off takes no sample, judges nothing and clears the sampler's faults once"
-}
-history_hold_body()
-{
-	# zpool(8): a pool as full as ./pct says.
 	echo 95 > pct
 	cat > fake-zpool <<EOS
 #!/bin/sh
@@ -9954,14 +10248,30 @@ EOS
 	chmod +x fake-zpool
 	DAEMON_ARGS="-Z $(pwd)/fake-zpool"
 	start_daemon
-	nmem() {
-		"$JGC" -c "$SOCK" events | grep -o "\"what\":\"mem\",[^}]*\"over\":$1" |
-		    wc -l | tr -d ' '
-	}
-	nstore() {
-		"$JGC" -c "$SOCK" events | grep -o "\"what\":\"storage\",\"name\":\"tank\",[^}]*\"over\":$1" |
-		    wc -l | tr -d ' '
-	}
+}
+
+# The events of memory's limit, and of the pool's: how many were over
+# ($1 true) or not.
+nmem()
+{
+	"$JGC" -c "$SOCK" events | grep -o "\"what\":\"mem\",[^}]*\"over\":$1" |
+	    wc -l | tr -d ' '
+}
+nstore()
+{
+	"$JGC" -c "$SOCK" events | grep -o "\"what\":\"storage\",\"name\":\"tank\",[^}]*\"over\":$1" |
+	    wc -l | tr -d ' '
+}
+
+atf_test_case history_hold_mem cleanup
+history_hold_mem_head()
+{
+	atf_set "descr" "a limit counts when it lasts: a burst shorter than the hold raises nothing, a sustained one raises once and clears once"
+	atf_set "timeout" "90"
+}
+history_hold_mem_body()
+{
+	history_hold_start
 
 	# Memory over 1% for a second, held 3: nothing.
 	atf_check -o match:'"hold":3,"enabled":true' \
@@ -9973,17 +10283,35 @@ EOS
 	atf_check_equal 0 "$(nmem true)"
 	# Over for longer than the hold: once, and a memory fault.
 	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 1 0 0
-	sleep 6
+	wait_match '^1$' nmem true
 	atf_check_equal 1 "$(nmem true)"
 	atf_check -o match:'"type":"memory","severity":"Major",[^}]*"object":"mem","by":"sampler",[^}]*"cleared":false' \
 	    "$JGC" -c "$SOCK" sdwan
 	# Under again for longer than the hold: cleared, once.
 	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 100 0 0
-	sleep 6
+	wait_match '^1$' nmem false
 	atf_check_equal 1 "$(nmem true)"
 	atf_check_equal 1 "$(nmem false)"
 	atf_check -o match:'"object":"mem","by":"sampler",[^}]*"cleared":true' \
 	    "$JGC" -c "$SOCK" sdwan
+}
+history_hold_mem_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case history_hold_storage cleanup
+history_hold_storage_head()
+{
+	atf_set "descr" "a pool's limit counts when it lasts: full and then not before the hold is out raises nothing, full for longer once"
+	atf_set "timeout" "60"
+}
+history_hold_storage_body()
+{
+	history_hold_start
+	# Held 3, the pool's limit off, as a burst of memory before left
+	# them.
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 100 0 0 hold 3
 
 	# A pool, looked at again each time its limit is changed: 95% full
 	# and then 50% before the hold is out, nothing; 95% twice the hold
@@ -9999,20 +10327,40 @@ EOS
 	atf_check_equal 0 "$(nstore true)"
 	sleep 2
 	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 100 0 91
-	sleep 2
+	wait_match '^1$' nstore true
 	atf_check_equal 1 "$(nstore true)"
 	atf_check -o match:'"type":"storage",[^}]*"object":"tank","by":"sampler",[^}]*"cleared":false' \
 	    "$JGC" -c "$SOCK" sdwan
+}
+history_hold_storage_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case history_hold_off cleanup
+history_hold_off_head()
+{
+	atf_set "descr" "sampling switched off takes no sample, judges nothing and clears the sampler's faults once; on again at the next start"
+	atf_set "timeout" "60"
+}
+history_hold_off_body()
+{
+	history_hold_start
+	# A memory fault raised and cleared, as a burst before left it.
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 1 0 0 hold 0
+	wait_match '^1$' nmem true
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 100 0 0
+	wait_match '^1$' nmem false
 
 	# Memory over again, then sampling off: the faults it raised
 	# cleared, once, no sample taken, nothing judged.
 	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 1 0 90 hold 0
-	sleep 3
+	wait_match '^2$' nmem true
 	atf_check_equal 2 "$(nmem true)"
 	atf_check -o match:'"enabled":false' \
 	    "$JGC" -c "$SOCK" history set 1 20 0 1 0 90 sampling off
 	atf_check -o match:'^enabled=no$' cat history.conf
-	sleep 2
+	wait_match 'tank: sampling switched off' "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"object":"mem","by":"sampler","description":"mem: sampling switched off","cleared":true' \
 	    -o match:'"object":"tank","by":"sampler","description":"tank: sampling switched off","cleared":true' \
 	    "$JGC" -c "$SOCK" sdwan
@@ -10031,26 +10379,29 @@ EOS
 	atf_check -o match:'"enabled":false' "$JGC" -c "$SOCK" history
 	atf_check -o match:'"enabled":true' \
 	    "$JGC" -c "$SOCK" history set 1 20 0 1 0 90 sampling on
-	sleep 3
-	"$JGC" -c "$SOCK" history > on.json
+	# Sampled: a loaded run samples late, so a minute at most.
+	was=$(sed 's/.*"samples"//' off2.json)
+	for i in $(seq 1 600); do
+		"$JGC" -c "$SOCK" history > on.json
+		[ "$(sed 's/.*"samples"//' on.json)" != "$was" ] && break
+		sleep 0.1
+	done
 	atf_check -o inline:'more\n' sh -c 'sed "s/.*\"samples\"//" off2.json > a;
 	    sed "s/.*\"samples\"//" on.json > b; cmp -s a b || echo more'
 	# The events begin anew with the agent: this one alone.
+	wait_match '^1$' nmem true
 	atf_check_equal 1 "$(nmem true)"
 	atf_check -s exit:1 -e match:'hold is 0 to 3600' -o ignore \
 	    "$JGC" -c "$SOCK" history set 1 20 hold 3601
 }
-history_hold_cleanup()
+history_hold_off_cleanup()
 {
 	stop_daemon
 }
 
-atf_test_case observe cleanup
-observe_head()
-{
-	atf_set "descr" "what runs, with what each uses; a process sent a signal and given a nice value, and which are left alone; a log read from its end, by text, and followed; the history the agent keeps by itself"
-}
-observe_body()
+# Logs to read, of each kind, and zpool(8) with a pool 95% full; then
+# the agent.
+observe_start()
 {
 	mkdir log
 	{
@@ -10077,6 +10428,17 @@ EOS
 	chmod +x fake-zpool
 	DAEMON_ARGS="-v $(pwd)/log -Z $(pwd)/fake-zpool"
 	start_daemon
+}
+
+atf_test_case observe_ps cleanup
+observe_ps_head()
+{
+	atf_set "descr" "what runs, with what each uses; a process sent a signal and given a nice value, and which are left alone"
+	atf_set "timeout" "60"
+}
+observe_ps_body()
+{
+	observe_start
 
 	# What runs: this test's own sleep among it, with what top shows.
 	sleep 300 &
@@ -10133,6 +10495,21 @@ EOS
 		atf_check -s exit:1 -o match:"the kernel's own" \
 		    "$JGC" -c "$SOCK" signal "$kpid" CONT
 	fi
+}
+observe_ps_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case observe_log cleanup
+observe_log_head()
+{
+	atf_set "descr" "a log read from its end, by text, and followed, turned over or shorter; what is no log of the directory refused"
+	atf_set "timeout" "60"
+}
+observe_log_body()
+{
+	observe_start
 
 	# A log: messages when none is named, each line taken apart; the
 	# logs there are, without what is packed or is not a file.
@@ -10203,6 +10580,21 @@ EOS
 	    "$JGC" -c "$SOCK" log nosuch
 	atf_check -s exit:1 -e match:'not a text' -o ignore \
 	    "$JGC" -c "$SOCK" log blob
+}
+observe_log_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case observe_history cleanup
+observe_history_head()
+{
+	atf_set "descr" "the events numbered; the history the agent keeps by itself, a sample as wide as its fields, none older than asked for"
+	atf_set "timeout" "60"
+}
+observe_history_body()
+{
+	observe_start
 
 	# What happened: numbered from one, the last of them kept; none
 	# after a number there is none after.
@@ -10212,7 +10604,7 @@ EOS
 
 	# The history is kept without being asked for: one sample after a
 	# second, and none after the time of the last.
-	sleep 2
+	wait_match '"samples":\[\[' "$JGC" -c "$SOCK" history
 	atf_check -o save:h.json "$JGC" -c "$SOCK" history
 	atf_check -o match:'"step":5,"keep":720,"bytes":[1-9][0-9]+,"ncpu":[0-9]+,"mem_total":[1-9][0-9]+,"swap_total":[0-9]+' \
 	    -o match:'"fields":\["t","cpu","load","mem","swap","rx","tx","read","write"\]' \
@@ -10236,8 +10628,22 @@ EOS
 		for (i = 1; i <= n; i++) { sub(/^\[/, "", a[i]); split(a[i], f, ","); if (a[i] != "" && f[1] + 0 <= last) ok = 0 }
 		print ok ? "ok" : "old " s
 	}' after.json
-	# How it samples is set, and written down for the next start: fewer
-	# kept are the newest; none kept is no sampling and no memory.
+}
+observe_history_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case observe_limits cleanup
+observe_limits_head()
+{
+	atf_set "descr" "a limit crossed is an event, once, told to those who follow; a pool over its limit a storage fault, cleared"
+	atf_set "timeout" "60"
+}
+observe_limits_body()
+{
+	observe_start
+
 	# A limit crossed is an event, once, until it is crossed back; told
 	# to those who follow the events the moment it is made.
 	"$JGC" -c "$SOCK" events -f > follow.out 2>&1 &
@@ -10245,7 +10651,7 @@ EOS
 	sleep 0.5
 	atf_check -o match:'"limits":\{"cpu":1,"mem":1,"swap":0,"storage":90\}' \
 	    "$JGC" -c "$SOCK" history set 1 20 1 1 0 hold 0
-	sleep 3
+	wait_match '"what":"mem"' cat follow.out
 	kill "$(cat follow.pid)"
 	atf_check -o match:'^\{"n":[0-9]+,"t":[0-9]+,"kind":"threshold","data":\{"what":"mem","value":[0-9]+,"limit":1,"over":true\}\}$' \
 	    cat follow.out
@@ -10261,7 +10667,7 @@ EOS
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"limits":\{"cpu":90,"mem":90,"swap":50,"storage":0\}' \
 	    "$JGC" -c "$SOCK" history set 1 20 90 90 50 0
-	sleep 2
+	wait_match '"what":"storage","name":"tank","limit":0,"over":false' "$JGC" -c "$SOCK" events
 	atf_check -o match:'"what":"storage","name":"tank","limit":0,"over":false' \
 	    "$JGC" -c "$SOCK" events
 	atf_check -o match:'"object":"tank","by":"sampler",[^}]*"cleared":true' \
@@ -10271,6 +10677,24 @@ EOS
 	    "$JGC" -c "$SOCK" history set 1 20 90 90 50 101
 	atf_check -o match:'"limits":\{"cpu":90,"mem":90,"swap":50,"storage":0\}' \
 	    "$JGC" -c "$SOCK" history set 1 20 90 90 50
+}
+observe_limits_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case observe_keep cleanup
+observe_keep_head()
+{
+	atf_set "descr" "how the history samples is set and kept: fewer kept are the newest, the older thinned when all are there"
+	atf_set "timeout" "90"
+}
+observe_keep_body()
+{
+	observe_start
+
+	# How it samples is set, and written down for the next start: fewer
+	# kept are the newest.
 	atf_check -o match:'"step":1,"keep":2,"bytes":[1-9][0-9]*,' \
 	    "$JGC" -c "$SOCK" history set 1 2
 	atf_check -o match:'^step=1$' -o match:'^keep=2$' cat history.conf
@@ -10292,12 +10716,29 @@ EOS
 		"$JGC" -c "$SOCK" history > h3.json
 		grep -o '\[[0-9][0-9]*,' h3.json | tr -d '[,' > t3
 		[ "$(awk 'NR > 1 { g[NR - 1] = $1 - p } { p = $1 }
-		    END { print (g[1] >= 2 && g[7] <= 2 && g[1] > g[7]) ? "ok" :
-		    "no" }' t3)" = ok ] && break
+		    END { print (g[1] >= 2 && g[7] <= 2 && g[1] > g[7]) ? "ok" : "no" }' \
+		    t3)" = ok ] && break
 	done
 	atf_check -o inline:'8\n' sh -c "wc -l < t3 | tr -d ' '"
 	atf_check -o inline:'ok\n' awk 'NR > 1 { g[NR - 1] = $1 - p } { p = $1 }
 	    END { print (g[1] >= 2 && g[7] <= 2 && g[1] > g[7]) ? "ok" : "gaps " g[1] " " g[7] }' t3
+}
+observe_keep_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case observe_rules cleanup
+observe_rules_head()
+{
+	atf_set "descr" "none kept is no sampling; the limits of one device or jail each; the samples written down at a stop and back at the start"
+	atf_set "timeout" "60"
+}
+observe_rules_body()
+{
+	observe_start
+
+	# None kept is no sampling and no memory.
 	atf_check -o match:'"step":60,"keep":0,"bytes":0,' -o match:'"samples":\[\]' \
 	    "$JGC" -c "$SOCK" history set 60 0
 	sleep 2
@@ -10317,7 +10758,7 @@ EOS
 	atf_check -o match:'^rule=net:lo1=1000$' cat history.conf
 	atf_check -o match:'"rules":\[\]' "$JGC" -c "$SOCK" history set 2 10 rules ''
 	atf_check -o not-match:'^rule=' cat history.conf
-	sleep 3
+	wait_match '"samples":\[\[' "$JGC" -c "$SOCK" history
 	atf_check -o match:'"samples":\[\[' "$JGC" -c "$SOCK" history
 	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 3601 10
 	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 5 5001
@@ -10332,7 +10773,7 @@ EOS
 	atf_check -o match:'"step":2,"keep":10,' -o match:'"samples":\[\[' \
 	    "$JGC" -c "$SOCK" history
 }
-observe_cleanup()
+observe_rules_cleanup()
 {
 	stop_daemon
 }
@@ -14196,6 +14637,33 @@ datastores_syslog_cleanup()
 
 atf_init_test_cases()
 {
+	atf_add_test_case sdwan_ids
+	atf_add_test_case vpn_bird_gone
+	atf_add_test_case safe_mode_restore
+	atf_add_test_case sdwan_ids_forms
+	atf_add_test_case history_hold_mem
+	atf_add_test_case sdwan_ids_run
+	atf_add_test_case observe_keep
+	atf_add_test_case safe_mode_undo
+	atf_add_test_case sdwan_proxy
+	atf_add_test_case history_hold_storage
+	atf_add_test_case sdwan_dhcp_dns
+	atf_add_test_case vpn_bird_safe
+	atf_add_test_case observe_rules
+	atf_add_test_case sdwan_ids_rules
+	atf_add_test_case history_hold_off
+	atf_add_test_case sdwan_rules
+	atf_add_test_case vpn_bird
+	atf_add_test_case sdwan_bird
+	atf_add_test_case vpn_wireguard
+	atf_add_test_case safe_mode_confirm
+	atf_add_test_case sdwan_ids_pcap
+	atf_add_test_case safe_mode_queue
+	atf_add_test_case observe_limits
+	atf_add_test_case observe_history
+	atf_add_test_case sdwan_probes
+	atf_add_test_case observe_ps
+	atf_add_test_case observe_log
 	atf_add_test_case datastores_syslog
 	atf_add_test_case datastores_ra
 	atf_add_test_case datastores_sysctl
@@ -14221,7 +14689,6 @@ atf_init_test_cases()
 	atf_add_test_case ipsec_sa
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
-	atf_add_test_case sdwan
 	atf_add_test_case sdwan_forms
 	atf_add_test_case netstore
 	atf_add_test_case smtpd
@@ -14240,7 +14707,6 @@ atf_init_test_cases()
 	atf_add_test_case sshd
 	atf_add_test_case crashes
 	atf_add_test_case capture
-	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case traceroute
 	atf_add_test_case kernel
@@ -14250,11 +14716,8 @@ atf_init_test_cases()
 	atf_add_test_case firewall_apply
 	atf_add_test_case firewall_feeds
 	atf_add_test_case firewall_migrate
-	atf_add_test_case observe
-	atf_add_test_case history_hold
 	atf_add_test_case storage
 	atf_add_test_case notify
-	atf_add_test_case safe_mode
 	atf_add_test_case safe_sysctl
 	atf_add_test_case safe_route_delete
 	atf_add_test_case safe_bird

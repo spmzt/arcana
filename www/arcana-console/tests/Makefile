@@ -1,8 +1,8 @@
 .include "${.CURDIR}/../../../share/mk/arcana.mk"
 
 TESTSDIR=	${TESTSBASE}/arcana/console
-ATF_TESTS_C=	console_test \
-		pwa_test \
+ATF_TESTS_C=	pwa_test \
+		console_test \
 		raft_test \
 		webpush_test \
 		yaml_test \

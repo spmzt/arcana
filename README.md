@@ -90,11 +90,14 @@ libwebsockets, emscripten or the libraries' sources. The port,
 `port/sysutils/arcana` (with a `CONSOLE` option), builds the same way;
 `devel/cblink` comes from cblink's own tree.
 
-`make check` skips the tests that need root; run it as root to drive a
-throwaway jail (`arcana-test`, on `127.0.10.0/24` on `lo0`) through
-jail(8) for real.  `make check-root` runs the root cases (vnet jails,
-routes, carp) as root through mdo(1), with no descriptor above stderr
-passed on: jail_attach(2) refuses a process holding an open directory.
+`make check` runs every suite under one kyua(1), `CHECK_PARALLEL`
+cases at once (one and a half a CPU), and skips the tests that need root; run it as root
+to drive throwaway jails (`arct_CASE`, on `127.0.10.0/24` to
+`127.0.14.0/24` on `lo0`) through jail(8) for real.  `make check-root`
+runs the root cases (vnet jails, routes, carp) as root through mdo(1),
+`CHECK_ROOT_PARALLEL` at once (6), those of the host's shared state
+alone, with no descriptor above stderr passed on: jail_attach(2)
+refuses a process holding an open directory.
 
 ## Setting it up
 

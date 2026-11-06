@@ -100,6 +100,7 @@ static void	js_str(char *, size_t, const char *);
 static void	dock_closed(void);
 static void	queued_run(void);
 static void	moves_measure(void);
+static void	ptr_define(void);
 
 static void
 shot(const char *name)
@@ -181,6 +182,8 @@ wait_js(const char *expr, int seconds)
 	ucl_object_t	*v;
 	int		 i;
 
+	/* Longer the busier the machine: many browsers run at once. */
+	seconds = busy_secs(seconds);
 	for (i = 0; i < seconds * 10; i++) {
 		if (js_true(expr))
 			return;
@@ -289,6 +292,15 @@ host_tab(const char *name)
 	snprintf(sel, sizeof(sel), "nav.hsects button.tab[data-arg='%s/%s']",
 	    in[i].tab, name);
 	click_when(sel, 10);
+}
+
+/* The first host's page with its tabs: where a part begins. */
+static void
+host_tabs(void)
+{
+
+	host_open(NULL);
+	wait_js("document.querySelector('button.tab[data-arg=network]')", 10);
 }
 
 static double
@@ -720,9 +732,9 @@ part_shell(void)
 	    "'abc_DEF')", 10);
 	/* Disabled until the save's reply: settings.json is written
 	 * before the page has it. */
-	click_when("button[data-act=telegram-test]", busy_secs(10));
+	click_when("button[data-act=telegram-test]", 10);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('No message sent'))", busy_secs(20));
+	    "t.textContent.includes('No message sent'))", 20);
 	/*
 	 * What is typed in a field stays there when the page is drawn
 	 * again under it: the key's path typed first is still there when
@@ -909,12 +921,12 @@ part_shell(void)
 	    "const f = document.querySelector('form[data-form=login-token]'); "
 	    "f.token.value = sessionStorage.getItem('wtok'); "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('.shell')", busy_secs(20));
+	wait_js("document.querySelector('.shell')", 20);
 	go("/#/settings/aaa/keys");
 	wait_js("document.querySelector('.set-body .keys-token')?.textContent"
 	    ".includes('opened with an API token') && !document.querySelector("
 	    "'form[data-form=add-key]') && !document.querySelector("
-	    "'.set-body .notice.bad')", busy_secs(20));
+	    "'.set-body .notice.bad')", 20);
 	shot("0b3-keys-token");
 	/* Settings' other tabs: the token's limit said once, no refusal of
 	 * what was not asked for; Cluster says this console is not one. */
@@ -931,21 +943,21 @@ part_shell(void)
 	run("const f = document.querySelector('form[data-form=login-password]'"
 	    "); f.user.value = 'admin'; f.password.value = 'a long lab "
 	    "password'; f.requestSubmit();");
-	wait_js("document.querySelector('.shell')", busy_secs(20));
+	wait_js("document.querySelector('.shell')", 20);
 	go("/#/settings/aaa/keys");
 	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
 	    ".name') && !document.querySelector('.set-body .keys-token')",
-	    busy_secs(20));
+	    20);
 	run("document.querySelector('header .acct-btn').click()");
 	wait_js("document.querySelector('.acct-menu.open button"
 	    "[data-act=password]')", 5);
 	run("document.querySelector('header .acct-btn').click()");
 	run("document.querySelector('button[data-act=logout]').click()");
 	click_when("button[data-act=login]", 10);
-	wait_js("document.querySelector('.shell')", busy_secs(20));
+	wait_js("document.querySelector('.shell')", 20);
 	go("/#/settings/aaa/keys");
 	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
-	    ".name')", busy_secs(20));
+	    ".name')", 20);
 	/*
 	 * The console's CA changed for another: made, rolled out (no host
 	 * over TLS here to give it to), finished; the new one alone is
@@ -1116,7 +1128,7 @@ part_hosts(void)
 	run("const f = document.querySelector('form[data-form=agent-update]'); "
 	    "f.restart.checked = false; f.requestSubmit();");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('in place'))", busy_secs(20));
+	    "t.textContent.includes('in place'))", 20);
 	ATF_CHECK(access("installed-agent", X_OK) == 0);
 
 	/*
@@ -1298,7 +1310,7 @@ part_hosts(void)
 	    "textContent; return t.includes('YANG model') && "
 	    "t.includes('module: arcana-jobs') && t.includes('+---x read') "
 	    "&& t.includes('+---x submit') && t.includes('lanes?'); })()",
-	    busy_secs(10));
+	    10);
 	shot("3c-schema");
 	run("document.querySelector('.trace button[data-act=schema]').click()");
 	wait_js("!document.querySelector('.step-pane')", 5);
@@ -1728,20 +1740,17 @@ part_hosts(void)
 	    "'^web {' etc/jail.conf.arcana.bak") == 0);
 }
 
+/*
+ * The network tab's kinds: a tunnel's monitor, the routes and sockets
+ * whole, an interface's label, the neighbours, multicast, CARP, span
+ * ports and the nexthop groups, those also beside the map.
+ */
 static void
-part_nettab(void)
+part_nettab_kinds(void)
 {
-	char		 web[MAXPATHLEN], script[2048];
-	char		*token;
-	FILE		*fp;
-	int		 i;
+	int	i;
 
-	(void)web;
-	(void)script;
-	(void)token;
-	(void)fp;
-	(void)i;
-
+	host_tabs();
 	/* Reboot, on the System tab, asks for the host's name typed; closed
 	 * here, never sent: this agent has no stand-in for shutdown(8). */
 	run("document.querySelector('button.tab[data-arg=system]').click()");
@@ -2112,6 +2121,19 @@ part_nettab(void)
 	    ".click()");
 	wait_js("document.querySelector('.netsect svg.topo')", 20);
 	run("window.fetch = window.fetchH;");
+}
+
+/*
+ * The interfaces: an address added, changed, a box closed by a click
+ * beside it, the table as CSV; static and kept routes, a nexthop, a
+ * lookup, an interface's MTU and tables, a task as it waits, given up
+ * and refused; netgraph, and the host's record of jobs.
+ */
+static void
+part_nettab_ifaces(void)
+{
+	int	i;
+
 	host_open(NULL);
 	click_when("button.tab[data-arg=network]", 10);
 	wait_js("document.querySelector('button[data-act=net-kind]"
@@ -2479,11 +2501,18 @@ part_nettab(void)
 	ATF_CHECK(js_true("!document.querySelector('button[data-act="
 	    "jail-base]')"));
 	run("document.querySelector('button.tab[data-arg=jobs]').click()");
+}
 
-	/*
-	 * On a phone: nothing is wider than the screen, on any of the
-	 * pages, and what is pressed is large enough to press.
-	 */
+/*
+ * On a phone: nothing is wider than the screen, on any of the
+ * pages, and what is pressed is large enough to press; the themes.
+ */
+static void
+part_nettab_phone(void)
+{
+	char	script[2048];
+
+	host_tabs();
 	phone(true);
 	{
 		static const char *tabs[] = { "summary", "jails", "services",
@@ -2662,7 +2691,7 @@ part_nettab(void)
 }
 
 static void
-part_plugins(void)
+part_plugins_hosts(void)
 {
 	char		 web[MAXPATHLEN], script[2048];
 	char		*token;
@@ -2789,14 +2818,21 @@ part_plugins(void)
 	    "true}));");
 	wait_js("!document.querySelector('select[data-input=net-jail]') && "
 	    "document.querySelector('button[data-act=route-add]')", 10);
-	host_open(NULL);
-	wait_js("document.querySelector('button.tab[data-arg=network]')", 10);
+	host_tabs();
+}
 
-	/*
-	 * WireGuard, in a host's network tab: an interface without a key
-	 * is given one, made on the host, and then a peer.  And BIRD: its
-	 * protocols, one of them reloaded.
-	 */
+/*
+ * WireGuard, in a host's network tab: an interface without a key
+ * is given one, made on the host, and then a peer.
+ */
+static void
+part_plugins_wg(void)
+{
+	int	i;
+
+	host_tabs();
+	/* The plugins are sections of the Network tab. */
+	click_when("nav.tabs:not(.sub) button.tab[data-arg=network]", 10);
 	/*
 	 * A plugin not installed: its tab is there still, and says what
 	 * to install, with a button that installs it by pkg(8).  Put back,
@@ -2970,11 +3006,19 @@ part_plugins(void)
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.dock > header').click()");
 	shot("7c-wireguard");
-	/*
-	 * IPsec, strongSwan: the host makes its key, whose public half is
-	 * shown; a connection is made with the form, IKEv2, and its SA is
-	 * there.
-	 */
+}
+
+/*
+ * IPsec, strongSwan: the host makes its key, whose public half is
+ * shown; a connection is made with the form, IKEv2, and its SA is
+ * there.
+ */
+static void
+part_plugins_ipsec(void)
+{
+	int	i;
+
+	host_tabs();
 	host_tab("ipsec");
 	wait_js("document.querySelector('.pane.ipsec button[data-act="
 	    "ipsec-init]')", 20);
@@ -3082,6 +3126,17 @@ part_plugins(void)
 	    "requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("!document.querySelector('table.ipsec')", 20);
+}
+
+/*
+ * BIRD: its protocols, one of them reloaded; its neighbours, its
+ * routes, its configuration changed by parts and by forms.
+ */
+static void
+part_plugins_bird(void)
+{
+
+	host_tabs();
 	host_tab("bird");
 	wait_js("document.querySelectorAll('table.bird tbody tr').length === 4",
 	    20);
@@ -4251,25 +4306,16 @@ part_hosttabs(void)
 	wait_js("!document.querySelector('section.ucard.uoff')", 20);
 }
 
+/*
+ * Storage: the pools with their devices, the datasets, a snapshot
+ * taken and one destroyed once its name is typed, the disks as
+ * the kernel has them, what is mounted, and fstab edited.
+ */
 static void
-part_storage(void)
+part_storage_zfs(void)
 {
-	char		 web[MAXPATHLEN], script[2048];
-	char		*token;
-	FILE		*fp;
-	int		 i;
+	int	i;
 
-	(void)web;
-	(void)script;
-	(void)token;
-	(void)fp;
-	(void)i;
-
-	/*
-	 * Storage: the pools with their devices, the datasets, a snapshot
-	 * taken and one destroyed once its name is typed, the disks as
-	 * the kernel has them, what is mounted, and fstab edited.
-	 */
 	run("document.querySelector('button.tab[data-arg=storage]').click()");
 	wait_js("document.querySelector('section.pool[data-pool=tank] table."
 	    "vdevs tr.bad')", 20);
@@ -4634,12 +4680,18 @@ part_storage(void)
 	ATF_CHECK(system("grep -q '^mount -F .*/fstab /mnt/web$' storage.log")
 	    == 0);
 	run("document.querySelector('.dock > header').click()");
+}
 
-	/*
-	 * The kernel: the files linked into it with the modules each
-	 * holds, what its memory went to, a module loaded and one
-	 * unloaded, kept in rc.conf's kld_list or taken out of it.
-	 */
+/*
+ * The kernel: the files linked into it with the modules each
+ * holds, what its memory went to, a module loaded and one
+ * unloaded, kept in rc.conf's kld_list or taken out of it.
+ */
+static void
+part_storage_kernel(void)
+{
+	int	i;
+
 	host_tab("kernel");
 	wait_js("document.querySelector('table.kmods tr[data-kld=kernel]') && "
 	    "document.querySelectorAll('table.kmem tbody tr').length > 3", 20);
@@ -4841,11 +4893,19 @@ part_storage(void)
 	ATF_CHECK(js_true("document.querySelector('.dock [data-act=trace]')."
 	    "dataset.arg === window.opsBefore"));
 	shot("7j-sysctl-pushed");
+}
 
-	/*
-	 * What runs: in the order of what each uses; one picked is given
-	 * a nice value, and sent a signal once that is confirmed.
-	 */
+/*
+ * What runs: in the order of what each uses; one picked is given
+ * a nice value, and sent a signal once that is confirmed.
+ */
+static void
+part_storage_procs(void)
+{
+	char	script[2048];
+	FILE	*fp;
+	int	i;
+
 	ATF_REQUIRE(system("sleep 300 & echo $! > sleep.pid") == 0);
 	{
 		char	pid[16], cmd[96];
@@ -5080,36 +5140,33 @@ part_storage(void)
 	    "'section.ucard .ujails')"));
 	run("document.querySelector('section.ucard .uname').click()");
 	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
-	part_certs();
-	part_ssh();
 	part_hosttabs();
 }
 
+/* The host's Firewall tab, its layout in the side bar. */
 static void
-part_firewall(void)
+fw_open(void)
 {
-	char		 web[MAXPATHLEN], script[2048];
-	char		*token;
-	FILE		*fp;
-	int		 i;
 
-	(void)web;
-	(void)script;
-	(void)token;
-	(void)fp;
-	(void)i;
-
-	/*
-	 * The firewall: the layout with a tab for each of its parts; a
-	 * part's rules, those of now and those only kept; a rule added
-	 * now and kept; the kept rules as a text; and applied through
-	 * set 1, which stays once the console is heard from again.
-	 */
 	run("document.querySelector('button.tab[data-arg=firewall]').click()");
 	/* The layout is in the side bar, a line for each part, in place of
 	 * the hosts; the light that says it is on is the switch. */
 	wait_js("document.querySelectorAll('.fwrail .titem.fw').length >= 34 "
 	    "&& document.querySelector('table.fw-layout tr.pick')", 20);
+}
+
+/*
+ * The firewall: the layout with a tab for each of its parts; a
+ * part's rules, those of now and those only kept; a rule added
+ * now and kept; the kept rules as a text, and the files of the
+ * host's own that it loads.
+ */
+static void
+part_firewall_rules(void)
+{
+	int	i;
+
+	fw_open();
 	ATF_CHECK(js_true("document.querySelector('button.switch.on[data-act="
 	    "fw-onoff]') && document.querySelector('.fw-count').textContent."
 	    "includes('7 rules now') && !document.querySelector('.tree "
@@ -5268,6 +5325,10 @@ part_firewall(void)
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('ipfw "
 	    "1001 changed: 1001 allow tcp from any to me6 2222'))", 20);
+	/* The kept rules written by a step after it. */
+	for (i = 0; i < 100 && system("grep -q '^add 01001 allow tcp from any "
+	    "to me6 2222 in via wg\\[0-1\\]$' ipfw.rules") != 0; i++)
+		usleep(100000);
 	ATF_CHECK(system("grep -A3 '^ipfw -n /dev/stdin$' ipfw.log | grep -A2 "
 	    "'^ipfw -q /dev/stdin$' | grep -A1 '^set 0 delete 1001$' | grep -q "
 	    "'^add 1001 allow tcp from any to me6 2222 in via wg\\[0-1\\]$' && "
@@ -5327,6 +5388,27 @@ part_firewall(void)
 		(void)system("grep -n '' ipfw.rules >&2");
 	run("document.querySelector('.dock > header').click()");
 	ATF_REQUIRE(system("sed -i '' -e '/^add 0170[0-3] /d' ipfw.rules") == 0);
+}
+
+/* Rule 1500 kept, as part_firewall_rules adds it. */
+static void
+fw_kept_1500(void)
+{
+
+	ATF_REQUIRE(system("printf 'add 01500 allow tcp from any to me6 8443 "
+	    "in\\n' >> ipfw.rules") == 0);
+}
+
+/*
+ * The kept rules as a text, the connections let through now, and the
+ * files of the host's own that the firewall loads, read as that text.
+ */
+static void
+part_firewall_files(void)
+{
+
+	fw_kept_1500();
+	fw_open();
 	/* The kept rules as a text, and the connections let through now,
 	 * read again by themselves. */
 	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
@@ -5393,17 +5475,25 @@ part_firewall(void)
 	    "= Date.now(); document.querySelector('button[data-act=refresh]')"
 	    "?.click(); } return false; })()", 30);
 	/* Disabled while the kept rules' read is on its way. */
-	click_when("button[data-act=fw-load-rc]", busy_secs(10));
+	click_when("button[data-act=fw-load-rc]", 10);
 	wait_js("document.querySelector('form[data-form=fw-text] textarea')"
 	    ".value === '# left out, the script\\'s own: fwcmd=\"/sbin/ipfw -q\""
-	    "\\nadd 200 allow ip from any to any via lo0\\n'", busy_secs(10));
+	    "\\nadd 200 allow ip from any to any via lo0\\n'", 10);
 	ATF_REQUIRE(system("sed -i '' -e '/^firewall_type=/d' -e "
 	    "'/^firewall_script=/d' rc.conf") == 0);
-	/*
-	 * A table and what is in it, an entry more; what Apply would
-	 * change; a packet followed through the rules; the firewall of
-	 * a jail with a network of its own.
-	 */
+}
+
+/*
+ * A table and what is in it, an entry more; what Apply would
+ * change; a packet followed through the rules; NAT and QoS by
+ * forms; the firewall of a jail with a network of its own.
+ */
+static void
+part_firewall_objects(void)
+{
+	int	i;
+
+	fw_open();
 	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
 	    "\"-4\"]').click()");
 	wait_js("document.querySelectorAll('table.fwentries tbody tr').length "
@@ -5600,13 +5690,22 @@ part_firewall(void)
 	    "document.querySelector('.fwbar button[data-act=fw-rail]')", 5);
 	run("document.querySelector('.fwbar button[data-act=fw-rail]').click()");
 	wait_js("document.querySelector('.fwrail .titem.fw')", 5);
-	/*
-	 * Apply needs net.inet.ip.fw.dyn_keep_states, and tables_sets for
-	 * a kept table: neither set, the page asks, saying what each does
-	 * and why; Set and apply sets them, and the kernel refusing one
-	 * is said with why, nothing applied.  Once they are set, Apply
-	 * goes on.
-	 */
+}
+
+/*
+ * Apply needs net.inet.ip.fw.dyn_keep_states, and tables_sets for
+ * a kept table: neither set, the page asks, saying what each does
+ * and why; Set and apply sets them, and the kernel refusing one
+ * is said with why, nothing applied.  Once they are set, Apply
+ * goes on.  Then a bridge, and geneve tunnels.
+ */
+static void
+part_firewall_apply(void)
+{
+	int	i;
+
+	fw_kept_1500();
+	fw_open();
 	ATF_REQUIRE(system("printf 'table T46 create type addr\\n' >> "
 	    "ipfw.rules && printf 'net.inet.ip.fw.dyn_keep_states=0\\n"
 	    "net.inet.ip.fw.tables_sets=0\\n' > fw.sysctl && touch "
@@ -5614,17 +5713,17 @@ part_firewall(void)
 	/* A read on its way is not asked again, and may have begun before
 	 * the files changed: the refresh asked once none is. */
 	wait_js("!document.querySelector('.fwbar .fresh.reading')",
-	    busy_secs(10));
+	    10);
 	run("document.querySelector('.fwbar button[data-act=refresh]')"
 	    ".click()");
 	usleep(300000);
 	wait_js("!document.querySelector('.fwbar .fresh.reading')",
-	    busy_secs(10));
+	    10);
 	run("document.querySelector('button[data-act=fw-apply]').click()");
 	wait_js("document.querySelector('.fw-ask') && document.querySelector("
 	    "'.fw-ask').textContent.includes('net.inet.ip.fw.dyn_keep_states "
 	    "is 0') && document.querySelector('.fw-ask').textContent.includes("
-	    "'net.inet.ip.fw.tables_sets is 0')", busy_secs(10));
+	    "'net.inet.ip.fw.tables_sets is 0')", 10);
 	ATF_CHECK(js_true("!document.querySelector('.modal') && document."
 	    "querySelector('.fw-ask').textContent.includes('connections they "
 	    "let through') && document.querySelector('.fw-ask').textContent."
@@ -5756,12 +5855,20 @@ part_firewall(void)
 	    "genevettl inherit genevelearn -genevedscpinherit "
 	    "-geneveexternal up$' ifconfig.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+}
 
-	/*
-	 * How the host is reached, on its summary: the agent's listener,
-	 * the console's own connection among those open now.  A local
-	 * socket is not switched to anything.
-	 */
+/*
+ * How the host is reached, on its summary: the agent's listener,
+ * the console's own connection among those open now.  A local
+ * socket is not switched to anything.  Its rollback timer, the
+ * alerts it is left out of, the host as a bundle and a template,
+ * and its connections read again while shown.
+ */
+static void
+part_firewall_host(void)
+{
+
+	host_tabs();
 	run("document.querySelector('button.tab[data-arg=summary]').click()");
 	wait_js("document.querySelector('.transport ul.listeners li.up') && "
 	    "document.querySelector('table.sessions tbody tr')", 20);
@@ -5924,6 +6031,10 @@ part_firewall(void)
 	click_when("button[data-act=tp-save]:not([disabled])", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
 	    "textContent.includes('Template lab-edge kept'))", 10);
+	/* The toast may be the template's first: the file is what says. */
+	for (int k = 0; k < 100 && system("grep -q 'the lab, as an edge' "
+	    "data/templates.json") != 0; k++)
+		usleep(100000);
 	ATF_CHECK(system("grep -q 'the lab, as an edge' data/templates.json")
 	    == 0);
 	shot("1g-template");
@@ -5939,11 +6050,11 @@ part_firewall(void)
 	    "'input', { bubbles: true }));");
 	wait_js("document.querySelector('input[data-input=tp-val][data-arg="
 	    "hostname]')?.value === 'lab2'", 10);
-	click_when("button[data-act=tp-check]:not([disabled])", busy_secs(10));
+	click_when("button[data-act=tp-check]:not([disabled])", 10);
 	wait_js("document.querySelector('section.template .hcreport')?."
 	    "textContent.includes('what it would do') && [...document."
 	    "querySelectorAll('section.template pre.diff')].some(p => p."
-	    "textContent.includes('+hostname=\"lab2\"'))", busy_secs(20));
+	    "textContent.includes('+hostname=\"lab2\"'))", 20);
 	ATF_CHECK(system("grep -q 'hostname=\"lab\"' root/etc/rc.conf") == 0);
 	/* The list, and the template forgotten. */
 	click_when("button[data-act=tp-close]", 5);
@@ -5988,25 +6099,16 @@ part_firewall(void)
 
 }
 
+/*
+ * Workflows: one made in the editor, its steps' forms from
+ * jobs.json, a parameter, a condition; run, its chain drawn as it
+ * went, a step's trace; and the queue kept as one.  Then the API's
+ * own page.
+ */
 static void
-part_flows(void)
+part_flows_wf(void)
 {
-	char		 web[MAXPATHLEN], script[2048];
-	char		*token;
-	FILE		*fp;
-	int		 i;
 
-	(void)web;
-	(void)script;
-	(void)token;
-	(void)fp;
-	(void)i;
-
-	/*
-	 * Workflows: one made in the editor, its steps' forms from
-	 * jobs.json, a parameter, a condition; run, its chain drawn as it
-	 * went, a step's trace; and the queue kept as one.
-	 */
 	run("document.querySelector('li.titem.wfnode').click()");
 	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
 	{
@@ -6367,14 +6469,19 @@ part_flows(void)
 	    "getAttribute('href') === '/openapi.yaml'"));
 	run("const i = document.querySelector('#filter'); i.value = ''; "
 	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+}
+
+/*
+ * SD-WAN, a section of its own: nothing kept yet; the example, as
+ * the document, checked; one that breaks a requirement told which;
+ * kept, and then in the overview and the service's own tables.
+ */
+static void
+part_flows_sdwan(void)
+{
+
 	host_open(NULL);
 	wait_js("document.querySelector('button.tab[data-arg=summary]')", 10);
-
-	/*
-	 * SD-WAN, a section of its own: nothing kept yet; the example, as
-	 * the document, checked; one that breaks a requirement told which;
-	 * kept, and then in the overview and the service's own tables.
-	 */
 	/* The agent on the console's own host, by its socket, is told
 	 * apart on its page. */
 	ATF_CHECK(js_true("document.querySelector('.hostbar .chip.here')"));
@@ -6757,6 +6864,8 @@ part_flows(void)
 	    "'to make')", 5);
 	shot("9-sdwan-deploy-ask");
 	run("document.querySelector('form[data-form=confirm]').requestSubmit();");
+	/* The apply is jobs on both edges, then the plan read again: as
+	 * long as the machine takes, the busier the longer. */
 	wait_js("(document.querySelector('.sd-applied h3') || {}).textContent"
 	    "?.startsWith('Last apply') && document.querySelector("
 	    "'button[data-act=sd-apply-ask]').disabled", 60);
@@ -6902,33 +7011,34 @@ part_flows(void)
 
 }
 
+/*
+ * The network section, both hosts up on its map; wg0 with a key and
+ * the peer of before, as part_plugins_wg leaves them.
+ */
 static void
-part_netsect(void)
+netsect_open(void)
 {
-	char		 web[MAXPATHLEN], script[2048];
-	char		*token;
-	FILE		*fp;
-	int		 i;
 
-	(void)web;
-	(void)script;
-	(void)token;
-	(void)fp;
-	(void)i;
-
-	/*
-	 * The network: every host a node of a map, joined to the others
-	 * as its interfaces join it.  Both agents here read the same
-	 * machine, so they share its networks.
-	 */
-	run("window.ptr = (el, type, x, y) => { const r = el."
-	    "getBoundingClientRect(); (type === 'pointerdown' ? el : document)"
-	    ".dispatchEvent(new PointerEvent(type, { bubbles: true, button: "
-	    "0, clientX: x === undefined ? r.x + r.width / 2 : x, clientY: "
-	    "y === undefined ? r.y + r.height / 2 : y })); };");
+	ATF_REQUIRE(system("printf 'yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fB"
+	    "mk=\\n' > wg.key && printf 'wg0\\txTIBA5rboUvnH4htodjb6e697QjLER"
+	    "t1NAB4mZqp8Dg=\\t(none)\\t192.0.2.9:51820\\t10.9.9.2/32\\t0\\t0"
+	    "\\t0\\t0\\n' > wg.peers.wg0") == 0);
+	ptr_define();
 	run("document.querySelector('li[data-act=select-network]').click()");
 	wait_js("document.querySelectorAll('svg.topo .tnode.up').length === 2",
 	    30);
+}
+
+/*
+ * The network: every host a node of a map, joined to the others
+ * as its interfaces join it.  Both agents here read the same
+ * machine, so they share its networks.
+ */
+static void
+part_netsect_map(void)
+{
+
+	netsect_open();
 	wait_js("document.querySelector('.map-panel .facts')", 10);
 	/* A host's bridge is drawn above it: a dot for each member, in
 	 * the colour the spanning tree gave it. */
@@ -6943,10 +7053,12 @@ part_netsect(void)
 	wait_js("window.arcGl !== undefined", 15);
 	fprintf(stderr, "WebGL 2: %s\n", js_true("window.arcGl.ok") ? "yes" :
 	    "no");
-	ATF_CHECK(js_true("document.querySelector('svg.topo .tlink .flow') && "
+	/* Waited for: the rates are of two reads, and the hosts here were
+	 * only just added. */
+	wait_js("document.querySelector('svg.topo .tlink .flow') && "
 	    "(window.arcGl.ok ? document.querySelector('.map-wrap > "
 	    "canvas#map-gl + svg.topo') && window.arcGl.flows >= 1 : "
-	    "!document.querySelector('canvas#map-gl'))"));
+	    "!document.querySelector('canvas#map-gl'))", 30);
 	run("for (let i = 0; i < 3; i++) document.querySelector('button"
 	    "[data-act=topo-zoom-in]').click();");
 	usleep(800000);
@@ -7205,12 +7317,18 @@ part_netsect(void)
 	run("document.documentElement.dataset.theme = 'onyx'");
 	shot("8a-onyx");
 	run("delete document.documentElement.dataset.theme");
+}
 
-	/*
-	 * A tunnel is drawn: from one host's port onto the other.  That
-	 * asks for its details, with addresses offered, and makes its two
-	 * ends, one on each host.
-	 */
+/*
+ * A tunnel is drawn: from one host's port onto the other.  That
+ * asks for its details, with addresses offered, and makes its two
+ * ends, one on each host.
+ */
+static void
+part_netsect_draw(void)
+{
+
+	netsect_open();
 	run("const ns = document.querySelectorAll('svg.topo .tnode'), p = "
 	    "ns[0].querySelector('.port'), b = ns[1].querySelector('.box')."
 	    "getBoundingClientRect(); window.bx = b.x + b.width / 2; "
@@ -7274,11 +7392,16 @@ part_netsect(void)
 	/* The peers are queued once the keys are read: run them too. */
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('Queued: wg0: wireguard peer'))", 40);
-	click_when("button[data-act=queue-run]", 5);
-	for (int k = 0; k < 150 && system("grep -q 'allowed-ips 10.254.0.2/32$'"
-	    " wg.log 2>/dev/null && grep -q 'allowed-ips 10.254.0.1/32$' "
-	    "wg.log") != 0; k++)
+	/* Run when the queue may run again: the first run can still be at
+	 * work, its button disabled, on a busy machine. */
+	for (int k = 0, n = busy_secs(15) * 10; k < n && system("grep -q "
+	    "'allowed-ips 10.254.0.2/32$' wg.log 2>/dev/null && grep -q "
+	    "'allowed-ips 10.254.0.1/32$' wg.log") != 0; k++) {
+		if (k % 10 == 0)
+			run("const b = document.querySelector('button[data-act="
+			    "queue-run]'); if (b && !b.disabled) b.click();");
 		usleep(100000);
+	}
 	ATF_CHECK(system("grep -q '^wg0 create$' ifconfig.log && grep -q "
 	    "'^wg0 inet 10.254.0.1/30$' ifconfig.log && grep -Eq '^set wg0 "
 	    "peer HIgo9xNzJMWLKASShiTqIybxZ0U3wGLiUeJ1PKf8ykw= endpoint "
@@ -7373,7 +7496,18 @@ part_netsect(void)
 	wait_js("!document.querySelector('form[data-form=bird-pform]')", 5);
 	run("document.querySelector('li[data-act=select-network]').click()");
 	wait_js("document.querySelectorAll('svg.topo .tnode').length >= 2", 20);
+}
 
+/*
+ * The route from a host to an address, a running vnet jail on the map,
+ * nexthop groups by link-local address, traceroute, and BGP, OSPF and
+ * BFD across the fleet.
+ */
+static void
+part_netsect_paths(void)
+{
+
+	netsect_open();
 	/* The route from a host to an address: asked of the host, drawn
 	 * over the map, and told hop by hop. */
 	run("const i = document.querySelector('#topo-addr'); i.value = "
@@ -8170,7 +8304,7 @@ part_route(int round)
 	    "step();\n", 12345 + round * 7919);
 	run(script);
 	wait_js("window.tdone && Date.now() - window.tlast > 2000",
-	    busy_secs(60));
+	    60);
 	js_str(got, sizeof(got), "location.hash + ' told ' + window.troutes."
 	    "slice(-6).join(' ')");
 	ATF_CHECK_MSG(js_true("window.troutes[window.troutes.length - 1] === "
@@ -8188,14 +8322,9 @@ part_route(int round)
 	run("window.troutes.length = 0;");
 }
 
-ATF_TC_WITH_CLEANUP(pwa_route);
-ATF_TC_HEAD(pwa_route, tc)
-{
-
-	atf_tc_set_md_var(tc, "descr", "The page's address under load: rapid navigate() and back() between renders, a plugin told every address once it is where it stays");
-	atf_tc_set_md_var(tc, "timeout", "300");
-}
-ATF_TC_BODY(pwa_route, tc)
+/* The console with the route plugin, enabled: the rounds' page. */
+static void
+route_prologue(const atf_tc_t *tc)
 {
 	char	dir[MAXPATHLEN];
 
@@ -8208,10 +8337,44 @@ ATF_TC_BODY(pwa_route, tc)
 	run("location.hash = '#/settings/plugins'");
 	click_when("tr[data-plugin=route] button[data-act=plugin-enable]", 10);
 	wait_js("Array.isArray(window.troutes)", 15);
-	for (int i = 0; i < 6; i++)
+}
+
+/* Each round its own seed: half of them a case, side by side. */
+ATF_TC_WITH_CLEANUP(pwa_route_early);
+ATF_TC_HEAD(pwa_route_early, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The page's address under load, rounds 0 to 2: rapid navigate() and back() between renders, a plugin told every address once it is where it stays");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_route_early, tc)
+{
+
+	route_prologue(tc);
+	for (int i = 0; i < 3; i++)
 		part_route(i);
 }
-ATF_TC_CLEANUP(pwa_route, tc)
+ATF_TC_CLEANUP(pwa_route_early, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_route_late);
+ATF_TC_HEAD(pwa_route_late, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The page's address under load, rounds 3 to 5: rapid navigate() and back() between renders, a plugin told every address once it is where it stays");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_route_late, tc)
+{
+
+	route_prologue(tc);
+	for (int i = 3; i < 6; i++)
+		part_route(i);
+}
+ATF_TC_CLEANUP(pwa_route_late, tc)
 {
 
 	browser_stop();
@@ -8497,20 +8660,58 @@ ATF_TC_CLEANUP(pwa_feeds, tc)
 	browser_stop();
 }
 
-ATF_TC_WITH_CLEANUP(pwa_nettab);
-ATF_TC_HEAD(pwa_nettab, tc)
+ATF_TC_WITH_CLEANUP(pwa_nettab_kinds);
+ATF_TC_HEAD(pwa_nettab_kinds, tc)
 {
 
-	atf_tc_set_md_var(tc, "descr", "The network tab, jobs, and every page on a phone with its themes");
-	atf_tc_set_md_var(tc, "timeout", "240");
+	atf_tc_set_md_var(tc, "descr", "The network tab: monitors, routes, sockets, labels, neighbours, multicast, CARP, span and nexthop groups");
+	atf_tc_set_md_var(tc, "timeout", "180");
 }
-ATF_TC_BODY(pwa_nettab, tc)
+ATF_TC_BODY(pwa_nettab_kinds, tc)
 {
 
 	prologue(tc, 1);
-	part_nettab();
+	part_nettab_kinds();
 }
-ATF_TC_CLEANUP(pwa_nettab, tc)
+ATF_TC_CLEANUP(pwa_nettab_kinds, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_nettab_ifaces);
+ATF_TC_HEAD(pwa_nettab_ifaces, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The network tab's interfaces and routes, a task as it waits, netgraph, and jobs");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_nettab_ifaces, tc)
+{
+
+	prologue(tc, 1);
+	part_nettab_ifaces();
+}
+ATF_TC_CLEANUP(pwa_nettab_ifaces, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_nettab_phone);
+ATF_TC_HEAD(pwa_nettab_phone, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Every page on a phone, with its themes");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_nettab_phone, tc)
+{
+
+	prologue(tc, 1);
+	part_nettab_phone();
+}
+ATF_TC_CLEANUP(pwa_nettab_phone, tc)
 {
 
 	browser_stop();
@@ -8949,8 +9150,9 @@ part_safefuse(void)
 
 /*
  * Seconds to wait for what the browser does in its own time, more the
- * busier the machine is: once more for each run queue's worth of load
- * on every CPU (a full make check runs twelve browsers at once).
+ * busier the machine is: twice more for each run queue's worth of load
+ * on every CPU, up to five times (a full make check runs a browser for
+ * most of its cases, and the load average lags behind).
  */
 static int
 busy_secs(int secs)
@@ -8961,7 +9163,8 @@ busy_secs(int secs)
 	if (getloadavg(&load, 1) != 1 || (ncpu = sysconf(
 	    _SC_NPROCESSORS_ONLN)) < 1)
 		return (secs);
-	return (secs * (1 + (int)fmin(load / (double)ncpu, 3.0)));
+	return ((int)ceil(secs * (1.0 + fmin(2.0 * load / (double)ncpu,
+	    4.0))));
 }
 
 /* What a script says, as text. */
@@ -8979,6 +9182,29 @@ js_str(char *out, size_t len, const char *expr)
 		ucl_object_unref(v);
 }
 
+/* window.ptr(el, type, x, y): a pointer event at el's middle, or at
+ * x, y; pointerdown on el itself, the others on the document. */
+static void
+ptr_define(void)
+{
+
+	run("window.ptr = (el, type, x, y) => { const r = el."
+	    "getBoundingClientRect(); (type === 'pointerdown' ? el : document)"
+	    ".dispatchEvent(new PointerEvent(type, { bubbles: true, button: "
+	    "0, clientX: x === undefined ? r.x + r.width / 2 : x, clientY: "
+	    "y === undefined ? r.y + r.height / 2 : y })); };");
+}
+
+/* The network section, its map drawn with a host up. */
+static void
+map_open(void)
+{
+
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelector('svg.topo .tnode.up') && window.arcGl "
+	    "!== undefined", 30);
+}
+
 /*
  * What a pointer move costs the page, measured in the browser: the
  * time spent in arc_on_action (the action and the drawing after it)
@@ -8991,12 +9217,8 @@ moves_measure(void)
 {
 	char	s[400];
 
-	run("window.ptr = (el, type, x, y) => { const r = el."
-	    "getBoundingClientRect(); (type === 'pointerdown' ? el : document)"
-	    ".dispatchEvent(new PointerEvent(type, { bubbles: true, button: "
-	    "0, clientX: x === undefined ? r.x + r.width / 2 : x, clientY: "
-	    "y === undefined ? r.y + r.height / 2 : y })); };"
-	    "window.raf = () => new Promise(r => requestAnimationFrame(r));"
+	ptr_define();
+	run("window.raf = () => new Promise(r => requestAnimationFrame(r));"
 	    "if (!window.arcT) { window.arcT = []; const f0 = Module."
 	    "_arc_on_action; Module._arc_on_action = function (a, b, c) { const "
 	    "t = performance.now(); f0.call(this, a, b, c); window.arcT.push("
@@ -9033,7 +9255,7 @@ moves_measure(void)
 	run("window.res = null; dragMoves('svg.topo .tnode .box', 40).then(s "
 	    "=> { window.res = s; }, e => { window.res = 'error: ' + (e.stack || "
 	    "e); });");
-	wait_js("window.res !== null", busy_secs(60));
+	wait_js("window.res !== null", 60);
 	js_str(s, sizeof(s), "window.res");
 	fprintf(stderr, "nodes=%d links=%d host drag: %s\n", (int)js_num(
 	    "document.querySelectorAll('svg.topo .tnode').length"), (int)js_num(
@@ -9042,13 +9264,13 @@ moves_measure(void)
 	run("window.res = null; dragMoves('svg.topo .bg', 40).then(s => { "
 	    "window.res = s; }, e => { window.res = 'error: ' + (e.stack || e); "
 	    "});");
-	wait_js("window.res !== null", busy_secs(60));
+	wait_js("window.res !== null", 60);
 	js_str(s, sizeof(s), "window.res");
 	fprintf(stderr, "map drag: %s\n", s);
 	ATF_CHECK_MSG(strncmp(s, "error", 5) != 0, "%s", s);
 	run("window.res = null; wheelMoves(40).then(s => { window.res = s; }, "
 	    "e => { window.res = 'error: ' + (e.stack || e); });");
-	wait_js("window.res !== null", busy_secs(60));
+	wait_js("window.res !== null", 60);
 	js_str(s, sizeof(s), "window.res");
 	fprintf(stderr, "wheel: %s\n", s);
 	ATF_CHECK_MSG(strncmp(s, "error", 5) != 0, "%s", s);
@@ -9058,7 +9280,7 @@ moves_measure(void)
 	    "i < 10; i++) { document.querySelector('button[data-act=topo-zoom-' "
 	    "+ (i % 2 ? 'out' : 'in') + ']').click(); await raf(); } window.res "
 	    "= stat(arcT); })();");
-	wait_js("window.res !== null", busy_secs(120));
+	wait_js("window.res !== null", 120);
 	js_str(s, sizeof(s), "window.res");
 	fprintf(stderr, "a whole redraw (the zoom buttons): %s\n", s);
 	js_str(s, sizeof(s), "JSON.stringify(window.arcGl) + ' ' + (window."
@@ -9075,12 +9297,10 @@ moves_measure(void)
  * back, as Escape would.
  */
 static void
-part_map(void)
+part_map_full(void)
 {
 
-	run("document.querySelector('li[data-act=select-network]').click()");
-	wait_js("document.querySelector('svg.topo .tnode.up') && window.arcGl "
-	    "!== undefined", 30);
+	map_open();
 	fprintf(stderr, "WebGL 2: %s\n", js_true("window.arcGl.ok") ? "yes" :
 	    "no");
 	run("window.cw0 = document.querySelector('#map-box').clientWidth;");
@@ -9103,15 +9323,22 @@ part_map(void)
 	wait_js("!document.fullscreenElement && document.querySelector('button"
 	    "[data-act=topo-full]').getAttribute('aria-pressed') === 'false'", 5);
 	moves_measure();
+}
 
-	/*
-	 * Draw mode: kept for this viewer; what a line makes picked by its
-	 * key; a line drawn by the hand lights the hosts that can take it
-	 * and says why of those that cannot; by the keys (C on a host, an
-	 * arrow, Enter) it ends in the dialog with its plan beside it and
-	 * a ghost on the map, which, applied, goes planned or pending as
-	 * its ends' jobs say; a list says the same for a screen reader.
-	 */
+/*
+ * Draw mode: kept for this viewer; what a line makes picked by its
+ * key; a line drawn by the hand lights the hosts that can take it
+ * and says why of those that cannot; by the keys (C on a host, an
+ * arrow, Enter) it ends in the dialog with its plan beside it and
+ * a ghost on the map, which, applied, goes planned or pending as
+ * its ends' jobs say; a list says the same for a screen reader.
+ */
+static void
+part_map_draw(void)
+{
+
+	map_open();
+	ptr_define();
 	click_at("button[data-act=topo-draw]");
 	wait_js("document.querySelector('button[data-act=topo-draw]')."
 	    "getAttribute('aria-pressed') === 'true' && localStorage.getItem("
@@ -9174,15 +9401,23 @@ part_map(void)
 	}
 	click_at("button[data-act=topo-draw]");
 	wait_js("localStorage.getItem('arc_topo_draw') === 'off'", 5);
-	/*
-	 * A fleet of 40 hosts and 500 links invented here, every host's
-	 * agent answered from the browser: a size the map has to stay
-	 * usable at (a thousand links do not even load in the case's time:
-	 * every poll's answer rebuilds the links, docs/notes/webgl-map.md).
-	 * Its links are point to point, each a /30 whose two ends name
-	 * each other.
-	 */
-	run("window.synN = 40; window.synL = 500; window.synIfs = (id) => { "
+}
+
+/*
+ * A fleet of 40 hosts and 500 links invented here, every host's
+ * agent answered from the browser: a size the map has to stay
+ * usable at (a thousand links do not even load in the case's time:
+ * every poll's answer rebuilds the links, docs/notes/webgl-map.md).
+ * Its links are point to point, each a /30 whose two ends name
+ * each other.
+ */
+static void
+part_map_fleet(void)
+{
+
+	map_open();
+	run("window.synN = 40; window.synL = 500; window.synSeen = new Set(); "
+	    "window.synIfs = (id) => { "
 	    "const n = parseInt(id.slice(2)) - 1, out = []; for (let k = 0; k < "
 	    "synL; k++) { const a = k % synN, b = (a + 1 + Math.floor(k / synN)) "
 	    "% synN; if (a !== n && b !== n) continue; const me = a === n, x = "
@@ -9193,9 +9428,11 @@ part_map(void)
 	    "return out; }; window.fetch0 = window.fetch; window.fetch = (u, o) "
 	    "=> { const s = String(u), m = /\\/api\\/servers\\/(sy\\d+)\\/(.*)$/"
 	    ".exec(s); if (m) { let body = { ok: true, data: {} }; if (m[2]."
-	    "startsWith('net/interfaces')) body = { ok: true, data: { time: "
-	    "Date.now(), interfaces: synIfs(m[1]) } }; return Promise.resolve("
-	    "new Response(JSON.stringify(body), { status: 200, headers: { "
+	    "startsWith('net/interfaces')) { body = { ok: true, data: { time: "
+	    "Date.now(), interfaces: synIfs(m[1]) } }; synSeen.add(m[1]); if "
+	    "(synSeen.size === synN && !window.synOff) { window.synOff = true; "
+	    "window.dispatchEvent(new Event('offline')); } } return Promise."
+	    "resolve(new Response(JSON.stringify(body), { status: 200, headers: { "
 	    "'Content-Type': 'application/json' } })); } if (/\\/api\\/servers"
 	    "(\\?|$)/.test(s) && (!o || !o.method || o.method === 'GET')) return "
 	    "fetch0(u, o).then(r => r.text().then(t => { const j = JSON.parse(t); "
@@ -9209,9 +9446,14 @@ part_map(void)
 	    "b.remove();");
 	wait_js("document.querySelectorAll('svg.topo .tnode').length === 40 && "
 	    "document.querySelectorAll('svg.topo .tlink').length >= 500", 600);
-	/* Measured with the page offline: every host is polled every five
+	/*
+	 * Measured with the page offline: every host is polled every five
 	 * seconds and each answer draws the map again, which at this size
-	 * is a page busy with nothing else (docs/notes/webgl-map.md). */
+	 * is a page busy with nothing else (docs/notes/webgl-map.md).  The
+	 * stub above takes it offline once every host has answered: a
+	 * script sent from here waits behind each draw already queued, a
+	 * backlog of minutes by the time the links are all there.
+	 */
 	run("window.dispatchEvent(new Event('offline'));");
 	usleep(3000000);
 	click_at("button[data-act=topo-fit]");
@@ -9258,7 +9500,7 @@ part_mapgpu(void)
 	    "window.glNote = v; window.glLosts++; } });");
 	run("document.querySelector('li[data-act=select-network]').click()");
 	wait_js("document.querySelector('svg.topo .tnode.up') && window.arcGl "
-	    "!== undefined && window.arcGl.gpu !== 1", busy_secs(30));
+	    "!== undefined && window.arcGl.gpu !== 1", 30);
 	if (!js_true("navigator.gpu && (window.arcGl.gpu === 2 || "
 	    "window.glLosts > 0)"))
 		atf_tc_skip("this headless Chromium gives no WebGPU device");
@@ -9288,7 +9530,7 @@ part_mapgpu(void)
 		ATF_REQUIRE_MSG(i <= 3, "devices lost after the fallback");
 		wait_js("(window.arcGl.ok && window.arcGl.losts === window."
 		    "glLosts) || window.dispatchEvent(new Event('resize')) && "
-		    "false", busy_secs(30));
+		    "false", 30);
 		losts = js_num("window.glLosts");
 		moves_measure();
 		if (js_num("window.glLosts") == losts)
@@ -9324,41 +9566,210 @@ ATF_TC_CLEANUP(pwa_mapgpu, tc)
 	browser_stop();
 }
 
-ATF_TC_WITH_CLEANUP(pwa_map);
-ATF_TC_HEAD(pwa_map, tc)
+ATF_TC_WITH_CLEANUP(pwa_map_full);
+ATF_TC_HEAD(pwa_map_full, tc)
 {
 
 	atf_tc_set_md_var(tc, "descr", "The network map: over the whole screen, and moved");
-	atf_tc_set_md_var(tc, "timeout", "900");
+	atf_tc_set_md_var(tc, "timeout", "300");
 }
-ATF_TC_BODY(pwa_map, tc)
+ATF_TC_BODY(pwa_map_full, tc)
 {
 
 	prologue(tc, 2);
-	part_map();
+	part_map_full();
 }
-ATF_TC_CLEANUP(pwa_map, tc)
+ATF_TC_CLEANUP(pwa_map_full, tc)
 {
 
 	browser_stop();
 }
 
-ATF_TC_WITH_CLEANUP(pwa_plugins);
-ATF_TC_HEAD(pwa_plugins, tc)
+ATF_TC_WITH_CLEANUP(pwa_map_draw);
+ATF_TC_HEAD(pwa_map_draw, tc)
 {
 
-	atf_tc_set_md_var(tc, "descr", "Two hosts, vnet jails, WireGuard, IPsec and BIRD, and the network map");
-	atf_tc_set_md_var(tc, "timeout", "400");
+	atf_tc_set_md_var(tc, "descr", "The network map's draw mode: a BGP session and a tunnel drawn by the pointer and by the keys");
+	atf_tc_set_md_var(tc, "timeout", "240");
 }
-ATF_TC_BODY(pwa_plugins, tc)
+ATF_TC_BODY(pwa_map_draw, tc)
+{
+
+	prologue(tc, 2);
+	part_map_draw();
+}
+ATF_TC_CLEANUP(pwa_map_draw, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_map_fleet);
+ATF_TC_HEAD(pwa_map_fleet, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The network map of 40 hosts and 500 links, moved");
+	atf_tc_set_md_var(tc, "timeout", "900");
+}
+ATF_TC_BODY(pwa_map_fleet, tc)
+{
+
+	prologue(tc, 2);
+	part_map_fleet();
+}
+ATF_TC_CLEANUP(pwa_map_fleet, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_plugins_hosts);
+ATF_TC_HEAD(pwa_plugins_hosts, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Two hosts with a service of one name, and a vnet jail's network");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_plugins_hosts, tc)
 {
 
 	prologue(tc, 1);
-	part_plugins();
-	part_netsect();
+	part_plugins_hosts();
+}
+ATF_TC_CLEANUP(pwa_plugins_hosts, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_plugins_wg);
+ATF_TC_HEAD(pwa_plugins_wg, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A plugin installed from its tab, and WireGuard: a key, peers and clients");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_plugins_wg, tc)
+{
+
+	prologue(tc, 1);
+	part_plugins_wg();
+}
+ATF_TC_CLEANUP(pwa_plugins_wg, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_plugins_ipsec);
+ATF_TC_HEAD(pwa_plugins_ipsec, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "IPsec: the host's key, a connection, its certificates and a child");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_plugins_ipsec, tc)
+{
+
+	prologue(tc, 1);
+	part_plugins_ipsec();
+}
+ATF_TC_CLEANUP(pwa_plugins_ipsec, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_plugins_bird);
+ATF_TC_HEAD(pwa_plugins_bird, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "BIRD: its protocols, routes and configuration, by parts and by forms");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_plugins_bird, tc)
+{
+
+	prologue(tc, 1);
+	part_plugins_bird();
+}
+ATF_TC_CLEANUP(pwa_plugins_bird, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_plugins_netmap);
+ATF_TC_HEAD(pwa_plugins_netmap, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The network map of two hosts: its legend, labels, drags and panel");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_plugins_netmap, tc)
+{
+
+	prologue(tc, 2);
+	part_netsect_map();
+}
+ATF_TC_CLEANUP(pwa_plugins_netmap, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_plugins_netdraw);
+ATF_TC_HEAD(pwa_plugins_netdraw, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Tunnels, WireGuard, BGP and OSPF drawn between two hosts on the map");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_plugins_netdraw, tc)
+{
+
+	prologue(tc, 2);
+	part_netsect_draw();
+}
+ATF_TC_CLEANUP(pwa_plugins_netdraw, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_plugins_netpaths);
+ATF_TC_HEAD(pwa_plugins_netpaths, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The network section: a path, a vnet jail, nexthop groups, traceroute, and routing across the fleet");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_plugins_netpaths, tc)
+{
+
+	prologue(tc, 2);
+	part_netsect_paths();
+}
+ATF_TC_CLEANUP(pwa_plugins_netpaths, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_plugins_safefuse);
+ATF_TC_HEAD(pwa_plugins_safefuse, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A change that waits for its confirmation burns down a fuse on the map");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_plugins_safefuse, tc)
+{
+
+	prologue(tc, 1);
 	part_safefuse();
 }
-ATF_TC_CLEANUP(pwa_plugins, tc)
+ATF_TC_CLEANUP(pwa_plugins_safefuse, tc)
 {
 
 	browser_stop();
@@ -9402,55 +9813,254 @@ ATF_TC_CLEANUP(pwa_mesh, tc)
 	browser_stop();
 }
 
-ATF_TC_WITH_CLEANUP(pwa_storage);
-ATF_TC_HEAD(pwa_storage, tc)
+ATF_TC_WITH_CLEANUP(pwa_storage_zfs);
+ATF_TC_HEAD(pwa_storage_zfs, tc)
 {
 
-	atf_tc_set_md_var(tc, "descr", "Storage, the kernel, sysctl, processes, logs, events and utilization");
-	atf_tc_set_md_var(tc, "timeout", "240");
+	atf_tc_set_md_var(tc, "descr", "Storage: pools, datasets, snapshots, disks, mounts and fstab");
+	atf_tc_set_md_var(tc, "timeout", "180");
 }
-ATF_TC_BODY(pwa_storage, tc)
+ATF_TC_BODY(pwa_storage_zfs, tc)
 {
 
 	prologue(tc, 2);
-	part_storage();
-	part_system();
-	part_mail();
-	part_relay();
-	part_dma();
+	part_storage_zfs();
 }
-ATF_TC_CLEANUP(pwa_storage, tc)
+ATF_TC_CLEANUP(pwa_storage_zfs, tc)
 {
 
 	browser_stop();
 }
 
-ATF_TC_WITH_CLEANUP(pwa_firewall);
-ATF_TC_HEAD(pwa_firewall, tc)
+ATF_TC_WITH_CLEANUP(pwa_storage_kernel);
+ATF_TC_HEAD(pwa_storage_kernel, tc)
 {
 
-	atf_tc_set_md_var(tc, "descr", "The firewall, a bridge, geneve tunnels and the transport");
-	atf_tc_set_md_var(tc, "timeout", "240");
+	atf_tc_set_md_var(tc, "descr", "The kernel's modules and memory, and sysctl: set, kept, for the next boot, the whole tree");
+	atf_tc_set_md_var(tc, "timeout", "180");
 }
-ATF_TC_BODY(pwa_firewall, tc)
+ATF_TC_BODY(pwa_storage_kernel, tc)
+{
+
+	prologue(tc, 2);
+	part_storage_kernel();
+}
+ATF_TC_CLEANUP(pwa_storage_kernel, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_storage_procs);
+ATF_TC_HEAD(pwa_storage_procs, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Processes, logs, events as they happen, and utilization");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_storage_procs, tc)
+{
+
+	prologue(tc, 2);
+	part_storage_procs();
+}
+ATF_TC_CLEANUP(pwa_storage_procs, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_storage_certs);
+ATF_TC_HEAD(pwa_storage_certs, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The certificates OpenSSL trusts, and the base system's sshd");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_storage_certs, tc)
+{
+
+	prologue(tc, 2);
+	part_certs();
+	part_ssh();
+}
+ATF_TC_CLEANUP(pwa_storage_certs, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_storage_system);
+ATF_TC_HEAD(pwa_storage_system, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A host's NTP, periodic, service jails, securelevel, MAC, devfs, syslog and hardening");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_storage_system, tc)
+{
+
+	prologue(tc, 2);
+	part_system();
+}
+ATF_TC_CLEANUP(pwa_storage_system, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_storage_mail);
+ATF_TC_HEAD(pwa_storage_mail, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The Mail tab: OpenSMTPD's form, its tables, its text, its queue's limit");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_storage_mail, tc)
+{
+
+	prologue(tc, 2);
+	part_mail();
+}
+ATF_TC_CLEANUP(pwa_storage_mail, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_storage_relay);
+ATF_TC_HEAD(pwa_storage_relay, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The FEC relay tab: its flags, its ratios, a comparison, a profile, its history");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_storage_relay, tc)
+{
+
+	prologue(tc, 2);
+	part_relay();
+}
+ATF_TC_CLEANUP(pwa_storage_relay, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_storage_dma);
+ATF_TC_HEAD(pwa_storage_dma, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "How dma relays the console's mail, written on its host");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_storage_dma, tc)
+{
+
+	prologue(tc, 2);
+	part_dma();
+}
+ATF_TC_CLEANUP(pwa_storage_dma, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_firewall_rules);
+ATF_TC_HEAD(pwa_firewall_rules, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The firewall's layout and rules: added, dragged, aliased, kept and moved");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_firewall_rules, tc)
 {
 
 	prologue(tc, 1);
-	part_firewall();
+	part_firewall_rules();
 }
-ATF_TC_CLEANUP(pwa_firewall, tc)
+ATF_TC_CLEANUP(pwa_firewall_rules, tc)
 {
 
 	browser_stop();
 }
 
-ATF_TC_WITH_CLEANUP(pwa_flows);
-ATF_TC_HEAD(pwa_flows, tc)
+ATF_TC_WITH_CLEANUP(pwa_firewall_files);
+ATF_TC_HEAD(pwa_firewall_files, tc)
 {
 
-	atf_tc_set_md_var(tc, "descr", "Workflows, the API, SD-WAN, Security and the Builder");
-	atf_tc_set_md_var(tc, "timeout", "360");
+	atf_tc_set_md_var(tc, "descr", "The firewall's kept rules as text, its states, and the host's own files it loads");
+	atf_tc_set_md_var(tc, "timeout", "180");
 }
+ATF_TC_BODY(pwa_firewall_files, tc)
+{
+
+	prologue(tc, 1);
+	part_firewall_files();
+}
+ATF_TC_CLEANUP(pwa_firewall_files, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_firewall_objects);
+ATF_TC_HEAD(pwa_firewall_objects, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The firewall's tables, its diff, a packet followed, NAT and QoS");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_firewall_objects, tc)
+{
+
+	prologue(tc, 1);
+	part_firewall_objects();
+}
+ATF_TC_CLEANUP(pwa_firewall_objects, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_firewall_apply);
+ATF_TC_HEAD(pwa_firewall_apply, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The firewall applied, its sysctls asked first; a bridge and geneve tunnels");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_firewall_apply, tc)
+{
+
+	prologue(tc, 1);
+	part_firewall_apply();
+}
+ATF_TC_CLEANUP(pwa_firewall_apply, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_firewall_host);
+ATF_TC_HEAD(pwa_firewall_host, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The host's transport, rollback timer, alert mutes, bundle, template and connections");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_firewall_host, tc)
+{
+
+	prologue(tc, 1);
+	part_firewall_host();
+}
+ATF_TC_CLEANUP(pwa_firewall_host, tc)
+{
+
+	browser_stop();
+}
+
 /*
  * Troubleshoot, in the side bar: a packet followed, the host itself a
  * router of the made-up network (ts_net): in on em0 from the client's
@@ -10208,17 +10818,115 @@ part_builder(void)
 	    10);
 }
 
-ATF_TC_BODY(pwa_flows, tc)
+ATF_TC_WITH_CLEANUP(pwa_flows_wf);
+ATF_TC_HEAD(pwa_flows_wf, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Workflows: made, drawn, run, from the queue; and the API's page");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_flows_wf, tc)
 {
 
 	prologue(tc, 2);
-	part_flows();
+	part_flows_wf();
+}
+ATF_TC_CLEANUP(pwa_flows_wf, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_flows_sdwan);
+ATF_TC_HEAD(pwa_flows_sdwan, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "SD-WAN: the guide, the forms, the edges applied, paths, security and identities");
+	atf_tc_set_md_var(tc, "timeout", "360");
+}
+ATF_TC_BODY(pwa_flows_sdwan, tc)
+{
+
+	prologue(tc, 2);
+	part_flows_sdwan();
+}
+ATF_TC_CLEANUP(pwa_flows_sdwan, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_flows_trouble);
+ATF_TC_HEAD(pwa_flows_trouble, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Troubleshoot: a packet followed through a made-up network");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_flows_trouble, tc)
+{
+
+	prologue(tc, 2);
 	part_trouble();
+}
+ATF_TC_CLEANUP(pwa_flows_trouble, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_flows_security);
+ATF_TC_HEAD(pwa_flows_security, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The Security page: a URL filter, antivirus and Suricata");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_flows_security, tc)
+{
+
+	prologue(tc, 2);
 	part_security();
+}
+ATF_TC_CLEANUP(pwa_flows_security, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_flows_netstore);
+ATF_TC_HEAD(pwa_flows_netstore, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The Storage page: NFS exports, an iSCSI target, a HAST role");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_flows_netstore, tc)
+{
+
+	prologue(tc, 2);
 	part_netstore();
+}
+ATF_TC_CLEANUP(pwa_flows_netstore, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_flows_builder);
+ATF_TC_HEAD(pwa_flows_builder, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The Builder: jails updated, a bulk build, a port's options");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_flows_builder, tc)
+{
+
+	prologue(tc, 2);
 	part_builder();
 }
-ATF_TC_CLEANUP(pwa_flows, tc)
+ATF_TC_CLEANUP(pwa_flows_builder, tc)
 {
 
 	browser_stop();
@@ -10227,23 +10935,51 @@ ATF_TC_CLEANUP(pwa_flows, tc)
 ATF_TP_ADD_TCS(tp)
 {
 
+	ATF_TP_ADD_TC(tp, pwa_map_fleet);
+	ATF_TP_ADD_TC(tp, pwa_flows_security);
+	ATF_TP_ADD_TC(tp, pwa_plugins_netpaths);
+	ATF_TP_ADD_TC(tp, pwa_plugins_wg);
+	ATF_TP_ADD_TC(tp, pwa_storage_relay);
+	ATF_TP_ADD_TC(tp, pwa_plugins_netmap);
+	ATF_TP_ADD_TC(tp, pwa_hosts);
+	ATF_TP_ADD_TC(tp, pwa_route_late);
+	ATF_TP_ADD_TC(tp, pwa_flows_wf);
+	ATF_TP_ADD_TC(tp, pwa_nettab_ifaces);
+	ATF_TP_ADD_TC(tp, pwa_route_early);
+	ATF_TP_ADD_TC(tp, pwa_flows_sdwan);
+	ATF_TP_ADD_TC(tp, pwa_firewall_host);
+	ATF_TP_ADD_TC(tp, pwa_firewall_rules);
+	ATF_TP_ADD_TC(tp, pwa_plugins_bird);
+	ATF_TP_ADD_TC(tp, pwa_storage_kernel);
 	ATF_TP_ADD_TC(tp, pwa_shell);
+	ATF_TP_ADD_TC(tp, pwa_nettab_phone);
+	ATF_TP_ADD_TC(tp, pwa_storage_certs);
+	ATF_TP_ADD_TC(tp, pwa_plugins_hosts);
+	ATF_TP_ADD_TC(tp, pwa_storage_procs);
+	ATF_TP_ADD_TC(tp, pwa_plugins_netdraw);
+	ATF_TP_ADD_TC(tp, pwa_firewall_files);
+	ATF_TP_ADD_TC(tp, pwa_plugins_safefuse);
+	ATF_TP_ADD_TC(tp, pwa_plugins_ipsec);
+	ATF_TP_ADD_TC(tp, pwa_firewall_apply);
+	ATF_TP_ADD_TC(tp, pwa_map_full);
+	ATF_TP_ADD_TC(tp, pwa_storage_zfs);
+	ATF_TP_ADD_TC(tp, pwa_storage_dma);
+	ATF_TP_ADD_TC(tp, pwa_flows_builder);
+	ATF_TP_ADD_TC(tp, pwa_nettab_kinds);
+	ATF_TP_ADD_TC(tp, pwa_storage_system);
+	ATF_TP_ADD_TC(tp, pwa_firewall_objects);
+	ATF_TP_ADD_TC(tp, pwa_storage_mail);
+	ATF_TP_ADD_TC(tp, pwa_flows_netstore);
+	ATF_TP_ADD_TC(tp, pwa_map_draw);
+	ATF_TP_ADD_TC(tp, pwa_flows_trouble);
 	ATF_TP_ADD_TC(tp, pwa_pad);
 	ATF_TP_ADD_TC(tp, pwa_cplug);
-	ATF_TP_ADD_TC(tp, pwa_route);
 	ATF_TP_ADD_TC(tp, pwa_routes);
-	ATF_TP_ADD_TC(tp, pwa_hosts);
 	ATF_TP_ADD_TC(tp, pwa_nacm);
 	ATF_TP_ADD_TC(tp, pwa_ra);
 	ATF_TP_ADD_TC(tp, pwa_feeds);
-	ATF_TP_ADD_TC(tp, pwa_nettab);
-	ATF_TP_ADD_TC(tp, pwa_plugins);
-	ATF_TP_ADD_TC(tp, pwa_map);
 	ATF_TP_ADD_TC(tp, pwa_mapgpu);
 	ATF_TP_ADD_TC(tp, pwa_mesh);
 	ATF_TP_ADD_TC(tp, pwa_scale);
-	ATF_TP_ADD_TC(tp, pwa_storage);
-	ATF_TP_ADD_TC(tp, pwa_firewall);
-	ATF_TP_ADD_TC(tp, pwa_flows);
 	return (atf_no_error());
 }

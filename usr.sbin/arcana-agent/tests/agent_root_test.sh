@@ -4,13 +4,32 @@
 # Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
 #
 # arcana-agent(8) as root, on a throwaway jail it defines itself:
-# "arcana-test", path "/", no mounts, exec hooks that only echo, and
-# addresses on lo0 in 127.0.10.0/24.  Each case removes the jail and its
-# addresses when it is done, and refuses to run if a jail of that name
-# already exists.
+# "arct_CASE", path "/", no mounts, exec hooks that only echo, and
+# addresses on lo0 in a /24 of 127.0.0.0/8 of the case's own.  Each case
+# removes the jail and its addresses when it is done, and refuses to run
+# if a jail of that name already exists.
+#
+# The cases run side by side (kyua's parallelism): each names its jails,
+# interfaces and addresses for itself.  Those marked is.exclusive change
+# what the whole host shares: FIB 0's routes, the host's ipfw, a commit
+# of the host's interfaces or routes as read a moment before; or measure
+# times another case's load would change.
 #
 
-JAIL=arcana-test
+# The case run: the script's last argument, NAME or NAME:cleanup.
+for _arg; do
+	_case=${_arg%:cleanup}
+done
+JAIL=arct_${_case:-test}
+YJAIL=arcy_${_case:-test}
+# The jail's addresses on lo0, the third octet the case's.
+case "${_case:-}" in
+lifecycle)		JNET=127.0.10 ;;
+live_address)		JNET=127.0.11 ;;
+aliases)		JNET=127.0.12 ;;
+yang_jail_actions)	JNET=127.0.13 ;;
+*)			JNET=127.0.14 ;;
+esac
 
 # Does the kernel have SCTP: compiled in (kern.features.sctp) or the
 # module loaded.
@@ -44,7 +63,7 @@ $JAIL {
 	path = "/";
 	host.hostname = "$JAIL.local";
 	interface = lo0;
-	ip4.addr = 127.0.10.1;
+	ip4.addr = $JNET.1;
 	persist;
 	exec.start = "/bin/echo $JAIL: exec.start ran";
 	exec.stop = "/bin/echo $JAIL: exec.stop ran";
@@ -69,7 +88,7 @@ cleanup()
 {
 	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
 	[ -f etc/jail.conf ] && jail -f etc/jail.conf -r "$JAIL" >/dev/null 2>&1
-	for a in 127.0.10.1 127.0.10.2 127.0.10.3; do
+	for a in $JNET.1 $JNET.2 $JNET.3; do
 		ifconfig lo0 inet "$a" -alias 2>/dev/null
 	done
 	true
@@ -80,13 +99,23 @@ lo0_has()
 	ifconfig lo0 inet | grep -q "inet $1 "
 }
 
+# Waits up to ten seconds for a shell condition: an unconfirmed commit
+# undone at its timeout.  The checks after it say what did not happen.
+wait_for()
+{
+	local i
+
+	for i in $(seq 1 100); do
+		sh -c "$1" >/dev/null 2>&1 && return
+		sleep 0.1
+	done
+}
+
 atf_test_case lifecycle cleanup
 lifecycle_head()
 {
 	atf_set "descr" "start, restart, stop and kill a real jail"
 	atf_set "require.user" "root"
-	# One jail and one name for all of them: never side by side.
-	atf_set "is.exclusive" "true"
 }
 lifecycle_body()
 {
@@ -95,8 +124,8 @@ lifecycle_body()
 	atf_check -o match:'^State: running \(jid [0-9]+\)$' cat start.out
 	atf_check -o match:"\\| $JAIL: exec.start ran" cat start.out
 	atf_check -o ignore jls -j "$JAIL"
-	lo0_has 127.0.10.1 || atf_fail "jail(8) did not add 127.0.10.1"
-	atf_check -o match:"^$JAIL +running +[0-9]+ +127.0.10.1 " \
+	lo0_has $JNET.1 || atf_fail "jail(8) did not add $JNET.1"
+	atf_check -o match:"^$JAIL +running +[0-9]+ +$JNET.1 " \
 	    "$JGC" -c "$SOCK" list
 	atf_check -s exit:1 -o ignore -e match:'already running' \
 	    "$JGC" -c "$SOCK" start "$JAIL"
@@ -107,7 +136,7 @@ lifecycle_body()
 
 	atf_check -o match:'^State: stopped$' "$JGC" -c "$SOCK" stop "$JAIL"
 	atf_check -s exit:1 -o ignore -e ignore jls -j "$JAIL"
-	lo0_has 127.0.10.1 && atf_fail "127.0.10.1 left on lo0"
+	lo0_has $JNET.1 && atf_fail "$JNET.1 left on lo0"
 
 	atf_check -o ignore "$JGC" -c "$SOCK" start "$JAIL"
 	atf_check -o save:kill.out "$JGC" -t -c "$SOCK" kill "$JAIL"
@@ -120,9 +149,10 @@ lifecycle_body()
 	atf_check -o match:"\"kind\":\"jail-state\",\"data\":\\{\"jail\":\"$JAIL\",\"state\":\"running\",\"jid\":[0-9]+\\}" \
 	    -o match:"\"kind\":\"jail-state\",\"data\":\\{\"jail\":\"$JAIL\",\"state\":\"stopped\"" \
 	    cat ev.json
-	# Four starts (start, restart, start again) and as many ends.
-	atf_check -o inline:'3\n' sh -c "grep -o '\"state\":\"running\"' ev.json | wc -l | tr -d ' '"
-	atf_check -o inline:'3\n' sh -c "grep -o '\"state\":\"stopped\"' ev.json | wc -l | tr -d ' '"
+	# Four starts (start, restart, start again) and as many ends, of
+	# this jail: other cases' come and go meanwhile.
+	atf_check -o inline:'3\n' sh -c "grep -o '\"jail\":\"$JAIL\",\"state\":\"running\"' ev.json | wc -l | tr -d ' '"
+	atf_check -o inline:'3\n' sh -c "grep -o '\"jail\":\"$JAIL\",\"state\":\"stopped\"' ev.json | wc -l | tr -d ' '"
 }
 lifecycle_cleanup()
 {
@@ -135,7 +165,6 @@ jail_events_nested_head()
 	atf_set "descr" "a jail made inside another, an LNE in an LNE, is an" \
 	    "event when made and when removed (EVFILT_JAIL)"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 # The jail the nested events are made in, its own name.
 NJAIL=arcana-nested
@@ -169,7 +198,6 @@ jail_allow_live_head()
 {
 	atf_set "descr" "jail-allow on a running jail: a parameter set with JAIL_UPDATE as jail -m does, read back by jls and in the list; in safe mode and not confirmed, set back as it was"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 jail_allow_live_body()
 {
@@ -205,8 +233,6 @@ live_address_head()
 {
 	atf_set "descr" "Live address changes use jail_setv(3) and ioctls only"
 	atf_set "require.user" "root"
-	# One jail and one name for all of them: never side by side.
-	atf_set "is.exclusive" "true"
 }
 live_address_body()
 {
@@ -214,29 +240,29 @@ live_address_body()
 	cp etc/jail.conf before
 	atf_check -o ignore "$JGC" -c "$SOCK" start "$JAIL"
 	atf_check -o save:add.out "$JGC" -t -c "$SOCK" address add -l "$JAIL" \
-	    127.0.10.2
-	atf_check -o match:'^IPv4: 127.0.10.1,127.0.10.2$' \
+	    $JNET.2
+	atf_check -o match:"^IPv4: $JNET.1,$JNET.2\$" \
 	    -o match:'\[syscall\] ioctl\(SIOCAIFADDR\)' \
 	    -o match:'\[lib\] jailparam_set\(3\)' cat add.out
 	# Only jail(8) -e, reading the configuration, runs a program, and
 	# sysrc(8) reading what starts at boot (the jail's record).
 	atf_check -s exit:1 sh -c "grep '\[exec\]' add.out | grep -v ' -e ' | \
 	    grep -v 'sysrc -i -n jail_'"
-	lo0_has 127.0.10.2 || atf_fail "alias not added"
-	atf_check -o inline:'127.0.10.1,127.0.10.2\n' \
+	lo0_has $JNET.2 || atf_fail "alias not added"
+	atf_check -o inline:"$JNET.1,$JNET.2\n" \
 	    jls -j "$JAIL" ip4.addr
 	atf_check cmp -s before etc/jail.conf
 
-	atf_check -o match:'^IPv4: 127.0.10.1$' \
-	    "$JGC" -c "$SOCK" address remove -l "$JAIL" 127.0.10.2
-	lo0_has 127.0.10.2 && atf_fail "alias not removed"
+	atf_check -o match:"^IPv4: $JNET.1\$" \
+	    "$JGC" -c "$SOCK" address remove -l "$JAIL" $JNET.2
+	lo0_has $JNET.2 && atf_fail "alias not removed"
 
-	atf_check -o match:'^IPv4: 127.0.10.1,127.0.10.3$' \
-	    "$JGC" -c "$SOCK" address add -lp "$JAIL" 127.0.10.3
-	atf_check -o match:'ip4.addr = 127.0.10.1, "127.0.10.3";' \
+	atf_check -o match:"^IPv4: $JNET.1,$JNET.3\$" \
+	    "$JGC" -c "$SOCK" address add -lp "$JAIL" $JNET.3
+	atf_check -o match:"ip4.addr = $JNET.1, \"$JNET.3\";" \
 	    cat etc/jail.conf
 	atf_check -o ignore "$JGC" -c "$SOCK" restart "$JAIL"
-	atf_check -o inline:'127.0.10.1,127.0.10.3\n' \
+	atf_check -o inline:"$JNET.1,$JNET.3\n" \
 	    jls -j "$JAIL" ip4.addr
 }
 live_address_cleanup()
@@ -249,26 +275,24 @@ aliases_head()
 {
 	atf_set "descr" "Aliases jail(8) does not know about go with the jail"
 	atf_set "require.user" "root"
-	# One jail and one name for all of them: never side by side.
-	atf_set "is.exclusive" "true"
 }
 aliases_body()
 {
 	start_daemon
 	atf_check -o ignore "$JGC" -c "$SOCK" start "$JAIL"
-	atf_check -o ignore "$JGC" -c "$SOCK" address add -l "$JAIL" 127.0.10.2
-	lo0_has 127.0.10.2 || atf_fail "alias not added"
+	atf_check -o ignore "$JGC" -c "$SOCK" address add -l "$JAIL" $JNET.2
+	lo0_has $JNET.2 || atf_fail "alias not added"
 	# jail(8) -r removes the configured alias; arcana-agent the live one.
 	atf_check -o save:stop.out "$JGC" -t -c "$SOCK" stop "$JAIL"
 	atf_check -o match:'\[syscall\] ioctl\(SIOCDIFADDR\)' cat stop.out
-	lo0_has 127.0.10.2 && atf_fail "live alias 127.0.10.2 left on lo0"
-	lo0_has 127.0.10.1 && atf_fail "configured alias 127.0.10.1 left on lo0"
+	lo0_has $JNET.2 && atf_fail "live alias $JNET.2 left on lo0"
+	lo0_has $JNET.1 && atf_fail "configured alias $JNET.1 left on lo0"
 
 	# jail_remove(2) removes no aliases at all; arcana-agent does.
 	atf_check -o ignore "$JGC" -c "$SOCK" start "$JAIL"
-	lo0_has 127.0.10.1 || atf_fail "jail(8) did not add 127.0.10.1"
+	lo0_has $JNET.1 || atf_fail "jail(8) did not add $JNET.1"
 	atf_check -o ignore "$JGC" -c "$SOCK" kill "$JAIL"
-	lo0_has 127.0.10.1 && atf_fail "alias 127.0.10.1 left after kill"
+	lo0_has $JNET.1 && atf_fail "alias $JNET.1 left after kill"
 	true
 }
 aliases_cleanup()
@@ -397,7 +421,6 @@ jail_network_head()
 {
 	atf_set "descr" "a jail's own network (vnet) watched as the host's is: its interfaces, addresses and routes are events with its name, whether it was there before the agent or came after; and removed, it goes at once, not held"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 jail_network_body()
 {
@@ -473,7 +496,6 @@ jail_plugins_head()
 {
 	atf_set "descr" "a vnet jail's plugins are looked for as the jail sees its files: a program behind a link inside it is found, though the host has none; wg(8), the base system's, is no plugin"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 jail_plugins_body()
 {
@@ -511,7 +533,6 @@ fw_trace_head()
 {
 	atf_set "descr" "packets followed through the real firewall by the kernel: pings to an address, each with the rule that passed it"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 fw_trace_body()
 {
@@ -754,6 +775,8 @@ sdwan_jail_edge_head()
 	    "helper makes there), up, and a host's address the jail has no" \
 	    "route to, down; its own ipfw given a set and steered"
 	atf_set "require.user" "root"
+	# Its rules are a commit of the host's interfaces as read a moment
+	# before: another case's epair gone meanwhile fails it.
 	atf_set "is.exclusive" "true"
 }
 sdwan_jail_edge_body()
@@ -807,6 +830,7 @@ sdwan_links_head()
 	    "end down is an interface fault, up again cleared, as netlink" \
 	    "tells the agent"
 	atf_set "require.user" "root"
+	# As sdwan_jail_edge's: a commit of the host's interfaces.
 	atf_set "is.exclusive" "true"
 }
 sdwan_links_body()
@@ -846,7 +870,6 @@ sctp_multihome_head()
 	    "epairs between them; the association has a path over each," \
 	    "one cut goes on over the other, and the cut one comes back"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 	atf_set "timeout" "180"
 }
 sctp_multihome_body()
@@ -980,7 +1003,6 @@ bird_live_head()
 	    "Established, a route of each learned by the other; the agent" \
 	    "reads the session's state and the routes through the real birdc"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 	atf_set "timeout" "180"
 }
 bird_live_body()
@@ -1088,7 +1110,6 @@ pkg_lanes_head()
 	    "of them; a pkg that says nothing is stopped with its child in" \
 	    "the jail, and one cancelled at work is stopped"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 	atf_set "timeout" "120"
 }
 pkg_lanes_body()
@@ -1096,18 +1117,18 @@ pkg_lanes_body()
 	local d="$(pwd)" j id
 
 	programs
-	for j in arcw_p1 arcw_p2 arcw_p3 arcw_p4 arcw_ps arcw_pc; do
+	for j in arcw_k1 arcw_k2 arcw_k3 arcw_k4 arcw_ks arcw_kc; do
 		jls -j $j >/dev/null 2>&1 && atf_skip "a jail $j is there already"
 	done
-	for j in arcw_p1 arcw_p2 arcw_p3 arcw_p4 arcw_ps arcw_pc; do
+	for j in arcw_k1 arcw_k2 arcw_k3 arcw_k4 arcw_ks arcw_kc; do
 		atf_check -o ignore jail -c name=$j persist path=/
 		echo $j >> jails.made
 	done
 	mkdir run etc etc/jail.conf.d
 	: > etc/jail.conf
 	# pkg, as the agent runs it: how many are at work when one starts,
-	# a jail's twice at once said; arcw_ps silent with a child, as a
-	# stalled download; arcw_pc silent until it is cancelled.
+	# a jail's twice at once said; arcw_ks silent with a child, as a
+	# stalled download; arcw_kc silent until it is cancelled.
 	cat > fake-pkg <<EOS
 #!/bin/sh
 jail=host
@@ -1120,7 +1141,7 @@ esac
 : > $d/run/\$jail
 echo "\$jail \$(ls $d/run | wc -l | tr -d ' ')" >> $d/lanes.log
 case "\$jail" in
-arcw_ps|arcw_pc)
+arcw_ks|arcw_kc)
 	# Stopped: no longer at work (its child is left to the agent).
 	trap "rm -f $d/run/\$jail; exit 143" TERM
 	sleep 300 &
@@ -1137,14 +1158,14 @@ EOS
 	    -1 "$d/history.conf" > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 50); do [ -S s.sock ] && break; sleep 0.1; done
-	for j in arcw_ps arcw_pc arcw_p1 arcw_p1 arcw_p2 arcw_p3 arcw_p4; do
+	for j in arcw_ks arcw_kc arcw_k1 arcw_k1 arcw_k2 arcw_k3 arcw_k4; do
 		"$JGC" -q -c "unix:$d/s.sock" pkg-upgrade -j $j >> queued.out ||
 		    atf_fail "pkg-upgrade -j $j not queued"
 	done
 	# Then one of another kind: pkg on the host.
 	"$JGC" -q -c "unix:$d/s.sock" pkg-upgrade >> queued.out
-	id=$(awk '/in arcw_pc$/ { print $1 }' queued.out)
-	for i in $(seq 1 50); do [ -s arcw_pc.child ] && break; sleep 0.1; done
+	id=$(awk '/in arcw_kc$/ { print $1 }' queued.out)
+	for i in $(seq 1 50); do [ -s arcw_kc.child ] && break; sleep 0.1; done
 	atf_check -o match:"^ *$id running" "$JGC" -c "unix:$d/s.sock" job-cancel $id
 	for i in $(seq 1 300); do
 		"$JGC" -c "unix:$d/s.sock" jobs | grep -q 'queued\|running' ||
@@ -1160,12 +1181,12 @@ EOS
 	# The host's after every jail's, alone.
 	atf_check -o match:'^host 1$' tail -1 lanes.log
 	# The silent one stopped, its child with it; the cancelled one too.
-	atf_check -o match:'failed +pkg upgrade in arcw_ps: pkg upgrade was killed: nothing came from it for 5 seconds' \
-	    -o match:'failed +pkg upgrade in arcw_pc: cancelled while at work' \
-	    -o match:'done +pkg upgrade in arcw_p1$' \
-	    -o match:'done +pkg upgrade in arcw_p4$' \
+	atf_check -o match:'failed +pkg upgrade in arcw_ks: pkg upgrade was killed: nothing came from it for 5 seconds' \
+	    -o match:'failed +pkg upgrade in arcw_kc: cancelled while at work' \
+	    -o match:'done +pkg upgrade in arcw_k1$' \
+	    -o match:'done +pkg upgrade in arcw_k4$' \
 	    -o match:'done +pkg upgrade$' cat jobs.out
-	for j in arcw_ps arcw_pc; do
+	for j in arcw_ks arcw_kc; do
 		atf_check -s not-exit:0 -e ignore kill -0 "$(cat $j.child)"
 	done
 }
@@ -1174,7 +1195,7 @@ pkg_lanes_cleanup()
 	local j
 
 	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
-	for j in arcw_ps arcw_pc; do
+	for j in arcw_ks arcw_kc; do
 		[ -f $j.child ] && kill "$(cat $j.child)" 2>/dev/null
 	done
 	if [ -f jails.made ]; then
@@ -1193,7 +1214,6 @@ sctp_loopback_head()
 	    "(net.inet.sctp.ignore_loopback_iftype): SCTP to that address" \
 	    "from a peer elsewhere answered, and no warning said"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 	atf_set "timeout" "120"
 }
 sctp_loopback_body()
@@ -1314,7 +1334,6 @@ resnapshot_head()
 {
 	atf_set "descr" "the newest snapshot of a dataset taken again under its name, on a pool of a memory disk made for it: newer, the same name, the older one untouched"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 resnapshot_body()
 {
@@ -1358,7 +1377,6 @@ jail_make_head()
 {
 	atf_set "descr" "jails made from a base snapshot on a pool of a memory disk made for it, by clone and by send, started, and taken away with their datasets"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 jail_make_body()
 {
@@ -1842,7 +1860,6 @@ monitors_probe_head()
 {
 	atf_set "descr" "A tunnel monitor really probing: lo0 answers, up with samples of no loss; a gif's far end, found from the interface, does not, down, told as an event"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 monitors_probe_body()
 {
@@ -1950,16 +1967,15 @@ monitors_fib_head()
 	atf_set "descr" "A monitor in another FIB hears its replies, which" \
 	    "come in on an interface of FIB 0"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 monitors_fib_body()
 {
 	[ "$(sysctl -n net.fibs)" -ge 2 ] || atf_skip "one FIB alone here"
-	ifconfig lo57 >/dev/null 2>&1 && atf_skip "lo57 is there already"
-	atf_check -o ignore ifconfig lo57 create
-	atf_check ifconfig lo57 inet 192.0.2.57/32
+	ifconfig lo56 >/dev/null 2>&1 && atf_skip "lo56 is there already"
+	atf_check -o ignore ifconfig lo56 create
+	atf_check ifconfig lo56 inet 192.0.2.57/32
 	# The address is FIB 0's; FIB 1 reaches it by a route of its own.
-	atf_check -o ignore setfib 1 route add -host 192.0.2.57 -iface lo57
+	atf_check -o ignore setfib 1 route add -host 192.0.2.57 -iface lo56
 	start_daemon
 	atf_check -o match:done "$JGC" -c "$SOCK" monitor set name=f1 \
 	    address=192.0.2.57 fib=1 interval=50 eval=200
@@ -1975,7 +1991,7 @@ monitors_fib_body()
 monitors_fib_cleanup()
 {
 	setfib 1 route delete -host 192.0.2.57 2>/dev/null
-	ifconfig lo57 destroy 2>/dev/null
+	ifconfig lo56 destroy 2>/dev/null
 	cleanup
 }
 
@@ -2107,7 +2123,6 @@ yang_layers_cleanup()
 # arcana-interfaces: each kind of interface the
 # agent's jobs make, read back.  What no job sets (a lagg's ports, a
 # vlan's priority, STP on a bridge's member) ifconfig does.
-YJAIL=arcana-ytest
 atf_test_case yang_kinds cleanup
 yang_kinds_head()
 {
@@ -2115,7 +2130,6 @@ yang_kinds_head()
 	    "made: a vlan on a lagg, a bridge, a gif's tunnel FIB, an MTU" \
 	    "and a FIB, an epair whose other end is in a vnet jail"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_kinds_body()
 {
@@ -2310,7 +2324,6 @@ yang_ip_head()
 	    "autoconf by EUI-64 or not, link-local, 169.254/16, duplicate," \
 	    "IPv6 off"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_ip_body()
 {
@@ -2372,7 +2385,6 @@ yang_ecmp_head()
 	    "a prefix with two gateways, IPv4 and IPv6, in a vnet" \
 	    "jail's FIB"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_ecmp_body()
 {
@@ -2419,7 +2431,6 @@ yang_static_apply_head()
 	    "by netlink, undone, and undone on a" \
 	    "failure"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_static_apply_body()
 {
@@ -2505,7 +2516,6 @@ yang_route_times_head()
 	    "a route added while route events are heard has the time, one" \
 	    "not seen to change none"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_route_times_body()
 {
@@ -2551,7 +2561,6 @@ yang_lne_head()
 	    "vnet jail is one, a jail sharing the host's stack is not; as" \
 	    "jls says"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_lne_body()
 {
@@ -2584,7 +2593,6 @@ yang_ni_head()
 	atf_set "descr" "network instances on a host with net.fibs=4" \
 	    ": a vnet jail's, raised to 4"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_ni_body()
 {
@@ -2607,7 +2615,6 @@ yang_ni_grow_head()
 	atf_set "descr" "an instance past the last FIB:" \
 	    "net.fibs raised live and kept in loader.conf; a vnet jail's"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_ni_grow_body()
 {
@@ -2646,15 +2653,14 @@ yang_ni_bind_head()
 	    "read back as the instance's name, a name applied by SIOCSIFFIB" \
 	    "and kept in rc.conf, bind-ni-name-failed; a vnet jail's epair"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_ni_bind_body()
 {
-	local y="$(atf_get_srcdir)/yni" e=epair72a b=epair72b
+	local y="$(atf_get_srcdir)/yni" e=epair70a b=epair70b
 
 	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
 	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
-	atf_check -o ignore ifconfig epair72 create
+	atf_check -o ignore ifconfig epair70 create
 	echo "$e" > made
 	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
 	atf_check ifconfig "$b" vnet "$YJAIL"
@@ -2690,7 +2696,7 @@ yang-cbor the same back
 }
 yang_ni_bind_cleanup()
 {
-	ifconfig epair72b -vnet "$YJAIL" >/dev/null 2>&1
+	ifconfig epair70b -vnet "$YJAIL" >/dev/null 2>&1
 	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
 	jail -r "$YJAIL" >/dev/null 2>&1
 	true
@@ -2703,7 +2709,6 @@ yang_rtadv_head()
 	    "submodule, rtadvctl reload, rtadvctl show," \
 	    "a lab rtadvd in a vnet jail"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_rtadv_body()
 {
@@ -2803,7 +2808,6 @@ yang_jail_actions_head()
 	    "real jail, over cblink's YANG family; the jail read as the " \
 	    "module has it in between"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_jail_actions_body()
 {
@@ -2881,7 +2885,6 @@ route_fib_head()
 {
 	atf_set "descr" "A route added in another routing table, its source used"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 route_fib_body()
 {
@@ -2937,7 +2940,6 @@ l2_vnet_head()
 {
 	atf_set "descr" "Geneve tunnels pass traffic, two bridges in a loop have one port discarding"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 l2_vnet_body()
 {
@@ -3039,7 +3041,7 @@ commit_route_body()
 	atf_check -o match:'^rc_conf_files=".*/usr/local/etc/rc.conf.d/arcana"' \
 	    cat root/etc/rc.conf
 	# Not confirmed: undone at its timeout, the kernel's and the file's.
-	sleep 5
+	wait_for "! route -n get 203.0.113.0 | grep -q 'destination: 203.0.113.0' && ! grep -q 203.0.113.0 root/usr/local/etc/rc.conf.d/arcana"
 	atf_check -s ignore -o not-match:'destination: 203.0.113.0' -e ignore \
 	    route -n get 203.0.113.0
 	atf_check -o not-match:'203.0.113.0' cat root/usr/local/etc/rc.conf.d/arcana
@@ -3089,7 +3091,7 @@ commit_interface_body()
 	atf_check -o match:"^ifconfig_${lo}_alias0=\"inet 192.0.2.9/32\"" \
 	    -o match:"^ifconfig_${lo}_descr=\"lab\"" \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	sleep 5
+	wait_for "! ifconfig $lo | grep -q 192.0.2.9 && ! grep -q lab root/usr/local/etc/rc.conf.d/arcana"
 	atf_check -o not-match:'192.0.2.9' -o not-match:'description' \
 	    ifconfig "$lo"
 	atf_check -o not-match:'192.0.2.9' -o not-match:'lab' \
@@ -3111,7 +3113,6 @@ console_group_head()
 	atf_set "descr" "A local account in the socket's group (-g) is the" \
 	    "console: it may name the user it asks for"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 console_group_body()
 {
@@ -3146,7 +3147,6 @@ onchange_address_head()
 	atf_set "descr" "An address added arrives as an on-change patch, told" \
 	    "by netlink(4)'s event"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 onchange_address_body()
 {
@@ -3203,7 +3203,7 @@ commit_create_body()
 	    -o match:'^ifconfig_gif57="tunnel 192.0.2.1 192.0.2.2 up"' \
 	    -o match:'^ifconfig_gif57_alias0="inet 198.51.100.57/32 198.51.100.58"' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	sleep 5
+	wait_for '! ifconfig gif57 && ! grep -q gif57 root/usr/local/etc/rc.conf.d/arcana'
 	atf_check -s not-exit:0 -e ignore ifconfig gif57
 	atf_check -o not-match:'gif57' cat root/usr/local/etc/rc.conf.d/arcana
 	# Confirmed: kept.
@@ -3254,7 +3254,7 @@ commit_fib_body()
 	atf_check -o match:'bind-ni-name":"fib1"' \
 	    "$JGC" -c "$SOCK" get -d running -x \
 	    "/ietf-interfaces:interfaces/interface[name='lo59']" interfaces
-	sleep 5
+	wait_for '! ifconfig lo59'
 	atf_check -s not-exit:0 -e ignore ifconfig lo59
 }
 commit_fib_cleanup()
@@ -3296,7 +3296,7 @@ commit_fib_route_body()
 	atf_check -o match:'gateway: 127.0.0.1' route -n get -fib 1 203.0.113.0
 	atf_check -o match:'203.0.113.0/24 127.0.0.1.*-fib 1|-fib 1.*203.0.113.0/24' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	sleep 5
+	wait_for "! route -n get -fib 1 203.0.113.0 | grep -q 'destination: 203.0.113.0'"
 	atf_check -s ignore -o not-match:'destination: 203.0.113.0' -e ignore \
 	    route -n get -fib 1 203.0.113.0
 }
@@ -3317,7 +3317,6 @@ lne_root_head()
 	atf_set "descr" "A vnet jail's LNE root read through its attached" \
 	    "helper: its interfaces and a FIB's routes"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 lne_root_body()
 {
@@ -3341,7 +3340,9 @@ lne_root_body()
 	    -o match:'"ietf-yang-library:yang-library"' \
 	    -o match:'"vrf-root":\{.*destination-prefix":"203\.0\.113\.0/24"' \
 	    cat lne.json
-	pid=$(pgrep -P "$(cat daemon.pid)" -f 'lne-serve')
+	# Its own helper: every vnet jail on the host has one.
+	jid=$(jls -j lne57 jid)
+	pid=$(pgrep -P "$(cat daemon.pid)" -f "scope-helper $jid lne-serve")
 	[ -n "$pid" ] || atf_fail "no helper of lne57's"
 	# The host's: epair57b, bound to lne57.
 	atf_check -o match:'"name":"epair57b"[^}]*"ietf-logical-network-element:bind-lne-name":"lne57"' \
@@ -3352,14 +3353,14 @@ lne_root_body()
 	atf_check kill -9 "$pid"
 	atf_check -o match:'"ip":"198\.51\.100\.57"' \
 	    "$JGC" -c "$SOCK" get logical-network-elements
-	atf_check -o not-match:"^$pid\$" pgrep -P "$(cat daemon.pid)" -f 'lne-serve'
+	atf_check -o not-match:"^$pid\$" pgrep -P "$(cat daemon.pid)" -f "scope-helper $jid lne-serve"
 	# With the jail, its helper goes: reaped, the jail not held dying.
 	# Its interfaces out first: a vnet torn down with an address in it
 	# panics a debug kernel.
 	atf_check ifconfig epair57a destroy
 	atf_check -o ignore jail -r lne57
 	sleep 0.5
-	atf_check -s not-exit:0 pgrep -P "$(cat daemon.pid)" -f 'lne-serve'
+	atf_check -s not-exit:0 pgrep -P "$(cat daemon.pid)" -f "scope-helper $jid lne-serve"
 	atf_check -s not-exit:0 -e match:"not found" jls -d -j lne57 jid
 }
 lne_root_cleanup()
@@ -3381,7 +3382,6 @@ yang_sap_head()
 	atf_set "descr" "An epair's ends as SAPs, one a vnet jail's; the" \
 	    "status following the link down and up, on change"
 	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
 }
 yang_sap_body()
 {
@@ -3487,7 +3487,7 @@ EOF2
 	atf_check -o match:'"name":"epair57a"[^}]*"ietf-logical-network-element:bind-lne-name":"lne57"' \
 	    "$JGC" -c "$SOCK" get -d running interfaces
 	# Not confirmed: back, its address with it, jail.conf as it was.
-	sleep 5
+	wait_for "ifconfig epair57a | grep -q 'inet 198.51.100.57 ' && ! grep -q epair57a etc/jail.conf"
 	atf_check -o match:'inet 198.51.100.57 ' ifconfig epair57a
 	atf_check -o not-match:'epair57a' cat etc/jail.conf
 	# Confirmed: kept; then given back by a commit of running without

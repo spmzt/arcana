@@ -4922,27 +4922,36 @@ run_wait(const char *n, struct resp *r)
 	ATF_REQUIRE_MSG(0, "run %s did not end", n);
 }
 
-CONSOLE_TC(workflows, "A workflow's steps checked against jobs.yaml, run on "
-    "a host with its values, conditions and what follows a failure, and "
-    "begun by the host's events")
-ATF_TC_BODY(workflows, tc)
+/* The workflows' console: host lab added, its id into sid. */
+static void
+wf_start(const atf_tc_t *tc, struct authn *a, char *sid, size_t len)
 {
-	struct authn	a;
 	struct resp	r;
-	char		cwd[1024], body[4096], sid[16], run[32], wid[16];
-	char		path[128], every[16];
-	FILE		*fp;
-	int		i;
+	char		cwd[1024], body[1200];
 
 	start(tc, 0, NULL);
-	enrol(&a);
+	enrol(a);
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
 	    "jgd.sock\"}", cwd);
 	http("POST", "/api/servers", body, &r);
 	EXPECT(&r, 200);
-	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	snprintf(sid, len, "%s", jstr(&r, "servers.0.id"));
 	resp_free(&r);
+}
+
+CONSOLE_TC(workflows, "A workflow's steps checked against jobs.yaml, run on "
+    "a host with its values, conditions and what follows a failure; its "
+    "runs cleared")
+ATF_TC_BODY(workflows, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[4096], sid[16], run[32], wid[16];
+	char		path[128];
+	int		i;
+
+	wf_start(tc, &a, sid, sizeof(sid));
 
 	/* What is not one, as jobs.yaml has the kinds. */
 	static const char *const bad[][2] = {
@@ -5063,6 +5072,45 @@ ATF_TC_BODY(workflows, tc)
 	ATF_CHECK(strstr(r.body, "\"trace\"") == NULL);
 	resp_free(&r);
 
+	/* The history cleared: another workflow's alone is none of
+	 * these; all of it, every run that has ended, its traces too. */
+	http("DELETE", "/api/runs?workflow=ffffffff", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("0", jstr(&r, "cleared"));
+	resp_free(&r);
+	http("DELETE", "/api/runs", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "cleared") != NULL && atoi(jstr(&r, "cleared"))
+	    >= 1, "%s", r.body);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "test ! -e data/runs/%s.json", run);
+	ATF_CHECK(system(body) == 0);
+	http("GET", "/api/runs", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"state\":\"done\"") == NULL &&
+	    strstr(r.body, "\"state\":\"failed\"") == NULL, "%s", r.body);
+	resp_free(&r);
+	/* Gone. */
+	snprintf(path, sizeof(path), "/api/workflows/%s", wid);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+}
+
+CONSOLE_TC(workflows_arcana, "A workflow keeping Arcana up to date from its "
+    "repository, a host that cannot take the agent named, and a run whose "
+    "worker dies said to be interrupted")
+ATF_TC_BODY(workflows_arcana, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[4096], sid[16], run[32], path[128];
+	int		i;
+
+	wf_start(tc, &a, sid, sizeof(sid));
 	/*
 	 * Arcana kept up to date from its repository: its head asked of
 	 * the host, the agent built and sent to every host only when the
@@ -5184,7 +5232,19 @@ ATF_TC_BODY(workflows, tc)
 	resp_free(&r);
 	/* What a run whose worker died is not, the console's end. */
 	ATF_REQUIRE(system("sed -i '' '/exited with status/d' console.out") == 0);
+}
 
+CONSOLE_TC(workflows_every, "A workflow at an interval, counted from when "
+    "it last ran, which a restart of the console does not forget")
+ATF_TC_BODY(workflows_every, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[4096], sid[16], path[128], every[16];
+	FILE		*fp;
+	int		i;
+
+	wf_start(tc, &a, sid, sizeof(sid));
 	/*
 	 * At an interval, counted from when it last ran by it, which a
 	 * restart of the console does not forget: kept as having run 58 s
@@ -5217,7 +5277,19 @@ ATF_TC_BODY(workflows, tc)
 	http("DELETE", path, NULL, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
+}
 
+CONSOLE_TC(workflows_events, "Workflows begun by the host's events: a "
+    "threshold crossed, a program that crashes, the host that stops "
+    "answering")
+ATF_TC_BODY(workflows_events, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[4096], sid[16], path[128];
+	int		i;
+
+	wf_start(tc, &a, sid, sizeof(sid));
 	/* Begun by the host's events: a threshold crossed, then the host
 	 * that stops answering. */
 	snprintf(body, sizeof(body), "{\"name\":\"on mem\",\"hosts\":[\"%s\"],"
@@ -5340,33 +5412,6 @@ ATF_TC_BODY(workflows, tc)
 	resp_free(&r);
 
 	ATF_CHECK(system("! grep -q 'exited with status' console.out") == 0);
-	/* The history cleared: another workflow's alone is none of
-	 * these; all of it, every run that has ended, its traces too, the
-	 * one going on left. */
-	http("DELETE", "/api/runs?workflow=ffffffff", NULL, &r);
-	EXPECT(&r, 200);
-	ATF_CHECK_STREQ("0", jstr(&r, "cleared"));
-	resp_free(&r);
-	http("DELETE", "/api/runs", NULL, &r);
-	EXPECT(&r, 200);
-	ATF_CHECK_MSG(jstr(&r, "cleared") != NULL && atoi(jstr(&r, "cleared"))
-	    >= 1, "%s", r.body);
-	resp_free(&r);
-	snprintf(body, sizeof(body), "test ! -e data/runs/%s.json", run);
-	ATF_CHECK(system(body) == 0);
-	http("GET", "/api/runs", NULL, &r);
-	EXPECT(&r, 200);
-	ATF_CHECK_MSG(strstr(r.body, "\"state\":\"done\"") == NULL &&
-	    strstr(r.body, "\"state\":\"failed\"") == NULL, "%s", r.body);
-	resp_free(&r);
-	/* Gone. */
-	snprintf(path, sizeof(path), "/api/workflows/%s", wid);
-	http("DELETE", path, NULL, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	http("DELETE", path, NULL, &r);
-	EXPECT(&r, 404);
-	resp_free(&r);
 }
 
 /* Wait for a step of a run's first host to reach a state; the run in r. */
@@ -6266,6 +6311,39 @@ ATF_TC_BODY(config_bundle, tc)
 	free(bundle);
 }
 
+/*
+ * The troubleshooter's console: host here added (its id into sid), its
+ * jails' network r1 to r3 as ts_net makes it, r2's routes and firewall
+ * as given.
+ */
+static void
+ts_start(const atf_tc_t *tc, struct authn *a, char *sid, size_t len,
+    const char *r2routes, const char *r2fw)
+{
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[1024];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, len, "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	ts_net(cwd, r2routes, r2fw);
+}
+
+#define	ASK(proto, port)						\
+	snprintf(body, sizeof(body), "{\"src\":\"10.1.0.2\",\"dst\":"	\
+	    "\"10.3.0.2\",\"proto\":\"" proto "\",\"port\":" #port ","	\
+	    "\"places\":[{\"server\":\"%s\",\"jail\":\"r1\"},{\"server\":"	\
+	    "\"%s\",\"jail\":\"r2\"},{\"server\":\"%s\",\"jail\":\"r3\"}]}",	\
+	    sid, sid, sid);						\
+	http("POST", "/api/troubleshoot/path", body, &r);		\
+	EXPECT(&r, 200)
+
 CONSOLE_TC(troubleshoot, "A packet followed across the hosts' jails: the "
     "way it goes, where it is stopped and why, the reply's way, and an "
     "asymmetric return a stateful firewall drops")
@@ -6276,24 +6354,8 @@ ATF_TC_BODY(troubleshoot, tc)
 	char		cwd[MAXPATHLEN], body[1024], sid[16];
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
-	start(tc, 0, NULL);
-	enrol(&a);
-	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
-	    "jgd.sock\"}", cwd);
-	http("POST", "/api/servers", body, &r);
-	EXPECT(&r, 200);
-	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
-	resp_free(&r);
-	ts_net(cwd, "10.1.0.0/24 10.12.0.1 em0\n",
+	ts_start(tc, &a, sid, sizeof(sid), "10.1.0.0/24 10.12.0.1 em0\n",
 	    "65535 allow ip from any to any\n");
-#define	ASK(proto, port)						\
-	snprintf(body, sizeof(body), "{\"src\":\"10.1.0.2\",\"dst\":"	\
-	    "\"10.3.0.2\",\"proto\":\"" proto "\",\"port\":" #port ","	\
-	    "\"places\":[{\"server\":\"%s\",\"jail\":\"r1\"},{\"server\":"	\
-	    "\"%s\",\"jail\":\"r2\"},{\"server\":\"%s\",\"jail\":\"r3\"}]}",	\
-	    sid, sid, sid);						\
-	http("POST", "/api/troubleshoot/path", body, &r);		\
-	EXPECT(&r, 200)
 
 	/* Through: in on r1 from the client's network, on to r2 by r1's
 	 * default route, onto the server's network; back the same way. */
@@ -6348,22 +6410,6 @@ ATF_TC_BODY(troubleshoot, tc)
 	ts_net(cwd, "10.1.0.0/24 10.12.0.1 em0\n",
 	    "01000 deny tcp from any to 10.3.0.0/24 22 in\n"
 	    "65535 allow ip from any to any\n");
-
-	/* r3's agent call hangs: the survey waits for it no longer than
-	 * its deadline, and the way is still followed by r1 and r2. */
-	ATF_REQUIRE(system("touch hang-13") == 0);
-	{
-		time_t	t0 = time(NULL);
-
-		ASK("tcp", 22);
-		ATF_CHECK_MSG(time(NULL) - t0 < 40, "%lld s", (long long)(
-		    time(NULL) - t0));
-		ATF_CHECK_STREQ("here, jail r2", jstr(&r, "end.place"));
-		ATF_CHECK_MSG(strstr(r.body, "no answer in 20 seconds") != NULL,
-		    "%.400s", r.body);
-		resp_free(&r);
-	}
-	ATF_REQUIRE(unlink("hang-13") == 0);
 
 	/* One host asked alone, for its firewall tab: the walk, rule by
 	 * rule, as the kernel would make it. */
@@ -6444,8 +6490,35 @@ ATF_TC_BODY(troubleshoot, tc)
 	    "\"dst\":\"2001:db8::1\"}", &r);
 	EXPECT(&r, 400);
 	resp_free(&r);
-#undef	ASK
 }
+
+CONSOLE_TC(troubleshoot_hang, "A packet followed across the hosts' jails "
+    "while one jail's agent call hangs: waited for no longer than its "
+    "deadline, the way still followed by the others")
+ATF_TC_BODY(troubleshoot_hang, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[1024], sid[16];
+	time_t		t0;
+
+	ts_start(tc, &a, sid, sizeof(sid), "10.1.0.0/24 10.12.0.1 em0\n",
+	    "01000 deny tcp from any to 10.3.0.0/24 22 in\n"
+	    "65535 allow ip from any to any\n");
+	/* r3's agent call hangs: the survey waits for it no longer than
+	 * its deadline, and the way is still followed by r1 and r2. */
+	ATF_REQUIRE(system("touch hang-13") == 0);
+	t0 = time(NULL);
+	ASK("tcp", 22);
+	ATF_CHECK_MSG(time(NULL) - t0 < 40, "%lld s", (long long)(time(NULL) -
+	    t0));
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "end.place"));
+	ATF_CHECK_MSG(strstr(r.body, "no answer in 20 seconds") != NULL,
+	    "%.400s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(unlink("hang-13") == 0);
+}
+#undef	ASK
 
 CONSOLE_TC(transfers, "A snapshot sent from one host to another, the "
     "console carrying it at the pace the receiver takes it")
@@ -7158,30 +7231,59 @@ tg_sink(pid_t *pidp)
 	}
 }
 
-CONSOLE_TC(telegram, "Alerts and a workflow's message to Telegram chats, "
-    "by a bot, sent by an agent; its token never read back")
-ATF_TC_BODY(telegram, tc)
+/*
+ * Telegram's console: the sink its Bot API (its pid into sink), events
+ * read each second; host here added (its id into sid), the bot's token
+ * and chats set, told by here of the jobs that failed.
+ */
+static void
+tg_start(const atf_tc_t *tc, struct authn *a, char *sid, size_t len,
+    pid_t *sink)
 {
-	struct authn	a;
 	struct resp	r;
-	char		cwd[MAXPATHLEN], body[MAXPATHLEN], path[160], sid[16];
-	char		run[32];
-	pid_t		sink;
-	int		port, i;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN];
+	int		port;
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
-	port = tg_sink(&sink);
+	port = tg_sink(sink);
 	snprintf(harness_telegram_api, sizeof(harness_telegram_api),
 	    "http://127.0.0.1:%d", port);
 	snprintf(harness_webconf, sizeof(harness_webconf), "mail_tick = 1;\n");
 	start(tc, 0, NULL);
-	enrol(&a);
+	enrol(a);
 	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
 	    "jgd.sock\"}", cwd);
 	http("POST", "/api/servers", body, &r);
 	EXPECT(&r, 200);
-	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	snprintf(sid, len, "%s", jstr(&r, "servers.0.id"));
 	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"telegram_token\":"
+	    "\"123:abc_DEF\",\"telegram_chats\":\"-100 42\","
+	    "\"telegram_via\":\"here\",\"telegram_jobs\":\"failed\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+}
+
+/* The sink stopped; the token never in the agent's output. */
+static void
+tg_end(pid_t sink)
+{
+
+	ATF_CHECK(system("! grep -q abc_DEF arcana-agent.out") == 0);
+	(void)kill(sink, SIGTERM);
+	(void)waitpid(sink, NULL, 0);
+}
+
+CONSOLE_TC(telegram, "Alerts to Telegram chats, by a bot, sent by an "
+    "agent; its token never read back")
+ATF_TC_BODY(telegram, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		path[160], sid[16];
+	pid_t		sink;
+
+	tg_start(tc, &a, sid, sizeof(sid), &sink);
 	/* Not a token, not a chat: refused. */
 	http("POST", "/api/settings", "{\"set\":{\"telegram_token\":"
 	    "\"x y\"}}", &r);
@@ -7190,11 +7292,6 @@ ATF_TC_BODY(telegram, tc)
 	http("POST", "/api/settings", "{\"set\":{\"telegram_chats\":"
 	    "\"-100 x;y\"}}", &r);
 	EXPECT(&r, 400);
-	resp_free(&r);
-	http("POST", "/api/settings", "{\"set\":{\"telegram_token\":"
-	    "\"123:abc_DEF\",\"telegram_chats\":\"-100 42\","
-	    "\"telegram_via\":\"here\",\"telegram_jobs\":\"failed\"}}", &r);
-	EXPECT(&r, 200);
 	resp_free(&r);
 	http("GET", "/api/settings", NULL, &r);
 	EXPECT(&r, 200);
@@ -7224,6 +7321,20 @@ ATF_TC_BODY(telegram, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("3", jstr(&r, "lanes"));
 	resp_free(&r);
+	tg_end(sink);
+}
+
+CONSOLE_TC(telegram_job, "A job that failed told to Telegram chats, by a "
+    "bot, sent by an agent")
+ATF_TC_BODY(telegram_job, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		path[160], sid[16];
+	pid_t		sink;
+	int		i;
+
+	tg_start(tc, &a, sid, sizeof(sid), &sink);
 	/* A job that failed, told within a tick or two. */
 	sleep(2);
 	snprintf(path, sizeof(path), "/api/servers/%s/jobs", sid);
@@ -7231,12 +7342,25 @@ ATF_TC_BODY(telegram, tc)
 	    "\"trust\",\"path\":\"nosuch.0\"}]}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	for (i = 0; i < 150 && system("grep -q 'failed: certificate trust "
+	for (i = 0; i < 150 && system("grep -q 'failed.ncertificate trust "
 	    "nosuch.0' tg.out") != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(system("grep -q '❌ here · job [0-9]* failed.ncertificate "
 	    "trust nosuch.0.n⚠️ [^\"]*.n🕒 [0-9:]*\"' tg.out") == 0,
 	    "no message of the job");
+	tg_end(sink);
+}
+
+CONSOLE_TC(telegram_workflow, "A workflow's message to Telegram chats, "
+    "its text made for the host; mail not set up, said")
+ATF_TC_BODY(telegram_workflow, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[MAXPATHLEN], path[160], sid[16], run[32];
+	pid_t		sink;
+
+	tg_start(tc, &a, sid, sizeof(sid), &sink);
 	/* A workflow's notify step: its text made for the host. */
 	http("POST", "/api/workflows", "{\"name\":\"bad\",\"steps\":[{\"id\":"
 	    "\"t\",\"notify\":{\"via\":\"pigeon\",\"text\":\"x\"}}]}", &r);
@@ -7265,9 +7389,7 @@ ATF_TC_BODY(telegram, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -q 'workflow tell on here.n.nhere said hi' "
 	    "tg.out") == 0);
-	ATF_CHECK(system("! grep -q abc_DEF arcana-agent.out") == 0);
-	(void)kill(sink, SIGTERM);
-	(void)waitpid(sink, NULL, 0);
+	tg_end(sink);
 }
 
 static void	pki(const char *, const char *, const char *);
@@ -7381,48 +7503,49 @@ mailed(const char *re)
 	return (n);
 }
 
-CONSOLE_TC_LONG(notify_cooldown, "Of one thing on one host, the first "
-    "change mailed at once, those within the cool-down held and said in "
-    "one line at its end; a host's mutes leave its utilization or its "
-    "sessions out, its admins' to set, a viewer refused")
-ATF_TC_BODY(notify_cooldown, tc)
+/*
+ * The cool-down's console: events read each second, a minute of the
+ * cool-down a second, the agent's BIRD watched each second.  Host here
+ * added (its id into id), its faults and limits mailed, a cool-down of
+ * ten; its events read from here on.
+ */
+static void
+nc_start(const atf_tc_t *tc, struct authn *a, char *id, size_t len)
 {
-	struct authn	a, b;
 	struct resp	r;
-	char		cwd[MAXPATHLEN], body[MAXPATHLEN], id[16], path[160];
-	int		i;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN];
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
-	/* Events read each second; a minute of the cool-down a second;
-	 * the agent's BIRD watched each second. */
 	harness_bird_watch = true;
 	snprintf(harness_webconf, sizeof(harness_webconf), "mail_tick = 1;\n"
 	    "cooldown_unit = 1;\n");
 	start(tc, 0, NULL);
-	enrol(&a);
+	enrol(a);
 	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
 	    "jgd.sock\"}", cwd);
 	http("POST", "/api/servers", body, &r);
 	EXPECT(&r, 200);
-	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
-	resp_free(&r);
-	http("POST", "/api/settings", "{\"set\":{\"notify_cooldown\":\"1441\"}}",
-	    &r);
-	EXPECT(&r, 400);
+	snprintf(id, len, "%s", jstr(&r, "servers.0.id"));
 	resp_free(&r);
 	http("POST", "/api/settings", "{\"set\":{\"mail_to\":\"ops@example.org\","
 	    "\"mail_faults\":\"Major\",\"mail_limits\":true,"
 	    "\"notify_cooldown\":\"10\"}}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	http("GET", "/restconf/data/arcana-console:settings/notify-cooldown",
-	    NULL, &r);
-	ATF_CHECK_MSG(r.status == 200 && strstr(r.body, "10") != NULL, "%d %s",
-	    r.status, r.body);
-	resp_free(&r);
 	/* The host's events read from here on. */
 	sleep(3);
+}
 
+CONSOLE_TC(notify_cooldown_held, "Of one thing on one host, the first "
+    "change mailed at once, those within the cool-down held and said in "
+    "one line at its end")
+ATF_TC_BODY(notify_cooldown_held, tc)
+{
+	struct authn	a;
+	char		id[16];
+	int		i;
+
+	nc_start(tc, &a, id, sizeof(id));
 	/* Over, under, over, under within the cool-down: the first
 	 * mailed, the rest held; at its end, one line. */
 	for (i = 0; i < 4; i++) {
@@ -7435,19 +7558,40 @@ ATF_TC_BODY(notify_cooldown, tc)
 		usleep(100000);
 	ATF_CHECK_MSG(mailed("mem on here: over/under 4 times in [0-9]* s, "
 	    "now under 95%$") == 1, "no line of what was held");
-	/* Over and under again, ending as it was last told: nothing. */
-	sleep(11);
+}
+
+CONSOLE_TC(notify_cooldown_again, "Over and under again within the "
+    "cool-down, ending as it was last told: no line at its end")
+ATF_TC_BODY(notify_cooldown_again, tc)
+{
+	struct authn	a;
+	char		id[16];
+	int		i;
+
+	nc_start(tc, &a, id, sizeof(id));
+	/* The first mailed at once; then under and over again. */
 	mem_limit(id, 1);
-	sleep(2);
-	ATF_CHECK_EQ(2, mailed("here: mem over its limit"));
+	for (i = 0; i < 100 && mailed("here: mem over its limit") < 1; i++)
+		usleep(100000);
+	ATF_CHECK_EQ(1, mailed("here: mem over its limit"));
 	mem_limit(id, 100);
 	sleep(2);
 	mem_limit(id, 1);
 	sleep(10);
-	ATF_CHECK_EQ(1, mailed("mem on here: over/under"));
+	ATF_CHECK_EQ(0, mailed("mem on here: over/under"));
 	ATF_CHECK_EQ(0, mailed("here: mem back under its limit"));
+}
 
-	/* Its utilization muted: not mailed; its sessions still are. */
+CONSOLE_TC(notify_cooldown_mute, "A host's utilization muted: not mailed; "
+    "its sessions still are")
+ATF_TC_BODY(notify_cooldown_mute, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		id[16], path[160];
+	int		i;
+
+	nc_start(tc, &a, id, sizeof(id));
 	snprintf(path, sizeof(path), "/api/servers/%s", id);
 	http("POST", path, "{\"notify_mute\":[\"cpu\"]}", &r);
 	EXPECT(&r, 400);
@@ -7460,18 +7604,44 @@ ATF_TC_BODY(notify_cooldown, tc)
 	ATF_CHECK_MSG(strstr(r.body, "\"notify-mute\":[\"utilization\"]") !=
 	    NULL, "%s", r.body);
 	resp_free(&r);
-	sleep(11);
 	mem_limit(id, 100);
 	sleep(2);
 	mem_limit(id, 1);
 	sleep(3);
-	ATF_CHECK_EQ(2, mailed("here: mem over its limit"));
+	ATF_CHECK_EQ(0, mailed("here: mem over its limit"));
 	ATF_CHECK_EQ(0, mailed("here: mem back under its limit"));
 	ATF_REQUIRE(system("touch ospf.down") == 0);
 	for (i = 0; i < 100 && mailed("fault, Major: ospf-neighbor") < 1; i++)
 		usleep(100000);
 	ATF_CHECK_EQ(1, mailed("here: fault, Major: ospf-neighbor"));
-	/* And then its sessions: the neighbour back is not mailed. */
+}
+
+CONSOLE_TC(notify_cooldown_sessions, "A host's sessions muted: the "
+    "neighbour back not mailed; its admins' to set, a viewer refused")
+ATF_TC_BODY(notify_cooldown_sessions, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		id[16], path[160];
+	int		i;
+
+	nc_start(tc, &a, id, sizeof(id));
+	http("POST", "/api/settings", "{\"set\":{\"notify_cooldown\":\"1441\"}}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("GET", "/restconf/data/arcana-console:settings/notify-cooldown",
+	    NULL, &r);
+	ATF_CHECK_MSG(r.status == 200 && strstr(r.body, "10") != NULL, "%d %s",
+	    r.status, r.body);
+	resp_free(&r);
+	/* A neighbour down, mailed; its sessions muted then: the
+	 * neighbour back is not mailed. */
+	snprintf(path, sizeof(path), "/api/servers/%s", id);
+	ATF_REQUIRE(system("touch ospf.down") == 0);
+	for (i = 0; i < 100 && mailed("fault, Major: ospf-neighbor") < 1; i++)
+		usleep(100000);
+	ATF_REQUIRE_EQ(1, mailed("here: fault, Major: ospf-neighbor"));
 	http("POST", path, "{\"notify_mute\":[\"utilization\",\"sessions\"]}",
 	    &r);
 	EXPECT(&r, 200);
@@ -9016,18 +9186,21 @@ pki(const char *name, const char *ca, const char *san)
 	ATF_REQUIRE_MSG(run_prog(argv), "openssl x509 %s failed", name);
 }
 
-CONSOLE_TC(mtls, "A host over TCP with mutual TLS")
-ATF_TC_BODY(mtls, tc)
+/*
+ * The console over TLS with a CA of the test's, and a second
+ * arcana-agent on TCP with mutual TLS, its port into *portp; host remote
+ * added, its id into sid.
+ */
+static void
+mtls_start(const atf_tc_t *tc, struct authn *a, int *portp, char *sid,
+    size_t len)
 {
-	struct authn	 a;
 	struct resp	 r;
-	char		 cwd[MAXPATHLEN], uri[64], body[256], path[128], upd[128];
+	char		 cwd[MAXPATHLEN], uri[64], body[256];
 	char		 jgd[MAXPATHLEN], listen[64], *argv[20];
-	char		 sid[16], sw[128];
 	FILE		*fp;
 	pid_t		 pid;
 	int		 port, i;
-	long		 seen_pre;
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	ATF_REQUIRE(mkdir("pki", 0700) == 0);
@@ -9074,18 +9247,29 @@ ATF_TC_BODY(mtls, tc)
 	fclose(fp);
 	usleep(300000);
 
-	enrol(&a);
+	enrol(a);
 	snprintf(uri, sizeof(uri), "tcp://127.0.0.1:%d", port);
 	snprintf(body, sizeof(body), "{\"name\":\"remote\",\"uri\":\"%s\"}",
 	    uri);
 	http("POST", "/api/servers", body, &r);
 	EXPECT(&r, 200);
-	snprintf(path, sizeof(path), "/api/servers/%s/jails",
-	    jstr(&r, "servers.0.id"));
-	snprintf(upd, sizeof(upd), "/api/servers/%s/agent-update",
-	    jstr(&r, "servers.0.id"));
+	snprintf(sid, len, "%s", jstr(&r, "servers.0.id"));
 	ATF_CHECK_STREQ("false", jstr(&r, "servers.0.local"));
 	resp_free(&r);
+	*portp = port;
+}
+
+CONSOLE_TC(mtls, "A host over TCP with mutual TLS")
+ATF_TC_BODY(mtls, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 body[256], path[128], upd[128], sid[16];
+	int		 port;
+
+	mtls_start(tc, &a, &port, sid, sizeof(sid));
+	snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
+	snprintf(upd, sizeof(upd), "/api/servers/%s/agent-update", sid);
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
@@ -9118,16 +9302,24 @@ ATF_TC_BODY(mtls, tc)
 	EXPECT(&r, 502);
 	ATF_CHECK_STREQ("unreachable", jstr(&r, "error.code"));
 	resp_free(&r);
+}
 
+CONSOLE_TC(mtls_sctp, "A host over mutual TLS switched to its SCTP "
+    "listener, where the kernel has SCTP, and back")
+ATF_TC_BODY(mtls_sctp, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 path[128], sid[16], sw[128];
+	int		 port;
+	long		 seen_pre;
+
+	mtls_start(tc, &a, &port, sid, sizeof(sid));
 	/*
 	 * Beside its TCP listener the agent has an SCTP one, at the same
 	 * address and port, where the kernel has SCTP.  The console is
 	 * switched to it only when the agent answers there, and back.
 	 */
-	http("GET", "/api/servers", NULL, &r);
-	EXPECT(&r, 200);
-	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
-	resp_free(&r);
 	snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
@@ -9328,7 +9520,18 @@ ATF_TC_BODY(mtls, tc)
 	http("POST", sw, "{\"transport\":\"udp\"}", &r);
 	EXPECT(&r, 400);
 	resp_free(&r);
+}
 
+CONSOLE_TC(mtls_move, "A host over mutual TLS: SCTP's other addresses "
+    "kept, and the agent moved to another address and back")
+ATF_TC_BODY(mtls_move, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 path[128], sid[16];
+	int		 port;
+
+	mtls_start(tc, &a, &port, sid, sizeof(sid));
 	/*
 	 * SCTP over several paths: the agent's other addresses, checked,
 	 * bound where they can be (192.0.2.99 is no address of this host:
@@ -11770,7 +11973,8 @@ sdwan_wait(struct resp *r)
 {
 	int	i;
 
-	for (i = 0; i < 300; i++) {
+	/* Up to two and a half minutes: several applies run at once. */
+	for (i = 0; i < 750; i++) {
 		http("GET", "/api/sdwan/apply", NULL, r);
 		if (r->status == 200 && jstr(r, "applying") != NULL &&
 		    strcmp(jstr(r, "applying"), "false") == 0 && jstr(r,
@@ -11991,33 +12195,36 @@ ATF_TC_BODY(sdwan_sfp, tc)
  * A USWE tunnel (Mplify 119 §10): the public underlay's tunnels made
  * ipsec(4) interfaces keyed by the agents: a pair each, the SAs derived
  * from the far end's public half, which the apply reads from that end.
+ *
+ * Its console: hosts a and b on the one agent, their ids into sa and sb;
+ * sdwan_good with a uswe tunnel over the Internet into doc, its UNIs on
+ * lo0, not kept yet.
  */
-CONSOLE_TC(sdwan_uswe, "SD-WAN with a uswe tunnel: keys made, SAs derived")
-ATF_TC_BODY(sdwan_uswe, tc)
+static void
+uswe_start(const atf_tc_t *tc, struct authn *a, char *sa, char *sb,
+    size_t len, char *doc, size_t dlen)
 {
-	struct authn	a;
 	struct resp	r;
-	char		cwd[1024], body[400], sa[16], sb[16];
-	char		doc[8192], t1[8192], t2[400];
+	char		cwd[1024], body[400], t1[8192];
 	size_t		i;
 
 	start(tc, 0, NULL);
-	enrol(&a);
+	enrol(a);
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
 	    "jgd.sock\"}", cwd);
 	http("POST", "/api/servers", body, &r);
 	EXPECT(&r, 200);
-	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	snprintf(sa, len, "%s", jstr(&r, "servers.0.id"));
 	resp_free(&r);
 	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
 	    "jgd.sock\"}", cwd);
 	http("POST", "/api/servers", body, &r);
 	EXPECT(&r, 200);
-	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
-	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	snprintf(sb, len, "%s", strcmp(jstr(&r, "servers.0.id"), sa) == 0 ?
+	    jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
 	resp_free(&r);
-	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	snprintf(doc, dlen, "%s", sdwan_good);
 	static const char *const edits[][2] = {
 		{ "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}",
 		    "\"tunnel\":{\"kind\":\"uswe\",\"algorithms\":\"aes-gcm-16\"}" },
@@ -12042,12 +12249,40 @@ ATF_TC_BODY(sdwan_uswe, tc)
 	for (i = 0; i < nitems(edits); i++) {
 		ATF_REQUIRE(swap_in(doc, edits[i][0], edits[i][1], t1,
 		    sizeof(t1)));
-		snprintf(doc, sizeof(doc), "%s", t1);
+		snprintf(doc, dlen, "%s", t1);
 	}
 	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
-		snprintf(doc, sizeof(doc), "%s", t1);
+		snprintf(doc, dlen, "%s", t1);
 	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
-		snprintf(doc, sizeof(doc), "%s", t1);
+		snprintf(doc, dlen, "%s", t1);
+}
+
+/* The uswe document kept and applied, done. */
+static void
+uswe_apply(const char *doc)
+{
+	struct resp	r;
+
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/sdwan/apply", accepting(false), &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
+	    r.body);
+	resp_free(&r);
+}
+
+CONSOLE_TC(sdwan_uswe, "SD-WAN with a uswe tunnel: keys made, SAs derived")
+ATF_TC_BODY(sdwan_uswe, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		sa[16], sb[16], doc[8192], t1[8192], t2[400];
+
+	uswe_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc));
 	/* IPsec IKEv2 under a uswe tunnel is refused. */
 	ATF_REQUIRE(swap_in(doc, "\"kind\":\"uswe\",", "\"kind\":\"uswe\","
 	    "\"ipsec\":true,", t1, sizeof(t1)));
@@ -12104,6 +12339,19 @@ ATF_TC_BODY(sdwan_uswe, tc)
 	/* Its SPIs are the same both ways: what a derive on each end set. */
 	ATF_CHECK(system("grep '^add 192.0.2.2 192.0.2.1 ' setkey.conf | sed "
 	    "'s/-u 10[01]/-u N/' | sort -u | wc -l | grep -q '^ *1$'") == 0);
+}
+
+CONSOLE_TC(sdwan_uswe_rekey, "SD-WAN with a uswe tunnel: its keys turned "
+    "by hand")
+ATF_TC_BODY(sdwan_uswe_rekey, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		sa[16], sb[16], doc[8192];
+	int		i;
+
+	uswe_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc));
+	uswe_apply(doc);
 	/* The keys turned by hand (Mplify 119 R110, R112): a next pair on
 	 * each end, the new SAs from them put in inbound on both, then
 	 * outbound, then the old taken out and the next pair made the pair;
@@ -12346,10 +12594,11 @@ ATF_TC_BODY(sdwan_jail, tc)
  * epair between them for the Internet and another whose ends are their
  * UNIs.  What a service makes there, snapshot by lab.sh: each jail's
  * addresses, FIBs and tunnels, and its routes to the lab's prefixes in
- * every table.
+ * every table.  Its jails' names are its own: agent_root_test's cases
+ * run beside it, and its agents' commits see their jails' networks.
  */
-#define	LAB_A	"arcw_la"
-#define	LAB_B	"arcw_lb"
+#define	LAB_A	"arcw_sla"
+#define	LAB_B	"arcw_slb"
 
 static const char lab_sh[] =
     "#!/bin/sh\n"
@@ -12492,7 +12741,6 @@ ATF_TC_HEAD(sdwan_lab, tc)
 	    "routes as they were, a good one makes them, the service taken "
 	    "away takes them away again");
 	atf_tc_set_md_var(tc, "require.user", "root");
-	atf_tc_set_md_var(tc, "is.exclusive", "true");
 	atf_tc_set_md_var(tc, "timeout", "300");
 }
 ATF_TC_CLEANUP(sdwan_lab, tc)
@@ -13975,26 +14223,36 @@ ATF_TC_BODY(sdwan_lists, tc)
 	resp_free(&r);
 }
 
-CONSOLE_TC_LONG(sdwan_apply, "SD-WAN made on the edges: planned, applied, kept")
-ATF_TC_BODY(sdwan_apply, tc)
+/*
+ * SD-WAN's console for the apply: the hosts' events read each second (the
+ * SENs come by them), hosts a and b on the one agent (their ids into sa
+ * and sb), SENs mailed to soc; the lists the security policy names, one
+ * pasted, one a feed from a file, one dead, fetched; sdwan_good with its
+ * underlays addressed and its UNIs on lo0 kept, into doc.  b-mpls's
+ * interface into lifn if it is the host's (empty if not), its address
+ * into laddr.
+ */
+static void
+sdwan_apply_start(const atf_tc_t *tc, struct authn *a, char *sa, char *sb,
+    size_t len, char *doc, size_t dlen, char *lifn, size_t ilen,
+    char *laddr, size_t alen)
 {
-	struct authn	a;
 	struct resp	r;
-	char		cwd[1024], body[400], sa[16], sb[16];
-	char		doc[8192], t1[8192], t2[300], lifn[32], laddr[64];
+	char		cwd[1024], body[400], t1[8192], t2[300];
 	size_t		i;
 	FILE		*fp;
 
+	lifn[0] = '\0';
 	/* The hosts' events read each second: the SENs come by them. */
 	snprintf(harness_webconf, sizeof(harness_webconf), "mail_tick = 1;\n");
 	start(tc, 0, NULL);
-	enrol(&a);
+	enrol(a);
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
 	    "jgd.sock\"}", cwd);
 	http("POST", "/api/servers", body, &r);
 	EXPECT(&r, 200);
-	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	snprintf(sa, len, "%s", jstr(&r, "servers.0.id"));
 	resp_free(&r);
 	http("POST", "/api/settings", "{\"set\":{\"mail_sen\":\"soc@example.org"
 	    "\"}}", &r);
@@ -14004,7 +14262,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "jgd.sock\"}", cwd);
 	http("POST", "/api/servers", body, &r);
 	EXPECT(&r, 200);
-	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	snprintf(sb, len, "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
 	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
 	resp_free(&r);
 	/* The lists the security policy names: one pasted, one a
@@ -14024,31 +14282,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	http("POST", "/api/sdwan/lists/fetch", "{}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	http("GET", "/api/sdwan/lists", NULL, &r);
-	EXPECT(&r, 200);
-	ATF_CHECK_MSG(jstr(&r, "lists.blocked.version") != NULL && strcmp(jstr(
-	    &r, "lists.blocked.version"), "1") == 0 && strcmp(jstr(&r,
-	    "lists.blocked.count"), "2") == 0 && strcmp(jstr(&r,
-	    "lists.feedlist.version"), "1") == 0 && strcmp(jstr(&r,
-	    "lists.feedlist.count"), "2") == 0 && jstr(&r, "lists.dead.error")
-	    != NULL && strcmp(jstr(&r, "lists.dead.count"), "0") == 0, "%s",
-	    r.body);
-	ATF_CHECK_STREQ("2", jstr(&r, "interval"));
-	resp_free(&r);
-	/* Fetched again unchanged: the version stays. */
-	http("POST", "/api/sdwan/lists/fetch", "{\"name\":\"feedlist\"}", &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	http("GET", "/api/sdwan/lists", NULL, &r);
-	ATF_CHECK_STREQ("1", jstr(&r, "lists.feedlist.version"));
-	resp_free(&r);
-	http("PUT", "/api/sdwan/lists", "{\"feeds\":[{\"name\":\"x\",\"text\":"
-	    "\"not a prefix!\"}]}", &r);
-	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "not a prefix nor a "
-	    "domain") != NULL, "%s", r.body);
-	resp_free(&r);
 	/* The good one, its underlays with addresses, its UNIs on lo0. */
-	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	snprintf(doc, dlen, "%s", sdwan_good);
 	static const char *const edits[][2] = {
 		{ "\"block\":[{\"dav4\":[\"192.0.2.0/24\"]}],",
 		    "\"block\":[{\"dav4\":[\"192.0.2.0/24\"]}],\"lists\":{\"block\":"
@@ -14080,28 +14315,81 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * not in the document but learned from the host, so it is an
 	 * interface of this host with an IPv4 address, whichever that is;
 	 * a host without one keeps the address in the document. */
-	if (host_iface(lifn, sizeof(lifn), laddr, sizeof(laddr)))
+	if (host_iface(lifn, ilen, laddr, alen))
 		snprintf(t2, sizeof(t2), "\"id\":\"b-mpls\",\"ucs\":\"mpls\","
 		    "\"interface\":\"%s\",\"addressing\":\"dhcp\"", lifn);
 	else {
-		snprintf(laddr, sizeof(laddr), "10.99.0.2");
+		snprintf(laddr, alen, "10.99.0.2");
 		snprintf(t2, sizeof(t2), "\"id\":\"b-mpls\",\"ucs\":\"mpls\","
 		    "\"interface\":\"vtnet1\",\"address\":\"10.99.0.2\"");
 	}
 	ATF_REQUIRE(swap_in(doc, "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":"
 	    "\"vtnet1\"", t2, t1, sizeof(t1)));
-	snprintf(doc, sizeof(doc), "%s", t1);
+	snprintf(doc, dlen, "%s", t1);
 	for (i = 0; i < nitems(edits); i++) {
 		ATF_REQUIRE(swap_in(doc, edits[i][0], edits[i][1], t1,
 		    sizeof(t1)));
-		snprintf(doc, sizeof(doc), "%s", t1);
+		snprintf(doc, dlen, "%s", t1);
 	}
 	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
-		snprintf(doc, sizeof(doc), "%s", t1);
+		snprintf(doc, dlen, "%s", t1);
 	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
-		snprintf(doc, sizeof(doc), "%s", t1);
+		snprintf(doc, dlen, "%s", t1);
 	http("PUT", "/api/sdwan", doc, &r);
 	EXPECT(&r, 200);
+	resp_free(&r);
+}
+
+/* The plan applied, every warning accepted: done. */
+static void
+sdwan_apply_done(void)
+{
+	struct resp	r;
+
+	http("POST", "/api/sdwan/apply", accepting(false), &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_REQUIRE_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
+	    r.body);
+	resp_free(&r);
+}
+
+CONSOLE_TC(sdwan_apply_plan, "SD-WAN planned for the edges: the lists "
+    "fetched and kept, the plan's tunnels, rules, instances and edits; a "
+    "policy that requires encryption, IPv6 without inner addresses, a "
+    "geneve tunnel")
+ATF_TC_BODY(sdwan_apply_plan, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		sa[16], sb[16];
+	char		doc[8192], t1[8192], t2[300], lifn[32], laddr[64];
+
+	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
+	    sizeof(lifn), laddr, sizeof(laddr));
+	http("GET", "/api/sdwan/lists", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "lists.blocked.version") != NULL && strcmp(jstr(
+	    &r, "lists.blocked.version"), "1") == 0 && strcmp(jstr(&r,
+	    "lists.blocked.count"), "2") == 0 && strcmp(jstr(&r,
+	    "lists.feedlist.version"), "1") == 0 && strcmp(jstr(&r,
+	    "lists.feedlist.count"), "2") == 0 && jstr(&r, "lists.dead.error")
+	    != NULL && strcmp(jstr(&r, "lists.dead.count"), "0") == 0, "%s",
+	    r.body);
+	ATF_CHECK_STREQ("2", jstr(&r, "interval"));
+	resp_free(&r);
+	/* Fetched again unchanged: the version stays. */
+	http("POST", "/api/sdwan/lists/fetch", "{\"name\":\"feedlist\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/lists", NULL, &r);
+	ATF_CHECK_STREQ("1", jstr(&r, "lists.feedlist.version"));
+	resp_free(&r);
+	http("PUT", "/api/sdwan/lists", "{\"feeds\":[{\"name\":\"x\",\"text\":"
+	    "\"not a prefix!\"}]}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "not a prefix nor a "
+	    "domain") != NULL, "%s", r.body);
 	resp_free(&r);
 
 	/*
@@ -14520,6 +14808,80 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "interface,comment\n", 60) == 0, "%s", r.body);
 	resp_free(&r);
 
+	/* A policy that requires encryption always: the private tunnel
+	 * is under IPsec too; a UCS that says no IPsec cannot be. */
+	ATF_REQUIRE(swap_in(doc, "\"encryption\":\"required-public-only\"",
+	    "\"encryption\":\"required-always\"", t1, sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":1", t1,
+	    sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "tunnels.1.ipsec"));
+	ATF_CHECK_STREQ("gif", jstr(&r, "tunnels.1.kind"));
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"",
+	    "\"kind\":\"gif\",\"ipsec\":false", t1, sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"version\":1", "\"version\":2", doc,
+	    sizeof(doc)));
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	ATF_CHECK_MSG(r.status == 409 && strstr(r.body, "(R39)") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\",\"ipsec\":false",
+	    "\"kind\":\"gif\"", t1, sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"encryption\":\"required-always\"",
+	    "\"encryption\":\"required-public-only\"", doc, sizeof(doc)));
+	ATF_REQUIRE(swap_in(doc, "\"version\":2", "\"version\":3", t1,
+	    sizeof(t1)));
+	http("PUT", "/api/sdwan", t1, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* An IPv6 UNI with no IPv6 inner addresses: the plan says so. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"notes\":[\"swvc acme: no tunnel from a "
+	    "to b carries 2001:db8:1::/64") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* A geneve tunnel: one VNI at both ends, its table after it. */
+	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"", "\"kind\":\"geneve\"",
+	    t1, sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
+	ATF_REQUIRE(swap_in(doc, "\"version\":2", "\"version\":4", t1,
+	    sizeof(t1)));
+	http("PUT", "/api/sdwan", t1, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(t2, sizeof(t2), "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
+	    "\"local\",\"10.99.0.1\",\"remote\",\"%s\"]", laddr);
+	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
+	snprintf(t2, sizeof(t2), "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
+	    "\"local\",\"%s\",\"remote\",\"10.99.0.1\"]", laddr);
+	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
+CONSOLE_TC_LONG(sdwan_apply, "SD-WAN made on the edges: refused without what "
+    "a service needs, applied, its SENs, kept")
+ATF_TC_BODY(sdwan_apply, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[400], sa[16], sb[16];
+	char		doc[8192], t2[300], lifn[32], laddr[64];
+	size_t		i;
+
+	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
+	    sizeof(lifn), laddr, sizeof(laddr));
 	/* Applied: each made, in the order, IPsec with the far key. */
 	/* An edge without what a service needs there: nothing is
 	 * installed by the apply, which refuses and says what to install
@@ -14613,6 +14975,69 @@ ATF_TC_BODY(sdwan_apply, tc)
 	/* Its scanner, c-icap, started in the table before it. */
 	ATF_CHECK(system("grep -q '^setfib -F 1 .*tools/c-icap -f .*sdwan-icap-"
 	    "sw1.conf' setfib.log") == 0);
+	/* The remote end point's wg, by the stand-in: listening, the
+	 * identity its peer. */
+	ATF_CHECK(system("grep -q '^set wg5 listen-port 51820' wg.log && grep "
+	    "-q '^set wg5 peer xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg= "
+	    "allowed-ips 10.30.0.2/32' wg.log") == 0);
+	/* One IPsec connection for the pair of outer addresses and kind. */
+	ATF_CHECK(system("ls swanctl/conf.d/arcana-sdw*.conf | wc -l | grep -q "
+	    "'^ *2$'") == 0);
+	ATF_CHECK(system("grep -q 'mode = transport' "
+	    "swanctl/conf.d/arcana-sdw*.conf") == 0);
+	ATF_CHECK(system("grep -q 'dynamic\\[gre\\]' "
+	    "swanctl/conf.d/arcana-sdw*.conf") == 0);
+	/* The agent probes them from now on (without root, it says so),
+	 * and holds the rules in set 30 and their tables. */
+	snprintf(body, sizeof(body), "/api/servers/%s/sdwan", sa);
+	http("GET", body, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"id\":\"acme/a-inet-b-inet\"") != NULL &&
+	    strstr(r.body, "\"id\":\"acme/a-mpls-b-mpls\"") != NULL, "%s",
+	    r.body);
+	ATF_CHECK(jstr(&r, "data.targets.0.state") != NULL);
+	ATF_CHECK_MSG(jstr(&r, "data.rules.set") != NULL && strcmp(jstr(&r,
+	    "data.rules.set"), "30") == 0, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^setfib -F 1 ./fake-local-unbound -c .*sdwan-dns-"
+	    "sw1.conf' setfib.log && grep -q '^checkconf .*sdwan-dns-sw1.conf' "
+	    "unbound.log") == 0);
+	ATF_CHECK(system("grep -q '^setfib -F 1 ./fake-dnsmasq -C .*sdwan-dhcp-sw1"
+	    ".conf -x ' setfib.log") == 0);
+	/* rtadvd's record by the commit, kept in Arcana's rc.conf file. */
+	ATF_CHECK_MSG(system("grep -q 'addr=\"2001:db8:1::\"' rtadvd.conf && "
+	    "grep -q 'prefixlen#64' rtadvd.conf && grep -q 'rdnss=\"2001:db8:1::"
+	    "1\"' rtadvd.conf && grep -q '^vlan[0-9]*:' rtadvd.conf && grep -q "
+	    "'^rtadvd_enable=\"YES\"' root/usr/local/etc/rc.conf.d/arcana") == 0,
+	    "no record of the VLAN's in rtadvd.conf, or rtadvd not enabled");
+	ATF_CHECK(system("grep -q '^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1"
+	    ".conf -s ' setfib.log") == 0);
+	ATF_CHECK(system("grep -q '^server ntp.example.org iburst$' ntp.conf && "
+	    "grep -q '^server 10.99.0.9 iburst$' ntp.conf && grep -q "
+	    "'^ntpd_enable=\"YES\"' rc.conf") == 0);
+	ATF_CHECK(system("grep -q 'add 12 set 30 fwd tablearg tcp from any to "
+	    "table(sw1_z0p0_4) dst-port 80,https' ipfw.log") == 0);
+	ATF_CHECK(system("grep -q 'ipfw -q set enable 30' ipfw.log") == 0);
+	/* Again: nothing to do. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_EQ(0, changes_of(&r, "make") + changes_of(&r, "remake") +
+	    changes_of(&r, "unmake"));
+	resp_free(&r);
+}
+
+CONSOLE_TC_LONG(sdwan_apply_identities, "SD-WAN's remote identities: issued, "
+    "listed, in a group, revoked; the audit trail")
+ATF_TC_BODY(sdwan_apply_identities, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		sa[16], sb[16];
+	char		doc[8192], lifn[32], laddr[64];
+
+	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
+	    sizeof(lifn), laddr, sizeof(laddr));
+	sdwan_apply_done();
 	/* Identities: one issued for a name, its key pair made
 	 * here, the configuration answered once with its address, the
 	 * second host after alice's, and the edges applied; listed with
@@ -14737,49 +15162,22 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_CHECK(system("stat -f %Lp data/sdwan-audit.key | grep -qx 600 && "
 	    "stat -f %Lp data/sdwan-audit.jsonl | grep -qx 600") == 0);
-	/* The remote end point's wg, by the stand-in: listening, the
-	 * identity its peer. */
-	ATF_CHECK(system("grep -q '^set wg5 listen-port 51820' wg.log && grep "
-	    "-q '^set wg5 peer xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg= "
-	    "allowed-ips 10.30.0.2/32' wg.log") == 0);
-	/* One IPsec connection for the pair of outer addresses and kind. */
-	ATF_CHECK(system("ls swanctl/conf.d/arcana-sdw*.conf | wc -l | grep -q "
-	    "'^ *2$'") == 0);
-	ATF_CHECK(system("grep -q 'mode = transport' "
-	    "swanctl/conf.d/arcana-sdw*.conf") == 0);
-	ATF_CHECK(system("grep -q 'dynamic\\[gre\\]' "
-	    "swanctl/conf.d/arcana-sdw*.conf") == 0);
-	/* The agent probes them from now on (without root, it says so),
-	 * and holds the rules in set 30 and their tables. */
-	snprintf(body, sizeof(body), "/api/servers/%s/sdwan", sa);
-	http("GET", body, NULL, &r);
-	EXPECT(&r, 200);
-	ATF_CHECK_MSG(strstr(r.body, "\"id\":\"acme/a-inet-b-inet\"") != NULL &&
-	    strstr(r.body, "\"id\":\"acme/a-mpls-b-mpls\"") != NULL, "%s",
-	    r.body);
-	ATF_CHECK(jstr(&r, "data.targets.0.state") != NULL);
-	ATF_CHECK_MSG(jstr(&r, "data.rules.set") != NULL && strcmp(jstr(&r,
-	    "data.rules.set"), "30") == 0, "%s", r.body);
-	resp_free(&r);
-	ATF_CHECK(system("grep -q '^setfib -F 1 ./fake-local-unbound -c .*sdwan-dns-"
-	    "sw1.conf' setfib.log && grep -q '^checkconf .*sdwan-dns-sw1.conf' "
-	    "unbound.log") == 0);
-	ATF_CHECK(system("grep -q '^setfib -F 1 ./fake-dnsmasq -C .*sdwan-dhcp-sw1"
-	    ".conf -x ' setfib.log") == 0);
-	/* rtadvd's record by the commit, kept in Arcana's rc.conf file. */
-	ATF_CHECK_MSG(system("grep -q 'addr=\"2001:db8:1::\"' rtadvd.conf && "
-	    "grep -q 'prefixlen#64' rtadvd.conf && grep -q 'rdnss=\"2001:db8:1::"
-	    "1\"' rtadvd.conf && grep -q '^vlan[0-9]*:' rtadvd.conf && grep -q "
-	    "'^rtadvd_enable=\"YES\"' root/usr/local/etc/rc.conf.d/arcana") == 0,
-	    "no record of the VLAN's in rtadvd.conf, or rtadvd not enabled");
-	ATF_CHECK(system("grep -q '^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1"
-	    ".conf -s ' setfib.log") == 0);
-	ATF_CHECK(system("grep -q '^server ntp.example.org iburst$' ntp.conf && "
-	    "grep -q '^server 10.99.0.9 iburst$' ntp.conf && grep -q "
-	    "'^ntpd_enable=\"YES\"' rc.conf") == 0);
-	ATF_CHECK(system("grep -q 'add 12 set 30 fwd tablearg tcp from any to "
-	    "table(sw1_z0p0_4) dst-port 80,https' ipfw.log") == 0);
-	ATF_CHECK(system("grep -q 'ipfw -q set enable 30' ipfw.log") == 0);
+}
+
+CONSOLE_TC_LONG(sdwan_apply_steer, "SD-WAN's steering: sent by the manager, "
+    "said by the edge, pinned and cleared; the VN view's underlay, an "
+    "operator's too")
+ATF_TC_BODY(sdwan_apply_steer, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[400], sa[16], sb[16];
+	char		doc[8192], lifn[32], laddr[64];
+	size_t		i;
+
+	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
+	    sizeof(lifn), laddr, sizeof(laddr));
+	sdwan_apply_done();
 	/* The manager: on its first tick it sends each edge its steering,
 	 * and says what it sent; branch's web flows reach hq's prefixes by
 	 * the encrypted public tunnel (the private one is a backup). */
@@ -14961,18 +15359,25 @@ ATF_TC_BODY(sdwan_apply, tc)
 		resp_free(&r);
 		memcpy(cookie, keep, sizeof(cookie));
 	}
-	/* Again: nothing to do. */
-	http("GET", "/api/sdwan/plan", NULL, &r);
-	EXPECT(&r, 200);
-	ATF_CHECK_EQ(0, changes_of(&r, "make") + changes_of(&r, "remake") +
-	    changes_of(&r, "unmake"));
-	resp_free(&r);
+}
 
+CONSOLE_TC_LONG(sdwan_apply_change, "SD-WAN changed on the edges: the MPLS no "
+    "longer the service's, its tunnel taken away")
+ATF_TC_BODY(sdwan_apply_change, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		sa[16], sb[16];
+	char		doc[8192], t1[8192], lifn[32], laddr[64];
+
+	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
+	    sizeof(lifn), laddr, sizeof(laddr));
+	sdwan_apply_done();
 	/* The MPLS no longer the service's: its tunnel taken away. */
 	ATF_REQUIRE(swap_in(doc, "\"ucs\":[\"inet\",\"mpls\"]",
 	    "\"ucs\":[\"inet\"]", t1, sizeof(t1)));
 	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":5", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":1", t1,
 	    sizeof(t1)));
 	http("PUT", "/api/sdwan", t1, &r);
 	EXPECT(&r, 200);
@@ -14998,69 +15403,20 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_CHECK(system("! grep -q '\"units\":\\[102' data/sdwan-state.json") ==
 	    0);
+}
 
-	/* A policy that requires encryption always: the private tunnel
-	 * is under IPsec too; a UCS that says no IPsec cannot be. */
-	ATF_REQUIRE(swap_in(doc, "\"encryption\":\"required-public-only\"",
-	    "\"encryption\":\"required-always\"", t1, sizeof(t1)));
-	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":6", t1,
-	    sizeof(t1)));
-	ATF_REQUIRE(swap_in(t1, "\"ucs\":[\"inet\"]",
-	    "\"ucs\":[\"inet\",\"mpls\"]", doc, sizeof(doc)));
-	http("PUT", "/api/sdwan", doc, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	http("GET", "/api/sdwan/plan", NULL, &r);
-	EXPECT(&r, 200);
-	ATF_CHECK_STREQ("true", jstr(&r, "tunnels.1.ipsec"));
-	ATF_CHECK_STREQ("gif", jstr(&r, "tunnels.1.kind"));
-	resp_free(&r);
-	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"",
-	    "\"kind\":\"gif\",\"ipsec\":false", t1, sizeof(t1)));
-	ATF_REQUIRE(swap_in(t1, "\"version\":6", "\"version\":7", doc,
-	    sizeof(doc)));
-	http("PUT", "/api/sdwan", doc, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	http("GET", "/api/sdwan/plan", NULL, &r);
-	ATF_CHECK_MSG(r.status == 409 && strstr(r.body, "(R39)") != NULL, "%s",
-	    r.body);
-	resp_free(&r);
-	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\",\"ipsec\":false",
-	    "\"kind\":\"gif\"", t1, sizeof(t1)));
-	ATF_REQUIRE(swap_in(t1, "\"encryption\":\"required-always\"",
-	    "\"encryption\":\"required-public-only\"", doc, sizeof(doc)));
-	ATF_REQUIRE(swap_in(doc, "\"version\":7", "\"version\":8", t1,
-	    sizeof(t1)));
-	http("PUT", "/api/sdwan", t1, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	/* An IPv6 UNI with no IPv6 inner addresses: the plan says so. */
-	http("GET", "/api/sdwan/plan", NULL, &r);
-	EXPECT(&r, 200);
-	ATF_CHECK_MSG(strstr(r.body, "\"notes\":[\"swvc acme: no tunnel from a "
-	    "to b carries 2001:db8:1::/64") != NULL, "%s", r.body);
-	resp_free(&r);
-	/* A geneve tunnel: one VNI at both ends, its table after it. */
-	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"", "\"kind\":\"geneve\"",
-	    t1, sizeof(t1)));
-	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":7", "\"version\":9", t1,
-	    sizeof(t1)));
-	http("PUT", "/api/sdwan", t1, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	http("GET", "/api/sdwan/plan", NULL, &r);
-	EXPECT(&r, 200);
-	snprintf(t2, sizeof(t2), "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
-	    "\"local\",\"10.99.0.1\",\"remote\",\"%s\"]", laddr);
-	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
-	snprintf(t2, sizeof(t2), "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
-	    "\"local\",\"%s\",\"remote\",\"10.99.0.1\"]", laddr);
-	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
-	resp_free(&r);
+CONSOLE_TC_LONG(sdwan_apply_security, "The Security page's own proxy and IDS "
+    "beside SD-WAN's: checked, rendered, its captures and files, stopped")
+ATF_TC_BODY(sdwan_apply_security, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		sa[16], sb[16];
+	char		doc[8192], t1[8192], t2[300], lifn[32], laddr[64];
 
+	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
+	    sizeof(lifn), laddr, sizeof(laddr));
+	sdwan_apply_done();
 	/* The Security page's own: a form not right refused; one made into
 	 * Squid's and c-icap's files beside SD-WAN's, its form told back;
 	 * Suricata's the same; [] stops them. */
@@ -15383,6 +15739,32 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_CHECK(access("sdwan-proxy-sec-web.conf", F_OK) != 0);
 	ATF_CHECK(access("sdwan-proxy-sw1.conf", F_OK) == 0);
+}
+
+CONSOLE_TC_LONG(sdwan_apply_rollback, "SD-WAN's apply rolled back when a step "
+    "fails after others were made")
+ATF_TC_BODY(sdwan_apply_rollback, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		sa[16], sb[16];
+	char		doc[8192], t1[8192], lifn[32], laddr[64];
+
+	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
+	    sizeof(lifn), laddr, sizeof(laddr));
+	sdwan_apply_done();
+	/* Kept with the MPLS tunnel a geneve one, as sdwan_apply_plan's
+	 * last, as sdwan_apply's rollback had it.  (gif102 made again by a
+	 * fresh apply crashes the agent: keep_made, yifedit.c, compares
+	 * the words of ifconfig_gif102 it has just nulled.) */
+	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"", "\"kind\":\"geneve\"", t1,
+	    sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"version\":0", "\"version\":1", doc,
+	    sizeof(doc)));
+	snprintf(t1, sizeof(t1), "%s", doc);
+	http("PUT", "/api/sdwan", t1, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
 	/*
 	 * A step that fails after others were made rolls the apply back:
 	 * what it made before is taken away again, the last first, and
@@ -15415,33 +15797,28 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 }
 
-/*
- * Three consoles of a cluster, each in its own directory, joined by unix
- * sockets: the seed leads, a change made on any is every one's, a
- * sign-in too, and one stopped catches up when it starts again.
- */
 static const char *const cl_nodes[] = { "na", "nb", "nc" };
 
-ATF_TC_WITH_CLEANUP(cluster);
-ATF_TC_HEAD(cluster, tc)
-{
-	atf_tc_set_md_var(tc, "descr", "Three consoles of a cluster: the seed "
-	    "leads, a change on any is every one's, a sign-in too, and one "
-	    "stopped catches up");
-	atf_tc_set_md_var(tc, "timeout", "120");
-}
-ATF_TC_CLEANUP(cluster, tc)
-{
-	char	cwd[MAXPATHLEN];
-	int	i;
-
-	if (getcwd(cwd, sizeof(cwd)) == NULL)
-		return;
-	for (i = 0; i < 3; i++)
-		if (chdir(cl_nodes[i]) == 0) {
-			stop();
-			(void)chdir(cwd);
-		}
+/* A case of the cluster's: its consoles stopped, each in its directory. */
+#define	CLUSTER_TC(name, descr)						\
+ATF_TC_WITH_CLEANUP(name);						\
+ATF_TC_HEAD(name, tc)							\
+{									\
+	atf_tc_set_md_var(tc, "descr", descr);				\
+	atf_tc_set_md_var(tc, "timeout", "120");				\
+}									\
+ATF_TC_CLEANUP(name, tc)						\
+{									\
+	char	cwd[MAXPATHLEN];					\
+	int	i;							\
+									\
+	if (getcwd(cwd, sizeof(cwd)) == NULL)				\
+		return;							\
+	for (i = 0; i < 3; i++)						\
+		if (chdir(cl_nodes[i]) == 0) {				\
+			stop();						\
+			(void)chdir(cwd);				\
+		}							\
 }
 
 /* GET path of node i until its answer says want: 15 s at most. */
@@ -15466,16 +15843,17 @@ cl_until(const char *cwd, int i, const char *path, const char *want)
 	return (ok);
 }
 
-ATF_TC_BODY(cluster, tc)
+/*
+ * The three consoles started, each in its directory under cwd; the
+ * seed's first key, once it leads; the others follow it.  Signed in on
+ * one, signed in on every one.
+ */
+static void
+cl_start(const atf_tc_t *tc, const char *cwd, struct authn *a)
 {
-	struct authn	a;
-	struct resp	r;
-	char		cwd[MAXPATHLEN], nodes[1024], key[64], far[16] = "";
-	char		path[128], body[128];
-	pid_t		pid;
-	int		i, n, k, st;
+	char	nodes[1024];
+	int	i, n;
 
-	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	n = snprintf(nodes, sizeof(nodes), "nodes {");
 	for (i = 0; i < 3; i++)
 		n += snprintf(nodes + n, sizeof(nodes) - (size_t)n, " %s { uri "
@@ -15492,15 +15870,34 @@ ATF_TC_BODY(cluster, tc)
 		ATF_REQUIRE(chdir(cwd) == 0);
 	}
 	harness_webconf[0] = '\0';
-	/* The seed's first key, once it leads; the others follow it. */
 	ATF_REQUIRE(chdir(cl_nodes[0]) == 0);
-	enrol(&a);
+	enrol(a);
 	ATF_REQUIRE(chdir(cwd) == 0);
 	ATF_CHECK(cl_until(cwd, 0, "/api/cluster", "\"role\":\"leader\""));
 	ATF_CHECK(cl_until(cwd, 1, "/api/cluster", "\"leader\":\"na\""));
 	ATF_CHECK(cl_until(cwd, 2, "/api/cluster", "\"leader\":\"na\""));
-	/* Signed in on one, signed in on every one. */
 	ATF_CHECK(cl_until(cwd, 2, "/api/servers", "\"servers\""));
+}
+
+/*
+ * Three consoles of a cluster, each in its own directory, joined by unix
+ * sockets: the seed leads, a change made on any is every one's, a
+ * sign-in too.
+ */
+CLUSTER_TC(cluster, "Three consoles of a cluster: the seed leads, a change "
+    "on any is every one's, a sign-in too; a store written on two at once "
+    "loses nothing")
+ATF_TC_BODY(cluster, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], key[64], far[16] = "";
+	char		path[128], body[128];
+	pid_t		pid;
+	int		i, k, st;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	cl_start(tc, cwd, &a);
 	/* A host added on a follower: written by the leader, every one's. */
 	ATF_REQUIRE(chdir(cl_nodes[1]) == 0);
 	http("POST", "/api/servers", "{\"name\":\"far\",\"uri\":\"tcp://"
@@ -15552,6 +15949,23 @@ ATF_TC_BODY(cluster, tc)
 	}
 	resp_free(&r);
 	ATF_REQUIRE(chdir(cwd) == 0);
+}
+
+/*
+ * The same three consoles: one stopped catches up when it starts
+ * again; signed out on one, signed out on every one.
+ */
+CLUSTER_TC(cluster_catchup, "Three consoles of a cluster: one stopped "
+    "catches up, a sign-out is every one's")
+ATF_TC_BODY(cluster_catchup, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[128];
+	int		n, k;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	cl_start(tc, cwd, &a);
 	/* One stopped misses a change two make; started, it has it. */
 	ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
 	console_stop();
@@ -16269,31 +16683,31 @@ events_continuous(const char *p, const char *end, const char *what)
  * numbered on without a gap or a record twice.  A host removed is not
  * asked again: said so, the reply ends.
  */
-CONSOLE_TC(fleet_stream_rejoin, "The fleet's event stream subscribes "
-    "again to a host whose agent restarted, and lets go of one removed")
-ATF_TC_BODY(fleet_stream_rejoin, tc)
+/*
+ * The fleet's stream read on socket s into buf (cap long, len had), of
+ * a console with one host (its id into id), until a job's event of the
+ * host's on it; path the host's jobs.
+ */
+static int
+fs_open(const atf_tc_t *tc, struct authn *a, char *id, size_t idlen,
+    char *path, size_t plen, char *buf, size_t *lenp, size_t cap)
 {
-	struct authn	 a;
 	struct resp	 r;
 	struct timeval	 tv = { 2, 0 };
-	char		 id[16], path[128], rq[512], want[128];
-	char		*buf, *info, *line, *nl;
-	size_t		 len = 0, cap = 1 << 20;
-	ssize_t		 n;
-	int		 s, before, after;
+	char		 rq[512];
+	int		 s;
 
 	start(tc, 0, NULL);
-	enrol(&a);
-	watch_host(id, sizeof(id));
-	snprintf(path, sizeof(path), "/api/servers/%s/jobs", id);
-	ATF_REQUIRE((buf = calloc(1, cap)) != NULL);
+	enrol(a);
+	watch_host(id, idlen);
+	snprintf(path, plen, "/api/servers/%s/jobs", id);
 	s = console_socket();
 	ATF_REQUIRE(setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv,
 	    sizeof(tv)) == 0);
 	snprintf(rq, sizeof(rq), "GET /restconf/streams/fleet/json "
 	    "HTTP/1.1\r\nHost: localhost:8443\r\nCookie: %s\r\n\r\n", cookie);
 	ATF_REQUIRE(write(s, rq, strlen(rq)) == (ssize_t)strlen(rq));
-	ATF_REQUIRE_MSG(sse_until(s, buf, &len, cap, "fleet's stream", 10),
+	ATF_REQUIRE_MSG(sse_until(s, buf, lenp, cap, "fleet's stream", 10),
 	    "%s", buf);
 	/* Subscribed once the thread has the host: then a job. */
 	usleep(1500000);
@@ -16301,8 +16715,26 @@ ATF_TC_BODY(fleet_stream_rejoin, tc)
 	    "\"args\":[\"name=gre9\",\"interface=gre9\",\"address=192.0.2.9\","
 	    "\"interval=500\",\"eval=10000\"]}]}", &r);
 	resp_free(&r);
-	ATF_REQUIRE_MSG(sse_until(s, buf, &len, cap, "arcana-events:event",
+	ATF_REQUIRE_MSG(sse_until(s, buf, lenp, cap, "arcana-events:event",
 	    15), "%s", buf);
+	return (s);
+}
+
+CONSOLE_TC(fleet_stream_rejoin, "The fleet's event stream subscribes "
+    "again to a host whose agent restarted")
+ATF_TC_BODY(fleet_stream_rejoin, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 id[16], path[128], want[128];
+	char		*buf, *info, *line, *nl;
+	size_t		 len = 0, cap = 1 << 20;
+	ssize_t		 n;
+	int		 s, before, after;
+
+	ATF_REQUIRE((buf = calloc(1, cap)) != NULL);
+	s = fs_open(tc, &a, id, sizeof(id), path, sizeof(path), buf, &len,
+	    cap);
 
 	/* The agent restarted: said lost, then heard again. */
 	agent_restart();
@@ -16335,7 +16767,25 @@ ATF_TC_BODY(fleet_stream_rejoin, tc)
 		ATF_CHECK_MSG(strstr(nl + 1, line) == NULL, "twice: %s", line);
 		*nl = '\n';
 	}
+	close(s);
+	free(buf);
+}
 
+CONSOLE_TC(fleet_stream_removed, "The fleet's event stream lets go of a "
+    "host removed")
+ATF_TC_BODY(fleet_stream_removed, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 id[16], path[128], want[128];
+	char		*buf;
+	size_t		 len = 0, cap = 1 << 20;
+	ssize_t		 n;
+	int		 s;
+
+	ATF_REQUIRE((buf = calloc(1, cap)) != NULL);
+	s = fs_open(tc, &a, id, sizeof(id), path, sizeof(path), buf, &len,
+	    cap);
 	/* Removed: its stream ended, it is not asked again; the reply
 	 * ends, it was the only one. */
 	snprintf(path, sizeof(path), "/api/servers/%s", id);
@@ -16735,29 +17185,29 @@ feed_dropped(const struct resp *r, const char *entry, const char *why)
 	return (false);
 }
 
-CONSOLE_TC_LONG(feeds, "Threat feeds: the presets' formats parsed from "
-    "fixtures, fetched by the console with If-Modified-Since, the "
-    "console's, a host's and a sign-in's addresses dropped, private space "
-    "kept only where the feed lists it on purpose; delivered as an ipfw "
-    "table swapped in; a preview; an alarm after three failures; a feed "
-    "disabled gives up its table alone; members may not")
-ATF_TC_BODY(feeds, tc)
+/*
+ * The feeds' console: the stand-in source (its port returned), host a
+ * (id into sa), far at 192.0.2.77, near at 100.64.0.5 (id into sn) and
+ * gone, which no agent answers for (id into sg); alice last signed in
+ * from 203.0.113.9.
+ */
+static int
+feeds_start(const atf_tc_t *tc, struct authn *a, char *sa, char *sn,
+    char *sg, size_t len)
 {
-	struct authn	a, b, c;
 	struct resp	r;
-	char		cwd[1024], body[1024], sa[16], k[96], invite[80];
-	char		invite2[80], sn[16], sg[16];
+	char		cwd[1024], body[1200], k[96];
 	int		port, i;
 
 	port = feeds_server(tc);
 	start(tc, 0, NULL);
-	enrol(&a);
+	enrol(a);
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
 	    "jgd.sock\"}", cwd);
 	http("POST", "/api/servers", body, &r);
 	EXPECT(&r, 200);
-	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	snprintf(sa, len, "%s", jstr(&r, "servers.0.id"));
 	resp_free(&r);
 	/* A host the console reaches at 192.0.2.77, and a user who last
 	 * signed in from 203.0.113.9: no feed is to cut either off. */
@@ -16774,7 +17224,7 @@ ATF_TC_BODY(feeds, tc)
 		snprintf(k, sizeof(k), "servers.%d.name", i);
 		if (jstr(&r, k) != NULL && strcmp(jstr(&r, k), "near") == 0) {
 			snprintf(k, sizeof(k), "servers.%d.id", i);
-			snprintf(sn, sizeof(sn), "%s", jstr(&r, k));
+			snprintf(sn, len, "%s", jstr(&r, k));
 		}
 	}
 	ATF_REQUIRE(sn[0] != '\0');
@@ -16789,14 +17239,135 @@ ATF_TC_BODY(feeds, tc)
 		snprintf(k, sizeof(k), "servers.%d.name", i);
 		if (jstr(&r, k) != NULL && strcmp(jstr(&r, k), "gone") == 0) {
 			snprintf(k, sizeof(k), "servers.%d.id", i);
-			snprintf(sg, sizeof(sg), "%s", jstr(&r, k));
+			snprintf(sg, len, "%s", jstr(&r, k));
 		}
 	}
 	ATF_REQUIRE(sg[0] != '\0');
 	resp_free(&r);
 	put("data/signins.json", "{\"alice\":{\"addr\":\"203.0.113.9\","
 	    "\"at\":1}}");
+	return (port);
+}
 
+/* The stand-in's 127.0.0.1 let through by the settings. */
+static void
+feeds_allow(void)
+{
+	struct resp	r;
+
+	http("POST", "/api/settings", "{\"set\":{\"feeds_allow_private\":"
+	    "\"127.0.0.1/32\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+}
+
+/* Spamhaus DROP on host sa, until delivered there; the feed in r. */
+static void
+feeds_spamhaus(int port, const char *sa, struct resp *r)
+{
+	char	body[1024], k[96];
+
+	snprintf(body, sizeof(body), "{\"preset\":\"spamhaus-drop-v4\","
+	    "\"url\":\"http://127.0.0.1:%d/drop_v4.json\",\"enabled\":true,"
+	    "\"hosts\":[\"%s\"]}", port, sa);
+	http("PUT", "/api/feeds/spamhaus-drop-v4", body, r);
+	EXPECT(r, 200);
+	ATF_CHECK_STREQ("feed_spamhaus_drop_v4", jstr(r, "feed.table"));
+	ATF_CHECK_STREQ("12", jstr(r, "feed.interval"));
+	resp_free(r);
+	snprintf(k, sizeof(k), "delivered.%s.at", sa);
+	feed_wait("spamhaus-drop-v4", k, NULL, r);
+}
+
+/* A feed of the stand-in's put as body says, until key is there (want,
+ * if not NULL); the feed in r. */
+static void
+feeds_put(const char *id, const char *body, const char *key,
+    const char *want, struct resp *r)
+{
+	char	path[96];
+
+	snprintf(path, sizeof(path), "/api/feeds/%s", id);
+	http("PUT", path, body, r);
+	EXPECT(r, 200);
+	resp_free(r);
+	feed_wait(id, key, want, r);
+}
+
+/* FireHOL level 1 on host sa, until fetched; the feed in r. */
+static void
+feeds_firehol(int port, const char *sa, struct resp *r)
+{
+	char	body[1024];
+
+	snprintf(body, sizeof(body), "{\"preset\":\"firehol-level1\",\"url\":"
+	    "\"http://127.0.0.1:%d/firehol_level1.netset\",\"enabled\":true,"
+	    "\"hosts\":[\"%s\"]}", port, sa);
+	feeds_put("firehol-level1", body, "fetched_at", NULL, r);
+}
+
+/* A list of one's own on host sa, of every kind of entry, until
+ * fetched; the feed in r. */
+static void
+feeds_local(int port, const char *sa, struct resp *r)
+{
+	char	body[1024];
+
+	snprintf(body, sizeof(body), "{\"name\":\"Local\",\"url\":\"http://"
+	    "127.0.0.1:%d/local.txt\",\"format\":\"plain\",\"interval\":1,"
+	    "\"enabled\":true,\"hosts\":[\"%s\"]}", port, sa);
+	http("PUT", "/api/feeds/local", body, r);
+	EXPECT(r, 200);
+	ATF_CHECK_STREQ("feed_local", jstr(r, "feed.table"));
+	resp_free(r);
+	feed_wait("local", "fetched_at", NULL, r);
+}
+
+/* A feed of chosen addresses, until fetched; the feed in r. */
+static void
+feeds_oracle(int port, struct resp *r)
+{
+	char	body[1024];
+
+	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
+	    "oracle.txt\",\"enabled\":true,\"hosts\":[]}", port);
+	feeds_put("oracle", body, "fetched_at", NULL, r);
+}
+
+/* A feed on host sg, which fails there, until its error is told; then
+ * its preview's.  The feed in r. */
+static void
+feeds_seen(int port, const char *sg, struct resp *r)
+{
+	char	body[1024], k[96];
+
+	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
+	    "drop_v4.json\",\"format\":\"spamhaus-json\",\"enabled\":true,"
+	    "\"hosts\":[\"%s\"]}", port, sg);
+	snprintf(k, sizeof(k), "delivered.%s.error", sg);
+	feeds_put("seen", body, k, NULL, r);
+	snprintf(k, sizeof(k), "delivered.%s.name", sg);
+	ATF_CHECK_STREQ("gone", jstr(r, k));
+	resp_free(r);
+	http("POST", "/api/feeds/seen/preview", NULL, r);
+	EXPECT(r, 202);
+	resp_free(r);
+	snprintf(k, sizeof(k), "preview.hosts.%s.error", sg);
+	feed_wait("seen", k, NULL, r);
+}
+
+CONSOLE_TC(feeds, "Threat feeds: what resolves to private space refused "
+    "unless let through; the presets; Spamhaus DROP fetched by the console "
+    "with If-Modified-Since, delivered as an ipfw table swapped in; "
+    "FireHOL's bogons kept but for the console's address")
+ATF_TC_BODY(feeds, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[1024], sa[16], sn[16], sg[16], k[96];
+	int		port, i;
+
+	port = feeds_start(tc, &a, sa, sn, sg, sizeof(sa));
 	/* A feed comes from the internet: what resolves to loopback,
 	 * private space or a cloud's metadata is refused, unless Settings
 	 * let its prefix through; the stand-in's 127.0.0.1 so. */
@@ -16814,10 +17385,7 @@ ATF_TC_BODY(feeds, tc)
 			resp_free(&r);
 		}
 	}
-	http("POST", "/api/settings", "{\"set\":{\"feeds_allow_private\":"
-	    "\"127.0.0.1/32\"}}", &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
+	feeds_allow();
 
 	/* The presets, off, each with its source and its terms. */
 	http("GET", "/api/feeds", NULL, &r);
@@ -16843,16 +17411,7 @@ ATF_TC_BODY(feeds, tc)
 
 	/* Spamhaus DROP, its JSON lines: fetched, kept, sent to host a as
 	 * a table filled by a scratch one and swapped in. */
-	snprintf(body, sizeof(body), "{\"preset\":\"spamhaus-drop-v4\","
-	    "\"url\":\"http://127.0.0.1:%d/drop_v4.json\",\"enabled\":true,"
-	    "\"hosts\":[\"%s\"]}", port, sa);
-	http("PUT", "/api/feeds/spamhaus-drop-v4", body, &r);
-	EXPECT(&r, 200);
-	ATF_CHECK_STREQ("feed_spamhaus_drop_v4", jstr(&r, "feed.table"));
-	ATF_CHECK_STREQ("12", jstr(&r, "feed.interval"));
-	resp_free(&r);
-	snprintf(k, sizeof(k), "delivered.%s.at", sa);
-	feed_wait("spamhaus-drop-v4", k, NULL, &r);
+	feeds_spamhaus(port, sa, &r);
 	ATF_CHECK_STREQ("4", jstr(&r, "count"));
 	ATF_CHECK_STREQ("1.10.16.0/20", jstr(&r, "sample.0"));
 	snprintf(k, sizeof(k), "delivered.%s.count", sa);
@@ -16879,31 +17438,37 @@ ATF_TC_BODY(feeds, tc)
 
 	/* FireHOL level 1 lists the bogons on purpose: kept, but for what
 	 * covers the console's own 127.0.0.1. */
-	snprintf(body, sizeof(body), "{\"preset\":\"firehol-level1\",\"url\":"
-	    "\"http://127.0.0.1:%d/firehol_level1.netset\",\"enabled\":true,"
-	    "\"hosts\":[\"%s\"]}", port, sa);
-	http("PUT", "/api/feeds/firehol-level1", body, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	feed_wait("firehol-level1", "fetched_at", NULL, &r);
+	feeds_firehol(port, sa, &r);
 	ATF_CHECK_MSG(feed_dropped(&r, "127.0.0.0/8", "covers 127.0.0.1, the "
 	    "console's"), "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"198.18.0.0/15\"") != NULL, "%s",
 	    r.body);
 	ATF_CHECK_STREQ("13", jstr(&r, "count"));
 	resp_free(&r);
+}
+
+CONSOLE_TC(feeds_local, "Threat feeds: a list of one's own, a host's and a "
+    "sign-in's addresses dropped, private space kept only where listed on "
+    "purpose; a preview; a feed disabled or removed gives up its table "
+    "alone")
+ATF_TC_BODY(feeds_local, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[1024], sa[16], sn[16], sg[16], k[96];
+	int		port, i;
+
+	port = feeds_start(tc, &a, sa, sn, sg, sizeof(sa));
+	feeds_allow();
+	feeds_spamhaus(port, sa, &r);
+	resp_free(&r);
+	feeds_firehol(port, sa, &r);
+	resp_free(&r);
 
 	/* A list of one's own, of every kind of entry: what is no prefix,
 	 * the whole space, a host's and a sign-in's address, private space
 	 * it does not list on purpose; one within another left out. */
-	snprintf(body, sizeof(body), "{\"name\":\"Local\",\"url\":\"http://"
-	    "127.0.0.1:%d/local.txt\",\"format\":\"plain\",\"interval\":1,"
-	    "\"enabled\":true,\"hosts\":[\"%s\"]}", port, sa);
-	http("PUT", "/api/feeds/local", body, &r);
-	EXPECT(&r, 200);
-	ATF_CHECK_STREQ("feed_local", jstr(&r, "feed.table"));
-	resp_free(&r);
-	feed_wait("local", "fetched_at", NULL, &r);
+	feeds_local(port, sa, &r);
 	ATF_CHECK_STREQ("2", jstr(&r, "count"));
 	ATF_CHECK_STREQ("1", jstr(&r, "covered"));
 	ATF_CHECK_STREQ("5", jstr(&r, "dropped_count"));
@@ -16935,6 +17500,42 @@ ATF_TC_BODY(feeds, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -q 'swap' ipfw.log") != 0);
 
+	/* Disabled: its own table given up, the others' left. */
+	snprintf(body, sizeof(body), "{\"name\":\"Local\",\"url\":\"http://"
+	    "127.0.0.1:%d/local.txt\",\"enabled\":false,\"hosts\":[\"%s\"]}",
+	    port, sa);
+	http("PUT", "/api/feeds/local", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 300 && access("feeds/feed_local", F_OK) == 0; i++)
+		usleep(100000);
+	ATF_CHECK(access("feeds/feed_local", F_OK) != 0);
+	ATF_CHECK(access("feeds/feed_spamhaus_drop_v4", F_OK) == 0);
+	ATF_CHECK(access("feeds/feed_firehol_level1", F_OK) == 0);
+	/* Removed: the same. */
+	http("DELETE", "/api/feeds/firehol-level1", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 300 && access("feeds/feed_firehol_level1", F_OK) ==
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK(access("feeds/feed_firehol_level1", F_OK) != 0);
+	ATF_CHECK(access("feeds/feed_spamhaus_drop_v4", F_OK) == 0);
+}
+
+CONSOLE_TC(feeds_alarm, "Threat feeds: a source gone, an alarm after three "
+    "failures in a row, the hosts' table as it was; back, cleared")
+ATF_TC_BODY(feeds_alarm, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[1024], sa[16], sn[16], sg[16], k[96];
+	int		port, i;
+
+	port = feeds_start(tc, &a, sa, sn, sg, sizeof(sa));
+	feeds_allow();
+	feeds_spamhaus(port, sa, &r);
+	resp_free(&r);
 	/* A source gone: an alarm after three failures in a row, the
 	 * hosts' table as it was; back, the alarm cleared. */
 	snprintf(body, sizeof(body), "{\"preset\":\"spamhaus-drop-v4\","
@@ -16964,57 +17565,37 @@ ATF_TC_BODY(feeds, tc)
 	feed_wait("spamhaus-drop-v4", "failures", "0", &r);
 	ATF_CHECK(jstr(&r, "alarm.since") == NULL);
 	resp_free(&r);
+}
 
-	/* Disabled: its own table given up, the others' left. */
-	snprintf(body, sizeof(body), "{\"name\":\"Local\",\"url\":\"http://"
-	    "127.0.0.1:%d/local.txt\",\"enabled\":false,\"hosts\":[\"%s\"]}",
-	    port, sa);
-	http("PUT", "/api/feeds/local", body, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	for (i = 0; i < 300 && access("feeds/feed_local", F_OK) == 0; i++)
-		usleep(100000);
-	ATF_CHECK(access("feeds/feed_local", F_OK) != 0);
-	ATF_CHECK(access("feeds/feed_spamhaus_drop_v4", F_OK) == 0);
-	ATF_CHECK(access("feeds/feed_firehol_level1", F_OK) == 0);
-	/* Removed: the same. */
-	http("DELETE", "/api/feeds/firehol-level1", NULL, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	for (i = 0; i < 300 && access("feeds/feed_firehol_level1", F_OK) ==
-	    0; i++)
-		usleep(100000);
-	ATF_CHECK(access("feeds/feed_firehol_level1", F_OK) != 0);
-	ATF_CHECK(access("feeds/feed_spamhaus_drop_v4", F_OK) == 0);
+CONSOLE_TC(feeds_redirect, "Threat feeds: a redirect followed, not to a "
+    "cloud's metadata; a feed of chosen addresses, each dropped and why; "
+    "a feed on a host that fails there, its error told")
+ATF_TC_BODY(feeds_redirect, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[1024], sa[16], sn[16], sg[16];
+	int		port;
 
+	port = feeds_start(tc, &a, sa, sn, sg, sizeof(sa));
+	feeds_allow();
 	/* Redirected: followed on the stand-in; to a cloud's metadata,
 	 * refused though the stand-in itself is let through. */
 	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
 	    "redirect\",\"format\":\"spamhaus-json\",\"enabled\":true,"
 	    "\"hosts\":[]}", port);
-	http("PUT", "/api/feeds/hop", body, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	feed_wait("hop", "count", "4", &r);
+	feeds_put("hop", body, "count", "4", &r);
 	resp_free(&r);
 	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
 	    "redirect-private\",\"enabled\":true,\"hosts\":[]}", port);
-	http("PUT", "/api/feeds/meta", body, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	feed_wait("meta", "failures", "1", &r);
+	feeds_put("meta", body, "failures", "1", &r);
 	ATF_CHECK_MSG(strstr(r.body, "169.254.169.254 is a private or "
 	    "reserved address") != NULL, "%s", r.body);
 	resp_free(&r);
 
 	/* A feed of chosen addresses: a sign-in's, an unreadable host's, a
 	 * readable host's.  The owner sees each entry dropped, and why. */
-	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
-	    "oracle.txt\",\"enabled\":true,\"hosts\":[]}", port);
-	http("PUT", "/api/feeds/oracle", body, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	feed_wait("oracle", "fetched_at", NULL, &r);
+	feeds_oracle(port, &r);
 	ATF_CHECK_MSG(feed_dropped(&r, "203.0.113.9/32", "alice's last "
 	    "sign-in") && feed_dropped(&r, "192.0.2.77/32", "host far's") &&
 	    feed_dropped(&r, "100.64.0.5/32", "host near's"), "%s", r.body);
@@ -17024,22 +17605,29 @@ ATF_TC_BODY(feeds, tc)
 
 	/* A feed on host gone, which fails there: the owner sees it, by
 	 * its name and error, in what was sent and in a preview. */
-	snprintf(body, sizeof(body), "{\"url\":\"http://127.0.0.1:%d/"
-	    "drop_v4.json\",\"format\":\"spamhaus-json\",\"enabled\":true,"
-	    "\"hosts\":[\"%s\"]}", port, sg);
-	http("PUT", "/api/feeds/seen", body, &r);
-	EXPECT(&r, 200);
+	feeds_seen(port, sg, &r);
 	resp_free(&r);
-	snprintf(k, sizeof(k), "delivered.%s.error", sg);
-	feed_wait("seen", k, NULL, &r);
-	snprintf(k, sizeof(k), "delivered.%s.name", sg);
-	ATF_CHECK_STREQ("gone", jstr(&r, k));
+}
+
+CONSOLE_TC(feeds_operator, "Threat feeds an operator of some hosts may "
+    "not take away nor change, nor read beyond them; members may not")
+ATF_TC_BODY(feeds_operator, tc)
+{
+	struct authn	a, b, c;
+	struct resp	r;
+	char		body[1024], sa[16], sn[16], sg[16], invite[80];
+	char		invite2[80];
+	int		port;
+
+	port = feeds_start(tc, &a, sa, sn, sg, sizeof(sa));
+	feeds_allow();
+	feeds_spamhaus(port, sa, &r);
 	resp_free(&r);
-	http("POST", "/api/feeds/seen/preview", NULL, &r);
-	EXPECT(&r, 202);
+	feeds_local(port, sa, &r);
 	resp_free(&r);
-	snprintf(k, sizeof(k), "preview.hosts.%s.error", sg);
-	feed_wait("seen", k, NULL, &r);
+	feeds_oracle(port, &r);
+	resp_free(&r);
+	feeds_seen(port, sg, &r);
 	resp_free(&r);
 
 	/* An operator who only views hosts a and near may not take away
@@ -19392,13 +19980,46 @@ ATF_TC_BODY(cyang_plugins, tc)
 
 ATF_TP_ADD_TCS(tp)
 {
-	ATF_TP_ADD_TC(tp, feeds);
-	ATF_TP_ADD_TC(tp, watch_nacm);
+	/* The longest first: kyua starts them in this order. */
+	ATF_TP_ADD_TC(tp, sdwan_apply_rollback);
+	ATF_TP_ADD_TC(tp, troubleshoot_hang);
+	ATF_TP_ADD_TC(tp, sdwan_apply_identities);
+	ATF_TP_ADD_TC(tp, notify_cooldown_again);
+	ATF_TP_ADD_TC(tp, sdwan_apply_security);
+	ATF_TP_ADD_TC(tp, sdwan_uswe_rekey);
+	ATF_TP_ADD_TC(tp, sdwan_apply_steer);
+	ATF_TP_ADD_TC(tp, notify_cooldown_held);
+	ATF_TP_ADD_TC(tp, feeds_operator);
+	ATF_TP_ADD_TC(tp, mtls_sctp);
+	ATF_TP_ADD_TC(tp, sdwan_apply_change);
+	ATF_TP_ADD_TC(tp, sdwan_apply);
+	ATF_TP_ADD_TC(tp, feeds_local);
+	ATF_TP_ADD_TC(tp, sdwan_uswe);
+	ATF_TP_ADD_TC(tp, feeds_alarm);
+	ATF_TP_ADD_TC(tp, feeds_redirect);
+	ATF_TP_ADD_TC(tp, notify_cooldown_mute);
+	ATF_TP_ADD_TC(tp, workflows_every);
+	ATF_TP_ADD_TC(tp, fleet_stream_rejoin);
+	ATF_TP_ADD_TC(tp, workflows_events);
+	ATF_TP_ADD_TC(tp, notify_cooldown_sessions);
 	ATF_TP_ADD_TC(tp, cluster);
+	ATF_TP_ADD_TC(tp, mtls);
+	ATF_TP_ADD_TC(tp, mtls_move);
+	ATF_TP_ADD_TC(tp, fleet_stream_removed);
+	ATF_TP_ADD_TC(tp, workflows_arcana);
+	ATF_TP_ADD_TC(tp, feeds);
+	ATF_TP_ADD_TC(tp, telegram_job);
+	ATF_TP_ADD_TC(tp, workflows);
+	ATF_TP_ADD_TC(tp, troubleshoot);
+	ATF_TP_ADD_TC(tp, sdwan_apply_plan);
+	ATF_TP_ADD_TC(tp, telegram);
+	ATF_TP_ADD_TC(tp, telegram_workflow);
+	ATF_TP_ADD_TC(tp, cluster_catchup);
+
+	ATF_TP_ADD_TC(tp, watch_nacm);
 	ATF_TP_ADD_TC(tp, notif_receiver);
 	ATF_TP_ADD_TC(tp, notif_token);
 	ATF_TP_ADD_TC(tp, watch_reconnect);
-	ATF_TP_ADD_TC(tp, fleet_stream_rejoin);
 	ATF_TP_ADD_TC(tp, watch_held);
 	ATF_TP_ADD_TC(tp, watch_events);
 
@@ -19469,10 +20090,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, monitors);
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, mail);
-	ATF_TP_ADD_TC(tp, notify_cooldown);
 	ATF_TP_ADD_TC(tp, sampling_switch);
 	ATF_TP_ADD_TC(tp, sampling_old);
-	ATF_TP_ADD_TC(tp, telegram);
 	ATF_TP_ADD_TC(tp, local_agent);
 	ATF_TP_ADD_TC(tp, local_same);
 	ATF_TP_ADD_TC(tp, local_absent);
@@ -19485,11 +20104,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, labels);
 	ATF_TP_ADD_TC(tp, password);
 	ATF_TP_ADD_TC(tp, ldap);
-	ATF_TP_ADD_TC(tp, troubleshoot);
-	ATF_TP_ADD_TC(tp, workflows);
 	ATF_TP_ADD_TC(tp, workflow_approval);
 	ATF_TP_ADD_TC(tp, sdwan);
-	ATF_TP_ADD_TC(tp, sdwan_apply);
 	ATF_TP_ADD_TC(tp, sdwan_mesh);
 	ATF_TP_ADD_TC(tp, sdwan_host);
 	ATF_TP_ADD_TC(tp, sdwan_loop);
@@ -19501,7 +20117,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_neigh);
 	ATF_TP_ADD_TC(tp, sdwan_lists);
 	ATF_TP_ADD_TC(tp, sdwan_notices);
-	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_sfp);
 	ATF_TP_ADD_TC(tp, sdwan_jail);
 	ATF_TP_ADD_TC(tp, sdwan_lab);
@@ -19509,7 +20124,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, churn);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);
-	ATF_TP_ADD_TC(tp, mtls);
 	ATF_TP_ADD_TC(tp, agent_update_bridge);
 	ATF_TP_ADD_TC(tp, restconf_revisions);
 	ATF_TP_ADD_TC(tp, restconf_actions);
