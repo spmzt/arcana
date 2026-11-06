@@ -401,6 +401,7 @@ struct plan {
 	ucl_object_t		*learned;	/* sid/ifname: the host's address */
 	ucl_object_t		*boroutes;	/* sid: the breakout's steered routes */
 	ucl_object_t		*nodes;		/* "VPN/NODE": its own (l3nm_plan.c) */
+	ucl_object_t		*caps;		/* sid: {capacity, committed} */
 	bool			 invalid;	/* not a service to make: why says */
 	char			 why[300];
 };
@@ -4632,6 +4633,16 @@ dn_fits(struct plan *pl, const char *sid, const struct dn *dn)
 		    strlen(commits), "%s%s %jd", n++ > 0 ? ", " : "",
 		    dn->lim[i].key, (intmax_t)dn->lim[i].commit);
 	}
+	/* The sums kept, for vn-compute's te-bandwidth (vn.c). */
+	if (pl->caps == NULL)
+		pl->caps = ucl_object_typed_new(UCL_OBJECT);
+	{
+		ucl_object_t	*c = ucl_object_typed_new(UCL_OBJECT);
+
+		put(c, "capacity", I(cap));
+		put(c, "committed", I(sum));
+		ucl_object_insert_key(pl->caps, c, sid, 0, true);
+	}
 	if (sum <= cap)
 		return (true);
 	/* The largest commit's owner: "service/limiter/name" or
@@ -7771,6 +7782,8 @@ plan_free(struct plan *pl)
 		ucl_object_unref(pl->boroutes);
 	if (pl->nodes != NULL)
 		ucl_object_unref(pl->nodes);
+	if (pl->caps != NULL)
+		ucl_object_unref(pl->caps);
 	if (pl->ready != NULL)
 		ucl_object_unref(pl->ready);
 	memset(pl, 0, sizeof(*pl));
@@ -11547,19 +11560,55 @@ api_sdwan_edges(struct http_request *req)
 
 /*
  * The tunnels a plan of L3NM y makes, both ends each (the VN view's
- * underlay, vn.c); NULL where it plans none.
+ * underlay, vn.c); NULL where it plans none.  Each end with its
+ * edge's name and what vn-compute weighs a bandwidth against, where
+ * said: its UCS End Point's bandwidth, its edge's uplinks and
+ * policies' commits (the sums of 4.5.6), bit/s.
  */
+/* Tunnel end end of plan pl: its edge's name, bandwidth and sums. */
+static void
+end_caps(const struct plan *pl, ucl_object_t *end)
+{
+	const ucl_object_t	*u, *c, *b;
+	const char		*sid;
+
+	if ((sid = str(end, "edge")) == NULL)
+		return;
+	put(end, "name", S(server_name_of(sid)));
+	u = by(ucl_object_lookup(by(ucl_object_lookup(pl->doc, "edges"),
+	    "server", sid), "ucs_end_points"), "id", str(end, "ucs_ep"));
+	if (ucl_object_type(b = ucl_object_lookup(u, "bandwidth")) == UCL_INT)
+		put(end, "bandwidth", I(ucl_object_toint(b)));
+	if ((c = ucl_object_lookup(pl->caps, sid)) != NULL) {
+		put(end, "capacity", ucl_object_copy(ucl_object_lookup(c,
+		    "capacity")));
+		put(end, "committed", ucl_object_copy(ucl_object_lookup(c,
+		    "committed")));
+	}
+}
+
 ucl_object_t *
 sdwan_plan_tunnels(const ucl_object_t *y)
 {
-	struct plan	 pl;
-	ucl_object_t	*st, *t = NULL;
+	struct plan		 pl;
+	const ucl_object_t	*tn;
+	ucl_object_iter_t	 it, et;
+	ucl_object_t		*st, *t = NULL, *end;
 
 	pthread_mutex_lock(&st_lock);
 	st = state_load();
 	pthread_mutex_unlock(&st_lock);
-	if (plan_build(&pl, y, st))
+	if (plan_build(&pl, y, st)) {
 		t = ucl_object_copy(pl.tunnels);
+		it = NULL;
+		while ((tn = ucl_object_iterate(t, &it, true)) != NULL) {
+			et = NULL;
+			while ((end = __DECONST(ucl_object_t *,
+			    ucl_object_iterate(ucl_object_lookup(tn, "ends"),
+			    &et, true))) != NULL)
+				end_caps(&pl, end);
+		}
+	}
 	plan_free(&pl);
 	ucl_object_unref(st);
 	return (t);

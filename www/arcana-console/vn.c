@@ -38,10 +38,15 @@
  *
  * RFC 9731's VN compute as the console's check, nothing made: each
  * member asked for found in the view (its APs, VNAPs and the member
- * between them), the plan's tunnels between its edges, and its bounds
- * (its own, else the input's) against what the steering at either end
- * last measured of them; infeasible, compute-status down with
- * error-info's reason and why; unmeasured, unknown.
+ * between them), the plan's tunnels between its edges, and what it
+ * asks (its own, else the input's): its bounds against what the
+ * steering at either end last measured of them, its te-bandwidth
+ * against the uplinks (4.5.6's sums), its cos among its service's
+ * business importance levels, its disjointness and the input's
+ * vn-level-diversity by UCS End Point (a link) and UCS (an SRLG, and
+ * the underlay's nodes); infeasible, compute-status down with
+ * error-info's reason and why; unmeasured, unknown; an optimization
+ * Arcana does not weigh, unknown and said.
  */
 
 #include <sys/param.h>
@@ -765,12 +770,42 @@ api_vn(struct http_request *req)
 /* ---- vn-compute (RFC 9731 section 4.3.1) ------------------------------ */
 
 #define	BOUND_MAX	8
+#define	TUN_MAX		16	/* a member's tunnels weighed */
+#define	DIV_MAX		64	/* members kept apart */
+#define	DIV_STEPS	100000	/* choices tried, at most */
+
+/* te-path-disjointness's bits (RFC 8776). */
+#define	DIS_NODE	0x1
+#define	DIS_LINK	0x2
+#define	DIS_SRLG	0x4
+
+#define	NO_RESOURCE	"ietf-vn:vn-computation-error-no-resource"
 
 /* A bound of path-metric-bounds, as the TCA's leaf has it. */
 struct bound {
 	const char	*leaf;		/* delay, ipdv, loss; NULL: unmeasured */
 	const char	*metric;
 	double		 max;
+};
+
+/* What a member asks, its own or the input's. */
+struct ask {
+	struct bound		 b[BOUND_MAX];
+	int			 nb;
+	double			 bw;	/* te-bandwidth, bit/s; 0: none */
+	const char		*bwlist; /* one that is a list */
+	int			 cos;	/* -1: none */
+	int			 dis;	/* DIS_*, of its own paths */
+	const ucl_object_t	*opt;	/* optimizations */
+};
+
+/* A member computed: its entry, the tunnels that may carry it. */
+struct mres {
+	ucl_object_t		*m;
+	const ucl_object_t	*tun[TUN_MAX];
+	bool			 fit[TUN_MAX];
+	int			 ntun;
+	bool			 down;
 };
 
 /* Entry key=id of list arr; NULL: none. */
@@ -850,31 +885,56 @@ sample_at(struct vctx *x, const char *edge, const char *id, const char *leaf,
 	}
 }
 
+static void	info(ucl_object_t *, const char *, const char *, const char *,
+		    ...) __printflike(4, 5);
 static void	fail_info(ucl_object_t *, const char *, const char *, ...)
 		    __printflike(3, 4);
 
-/* Member m infeasible: compute-status down, error-info why. */
+/* Member m's compute-status st, error-info why (reason NULL: none). */
 static void
-fail_info(ucl_object_t *m, const char *reason, const char *fmt, ...)
+vinfo(ucl_object_t *m, const char *st, const char *reason, const char *fmt,
+    va_list ap)
 {
 	ucl_object_t	*ei;
-	va_list		 ap;
 	struct tm	 tm;
 	time_t		 now;
-	char		 why[512], ts[32];
+	char		 why[1024], ts[32];
 
-	va_start(ap, fmt);
 	vsnprintf(why, sizeof(why), fmt, ap);
-	va_end(ap);
 	now = time(NULL);
 	gmtime_r(&now, &tm);
 	strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", &tm);
 	ei = ucl_object_typed_new(UCL_OBJECT);
 	put_str(ei, "error-description", why);
 	put_str(ei, "error-timestamp", ts);
-	put_str(ei, "error-reason", reason);
-	put_str(m, "compute-status", "down");
+	if (reason != NULL)
+		put_str(ei, "error-reason", reason);
+	(void)ucl_object_delete_key(m, "compute-status");
+	(void)ucl_object_delete_key(m, "error-info");
+	put_str(m, "compute-status", st);
 	ucl_object_insert_key(m, ei, "error-info", 0, false);
+}
+
+static void
+info(ucl_object_t *m, const char *st, const char *reason, const char *fmt,
+    ...)
+{
+	va_list	ap;
+
+	va_start(ap, fmt);
+	vinfo(m, st, reason, fmt, ap);
+	va_end(ap);
+}
+
+/* Member m infeasible: compute-status down, error-info why. */
+static void
+fail_info(ucl_object_t *m, const char *reason, const char *fmt, ...)
+{
+	va_list	ap;
+
+	va_start(ap, fmt);
+	vinfo(m, "down", reason, fmt, ap);
+	va_end(ap);
 }
 
 /* AP ap's VNAP: vnap where named, else its only one; NULL: neither. */
@@ -925,27 +985,305 @@ member_between(const ucl_object_t *vn, const char *a, const char *b)
 }
 
 /*
- * Input member in computed against view top: its APs and VNAPs known,
- * a member of the view between them, the plan's tunnels between their
- * edges, and the bounds (its own, else the input's vb) met by one of
- * them as the steering at either end last measured it.
+ * te-bandwidth's generic of path-constraints pc (RFC 8776): for a
+ * packet network an IEEE float32, or a decimal or hex integer, of bytes
+ * a second, *bps in bits; a list (OTN's, DWDM's) in *list.  -1 bad.
  */
-static ucl_object_t *
-compute_one(struct vctx *x, const ucl_object_t *top, const ucl_object_t *in,
-    const struct bound *vb, int nvb)
+static int
+bw_in(const ucl_object_t *pc, double *bps, const char **list)
+{
+	const ucl_object_t	*v;
+	const char		*s;
+	char			*end;
+	double			 d;
+
+	if ((v = ucl_object_lookup_path(pc, "te-bandwidth.generic")) == NULL)
+		return (0);
+	if (ucl_object_type(v) != UCL_STRING ||
+	    *(s = ucl_object_tostring(v)) == '\0')
+		return (-1);
+	if (strchr(s, ',') != NULL) {
+		*list = s;
+		return (0);
+	}
+	d = strtod(s, &end);
+	if (*end != '\0' || !isfinite(d) || d < 0)
+		return (-1);
+	*bps = d * 8;
+	return (0);
+}
+
+/* te-path-disjointness's bits of v (none: 0); -1 bad. */
+static int
+dis_of(const ucl_object_t *v)
+{
+	const char	*s;
+	size_t		 n;
+	int		 bits = 0;
+
+	if (v == NULL)
+		return (0);
+	if (ucl_object_type(v) != UCL_STRING)
+		return (-1);
+	for (s = ucl_object_tostring(v); *(s += strspn(s, " ")) != '\0';
+	    s += n) {
+		n = strcspn(s, " ");
+		if (n == 4 && strncmp(s, "node", 4) == 0)
+			bits |= DIS_NODE;
+		else if (n == 4 && strncmp(s, "link", 4) == 0)
+			bits |= DIS_LINK;
+		else if (n == 4 && strncmp(s, "srlg", 4) == 0)
+			bits |= DIS_SRLG;
+		else
+			return (-1);
+	}
+	return (bits);
+}
+
+static const char *
+dis_name(int bits, char *buf, size_t len)
+{
+
+	snprintf(buf, len, "%s%s%s%s%s", bits & DIS_NODE ? "node" : "",
+	    (bits & DIS_NODE) && (bits & ~DIS_NODE) ? ", " : "",
+	    bits & DIS_LINK ? "link" : "", (bits & DIS_LINK) &&
+	    (bits & DIS_SRLG) ? ", " : "", bits & DIS_SRLG ? "SRLG" : "");
+	return (buf);
+}
+
+/* What o (a member, or the input) asks into a; -1 bad. */
+static int
+ask_in(const ucl_object_t *o, struct ask *a)
+{
+	const ucl_object_t	*pc, *v;
+	int64_t			 k;
+
+	memset(a, 0, sizeof(*a));
+	a->cos = -1;
+	pc = ucl_object_lookup(o, "path-constraints");
+	if ((a->nb = bounds_in(pc, a->b)) < 0 || bw_in(pc, &a->bw,
+	    &a->bwlist) < 0 || (a->dis = dis_of(ucl_object_lookup(pc,
+	    "disjointness"))) < 0)
+		return (-1);
+	if ((v = ucl_object_lookup(o, "cos")) != NULL) {
+		if (ucl_object_type(v) != UCL_INT || (k = ucl_object_toint(v)) <
+		    0 || k > 7)
+			return (-1);
+		a->cos = (int)k;
+	}
+	if ((v = ucl_object_lookup(o, "optimizations")) != NULL) {
+		if (ucl_object_type(v) != UCL_OBJECT)
+			return (-1);
+		a->opt = v;
+	}
+	return (0);
+}
+
+/* What a leaves out, the input's (d). */
+static void
+ask_merge(struct ask *a, const struct ask *d)
+{
+
+	if (a->nb <= 0 && d->nb > 0) {
+		memcpy(a->b, d->b, sizeof(*a->b) * (size_t)d->nb);
+		a->nb = d->nb;
+	}
+	if (a->bw == 0 && a->bwlist == NULL) {
+		a->bw = d->bw;
+		a->bwlist = d->bwlist;
+	}
+	if (a->cos < 0)
+		a->cos = d->cos;
+	if (a->dis == 0)
+		a->dis = d->dis;
+	if (a->opt == NULL)
+		a->opt = d->opt;
+}
+
+/*
+ * Whether the plan's tunnel id carries bps at both ends: its UCS End
+ * Point's bandwidth, and its edge's uplinks beyond what its policies
+ * commit (4.5.6's sums, sdwan_plan_tunnels()).  1 it does, 0 not said,
+ * -1 it does not, why appended.
+ */
+static int
+bw_fits(struct vctx *x, const char *id, double bps, char *why, size_t len)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	int64_t			 bw, cap, com;
+	size_t			 n;
+	int			 k = 1;
+
+	while ((e = ucl_object_iterate(ucl_object_lookup(entry(x->tunnels,
+	    "id", id), "ends"), &it, true)) != NULL) {
+		if (ucl_object_lookup(e, "bandwidth") == NULL ||
+		    ucl_object_lookup(e, "capacity") == NULL) {
+			k = MIN(k, 0);
+			continue;
+		}
+		bw = ucl_object_toint(ucl_object_lookup(e, "bandwidth"));
+		cap = ucl_object_toint(ucl_object_lookup(e, "capacity"));
+		com = ucl_object_toint(ucl_object_lookup(e, "committed"));
+		n = strlen(why);
+		if (bw < bps)
+			snprintf(why + n, len - n, "%s%s's UCS End Point %s "
+			    "carries %jd bit/s", n > 0 ? "; " : "", ucl_str(e,
+			    "name"), ucl_str(e, "ucs_ep"), (intmax_t)bw);
+		else if (cap - com < bps)
+			snprintf(why + n, len - n, "%s%s's uplinks carry %jd "
+			    "bit/s, its policies commit %jd", n > 0 ? "; " : "",
+			    ucl_str(e, "name"), (intmax_t)cap, (intmax_t)com);
+		else
+			continue;
+		k = -1;
+	}
+	return (k);
+}
+
+/*
+ * Whether the view's tunnels a and b are disjoint by bits, the
+ * underlay as Arcana knows it: a link an edge's UCS End Point (its
+ * uplink), an SRLG a UCS (one network, one risk), and a node of the
+ * underlay a UCS's, none known by itself (two paths over one UCS may
+ * share one); the edges at the ends are the paths' own.  Why not in
+ * why (NULL: not said).
+ */
+static bool
+tun_disjoint(const ucl_object_t *a, const ucl_object_t *b, int bits,
+    char *why, size_t len)
+{
+	static const char *const ends[] = { "src", "dest" };
+	const ucl_object_t	*ea, *eb;
+	const char		*ua, *ub, *pa, *pb, *xa, *xb;
+
+	ua = ucl_str(a, "ucs");
+	ub = ucl_str(b, "ucs");
+	if ((bits & (DIS_NODE | DIS_SRLG)) != 0 && (ua == NULL || ub ==
+	    NULL || strcmp(ua, ub) == 0)) {
+		if (why != NULL)
+			snprintf(why, len, "%s and %s are both over UCS %s",
+			    ucl_str(a, "id"), ucl_str(b, "id"), ua != NULL ?
+			    ua : "unsaid");
+		return (false);
+	}
+	if ((bits & DIS_LINK) == 0)
+		return (true);
+	for (int i = 0; i < 2; i++)
+		for (int j = 0; j < 2; j++) {
+			ea = ucl_object_lookup(a, ends[i]);
+			eb = ucl_object_lookup(b, ends[j]);
+			pa = ucl_str(ea, "ucs-end-point");
+			pb = ucl_str(eb, "ucs-end-point");
+			xa = ucl_str(ea, "edge");
+			xb = ucl_str(eb, "edge");
+			if (pa != NULL && pb != NULL && xa != NULL && xb !=
+			    NULL && (strcmp(pa, pb) != 0 || strcmp(xa, xb) != 0))
+				continue;
+			if (why != NULL)
+				snprintf(why, len, "%s and %s both go through "
+				    "UCS End Point %s", ucl_str(a, "id"),
+				    ucl_str(b, "id"), pa != NULL ? pa :
+				    "unsaid");
+			return (false);
+		}
+	return (true);
+}
+
+/*
+ * Class-Type cos (RFC 4124) of service vid of L3NM y: its business
+ * importance level at that place (MEF 70.2 §9.11), the first the
+ * highest; without levels CT0 alone, every flow's.  Why not in why.
+ */
+static bool
+cos_has(const ucl_object_t *y, const char *vid, int cos, char *why,
+    size_t len)
+{
+	const ucl_object_t	*lv;
+	size_t			 n;
+
+	lv = ucl_object_lookup_path(entry(ucl_object_lookup_path(y,
+	    "vpn-services.vpn-service"), "vpn-id", vid),
+	    "arcana-l3nm:sdwan.importance.level");
+	n = ucl_object_type(lv) == UCL_ARRAY ? ucl_array_size(lv) : lv !=
+	    NULL ? 1 : 0;
+	if (n == 0 ? cos == 0 : (size_t)cos < n)
+		return (true);
+	if (n == 0)
+		snprintf(why, len, "service %s has no business importance "
+		    "levels, one class (CT0): class-type %d is not one", vid,
+		    cos);
+	else
+		snprintf(why, len, "service %s has %zu business importance "
+		    "levels (CT0 to CT%zu): class-type %d is none of them", vid,
+		    n, n - 1, cos);
+	return (false);
+}
+
+/* What of optimizations o Arcana does not weigh, in buf; NULL: none. */
+static const char *
+opt_unknown(const ucl_object_t *o, char *buf, size_t len)
+{
+	const ucl_object_t	*v, *e;
+	ucl_object_iter_t	 it = NULL, mt;
+	const char		*k, *leaf;
+	double			 d;
+
+	while ((v = ucl_object_iterate(o, &it, true)) != NULL) {
+		if (strcmp(ucl_object_key(v), "optimization-metric") != 0) {
+			snprintf(buf, len, "%s, of the optimizations, is not "
+			    "one Arcana computes", ucl_object_key(v));
+			return (buf);
+		}
+		mt = NULL;
+		while ((e = ucl_object_iterate(v, &mt, true)) != NULL) {
+			k = ucl_str(e, "metric-type");
+			if (k == NULL || !vn_bound_tca(k, 1, &leaf, &d)) {
+				snprintf(buf, len, "an optimization by %s is "
+				    "not one Arcana computes: the steering "
+				    "weighs delay, delay variation and loss",
+				    k != NULL ? k : "no metric");
+				return (buf);
+			}
+			if (ucl_object_lookup(e,
+			    "explicit-route-exclude-objects") != NULL ||
+			    ucl_object_lookup(e,
+			    "explicit-route-include-objects") != NULL) {
+				snprintf(buf, len, "explicit route objects are "
+				    "not computed: no TE topology is kept");
+				return (buf);
+			}
+		}
+	}
+	return (NULL);
+}
+
+/*
+ * Input member in computed against view top into res: its APs and
+ * VNAPs known, a member of the view between them, the plan's tunnels
+ * between their edges, and what it asks (its own, else the input's d)
+ * met by one of them: the bounds as the steering at either end last
+ * measured them, the bandwidth as the plan's uplinks carry it
+ * (bw_fits()), the class among its service's (cos_has()), two of them
+ * disjoint (tun_disjoint()); an optimization Arcana does not weigh
+ * unknown, said.
+ */
+static void
+compute_one(struct vctx *x, const ucl_object_t *y, const ucl_object_t *top,
+    const ucl_object_t *in, const struct ask *d, struct mres *res)
 {
 	const ucl_object_t	*aps, *sap, *dap, *svn, *dvn, *vn, *mm, *t;
 	ucl_object_iter_t	 it = NULL;
-	struct bound		 b[BOUND_MAX];
+	struct ask		 a;
 	ucl_object_t		*m;
 	const char		*sa, *da, *vid, *tid;
-	char			 why[400];
+	char			 why[1024], dn[32], ob[256];
 	double			 got;
 	size_t			 len;
-	int			 nb, unmeasured = 0, ntun = 0;
-	bool			 fits = false;
+	int			 ntun = 0, nfit = 0, st, k, best;
 
-	m = ucl_object_typed_new(UCL_OBJECT);
+	res->m = m = ucl_object_typed_new(UCL_OBJECT);
+	res->down = true;
 	put_str(m, "id", ucl_str(in, "id"));
 	sa = ucl_object_tostring(ucl_object_lookup_path(in, "src.ap"));
 	da = ucl_object_tostring(ucl_object_lookup_path(in, "dest.ap"));
@@ -964,20 +1302,20 @@ compute_one(struct vctx *x, const ucl_object_t *top, const ucl_object_t *in,
 		fail_info(m, "ietf-vn:vn-computation-ap-unknown", "no AP %s",
 		    sap == NULL ? (sa != NULL ? sa : "as its source") :
 		    (da != NULL ? da : "as its destination"));
-		return (m);
+		return;
 	}
 	if (svn == NULL || dvn == NULL) {
 		fail_info(m, "ietf-vn:vn-computation-ap-unknown", "AP %s has "
 		    "no such VNAP, or several: name one", svn == NULL ? sa :
 		    da);
-		return (m);
+		return;
 	}
 	if ((vid = ucl_str(svn, "vn")) == NULL || ucl_str(dvn, "vn") == NULL ||
 	    strcmp(vid, ucl_str(dvn, "vn")) != 0) {
 		fail_info(m, "ietf-vn:vn-computation-error-path-not-found",
 		    "%s and %s are of two VNs", ucl_str(svn, "id"),
 		    ucl_str(dvn, "id"));
-		return (m);
+		return;
 	}
 	vn = entry(ucl_object_lookup_path(top, "ietf-vn:" VN_VN ".vn"), "id",
 	    vid);
@@ -987,58 +1325,172 @@ compute_one(struct vctx *x, const ucl_object_t *top, const ucl_object_t *in,
 		    "VN %s has no member between %s and %s: they are on one "
 		    "node, or two spokes", vid, ucl_str(svn, "id"),
 		    ucl_str(dvn, "id"));
-		return (m);
+		return;
 	}
-	if ((nb = bounds_in(ucl_object_lookup(in, "path-constraints"), b)) <=
-	    0 && nvb > 0) {
-		memcpy(b, vb, sizeof(*b) * (size_t)nvb);
-		nb = nvb;
-	}
-	for (int i = 0; i < nb; i++)
-		if (b[i].leaf == NULL) {
-			fail_info(m, "ietf-vn:vn-computation-error-no-resource",
-			    "no edge measures %s", b[i].metric);
-			return (m);
+	(void)ask_in(in, &a);
+	ask_merge(&a, d);
+	for (int i = 0; i < a.nb; i++)
+		if (a.b[i].leaf == NULL) {
+			fail_info(m, NO_RESOURCE, "no edge measures %s",
+			    a.b[i].metric);
+			return;
 		}
+	if (a.bwlist != NULL) {
+		fail_info(m, NO_RESOURCE, "te-bandwidth %s is a list, an OTN's "
+		    "or a DWDM's: Arcana's underlay is a packet network's",
+		    a.bwlist);
+		return;
+	}
+	if (a.cos >= 0 && !cos_has(y, vid, a.cos, why, sizeof(why))) {
+		fail_info(m, NO_RESOURCE, "%s", why);
+		return;
+	}
 	why[0] = '\0';
-	while (!fits && (t = ucl_object_iterate(ucl_object_lookup_path(mm,
+	while ((t = ucl_object_iterate(ucl_object_lookup_path(mm,
 	    "underlay.arcana-sdwan-underlay:sdwan.tunnel"), &it, true)) !=
 	    NULL) {
 		if ((tid = ucl_str(t, "id")) == NULL)
 			continue;
 		ntun++;
-		fits = true;
-		for (int i = 0; i < nb; i++) {
+		st = 1;
+		for (int i = 0; i < a.nb; i++) {
 			got = NAN;
 			sample_at(x, ucl_object_tostring(ucl_object_lookup_path(
-			    t, "src.edge")), tid, b[i].leaf, &got);
+			    t, "src.edge")), tid, a.b[i].leaf, &got);
 			sample_at(x, ucl_object_tostring(ucl_object_lookup_path(
-			    t, "dest.edge")), tid, b[i].leaf, &got);
-			if (isnan(got)) {
-				unmeasured++;
-				fits = false;
-				break;
-			}
-			if (got > b[i].max) {
+			    t, "dest.edge")), tid, a.b[i].leaf, &got);
+			if (isnan(got))
+				st = MIN(st, 0);
+			else if (got > a.b[i].max) {
 				len = strlen(why);
 				snprintf(why + len, sizeof(why) - len, "%s%s's "
 				    "%s %g over %g", len > 0 ? "; " : "", tid,
-				    b[i].leaf, got, b[i].max);
-				fits = false;
+				    a.b[i].leaf, got, a.b[i].max);
+				st = -1;
 			}
 		}
+		if (st >= 0 && a.bw > 0 && (k = bw_fits(x, tid, a.bw, why,
+		    sizeof(why))) < 1)
+			st = MIN(st, k);
+		nfit += st == 1;
+		if (st >= 0 && res->ntun < TUN_MAX) {
+			res->fit[res->ntun] = st == 1;
+			res->tun[res->ntun++] = t;
+		}
 	}
-	if (ntun == 0)
+	if (ntun == 0) {
 		fail_info(m, "ietf-vn:vn-computation-error-path-not-found",
 		    "the plan makes no tunnel between %s and %s", sa, da);
-	else if (fits)
-		put_str(m, "compute-status", "up");
-	else if (unmeasured > 0)
-		put_str(m, "compute-status", "unknown");
+		return;
+	}
+	if (res->ntun == 0) {
+		fail_info(m, NO_RESOURCE, "no tunnel meets what is asked: %s",
+		    why);
+		return;
+	}
+	/* Its own paths disjoint: a working one and one to protect it. */
+	if (a.dis != 0) {
+		best = -1;
+		snprintf(why, sizeof(why), "one tunnel alone may carry it");
+		for (int i = 0; i < res->ntun; i++)
+			for (int j = i + 1; j < res->ntun; j++)
+				if (tun_disjoint(res->tun[i], res->tun[j],
+				    a.dis, why, sizeof(why)))
+					best = MAX(best, res->fit[i] &&
+					    res->fit[j] ? 1 : 0);
+		if (best < 0) {
+			fail_info(m, NO_RESOURCE, "no two of its tunnels are "
+			    "%s-disjoint: %s", dis_name(a.dis, dn, sizeof(dn)),
+			    why);
+			return;
+		}
+		nfit = best;
+	}
+	res->down = false;
+	if (a.opt != NULL && opt_unknown(a.opt, ob, sizeof(ob)) != NULL)
+		info(m, "unknown", NULL, "%s", ob);
 	else
-		fail_info(m, "ietf-vn:vn-computation-error-no-resource",
-		    "no tunnel within the bounds: %s", why);
-	return (m);
+		put_str(m, "compute-status", nfit > 0 ? "up" : "unknown");
+}
+
+/* Members who[i..n) given a tunnel each, by bits apart from pick's. */
+static bool
+assign(const struct mres *rs, const int *who, int n, int i,
+    const ucl_object_t **pick, int bits, long *steps)
+{
+	const ucl_object_t	*t;
+	int			 j;
+
+	if (i == n)
+		return (true);
+	for (int k = 0; k < rs[who[i]].ntun; k++) {
+		if (++*steps > DIV_STEPS)
+			return (false);
+		t = rs[who[i]].tun[k];
+		for (j = 0; j < i; j++)
+			if (!tun_disjoint(pick[j], t, bits, NULL, 0))
+				break;
+		if (j < i)
+			continue;
+		pick[i] = t;
+		if (assign(rs, who, n, i + 1, pick, bits, steps))
+			return (true);
+	}
+	return (false);
+}
+
+/*
+ * vn-level-diversity (RFC 9731's vn-policy): the members not down
+ * given one tunnel each, all of them disjoint by bits; else each down,
+ * with another it shares something with on every choice, or none
+ * there is.
+ */
+static void
+diversity(struct mres *rs, size_t n, int bits)
+{
+	const ucl_object_t	*pick[DIV_MAX];
+	const char		*other;
+	char			 dn[32], why[400];
+	long			 steps = 0;
+	int			 who[DIV_MAX], nw = 0;
+	bool			 apart;
+
+	for (size_t i = 0; i < n; i++)
+		if (!rs[i].down && nw < DIV_MAX)
+			who[nw++] = (int)i;
+	if (nw < 2 || assign(rs, who, nw, 0, pick, bits, &steps))
+		return;
+	dis_name(bits, dn, sizeof(dn));
+	for (int i = 0; i < nw; i++) {
+		if (steps > DIV_STEPS) {
+			info(rs[who[i]].m, "unknown", NULL, "vn-level-"
+			    "diversity %s: more choices of tunnels than are "
+			    "tried", dn);
+			continue;
+		}
+		other = NULL;
+		for (int j = 0; other == NULL && j < nw; j++) {
+			if (j == i)
+				continue;
+			apart = false;
+			for (int k = 0; !apart && k < rs[who[i]].ntun; k++)
+				for (int l = 0; !apart && l < rs[who[j]].ntun;
+				    l++)
+					apart = tun_disjoint(rs[who[i]].tun[k],
+					    rs[who[j]].tun[l], bits, why,
+					    sizeof(why));
+			if (!apart)
+				other = ucl_str(rs[who[j]].m, "id");
+		}
+		if (other != NULL)
+			fail_info(rs[who[i]].m, NO_RESOURCE, "vn-level-"
+			    "diversity %s: member %s and it are not, by any "
+			    "tunnel of either: %s", dn, other, why);
+		else
+			fail_info(rs[who[i]].m, NO_RESOURCE, "vn-level-"
+			    "diversity %s: no choice of tunnels keeps the %d "
+			    "members apart", dn, nw);
+	}
 }
 
 /*
@@ -1049,12 +1501,14 @@ compute_one(struct vctx *x, const ucl_object_t *top, const ucl_object_t *in,
 int
 api_restconf_operations(struct http_request *req)
 {
-	struct bound		 vb[BOUND_MAX], mb[BOUND_MAX];
+	struct ask		 d, ma;
 	struct vctx		 x;
+	struct mres		*rs;
 	const ucl_object_t	*in, *e;
 	ucl_object_iter_t	 it = NULL;
 	ucl_object_t		*body, *y, *top, *list, *o;
-	int			 nvb;
+	size_t			 n;
+	int			 ok, vdis = 0;
 
 	if (!guard(req, false))
 		return (WEB_OK);
@@ -1088,27 +1542,36 @@ api_restconf_operations(struct http_request *req)
 		return (restconf_error_tag(req, 400, "malformed-message",
 		    "the body is {\"ietf-vn:input\": {...}}"));
 	}
-	nvb = bounds_in(ucl_object_lookup(in, "path-constraints"), vb);
-	while (nvb >= 0 && (e = ucl_object_iterate(ucl_object_lookup(in,
+	ok = ask_in(in, &d) == 0 && (vdis = dis_of(ucl_object_lookup(in,
+	    "vn-level-diversity"))) >= 0;
+	while (ok && (e = ucl_object_iterate(ucl_object_lookup(in,
 	    "vn-member-list"), &it, true)) != NULL)
-		if (ucl_str(e, "id") == NULL || bounds_in(ucl_object_lookup(e,
-		    "path-constraints"), mb) < 0)
-			nvb = -1;
-	if (nvb < 0) {
+		ok = ucl_str(e, "id") != NULL && ask_in(e, &ma) == 0;
+	if (!ok) {
 		ucl_object_unref(body);
 		return (restconf_error(req, 400, "each vn-member-list entry "
 		    "has an id; each path-metric-bound a metric-type and an "
-		    "upper-bound"));
+		    "upper-bound; te-bandwidth is a bandwidth, cos 0 to 7, "
+		    "disjointness and vn-level-diversity of node, link and "
+		    "srlg"));
 	}
 	y = l3nm_kept();
 	top = view_make(req, y, &x);
-	ucl_object_unref(y);
-	list = ucl_object_typed_new(UCL_ARRAY);
+	n = ucl_array_size(ucl_object_lookup(in, "vn-member-list"));
+	rs = xcalloc(n > 0 ? n : 1, sizeof(*rs));
+	n = 0;
 	it = NULL;
 	while ((e = ucl_object_iterate(ucl_object_lookup(in, "vn-member-list"),
 	    &it, true)) != NULL)
-		ucl_array_append(list, compute_one(&x, top, e, vb, nvb));
+		compute_one(&x, y, top, e, &d, &rs[n++]);
+	if (vdis != 0)
+		diversity(rs, n, vdis);
+	list = ucl_object_typed_new(UCL_ARRAY);
+	for (size_t i = 0; i < n; i++)
+		ucl_array_append(list, rs[i].m);
+	free(rs);
 	ucl_object_unref(top);
+	ucl_object_unref(y);
 	view_done(&x);
 	ucl_object_unref(body);
 	o = ucl_object_typed_new(UCL_OBJECT);

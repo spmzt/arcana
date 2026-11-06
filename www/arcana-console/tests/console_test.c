@@ -14194,6 +14194,173 @@ ATF_TC_BODY(l3nm_vn_compute, tc)
 	resp_free(&r);
 }
 
+/* Member i of r's vn-compute output: its status, reason (NULL: no
+ * error-info), and whether it says why. */
+static void
+vnc_want(struct resp *r, size_t i, const char *status, const char *reason,
+    bool said)
+{
+	char	p[96];
+
+	snprintf(p, sizeof(p), "ietf-vn:output.vn-member-list.%zu."
+	    "compute-status", i);
+	ATF_CHECK_STREQ_MSG(status, jstr(r, p), "%zu: %s", i, r->body);
+	snprintf(p, sizeof(p), "ietf-vn:output.vn-member-list.%zu."
+	    "error-info.error-reason", i);
+	if (reason == NULL)
+		ATF_CHECK_MSG(jstr(r, p) == NULL, "%zu: %s", i, r->body);
+	else
+		ATF_CHECK_STREQ_MSG(reason, jstr(r, p), "%zu: %s", i, r->body);
+	snprintf(p, sizeof(p), "ietf-vn:output.vn-member-list.%zu."
+	    "error-info.error-description", i);
+	ATF_CHECK_MSG((jstr(r, p) != NULL) == said, "%zu: %s", i, r->body);
+}
+
+CONSOLE_TC(l3nm_vn_compute_asks, "vn-compute weighs the rest: te-bandwidth "
+    "against the uplinks, cos against the service's importance levels, "
+    "disjointness by UCS End Point and UCS, an optimization Arcana does "
+    "not compute unknown and said")
+ATF_TC_BODY(l3nm_vn_compute_asks, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[4096], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"bandwidth\":4000000" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\",\"bandwidth\":3000000" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\",\"bandwidth\":4000000" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\",\"bandwidth\":3000000" },
+	};
+#define	VNC_BW(v)	",\"path-constraints\":{\"te-bandwidth\":{"	\
+	"\"generic\":\"" v "\"}}"
+#define	VNC_OPT(m)	",\"optimizations\":{"				\
+	"\"optimization-metric\":[{\"metric-type\":\"ietf-te-types:" m	\
+	"\",\"weight\":1}]}"
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+
+	/*
+	 * Each edge's uplinks 7 Mbit/s, 1 Mbit/s committed: 1 Mbit/s
+	 * (125000 bytes/s) up; 8 Mbit/s (a float32's) more than any UCS
+	 * End Point carries, down; class-types 1 and 5 of two levels;
+	 * its own paths link- and SRLG-disjoint over inet and mpls; an
+	 * optimization by TE metric unknown, said; by delay, up.
+	 */
+	snprintf(body, sizeof(body), "{\"ietf-vn:input\":{\"vn-member-list\":["
+	    VNC_M("1", ":vtnet2", ":vtnet2", VNC_BW("125000")) ","
+	    VNC_M("2", ":vtnet2", ":vtnet2", VNC_BW("0x1.e848p+19")) ","
+	    VNC_M("3", ":vtnet2", ":vtnet2", ",\"cos\":1") ","
+	    VNC_M("4", ":vtnet2", ":vtnet2", ",\"cos\":5") ","
+	    VNC_M("5", ":vtnet2", ":vtnet2", ",\"path-constraints\":{"
+	    "\"disjointness\":\"link srlg\"}") ","
+	    VNC_M("6", ":vtnet2", ":vtnet2", VNC_OPT("path-metric-te")) ","
+	    VNC_M("7", ":vtnet2", ":vtnet2",
+	    VNC_OPT("path-metric-delay-average")) "]}}",
+	    sa, sb, sa, sb, sa, sb, sa, sb, sa, sb, sa, sb, sa, sb);
+	http("POST", VNC, body, &r);
+	EXPECT(&r, 200);
+	vnc_want(&r, 0, "up", NULL, false);
+	vnc_want(&r, 1, "down", "ietf-vn:vn-computation-error-no-resource",
+	    true);
+	ATF_CHECK_MSG(strstr(r.body, "carries 4000000 bit/s") != NULL, "%s",
+	    r.body);
+	vnc_want(&r, 2, "up", NULL, false);
+	vnc_want(&r, 3, "down", "ietf-vn:vn-computation-error-no-resource",
+	    true);
+	vnc_want(&r, 4, "up", NULL, false);
+	vnc_want(&r, 5, "unknown", NULL, true);
+	vnc_want(&r, 6, "up", NULL, false);
+	resp_free(&r);
+	/* Bad: a bandwidth not one, a class out of range, a bit unknown. */
+	snprintf(body, sizeof(body), "{\"ietf-vn:input\":{\"vn-member-list\":["
+	    VNC_M("1", ":vtnet2", ":vtnet2", VNC_BW("lots")) "]}}", sa, sb);
+	http("POST", VNC, body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"ietf-vn:input\":{\"cos\":8,"
+	    "\"vn-member-list\":[" VNC_M("1", ":vtnet2", ":vtnet2", "") "]}}",
+	    sa, sb);
+	http("POST", VNC, body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"ietf-vn:input\":{"
+	    "\"vn-level-diversity\":\"path\",\"vn-member-list\":["
+	    VNC_M("1", ":vtnet2", ":vtnet2", "") "]}}", sa, sb);
+	http("POST", VNC, body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/* Two members kept SRLG-apart: one over inet, one over mpls. */
+#define	VNC_TWO	"{\"ietf-vn:input\":{\"vn-level-diversity\":\"srlg\","	\
+	"\"vn-member-list\":[" VNC_M("a", ":vtnet2", ":vtnet2", "") ","	\
+	VNC_M("b", ":vtnet2", ":vtnet2", "") "]}}"
+	snprintf(body, sizeof(body), VNC_TWO, sa, sb, sa, sb);
+	http("POST", VNC, body, &r);
+	EXPECT(&r, 200);
+	vnc_want(&r, 0, "up", NULL, false);
+	vnc_want(&r, 1, "up", NULL, false);
+	resp_free(&r);
+	/* The service over inet alone: both share it, down. */
+	ATF_REQUIRE(swap_in(doc, "\"ucs\":[\"inet\",\"mpls\"]",
+	    "\"ucs\":[\"inet\"]", t1, sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"version\":0", "\"version\":1", doc,
+	    sizeof(doc)));
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(body, sizeof(body), VNC_TWO, sa, sb, sa, sb);
+	http("POST", VNC, body, &r);
+	EXPECT(&r, 200);
+	vnc_want(&r, 0, "down", "ietf-vn:vn-computation-error-no-resource",
+	    true);
+	vnc_want(&r, 1, "down", "ietf-vn:vn-computation-error-no-resource",
+	    true);
+	ATF_CHECK_MSG(strstr(r.body, "both over UCS inet") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+#undef	VNC_BW
+#undef	VNC_OPT
+#undef	VNC_TWO
+}
+
 CONSOLE_TC(l3nm_plan, "The planner reads the L3NM (PLAN-SDN-YANG 4.5.4): "
     "a node's active profile over the service's (its AS, router id and "
     "an RD it asks to be allocated), a service naming no table given "
@@ -20915,6 +21082,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, l3nm_vn);
 	ATF_TP_ADD_TC(tp, l3nm_vn_tca);
 	ATF_TP_ADD_TC(tp, l3nm_vn_compute);
+	ATF_TP_ADD_TC(tp, l3nm_vn_compute_asks);
 	ATF_TP_ADD_TC(tp, cyang_settings);
 	ATF_TP_ADD_TC(tp, cyang_tokens);
 	ATF_TP_ADD_TC(tp, cyang_users);

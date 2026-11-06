@@ -2378,11 +2378,37 @@ whose first part is served.
   RFC 9731's reason: `vn-computation-ap-unknown`, `-path-not-found`
   for two VNs, no member or no tunnel, `-no-resource` for bounds no
   tunnel meets, naming each excess, or a metric no edge measures).
-  Not checked: `te-bandwidth`, `cos`, optimizations and disjointness,
-  which no edge measures.  Check (console_test l3nm_vn_compute): hq to
-  branch over the planned tunnels up; bounded by an unmeasured delay
-  unknown; by `path-metric-te`, from no AP and between two accesses of
-  one node each down with its reason; the L3NM's version unchanged.
+  Check (console_test l3nm_vn_compute): hq to branch over the planned
+  tunnels up; bounded by an unmeasured delay unknown; by
+  `path-metric-te`, from no AP and between two accesses of one node
+  each down with its reason; the L3NM's version unchanged.
+  The rest (console 0.380.2, vn.c, sdwan_edge.c), the member's own
+  else the input's, a tunnel that may carry it meeting all of it:
+  `te-bandwidth` (generic: a packet network's float32, or an integer,
+  of bytes/s; a list, OTN's or DWDM's, down) against both ends of a
+  tunnel: its UCS End Point's bandwidth and its edge's uplinks less
+  what its policies commit (4.5.6's sums, kept by the plan and carried
+  on sdwan_plan_tunnels()'s ends), one unsaid unknown; `cos` (RFC
+  4124's Class-Type) the service's business importance level at that
+  place (MEF 70.2 §9.11, the first the highest), CT0 alone without
+  levels; disjointness by the underlay as Arcana knows it: a link an
+  edge's UCS End Point, an SRLG a UCS, a node the UCS's too (none of
+  the underlay's routers known, two paths over one UCS may share
+  one), the ends' edges the paths' own; a member's own `disjointness`
+  two of its tunnels apart (working and protecting), the input's
+  `vn-level-diversity` a tunnel for each member not down, all apart
+  (searched, 100000 choices at most, beyond them unknown).  Each
+  failure down with `-no-resource`, naming the shortfall or what two
+  paths share.  `optimizations`: by delay, delay variation or loss,
+  what the steering weighs, nothing to refuse; any other metric, an
+  objective function, tiebreakers or route objects unknown with
+  error-info saying so and no error-reason (none of RFC 9731's
+  reasons is "not computed").  Check (console_test
+  l3nm_vn_compute_asks): 1 Mbit/s up, 8 Mbit/s down (a UCS End Point
+  carries 4); class-type 1 of two levels up, 5 down; link and SRLG
+  disjointness over inet and mpls up; by TE metric unknown, said; by
+  delay up; two members SRLG-apart up, both down once the service is
+  over inet alone; a bad bandwidth, class or bit 400.
 - 4.8.1 P: the page's fetch layer on RESTCONF JSON (or CBOR
   pass-through); check: the browser test.
 - 4.8.1 the console's own done (console 0.375.0 to 0.380.0; page
