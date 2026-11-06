@@ -193,8 +193,10 @@ cat /var/db/arcana/setup-token   # for the first login
 | `agent_ssh_key` | For a repository over SSH: a private key on the build host for git, readable by `nobody`. | a key the host makes |
 
 rc.conf variables: `arcana_console_enable`, `arcana_console_web_conf`,
-`arcana_console_pidfile`. The HTTP API is in
-[openapi.yaml](openapi.yaml).
+`arcana_console_pidfile`. The API is RESTCONF (RFC 8040), described
+by the YANG modules the console lists; `python3 -I
+docs/restconf-modules.py` prints each module's paths as Markdown. The
+deprecated `/api` is in [openapi.yaml](openapi.yaml).
 
 ## arcana-container
 

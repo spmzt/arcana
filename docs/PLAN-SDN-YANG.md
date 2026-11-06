@@ -2410,6 +2410,39 @@ whose first part is served.
   from a generated form.
 - 4.9.1 D: the API page from the RESTCONF description; openapi.yaml
   retired or generated; the book's chapters.
+  Done (docs/restconf-modules.py; arcana-docs): the book's API is
+  RESTCONF, "The API: RESTCONF" (automation/restconf.md): discovery,
+  the datastores, the yang-library, the console's own modules, the
+  fleet mount and each host's schema, the candidate and its confirmed
+  commit, arcana-accept, YANG Patch, entity tags, actions and rpcs,
+  JSON and YANG-CBOR, streams and subscriptions, errors, sessions,
+  tokens and the change header, the roles and NACM, D-10's resources
+  beside, and 4.4.1's route table as "From /api to RESTCONF".  Made,
+  not copied: "RESTCONF paths, by module", the output of
+  docs/restconf-modules.py at each build of the book (tools/gen.sh):
+  the console's library as restconf.c's library_object() lists it and
+  an agent's as arcana.yang.mk's ARC_YMODS has it, each module's
+  top-level nodes, rpcs, actions, notifications and augment targets as
+  api-paths, read from share/yang by a YANG reader of its own (uses
+  expanded, augments applied across modules; no libyang, so the
+  book's Linux CI runs it).  Decided: openapi.yaml retired, not
+  generated: it documents /api alone, which 4.4.2 removes, and
+  RESTCONF's description is the YANG library and its modules, which
+  any client reads from the console (no standard maps YANG to
+  OpenAPI); it is frozen, its info marked deprecated, and goes with
+  /api in 4.4.2 together with apidoc.c, openapi.awk and
+  yaml_test:openapi (still passing).  The book's /api page says
+  deprecated and links each route's home.  The SD-WAN part over L3NM:
+  "The service as L3NM, SAP and VN" (sdwan/models.md: each MEF 70.2
+  and Mplify 119 term with its L3NM node and arcana-l3nm augment, the
+  example as stored, what does not come back the same, the SAP view
+  and attach, the VN view, path-metric bounds and vn-compute, the
+  planner's ledger), the index's table with an L3NM column, the
+  document a view of the L3NM, Check, plan and apply with the device
+  edits by confirmed commit, the warnings accepted and the refusal of
+  the infeasible; every /api the book named moved to its RESTCONF
+  home; the MEF terms kept in the page and the text.  No screenshot
+  changed.
 - 4.10.1 L: a service written as L3NM through RESTCONF, applied on
   the lab, read back as VN and SAP, exported as MEF and re-imported
   unchanged; written to TODO's verified list.

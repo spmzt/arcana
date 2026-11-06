@@ -436,7 +436,8 @@ usr.sbin/arcanactl/     arcanactl(8)
 usr.sbin/arcana-enrol/  arcana-enrol(8)
 www/arcana-console/     arcana-console(8)
 www/arcana-ui/          the PWA
-docs/                   this file, the other guides, openapi.yaml
+docs/                   this file, the other guides, openapi.yaml (deprecated),
+                        restconf-modules.py
 tests/                  the top of the installed test suite
 ```
 

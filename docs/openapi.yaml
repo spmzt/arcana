@@ -1,9 +1,18 @@
 openapi: 3.1.0
 info:
-  title: Arcana console API
+  title: Arcana console API (deprecated)
   version: 0.127.0
-  summary: The JSON API of arcana-console(8).
+  summary: The JSON API of arcana-console(8), /api, deprecated for RESTCONF.
   description: |
+    Deprecated.  The console's API is RESTCONF (RFC 8040) at /restconf,
+    described by the YANG modules its yang-library lists; each route
+    below has its home there (docs/PLAN-SDN-YANG.md, 4.4.1's route
+    table, and the book's "The API: RESTCONF").  This document is
+    frozen: /api and it are removed together (4.4.2), but for the
+    resources RESTCONF has no place for (health, the WebAuthn
+    ceremonies, logout, enrolment, assetlinks.json, the notification
+    receiver, the IDS pcap), which move beside /restconf.
+
     One user, authenticated with WebAuthn.  After a login or registration
     the console sets an HttpOnly, SameSite=Strict `arc_session` cookie;
     every route below except health, auth status and the four ceremony
