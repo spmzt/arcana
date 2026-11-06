@@ -2237,6 +2237,33 @@ osversion_ask(const char *err, bool dry_run, bool read)
 	    "do-pkg-anyos", "", app.pkg.names != NULL ? app.pkg.names : "");
 }
 
+static const char *const pkg_top_map[] = { "pkgbase", "pkgbase",
+    "upgraded", "upgraded", NULL };
+static const char *const pkg_map[] = { "name", "name", "installed",
+    "installed", "available", "available", "origin", "origin", "comment",
+    "comment", "automatic", "automatic", "size", "size", NULL };
+
+/* How the repository is reached, as input's member, or "". */
+static const char *
+pkg_ipv(void)
+{
+
+	return (app.pkg.ip == 4 ? ",\"ip-version\":\"ipv4\"" : app.pkg.ip ==
+	    6 ? ",\"ip-version\":\"ipv6\"" : "");
+}
+
+/* Where a jail's packages are: arcana-packages below its entry. */
+static void
+pkg_path(char *buf, size_t len, const char *jail, const char *act)
+{
+
+	if (jail[0] == '\0' || strcmp(jail, "*") == 0)
+		snprintf(buf, len, "arcana-packages:packages/%s", act);
+	else
+		snprintf(buf, len, "arcana-jails:jails/jail=%s/arcana-packages:"
+		    "packages/%s", rc_key(jail), act);
+}
+
 static void
 packages_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -2246,21 +2273,28 @@ packages_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	c = arg;
 	op = c->op != 0 ? op_find(c->op) : NULL;
-	ok = status == 200 && jbool(o, "ok");
-	if (status == 200 && !ok)
-		err = jstr(o, "error");
-	op_done(op, ok, o, err);
+	ok = status == 200 && o != NULL;
+	op_done(op, ok, NULL, err);
 	if (strcmp(app.pkg.sid, c->sid) == 0 &&
-	    strcmp(app.pkg.jail, c->jail) == 0 && (c->dry_run || jget(o,
-	    "upgraded") != NULL || c->net_kind == app.pkg.mode)) {
+	    strcmp(app.pkg.jail, c->jail) == 0 && (c->dry_run || c->net_kind ==
+	    app.pkg.mode)) {
 		app.pkg.loading = false;
 		app.pkg.busy = false;
 		if (ok) {
 			ucl_object_t	*nd;
 
-			/* An upgrade's reply says no repositories: those the
-			 * read before said are kept, the choice with them. */
-			nd = ucl_object_copy(o);
+			/* arcana-packages' as the tab draws it.  An upgrade's
+			 * reply says no repositories: those the read before
+			 * said are kept, the choice with them. */
+			nd = jmap(o, pkg_top_map);
+			ucl_object_insert_key(nd, jmap_each(jget(o, "package"),
+			    pkg_map), "packages", 0, false);
+			if (jget(o, "repository") != NULL || !c->dry_run)
+				ucl_object_insert_key(nd, jget(o, "repository") !=
+				    NULL ? ucl_object_copy(jget(o, "repository")) :
+				    ucl_object_typed_new(UCL_ARRAY), "repos", 0,
+				    false);
+			o = nd;
 			if (jget(nd, "repos") == NULL && app.pkg.data != NULL &&
 			    jget(app.pkg.data, "repos") != NULL)
 				ucl_object_insert_key(nd, ucl_object_copy(jget(
@@ -2296,7 +2330,7 @@ refresh_packages(struct server *s, bool refresh)
 {
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[512], title[160];
+	char		 url[512], title[160], in[128];
 
 	if (!app.online)
 		return;
@@ -2325,21 +2359,21 @@ refresh_packages(struct server *s, bool refresh)
 	    "pending packages", app.pkg.jail[0] != '\0' ? " of jail " : "");
 	strlcat(title, app.pkg.jail, sizeof(title));
 	/* The installed are the host's own: the repository is not asked. */
-	snprintf(url, sizeof(url), "/api/servers/%s/packages?jail=%s%s%s%s",
-	    s->id, url_word(app.pkg.jail) ? app.pkg.jail : "",
-	    app.pkg.mode == 0 ? "&installed=1" : refresh ? "&refresh=1" : "",
-	    app.pkg.ip == 4 ? "&ip=4" : app.pkg.ip == 6 ? "&ip=6" : "",
-	    app.pkg.anyos ? "&anyos=1" : "");
+	pkg_path(url, sizeof(url), app.pkg.jail, app.pkg.mode == 0 ? "read" :
+	    "refresh");
+	if (app.pkg.mode == 0)
+		snprintf(in, sizeof(in), "{}");
+	else
+		snprintf(in, sizeof(in), "{\"update\":%s%s%s}", refresh ? "true" :
+		    "false", pkg_ipv(), app.pkg.anyos ?
+		    ",\"ignore-osversion\":true" : "");
 	/* Read again by the page itself (after an upgrade): no task. */
-	if (app.quiet) {
-		api("GET", url, NULL, packages_cb, c);
-		return;
+	if (!app.quiet) {
+		op = op_new(title, s->name);
+		c->op = op->id;
+		app.trace_op = op->id;
 	}
-	op = op_new(title, s->name);
-	c->op = op->id;
-	app.trace_op = op->id;
-	live_read(s->id, url + strlen("/api/servers/") + strlen(s->id) + 1,
-	    url, c->op, packages_cb, c);
+	host_yread(s, url, in, NULL, false, packages_cb, c);
 }
 
 /* pkg upgrade of the named packages (JSON array text), or of all. */
@@ -2348,7 +2382,7 @@ pkg_upgrade(struct server *s, const char *names, bool dry_run, bool anyos)
 {
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[160], title[200], *qj, *qr, *body;
+	char		 url[512], title[200], *qj, *qr, *body;
 
 	if (!app.online || app.pkg.busy)
 		return;
@@ -2397,17 +2431,19 @@ pkg_upgrade(struct server *s, const char *names, bool dry_run, bool anyos)
 	c->op = op->id;
 	app.trace_op = op->id;
 	app.trace_step = -1;
-	qj = json_quote(app.pkg.jail);
 	qr = json_quote(app.pkg.repo);
-	if (asprintf(&body, "{\"jail\":%s,\"packages\":%s,\"dry_run\":%s,"
-	    "\"ignore_osversion\":%s,\"pkg_ip\":%d,\"pkg_repo\":%s}", qj,
-	    names != NULL ? names : "[]", dry_run ? "true" : "false", anyos ?
-	    "true" : "false", app.pkg.ip, qr) == -1)
+	if (asprintf(&body, "{\"name\":%s,\"dry-run\":%s,\"ignore-osversion\":"
+	    "%s%s%s%s%s}", names != NULL ? names : "[]", dry_run ? "true" :
+	    "false", anyos ? "true" : "false", pkg_ipv(), app.pkg.repo[0] !=
+	    '\0' ? ",\"repository\":" : "", app.pkg.repo[0] != '\0' ? qr : "",
+	    strcmp(app.pkg.jail, "*") == 0 ?
+	    ",\"every-jail\":true" : "") == -1)
 		abort();
 	free(qr);
-	snprintf(url, sizeof(url), "/api/servers/%s/packages/upgrade", s->id);
-	api("POST", url, body, packages_cb, c);
-	free(qj);
+	rc_h(url, sizeof(url), s->id, "%s", "");
+	pkg_path(url + strlen(url), sizeof(url) - strlen(url), app.pkg.jail,
+	    "upgrade");
+	rc_read(url, body, NULL, packages_cb, c);
 	free(body);
 }
 

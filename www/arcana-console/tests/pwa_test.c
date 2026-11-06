@@ -1465,13 +1465,10 @@ part_hosts(void)
 	    "[ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done'; echo 'exec "
 	    "./fake-pkg.fast \"$@\"'; } > fake-pkg.slow && chmod +x "
 	    "fake-pkg.slow && mv fake-pkg.slow fake-pkg") == 0);
-	/* Asked with GET, or over the console's socket. */
+	/* Asked through the fleet mount. */
 	run("window.pkgAsked = 0; const of = window.fetch; window.fetch = "
-	    "function (u, o) { if (String(u).includes('/packages')) "
-	    "window.pkgAsked++; return of.call(this, u, o); }; const os = "
-	    "WebSocket.prototype.send; WebSocket.prototype.send = function "
-	    "(m) { if (String(m).includes('\"read\":\"packages')) "
-	    "window.pkgAsked++; return os.call(this, m); };");
+	    "function (u, o) { if (String(u).includes(':packages/')) "
+	    "window.pkgAsked++; return of.call(this, u, o); };");
 	run("document.querySelector('button.tab[data-arg=packages]').click()");
 	wait_js("window.pkgAsked === 1", 5);
 	run("document.querySelector('button.tab[data-arg=jails]').click()");
