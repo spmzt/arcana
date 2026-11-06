@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.245.0"
+#define	ARCANA_AGENT_VERSION	"0.246.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -863,7 +863,8 @@ int		 do_log(struct work *, const char *, const char *, bool,
 		    uint64_t, uint32_t, struct json_rsp *);
 void		 history_start(void);
 int		 do_history(struct work *, uint64_t, bool, uint32_t, uint32_t,
-		    const uint32_t *, const char *, struct json_rsp *);
+		    int, int, const uint32_t *, const char *,
+		    struct json_rsp *);
 /* gula/kmsg.c: the kernel's messages, numbered as they come. */
 struct kmsg_line {
 	uint64_t	 n;
@@ -1094,6 +1095,7 @@ void		 fault_clear(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);
 bool		 fault_update(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);
+void		 fault_clear_by(const char *, const char *);
 void		 faults_json(struct ucl_object_s *);
 void		 faults_start(void);
 int		 faults_purge(int, time_t, int, int);

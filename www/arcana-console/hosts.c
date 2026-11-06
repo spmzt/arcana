@@ -2879,7 +2879,7 @@ connected:
 
 			for (size_t k = 0; c->names != NULL && k < 3; k++)
 				lim[k] = (uint32_t)atoi(c->names[k]);
-			ok = ygula_history_set(conn, c->fib, c->offset,
+			ok = ygula_history_set(conn, c->fib, c->offset, -1, -1,
 			    c->names != NULL ? lim : NULL, c->names != NULL &&
 			    c->nnames == 4 ? atoi(c->names[3]) : -1, c->text,
 			    ywhy, sizeof(ywhy)) == 0;

@@ -1937,6 +1937,7 @@ arcana_history_history_edit(cbl_req *req, const struct arcana_history *before,
 	struct work				 w;
 	uint32_t				 lim[4];
 	uint32_t				 step, keep;
+	int					 hold, on;
 	char					*rl;
 	size_t					 len;
 	int					 rc;
@@ -1947,6 +1948,10 @@ arcana_history_history_edit(cbl_req *req, const struct arcana_history *before,
 	    h->sampling->step : 5;
 	keep = h != NULL && h->sampling != NULL && h->sampling->has_keep ?
 	    h->sampling->keep : 720;
+	hold = h != NULL && h->sampling != NULL && h->sampling->has_hold ?
+	    h->sampling->hold : 60;
+	on = h == NULL || h->sampling == NULL || !h->sampling->has_enabled ||
+	    h->sampling->enabled;
 	memset(lim, 0, sizeof(lim));
 	if (h != NULL && h->limits != NULL) {
 		lim[0] = h->limits->has_cpu ? h->limits->cpu : 0;
@@ -1973,7 +1978,8 @@ arcana_history_history_edit(cbl_req *req, const struct arcana_history *before,
 	}
 	work_init(&w);
 	memset(&r, 0, sizeof(r));
-	(void)do_history(&w, UINT64_MAX, true, step, keep, lim, rl, &r);
+	(void)do_history(&w, UINT64_MAX, true, step, keep, hold, on, lim, rl,
+	    &r);
 	rc = r.ok ? 0 : said(req, r.error);
 	work_free(&w);
 	free(rl);
@@ -1993,7 +1999,7 @@ arcana_history_history_get(cbl_req *req, struct arcana_history *data,
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
-	(void)do_history(w, 0, false, 0, 0, NULL, NULL, &r);
+	(void)do_history(w, 0, false, 0, 0, -1, -1, NULL, NULL, &r);
 	if (!r.ok)
 		return (failed("history", r.error));
 	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL)
@@ -2021,7 +2027,8 @@ arcana_history_history_read_action(cbl_req *req, const struct cbl_bytes *target,
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
 	memset(&r, 0, sizeof(r));
-	(void)do_history(w, (uint64_t)after, false, 0, 0, NULL, NULL, &r);
+	(void)do_history(w, (uint64_t)after, false, 0, 0, -1, -1, NULL, NULL,
+	    &r);
 	if (!r.ok)
 		return (failed("history", r.error));
 	memset(&o, 0, sizeof(o));

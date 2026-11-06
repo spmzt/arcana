@@ -190,6 +190,8 @@ yhist_from_json(const char *json, cbl_yarena *a,
 	memset(st, 0, sizeof(*st));
 	YJ_NUM(top, "step", sp, step);
 	YJ_NUM(top, "keep", sp, keep);
+	YJ_NUM(top, "hold", sp, hold);
+	sp->enabled = yj_yes(top, "enabled", &sp->has_enabled);
 	if ((o = ucl_object_lookup(top, "limits")) != NULL) {
 		YJ_NUM(o, "cpu", li, cpu);
 		YJ_NUM(o, "mem", li, memory);

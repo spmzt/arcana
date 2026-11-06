@@ -217,6 +217,29 @@ fault_clear(const char *type, const char *object, const char *fmt, ...)
 	logmsg(LOG_NOTICE, "fault %s %s cleared: %s", type, object, descr);
 }
 
+/* Every open fault one saw (by) cleared, each with the line why. */
+void
+fault_clear_by(const char *by, const char *why)
+{
+	char	type[24], object[128];
+	int	i;
+
+	for (;;) {
+		pthread_mutex_lock(&lock);
+		for (i = 0; i < nfaults; i++)
+			if (!faults[i].cleared && strcmp(faults[i].by, by) == 0)
+				break;
+		if (i == nfaults) {
+			pthread_mutex_unlock(&lock);
+			return;
+		}
+		snprintf(type, sizeof(type), "%s", faults[i].type);
+		snprintf(object, sizeof(object), "%s", faults[i].object);
+		pthread_mutex_unlock(&lock);
+		fault_clear(type, object, "%s: %s", object, why);
+	}
+}
+
 /*
  * An open fault's line said anew, as what it is of goes on (a program
  * that crashes again): no event, the fault being the same one.  false

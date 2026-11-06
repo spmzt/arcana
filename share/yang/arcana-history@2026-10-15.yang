@@ -222,6 +222,28 @@ module arcana-history {
         description
           "How many samples are kept; 0, none taken.";
       }
+      leaf hold {
+        type uint16 {
+          range "0..3600";
+        }
+        units "seconds";
+        default "60";
+        description
+          "How long a figure stays over its limit before it is over
+           (an event, threshold, and for cpu, memory and storage a
+           fault), and under it again before it is back under; 0, at
+           the first sample that crosses.  The limits below and the
+           rules alike.";
+      }
+      leaf enabled {
+        type boolean;
+        default "true";
+        description
+          "Whether the host is sampled at all.  Off, no sample is
+           taken, no limit judged and no event or fault made of one;
+           a resource fault raised before is cleared once; the
+           samples kept stay, to be read, until it is on again.";
+      }
     }
     container limits {
       description

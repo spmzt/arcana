@@ -9936,6 +9936,115 @@ l2_cleanup()
 	stop_daemon
 }
 
+atf_test_case history_hold cleanup
+history_hold_head()
+{
+	atf_set "descr" "a limit counts when it lasts: a burst shorter than the hold raises nothing, a sustained one raises once and clears once; sampling switched off takes no sample, judges nothing and clears the sampler's faults once"
+}
+history_hold_body()
+{
+	# zpool(8): a pool as full as ./pct says.
+	echo 95 > pct
+	cat > fake-zpool <<EOS
+#!/bin/sh
+case "\$*" in
+*name,size,alloc*) printf 'tank\t100\t%s\n' "\$(cat $(pwd)/pct)" ;;
+esac
+EOS
+	chmod +x fake-zpool
+	DAEMON_ARGS="-Z $(pwd)/fake-zpool"
+	start_daemon
+	nmem() {
+		"$JGC" -c "$SOCK" events | grep -o "\"what\":\"mem\",[^}]*\"over\":$1" |
+		    wc -l | tr -d ' '
+	}
+	nstore() {
+		"$JGC" -c "$SOCK" events | grep -o "\"what\":\"storage\",\"name\":\"tank\",[^}]*\"over\":$1" |
+		    wc -l | tr -d ' '
+	}
+
+	# Memory over 1% for a second, held 3: nothing.
+	atf_check -o match:'"hold":3,"enabled":true' \
+	    "$JGC" -c "$SOCK" history set 1 20 0 1 0 0 hold 3
+	atf_check -o match:'^hold=3$' -o match:'^enabled=yes$' cat history.conf
+	sleep 1
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 90 0 0
+	sleep 4
+	atf_check_equal 0 "$(nmem true)"
+	# Over for longer than the hold: once, and a memory fault.
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 1 0 0
+	sleep 6
+	atf_check_equal 1 "$(nmem true)"
+	atf_check -o match:'"type":"memory","severity":"Major",[^}]*"object":"mem","by":"sampler",[^}]*"cleared":false' \
+	    "$JGC" -c "$SOCK" sdwan
+	# Under again for longer than the hold: cleared, once.
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 100 0 0
+	sleep 6
+	atf_check_equal 1 "$(nmem true)"
+	atf_check_equal 1 "$(nmem false)"
+	atf_check -o match:'"object":"mem","by":"sampler",[^}]*"cleared":true' \
+	    "$JGC" -c "$SOCK" sdwan
+
+	# A pool, looked at again each time its limit is changed: 95% full
+	# and then 50% before the hold is out, nothing; 95% twice the hold
+	# apart, over once.
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 100 0 90
+	sleep 2
+	echo 50 > pct
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 100 0 91
+	sleep 2
+	echo 95 > pct
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 100 0 90
+	sleep 2
+	atf_check_equal 0 "$(nstore true)"
+	sleep 2
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 100 0 91
+	sleep 2
+	atf_check_equal 1 "$(nstore true)"
+	atf_check -o match:'"type":"storage",[^}]*"object":"tank","by":"sampler",[^}]*"cleared":false' \
+	    "$JGC" -c "$SOCK" sdwan
+
+	# Memory over again, then sampling off: the faults it raised
+	# cleared, once, no sample taken, nothing judged.
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20 0 1 0 90 hold 0
+	sleep 3
+	atf_check_equal 2 "$(nmem true)"
+	atf_check -o match:'"enabled":false' \
+	    "$JGC" -c "$SOCK" history set 1 20 0 1 0 90 sampling off
+	atf_check -o match:'^enabled=no$' cat history.conf
+	sleep 2
+	atf_check -o match:'"object":"mem","by":"sampler","description":"mem: sampling switched off","cleared":true' \
+	    -o match:'"object":"tank","by":"sampler","description":"tank: sampling switched off","cleared":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	"$JGC" -c "$SOCK" history > off1.json
+	"$JGC" -c "$SOCK" events > ev1.json
+	sleep 3
+	"$JGC" -c "$SOCK" history > off2.json
+	atf_check -o match:'"samples":\[\[' cat off2.json
+	atf_check -o inline:'same\n' sh -c 'sed "s/.*\"samples\"//" off1.json > a;
+	    sed "s/.*\"samples\"//" off2.json > b; cmp -s a b && echo same'
+	atf_check_equal 2 "$(nmem true)"
+	atf_check -o inline:'2\n' sh -c "$JGC -c $SOCK sdwan | grep -o 'sampling switched off' | wc -l | tr -d ' '"
+	# On again at its next start too: sampled, and judged.
+	stop_daemon
+	start_daemon
+	atf_check -o match:'"enabled":false' "$JGC" -c "$SOCK" history
+	atf_check -o match:'"enabled":true' \
+	    "$JGC" -c "$SOCK" history set 1 20 0 1 0 90 sampling on
+	sleep 3
+	"$JGC" -c "$SOCK" history > on.json
+	atf_check -o inline:'more\n' sh -c 'sed "s/.*\"samples\"//" off2.json > a;
+	    sed "s/.*\"samples\"//" on.json > b; cmp -s a b || echo more'
+	# The events begin anew with the agent: this one alone.
+	atf_check_equal 1 "$(nmem true)"
+	atf_check -s exit:1 -e match:'hold is 0 to 3600' -o ignore \
+	    "$JGC" -c "$SOCK" history set 1 20 hold 3601
+}
+history_hold_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case observe cleanup
 observe_head()
 {
@@ -10135,7 +10244,7 @@ EOS
 	echo $! > follow.pid
 	sleep 0.5
 	atf_check -o match:'"limits":\{"cpu":1,"mem":1,"swap":0,"storage":90\}' \
-	    "$JGC" -c "$SOCK" history set 1 20 1 1 0
+	    "$JGC" -c "$SOCK" history set 1 20 1 1 0 hold 0
 	sleep 3
 	kill "$(cat follow.pid)"
 	atf_check -o match:'^\{"n":[0-9]+,"t":[0-9]+,"kind":"threshold","data":\{"what":"mem","value":[0-9]+,"limit":1,"over":true\}\}$' \
@@ -14032,6 +14141,7 @@ atf_init_test_cases()
 	atf_add_test_case firewall_feeds
 	atf_add_test_case firewall_migrate
 	atf_add_test_case observe
+	atf_add_test_case history_hold
 	atf_add_test_case storage
 	atf_add_test_case notify
 	atf_add_test_case safe_mode

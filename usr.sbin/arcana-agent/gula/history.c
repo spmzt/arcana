@@ -22,7 +22,10 @@
  * limits of one interface (bytes a second, both ways), one disk (bytes
  * a second, read and written), one jail's CPU (percent of one CPU, as
  * racct says it) or memory (bytes): an event when the figure crosses
- * its limit, either way.
+ * its limit, either way.  A crossing counts once it has lasted the
+ * hold (60 s unless set; 0, at once): a burst shorter makes nothing.
+ * Sampling switched off takes no look and judges nothing; the faults
+ * it raised are cleared once, and the samples kept stay to be read.
  *
  * How often it looks and how many looks it keeps is set by whoever
  * manages the host, and kept in a file for the next start; when they
@@ -61,6 +64,8 @@
 #define	HIST_STEP	5		/* s between two looks, at first */
 #define	HIST_KEEP	720		/* looks kept, at first: an hour */
 #define	HIST_STEP_MAX	3600
+#define	HIST_HOLD	60		/* s a crossing must last, at first */
+#define	HIST_HOLD_MAX	3600
 #define	HIST_KEEP_MAX	5000
 #define	HIST_DEVS	16		/* interfaces, and disks, told apart */
 #define	HIST_NAME	24
@@ -72,6 +77,15 @@
  * FEC relay's bytes a second taken in plain and added by its FEC. */
 enum { H_CPU, H_LOAD, H_MEM, H_SWAP, H_RX, H_TX, H_RD, H_WR, H_BASE };
 
+/*
+ * A crossing waiting to last: since when the figure has been on the
+ * other side of its limit, while pending.
+ */
+struct hold {
+	time_t	since;
+	bool	pending;
+};
+
 struct dev {
 	char		name[HIST_NAME];
 	uint64_t	a, b;		/* its counters at the look before */
@@ -82,7 +96,7 @@ struct dev {
 static void	thresholds(const float *);
 static void	storage_fullness(void);
 static void	thin(void);
-static void	rules_check(const float *);
+static void	rules_check(const float *, time_t);
 
 /* A limit of one device or jail: an event when it is crossed. */
 enum rule_kind { R_NET, R_DISK, R_JAIL_CPU, R_JAIL_MEM, R_KINDS };
@@ -93,6 +107,7 @@ struct rule {
 	char		name[HIST_NAME];
 	double		limit;
 	bool		over;
+	struct hold	h;
 };
 static struct rule	rules[HIST_RULES];
 static size_t		nrules;
@@ -101,9 +116,44 @@ static pthread_mutex_t	hist_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t	hist_wake = PTHREAD_COND_INITIALIZER;
 static unsigned int	hist_step = HIST_STEP;
 static unsigned int	hist_keep = HIST_KEEP;
+static unsigned int	hist_hold = HIST_HOLD;
+static bool		hist_on = true;	/* sampled at all */
+static bool		off_told = true;	/* its faults cleared since off */
 /* Above which an event is made: cpu, mem, swap in percent; 0 none. */
 static unsigned int	limits[4] = { 90, 90, 50, 90 };	/* + storage */
 static bool		over[3];
+static struct hold	over_hold[3];
+
+/*
+ * Whether a crossing has lasted: want, the figure is on the other side
+ * now; it counts once it has been for hist_hold seconds (monotonic).
+ */
+static bool
+held(struct hold *h, bool want, time_t now)
+{
+
+	if (!want) {
+		h->pending = false;
+		return (false);
+	}
+	if (!h->pending) {
+		h->pending = true;
+		h->since = now;
+	}
+	if (now - h->since < (time_t)hist_hold)
+		return (false);
+	h->pending = false;
+	return (true);
+}
+
+static time_t
+mono(void)
+{
+	struct timespec	ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (ts.tv_sec);
+}
 
 /*
  * The file systems over the storage limit: a ZFS pool by its name, any
@@ -112,8 +162,10 @@ static bool		over[3];
 #define	STORAGE_EVERY	60
 #define	STORAGE_MAX	64
 static struct {
-	char	name[MNAMELEN];
-	bool	seen;
+	char		name[MNAMELEN];
+	bool		seen;
+	bool		over;	/* else only pending */
+	struct hold	h;
 }			storage_over[STORAGE_MAX];
 static int		nstorage_over;
 static time_t		storage_at;
@@ -558,7 +610,7 @@ col_of(const struct dev *v, size_t n, const char *name)
  * a figure about its limit does not make one at every look.
  */
 static void
-rules_check(const float *row)
+rules_check(const float *row, time_t now)
 {
 	struct rule	*r;
 	const float	*base;
@@ -588,12 +640,10 @@ rules_check(const float *row)
 			v = r->kind == R_JAIL_CPU ? base[0] : base[1];
 			break;
 		}
-		if (!r->over && v > r->limit)
-			r->over = true;
-		else if (r->over && v < r->limit * 0.9)
-			r->over = false;
-		else
+		if (!held(&r->h, r->over ? v < r->limit * 0.9 : v > r->limit,
+		    now))
 			continue;
+		r->over = !r->over;
 		/* A device's or a jail's name needs no escaping. */
 		event_add("threshold", "{\"what\":\"%s\",\"name\":\"%s\","
 		    "\"value\":%.0f,\"limit\":%.0f,\"over\":%s}",
@@ -664,8 +714,10 @@ rules_set(const char *list)
 		/* One that was over and stays the same stays over. */
 		for (i = 0; i < nrules; i++)
 			if (rules[i].kind == next[n].kind && strcmp(
-			    rules[i].name, next[n].name) == 0)
+			    rules[i].name, next[n].name) == 0) {
 				next[n].over = rules[i].over;
+				next[n].h = rules[i].h;
+			}
 		n++;
 	}
 	free(copy);
@@ -684,20 +736,20 @@ thresholds(const float *row)
 {
 	static const char *const what[] = { "cpu", "mem", "swap" };
 	double	v[3];
+	time_t	now;
 	size_t	i;
 
+	now = mono();
 	v[0] = row[H_CPU];
 	v[1] = mem_total > 0 ? 100.0 * row[H_MEM] / (double)mem_total : 0;
 	v[2] = swap_total > 0 ? 100.0 * row[H_SWAP] / (double)swap_total : 0;
 	for (i = 0; i < 3; i++) {
 		if (limits[i] == 0)
 			continue;
-		if (!over[i] && v[i] > limits[i])
-			over[i] = true;
-		else if (over[i] && v[i] < (double)limits[i] - 5)
-			over[i] = false;
-		else
+		if (!held(&over_hold[i], over[i] ? v[i] < (double)limits[i] -
+		    5 : v[i] > limits[i], now))
 			continue;
+		over[i] = !over[i];
 		event_add("threshold", "{\"what\":\"%s\",\"value\":%.0f,"
 		    "\"limit\":%u,\"over\":%s}", what[i], v[i], limits[i],
 		    over[i] ? "true" : "false");
@@ -710,7 +762,7 @@ thresholds(const float *row)
 			fault_clear(i == 0 ? "cpu" : "memory", what[i], "%s at "
 			    "%.0f%%, under %u%% again", what[i], v[i], limits[i]);
 	}
-	rules_check(row);
+	rules_check(row, now);
 }
 
 /* A file system's share in use against the limit: a fault either way. */
@@ -718,14 +770,30 @@ static void
 storage_one(const char *name, double pct, unsigned int limit)
 {
 	int	i;
+	bool	want;
 
 	for (i = 0; i < nstorage_over; i++)
 		if (strcmp(storage_over[i].name, name) == 0)
 			break;
-	if (i < nstorage_over) {
-		storage_over[i].seen = true;
-		if (pct >= (double)limit - 5 && limit != 0)
+	if (i == nstorage_over) {
+		if (limit == 0 || pct <= (double)limit || nstorage_over ==
+		    STORAGE_MAX)
 			return;
+		memset(&storage_over[i], 0, sizeof(storage_over[i]));
+		snprintf(storage_over[i].name, sizeof(storage_over[i].name),
+		    "%s", name);
+		nstorage_over++;
+	}
+	storage_over[i].seen = true;
+	want = storage_over[i].over ? limit == 0 || pct < (double)limit - 5 :
+	    limit != 0 && pct > (double)limit;
+	if (!held(&storage_over[i].h, want, mono())) {
+		/* Back before it lasted: nothing to keep. */
+		if (!storage_over[i].over && !storage_over[i].h.pending)
+			storage_over[i] = storage_over[--nstorage_over];
+		return;
+	}
+	if (storage_over[i].over) {
 		storage_over[i] = storage_over[--nstorage_over];
 		event_add("threshold", "{\"what\":\"storage\",\"name\":\"%s\","
 		    "\"value\":%.0f,\"limit\":%u,\"over\":false}", name, pct,
@@ -734,11 +802,7 @@ storage_one(const char *name, double pct, unsigned int limit)
 		    name, pct, limit);
 		return;
 	}
-	if (limit == 0 || pct <= (double)limit || nstorage_over == STORAGE_MAX)
-		return;
-	snprintf(storage_over[nstorage_over].name, sizeof(
-	    storage_over[nstorage_over].name), "%s", name);
-	storage_over[nstorage_over++].seen = true;
+	storage_over[i].over = true;
 	event_add("threshold", "{\"what\":\"storage\",\"name\":\"%s\","
 	    "\"value\":%.0f,\"limit\":%u,\"over\":true}", name, pct, limit);
 	fault_set("storage", "Major", name, "sampler", "%s %.0f%% full, over "
@@ -822,6 +886,10 @@ storage_fullness(void)
 	for (i = nstorage_over - 1; i >= 0; i--) {
 		if (storage_over[i].seen)
 			continue;
+		if (!storage_over[i].over) {
+			storage_over[i] = storage_over[--nstorage_over];
+			continue;
+		}
 		event_add("threshold", "{\"what\":\"storage\",\"name\":\"%s\","
 		    "\"limit\":%u,\"over\":false}", storage_over[i].name, limit);
 		fault_clear("storage", storage_over[i].name, limit == 0 ?
@@ -956,6 +1024,27 @@ history_save(void)
 	pthread_mutex_unlock(&hist_lock);
 }
 
+/*
+ * Sampling switched off: what was over is not, nothing pending, and
+ * the faults the sampler raised cleared, once.  The sampler's thread.
+ */
+static void
+sampling_off(void)
+{
+	size_t	i;
+
+	pthread_mutex_lock(&hist_lock);
+	memset(over, 0, sizeof(over));
+	memset(over_hold, 0, sizeof(over_hold));
+	for (i = 0; i < nrules; i++) {
+		rules[i].over = false;
+		memset(&rules[i].h, 0, sizeof(rules[i].h));
+	}
+	pthread_mutex_unlock(&hist_lock);
+	nstorage_over = 0;
+	fault_clear_by("sampler", "sampling switched off");
+}
+
 static void *
 sampler(void *arg __unused)
 {
@@ -967,8 +1056,16 @@ sampler(void *arg __unused)
 		dstat_ok = true;
 	for (;;) {
 		pthread_mutex_lock(&hist_lock);
-		/* With none kept there is nothing to do, and no look. */
-		while (hist_keep == 0) {
+		/* With none kept, or off, there is nothing to do, and no
+		 * look. */
+		while (hist_keep == 0 || !hist_on) {
+			if (!hist_on && !off_told) {
+				off_told = true;
+				pthread_mutex_unlock(&hist_lock);
+				sampling_off();
+				pthread_mutex_lock(&hist_lock);
+				continue;
+			}
 			have_was = false;
 			pthread_cond_wait(&hist_wake, &hist_lock);
 		}
@@ -1009,6 +1106,15 @@ hconf_read(void)
 			v = strtonum(line + 5, 0, HIST_KEEP_MAX, &e);
 			if (e == NULL)
 				hist_keep = (unsigned int)v;
+		} else if (strncmp(line, "hold=", 5) == 0) {
+			v = strtonum(line + 5, 0, HIST_HOLD_MAX, &e);
+			if (e == NULL)
+				hist_hold = (unsigned int)v;
+		} else if (strncmp(line, "enabled=", 8) == 0) {
+			hist_on = strcmp(line + 8, "no") != 0;
+			/* Off at the start: what a day's faults kept of it,
+			 * cleared. */
+			off_told = hist_on;
 		} else if (strncmp(line, "rule=", 5) == 0) {
 			if (nrules < HIST_RULES && rule_parse(line + 5,
 			    &rules[nrules]))
@@ -1026,7 +1132,7 @@ hconf_read(void)
 }
 
 static int
-hconf_write(unsigned int step, unsigned int keep)
+hconf_write(unsigned int step, unsigned int keep, unsigned int hold, bool on)
 {
 	char	tmp[MAXPATHLEN];
 	FILE	*fp;
@@ -1037,8 +1143,8 @@ hconf_write(unsigned int step, unsigned int keep)
 		return (-1);
 	fprintf(fp, "# How arcana-agent samples the host: set from the "
 	    "console.\nstep=%u\nkeep=%u\ncpu=%u\nmem=%u\nswap=%u\n"
-	    "storage=%u\n", step, keep, limits[0], limits[1], limits[2],
-	    limits[3]);
+	    "storage=%u\nhold=%u\nenabled=%s\n", step, keep, limits[0],
+	    limits[1], limits[2], limits[3], hold, on ? "yes" : "no");
 	for (i = 0; i < nrules; i++)
 		fprintf(fp, "rule=%s:%s=%.0f\n", rule_kinds[rules[i].kind],
 		    rules[i].name, rules[i].limit);
@@ -1088,8 +1194,8 @@ names(FILE *fp, const char *key, const struct dev *v, size_t n)
  */
 int
 do_history(struct work *w, uint64_t after, bool set, uint32_t step,
-    uint32_t keep, const uint32_t lim[4], const char *rlist,
-    struct json_rsp *rsp)
+    uint32_t keep, int hold, int on, const uint32_t lim[4],
+    const char *rlist, struct json_rsp *rsp)
 {
 	struct rule	 was[HIST_RULES];
 	size_t		 nwas;
@@ -1103,12 +1209,18 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 	rsp->has_ok = true;
 	rsp->ok = false;
 	if (set) {
+		if (hold < 0)
+			hold = (int)hist_hold;
+		if (on < 0)
+			on = hist_on;
 		if (step < 1 || step > HIST_STEP_MAX || keep > HIST_KEEP_MAX ||
+		    hold > HIST_HOLD_MAX ||
 		    (lim != NULL && (lim[0] > 100 || lim[1] > 100 || lim[2] >
 		    100 || (lim[3] > 100 && lim[3] != UINT32_MAX)))) {
 			rsp->error = wfmt(w, "sampled every 1 to %d seconds, "
-			    "0 to %d samples kept, and limits of 0 to 100",
-			    HIST_STEP_MAX, HIST_KEEP_MAX);
+			    "0 to %d samples kept, held 0 to %d seconds, and "
+			    "limits of 0 to 100", HIST_STEP_MAX, HIST_KEEP_MAX,
+			    HIST_HOLD_MAX);
 			return (0);
 		}
 		pthread_mutex_lock(&hist_lock);
@@ -1130,9 +1242,9 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 			pthread_mutex_unlock(&hist_lock);
 		}
 		st = step_begin(w, STEP_DAEMON, "history",
-		    "every %u s, %u kept, into %s", step, keep,
-		    opts.history_conf);
-		if (hconf_write(step, keep) == -1) {
+		    "every %u s, %u kept, held %d s%s, into %s", step, keep,
+		    hold, on ? "" : ", off", opts.history_conf);
+		if (hconf_write(step, keep, (unsigned int)hold, on) == -1) {
 			/* Not kept: the rules as they were. */
 			pthread_mutex_lock(&hist_lock);
 			memcpy(rules, was, sizeof(rules));
@@ -1145,6 +1257,10 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 		}
 		pthread_mutex_lock(&hist_lock);
 		hist_step = step;
+		hist_hold = (unsigned int)hold;
+		if (hist_on && !on)
+			off_told = false;
+		hist_on = on;
 		reshape(keep, nnets, ndisks, njails, nrelays);
 		pthread_cond_broadcast(&hist_wake);
 		pthread_mutex_unlock(&hist_lock);
@@ -1169,6 +1285,8 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 		    rules[i].name, rules[i].limit, rules[i].over ? "true" :
 		    "false");
 	fprintf(fp, "],\"racct\":%s,", racct ? "true" : "false");
+	fprintf(fp, "\"hold\":%u,\"enabled\":%s,", hist_hold, hist_on ? "true" :
+	    "false");
 	fprintf(fp, "\"step\":%u,\"keep\":%u,\"bytes\":%zu,\"ncpu\":%d,"
 	    "\"mem_total\":%ju,\"swap_total\":%ju,\"fields\":[\"t\",\"cpu\","
 	    "\"load\",\"mem\",\"swap\",\"rx\",\"tx\",\"read\",\"write\"],",

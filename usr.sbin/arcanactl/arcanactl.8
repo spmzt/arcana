@@ -1947,7 +1947,7 @@ only the samples after that time, in seconds since the epoch.
 It is arcana-history's
 .Ic read
 action.
-.It Cm history set Ar seconds Ar samples Oo Ar cpu mem swap Oo Ar storage Oc Oc Op Cm rules Ar list
+.It Cm history set Ar seconds Ar samples Oo Ar cpu mem swap Oo Ar storage Oc Oc Op Cm rules Ar list Op Cm hold Ar seconds Op Cm sampling Cm on | off
 Have the agent sample every
 .Ar seconds ,
 1 to 3600, and keep that many
@@ -1973,6 +1973,17 @@ the limits of an interface, a disk or a jail, with commas:
 and
 .Ql jail-mem: Ns Ar jail Ns = Ns Ar bytes ;
 an empty list takes them away.
+With
+.Cm hold ,
+0 to 3600, how long a figure stays over its limit before it counts as
+over, and under it again before it counts as back under (60 unless
+said; 0, at the first sample).
+With
+.Cm sampling off
+the host is not sampled at all: no sample, no limit judged, and the
+faults the sampler raised cleared once; the samples kept stay to be
+read.
+An agent before 0.246.0 has neither, and refuses them.
 They are arcana-history's configuration, put in the candidate with what
 running has besides and committed.
 The reply says what the samples take of the agent's memory.

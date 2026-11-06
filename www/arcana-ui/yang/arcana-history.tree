@@ -1,8 +1,10 @@
 module: arcana-history
   +--rw history
      +--rw sampling
-     |  +--rw step?   uint16
-     |  +--rw keep?   uint32
+     |  +--rw step?      uint16
+     |  +--rw keep?      uint32
+     |  +--rw hold?      uint16
+     |  +--rw enabled?   boolean
      +--rw limits
      |  +--rw cpu?       uint8
      |  +--rw memory?    uint8
@@ -54,8 +56,10 @@ module: arcana-history
         |  +---w after?   yang:date-and-time
         +--ro output
            +--ro sampling
-           |  +--ro step?   uint16
-           |  +--ro keep?   uint32
+           |  +--ro step?      uint16
+           |  +--ro keep?      uint32
+           |  +--ro hold?      uint16
+           |  +--ro enabled?   boolean
            +--ro limits
            |  +--ro cpu?       uint8
            |  +--ro memory?    uint8

@@ -475,6 +475,12 @@ ygula_history(cbl_conn *conn, bool has_after, uint64_t after,
 	}
 	put(top, "rules", arr);
 	put(top, "racct", ucl_object_frombool(out.has_racct && out.racct));
+	/* An agent before 0.246.0 says neither. */
+	if (out.sampling != NULL && out.sampling->has_hold)
+		put(top, "hold", ucl_object_fromint(out.sampling->hold));
+	if (out.sampling != NULL && out.sampling->has_enabled)
+		put(top, "enabled", ucl_object_frombool(
+		    out.sampling->enabled));
 	put(top, "step", ucl_object_fromint(out.sampling != NULL &&
 	    out.sampling->has_step ? out.sampling->step : 5));
 	put(top, "keep", ucl_object_fromint(out.sampling != NULL &&
@@ -557,8 +563,8 @@ rules_of(const char *list, cbl_yarena *a,
 }
 
 int
-ygula_history_set(cbl_conn *conn, uint32_t step, uint32_t keep,
-    const uint32_t *lim, int storage, const char *rules, char *err,
+ygula_history_set(cbl_conn *conn, uint32_t step, uint32_t keep, int hold,
+    int on, const uint32_t *lim, int storage, const char *rules, char *err,
     size_t errlen)
 {
 	struct arcana_history_history_sampling	 sp;
@@ -593,6 +599,21 @@ ygula_history_set(cbl_conn *conn, uint32_t step, uint32_t keep,
 			li = *d.history->limits;
 	}
 	memset(&sp, 0, sizeof(sp));
+	if (d.history != NULL && d.history->sampling != NULL)
+		sp = *d.history->sampling;
+	/* Running says them both, but of an agent before 0.246.0. */
+	if ((hold >= 0 || on >= 0) && !sp.has_hold) {
+		snprintf(err, errlen, "this host's agent neither holds a "
+		    "limit's crossing nor has sampling switched off: "
+		    "arcana-agent 0.246.0 or later does");
+		cbl_yarena_free(a);
+		return (ENOTSUP);
+	}
+	if (hold >= 0)
+		sp.hold = (uint16_t)hold;
+	if (on >= 0)
+		sp.enabled = on != 0;
+	sp.has_enabled = sp.has_hold;
 	sp.has_step = sp.has_keep = true;
 	sp.step = (uint16_t)step;
 	sp.keep = keep;

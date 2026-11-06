@@ -43,13 +43,16 @@ int	ygula_log(cbl_conn *conn, const char *name, const char *filter,
  * every step seconds and keep of them kept, committed with what running
  * has besides: with lim, the cpu, memory and swap limits (3); with
  * storage not -1, the file systems'; with rules ("net:igb0=125000000,
- * jail-cpu:web=80"; "": none) not NULL, the rules.
+ * jail-cpu:web=80"; "": none) not NULL, the rules; hold (seconds) and
+ * on (0 or 1, sampling at all) each -1 for running's, and refused by an
+ * agent before 0.246.0, which has neither.  The read says "hold" and
+ * "enabled" where the agent has them.
  */
 int	ygula_history(cbl_conn *conn, bool has_after, uint64_t after,
 	    ucl_object_t **data, char *err, size_t errlen);
 int	ygula_history_set(cbl_conn *conn, uint32_t step, uint32_t keep,
-	    const uint32_t *lim, int storage, const char *rules, char *err,
-	    size_t errlen);
+	    int hold, int on, const uint32_t *lim, int storage,
+	    const char *rules, char *err, size_t errlen);
 /*
  * ygula_events(): arcana-events' read, the events after number after
  * where has_after, {"last", "first", "kept", "events"}.  As they

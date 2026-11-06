@@ -801,9 +801,10 @@ main(int argc, char *argv[])
 	transport_init(ctx, loop, tls);
 	jobs_conf_load();
 	jobs_init();
+	/* The faults before the sampler, which may clear its own. */
+	faults_start();
 	history_start();
 	probe_start();
-	faults_start();
 	record_start();
 	sdwan_start();
 	feeds_start();

@@ -307,7 +307,7 @@ usage(void)
 	    "    log [-o lines] [-f position] [name [text]]\n"
 	    "    history [after]\n"
 	    "    history set seconds samples [cpu%% mem%% swap%% [storage%%]] "
-	    "[rules list]\n"
+	    "[rules list] [hold seconds] [sampling on | off]\n"
 	    "    events [after | -f]\n"
 	    "    net bridges | geneve | ipfw | nhgroups | kept-routes\n"
 	    "    bridge name addm | deletem member\n"
@@ -5975,13 +5975,27 @@ cmd_gula(cbl_conn *conn, int argc, char **argv)
 		const char	*rules = NULL;
 		uint32_t	 lim[3], step = 0, keep = 0;
 		uint64_t	 after = 0;
-		int		 storage = -1;
+		int		 storage = -1, hold = -1, on = -1;
 		bool		 set = false, has_lim = false, has_after = false;
 
-		/* ... rules list: the limits of devices and jails, last. */
-		if (argc >= 6 && strcmp(argv[1], "set") == 0 &&
-		    strcmp(argv[argc - 2], "rules") == 0) {
-			rules = argv[argc - 1];
+		/* ... [rules list] [hold seconds] [sampling on|off], last,
+		 * in any order. */
+		while (argc >= 6 && strcmp(argv[1], "set") == 0) {
+			if (strcmp(argv[argc - 2], "rules") == 0)
+				rules = argv[argc - 1];
+			else if (strcmp(argv[argc - 2], "hold") == 0) {
+				hold = (int)strtonum(argv[argc - 1], 0, 3600,
+				    &e);
+				if (e != NULL)
+					xo_errx(1, "history: hold is 0 to 3600 "
+					    "seconds");
+			} else if (strcmp(argv[argc - 2], "sampling") == 0) {
+				if (strcmp(argv[argc - 1], "on") != 0 &&
+				    strcmp(argv[argc - 1], "off") != 0)
+					xo_errx(1, "history: sampling on or off");
+				on = strcmp(argv[argc - 1], "on") == 0;
+			} else
+				break;
 			argc -= 2;
 		}
 		if ((argc == 4 || argc == 7 || argc == 8) && strcmp(argv[1],
@@ -6026,8 +6040,8 @@ cmd_gula(cbl_conn *conn, int argc, char **argv)
 		}
 		ytold_begin(conn);
 		data = NULL;
-		error = set ? ygula_history_set(conn, step, keep, has_lim ?
-		    lim : NULL, storage, rules, err, sizeof(err)) : 0;
+		error = set ? ygula_history_set(conn, step, keep, hold, on,
+		    has_lim ? lim : NULL, storage, rules, err, sizeof(err)) : 0;
 		if (error == 0)
 			error = ygula_history(conn, has_after, after, &data,
 			    err, sizeof(err));
