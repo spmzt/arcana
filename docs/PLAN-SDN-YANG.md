@@ -2399,7 +2399,7 @@ whose first part is served.
   the one it read (the page's converters); what the console's
   RESTCONF lacked was added: settings/source label and help,
   users/user from-directory, runs' step detail.
-- 4.8.1 the host's tabs begun (console 0.381.0 to 0.389.0): a tab reads
+- 4.8.1 the host's tabs begun (console 0.381.0 to 0.390.0): a tab reads
   its agent's module through the fleet mount itself, a small parser in
   the screen's file making of the YANG JSON what it draws (json.c's
   jmap() renames, jflat() a yflat names table), no translator of the
@@ -2423,14 +2423,17 @@ whose first part is served.
   its kind, safe-wait the host's timer; a trace the agent's steps under
   the three a live read has), Jails (arcana-jails with arcana-host's
   host, jail files, the address preview a dry run of arcana-network's
-  address).  Added to the console's RESTCONF side: the socket's
-  `{"what": "restconf"}`, a GET or an action that reads below a host's
+  address), Storage (arcana-storage's read, fstab/replace;
+  arcana-netstore's read).  A tab's export names a read by its nodes
+  without their modules ("services").  Added to the console's RESTCONF
+  side: the socket's `{"what": "restconf"}`, a GET or an action that reads below a host's
   entry with its steps (hosts_restconf_live(); console_test
   stream_restconf); arcana-jobs' confirm over a connection the console
   dials for it, as a confirming commit (restconf_confirms(); console_test
   restconf_job_confirm).  Decided: the Log tab's events stay on /api
   with the socket's events, the same shape, until the stream is
-  RESTCONF's (4.8.2).  Open: Storage (storage.c, nas.c), Network
+  RESTCONF's (4.8.2).  Open: a dataset's key (its name has a /, which
+  no path below the mount carries, as 4.4.1 found), Network
   (net/*, BIRD, IPsec, FEC relay, monitors, netview, topo, ecmp, mtr,
   span), Firewall (ipfw.c), the Security page (secpage.c, surules.c,
   idsstats.c), an edge's SD-WAN state and the interfaces its forms read
