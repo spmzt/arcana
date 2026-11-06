@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "app.h"
 
@@ -68,12 +69,378 @@ static void	runs_watch(void);
 
 static void	wf_load(void);
 
+/* ---- arcana-console's workflows and runs as the console keeps them --- */
+
+static const char *const wtests[] = { "read", "step", "path", "op",
+    "value", NULL };
+
+static void
+put(ucl_object_t *o, const char *key, ucl_object_t *v)
+{
+
+	ucl_object_insert_key(o, v, key, 0, true);
+}
+
+static void
+put_str(ucl_object_t *o, const char *key, const char *v)
+{
+
+	if (v != NULL)
+		put(o, key, ucl_object_fromstring(v));
+}
+
+/* Of a step's job field, or an event's match, its value: text, number,
+ * flag or JSON. */
+static ucl_object_t *
+typed_of(const ucl_object_t *y, const char *text)
+{
+	char	err[80];
+
+	if (jget(y, "number") != NULL)
+		return (ucl_object_fromint(jint(y, "number", 0)));
+	if (jget(y, "flag") != NULL)
+		return (ucl_object_frombool(jbool(y, "flag")));
+	if (jstr(y, "json") != NULL)
+		return (data_parse(jstr(y, "json"), err, sizeof(err)));
+	return (ucl_object_fromstring(jstr(y, text) != NULL ? jstr(y, text) :
+	    ""));
+}
+
+/* Value x into o as its leaf has it. */
+static void
+typed_into(ucl_object_t *o, const char *text, const ucl_object_t *x)
+{
+	unsigned char	*s;
+	char		 num[24];
+
+	switch (ucl_object_type(x)) {
+	case UCL_STRING:
+		put_str(o, text, ucl_object_tostring(x));
+		break;
+	case UCL_INT:
+		snprintf(num, sizeof(num), "%lld", (long long)ucl_object_toint(
+		    x));
+		put_str(o, "number", num);
+		break;
+	case UCL_BOOLEAN:
+		put(o, "flag", ucl_object_frombool(ucl_object_toboolean(x)));
+		break;
+	default:
+		s = ucl_object_emit(x, UCL_EMIT_JSON_COMPACT);
+		put_str(o, "json", s != NULL ? (char *)s : "null");
+		free(s);
+		break;
+	}
+}
+
+/* A workflow entry as the console keeps it (and /api had it). */
+static ucl_object_t *
+wf_of(const ucl_object_t *y)
+{
+	ucl_object_t		*w, *l, *s, *j, *e, *m, *v2;
+	const ucl_object_t	*v, *st, *x;
+	ucl_object_iter_t	 it, xit;
+	int64_t			 i;
+	int			 k;
+
+	w = ucl_object_typed_new(UCL_OBJECT);
+	put_str(w, "id", jstr(y, "id"));
+	put_str(w, "name", jstr(y, "name") != NULL ? jstr(y, "name") : "");
+	put(w, "hosts", jget(y, "host") != NULL ? ucl_object_copy(jget(y,
+	    "host")) : ucl_object_typed_new(UCL_ARRAY));
+	put(w, "serial", ucl_object_frombool(jbool(y, "serial")));
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(y, "param"), &it, true)) != NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put_str(e, "name", jstr(v, "name"));
+		put_str(e, "default", jstr(v, "default"));
+		ucl_array_append(l, e);
+	}
+	put(w, "params", l);
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((st = ucl_object_iterate(jget(y, "step"), &it, true)) != NULL) {
+		s = ucl_object_typed_new(UCL_OBJECT);
+		put_str(s, "id", jstr(st, "id"));
+		put_str(s, "name", jstr(st, "name"));
+		if ((v = jget(st, "job")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			put_str(j, "kind", jstr(v, "kind"));
+			xit = NULL;
+			while ((x = ucl_object_iterate(jget(v, "field"), &xit,
+			    true)) != NULL)
+				if (jstr(x, "name") != NULL &&
+				    (v2 = typed_of(x, "text")) != NULL)
+					put(j, jstr(x, "name"), v2);
+			put(s, "job", j);
+		} else if ((v = jget(st, "notify")) != NULL)
+			put(s, "notify", ucl_object_copy(v));
+		else if ((v = jget(st, "approval")) != NULL)
+			put(s, "approval", ucl_object_copy(v));
+		else if (jstr(st, "arcana") != NULL)
+			put_str(s, "arcana", jstr(st, "arcana"));
+		else if (jstr(st, "read") != NULL)
+			put_str(s, "read", jstr(st, "read"));
+		if ((v = jget(st, "when")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			for (k = 0; wtests[k] != NULL; k++)
+				put_str(j, wtests[k], jstr(v, wtests[k]));
+			put(s, "when", j);
+		}
+		put_str(s, "on_fail", jstr(st, "on-fail"));
+		if (jbool(st, "destroys"))
+			put(s, "destroys", ucl_object_frombool(true));
+		ucl_array_append(l, s);
+	}
+	put(w, "steps", l);
+	put(w, "every", ucl_object_fromint(jint(y, "every", 0)));
+	/* The events in their places' order. */
+	l = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < 8; i++) {
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(y, "on"), &it, true)) !=
+		    NULL && jint(v, "index", -1) != i)
+			;
+		if (v == NULL)
+			continue;
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put_str(e, "event", jstr(v, "event"));
+		if (jget(v, "match") != NULL) {
+			m = ucl_object_typed_new(UCL_OBJECT);
+			xit = NULL;
+			while ((x = ucl_object_iterate(jget(v, "match"), &xit,
+			    true)) != NULL)
+				if (jstr(x, "name") != NULL &&
+				    (v2 = typed_of(x, "value")) != NULL)
+					put(m, jstr(x, "name"), v2);
+			put(e, "match", m);
+		}
+		ucl_array_append(l, e);
+	}
+	put(w, "on", l);
+	put(w, "destructive", ucl_object_frombool(jbool(y, "destructive")));
+	if (jstr(y, "changed") != NULL)
+		put(w, "changed", ucl_object_fromint(rc_time(jstr(y,
+		    "changed"))));
+	return (w);
+}
+
+/* A workflow as the console keeps it, made its entry to be put: what
+ * the console says of it (changed, destroys) left out. */
+static ucl_object_t *
+wf_entry(const ucl_object_t *w)
+{
+	ucl_object_t		*o, *l, *e, *s, *j, *f, *m;
+	const ucl_object_t	*v, *st, *x;
+	ucl_object_iter_t	 it, xit;
+	int			 k;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put_str(o, "id", jstr(w, "id"));
+	put_str(o, "name", jstr(w, "name") != NULL ? jstr(w, "name") : "");
+	if (ucl_array_size(jget(w, "hosts")) > 0) {
+		l = ucl_object_typed_new(UCL_ARRAY);
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(w, "hosts"), &it, true)) !=
+		    NULL)
+			ucl_array_append(l, ucl_object_fromstring(
+			    ucl_object_tostring_forced(v)));
+		put(o, "host", l);
+	}
+	put(o, "serial", ucl_object_frombool(jbool(w, "serial")));
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(w, "params"), &it, true)) != NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put_str(e, "name", jstr(v, "name"));
+		put_str(e, "default", jstr(v, "default") != NULL ? jstr(v,
+		    "default") : "");
+		ucl_array_append(l, e);
+	}
+	if (ucl_array_size(l) > 0)
+		put(o, "param", l);
+	else
+		ucl_object_unref(l);
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((st = ucl_object_iterate(jget(w, "steps"), &it, true)) != NULL) {
+		s = ucl_object_typed_new(UCL_OBJECT);
+		put_str(s, "id", jstr(st, "id"));
+		put_str(s, "name", jstr(st, "name"));
+		if ((v = jget(st, "job")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			put_str(j, "kind", jstr(v, "kind"));
+			f = ucl_object_typed_new(UCL_ARRAY);
+			xit = NULL;
+			while ((x = ucl_object_iterate(v, &xit, true)) != NULL) {
+				if (strcmp(ucl_object_key(x), "kind") == 0)
+					continue;
+				e = ucl_object_typed_new(UCL_OBJECT);
+				put_str(e, "name", ucl_object_key(x));
+				typed_into(e, "text", x);
+				ucl_array_append(f, e);
+			}
+			if (ucl_array_size(f) > 0)
+				put(j, "field", f);
+			else
+				ucl_object_unref(f);
+			put(s, "job", j);
+		} else if ((v = jget(st, "notify")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			put_str(j, "via", jstr(v, "via"));
+			put_str(j, "text", jstr(v, "text"));
+			put(s, "notify", j);
+		} else if ((v = jget(st, "approval")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			put_str(j, "text", jstr(v, "text"));
+			if (jstr(v, "via") != NULL && jstr(v, "via")[0] != '\0')
+				put_str(j, "via", jstr(v, "via"));
+			if (jget(v, "timeout") != NULL)
+				put(j, "timeout", ucl_object_fromint(jint(v,
+				    "timeout", 0)));
+			put(s, "approval", j);
+		} else if (jstr(st, "arcana") != NULL)
+			put_str(s, "arcana", jstr(st, "arcana"));
+		else if (jstr(st, "read") != NULL)
+			put_str(s, "read", jstr(st, "read"));
+		if ((v = jget(st, "when")) != NULL) {
+			j = ucl_object_typed_new(UCL_OBJECT);
+			for (k = 0; wtests[k] != NULL; k++)
+				put_str(j, wtests[k], jstr(v, wtests[k]));
+			put(s, "when", j);
+		}
+		put_str(s, "on-fail", jstr(st, "on_fail") != NULL ? jstr(st,
+		    "on_fail") : "stop");
+		ucl_array_append(l, s);
+	}
+	if (ucl_array_size(l) > 0)
+		put(o, "step", l);
+	else
+		ucl_object_unref(l);
+	put(o, "every", ucl_object_fromint(jint(w, "every", 0)));
+	l = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(w, "on"), &it, true)) != NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "index", ucl_object_fromint((int64_t)ucl_array_size(l)));
+		put_str(e, "event", jstr(v, "event"));
+		m = ucl_object_typed_new(UCL_ARRAY);
+		xit = NULL;
+		while ((x = ucl_object_iterate(jget(v, "match"), &xit, true)) !=
+		    NULL) {
+			f = ucl_object_typed_new(UCL_OBJECT);
+			put_str(f, "name", ucl_object_key(x));
+			typed_into(f, "value", x);
+			ucl_array_append(m, f);
+		}
+		if (ucl_array_size(m) > 0)
+			put(e, "match", m);
+		else
+			ucl_object_unref(m);
+		ucl_array_append(l, e);
+	}
+	if (ucl_array_size(l) > 0)
+		put(o, "on", l);
+	else
+		ucl_object_unref(l);
+	put(o, "destructive", ucl_object_frombool(jbool(w, "destructive")));
+	return (o);
+}
+
+/* A time leaf as runs.json's seconds. */
+static void
+time_of(ucl_object_t *o, const char *key, const ucl_object_t *y)
+{
+
+	if (jstr(y, key) != NULL)
+		put(o, key, ucl_object_fromint(rc_time(jstr(y, key))));
+}
+
+/* A run entry as the console keeps it. */
+static ucl_object_t *
+run_of(const ucl_object_t *y)
+{
+	static const char *const strs[] = { "workflow", "name", "trigger",
+	    "state", NULL };
+	static const char *const sstrs[] = { "state", "title", "error",
+	    "detail", NULL };
+	ucl_object_t		*r, *p, *a, *e, *sl, *s, *t;
+	const ucl_object_t	*v, *h, *st;
+	ucl_object_iter_t	 it, hit, sit;
+	char			 err[80];
+	int			 k;
+
+	r = ucl_object_typed_new(UCL_OBJECT);
+	put(r, "id", ucl_object_fromint(jint(y, "id", 0)));
+	for (k = 0; strs[k] != NULL; k++)
+		put_str(r, strs[k], jstr(y, strs[k]));
+	put_str(r, "started_by", jstr(y, "started-by"));
+	time_of(r, "started", y);
+	time_of(r, "ended", y);
+	p = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(y, "param"), &it, true)) != NULL)
+		if (jstr(v, "name") != NULL)
+			put_str(p, jstr(v, "name"), jstr(v, "value") != NULL ?
+			    jstr(v, "value") : "");
+	put(r, "params", p);
+	if (jstr(y, "event") != NULL && (t = data_parse(jstr(y, "event"), err,
+	    sizeof(err))) != NULL)
+		put(r, "event", t);
+	if (jbool(y, "cancel"))
+		put(r, "cancel", ucl_object_frombool(true));
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(y, "approved"), &it, true)) !=
+	    NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put_str(e, "step", jstr(v, "step"));
+		put_str(e, "by", jstr(v, "by"));
+		time_of(e, "at", v);
+		ucl_array_append(a, e);
+	}
+	put(r, "approved", a);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	hit = NULL;
+	while ((h = ucl_object_iterate(jget(y, "host"), &hit, true)) != NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put_str(e, "id", jstr(h, "id"));
+		put_str(e, "name", jstr(h, "name"));
+		put_str(e, "state", jstr(h, "state"));
+		sl = ucl_object_typed_new(UCL_ARRAY);
+		sit = NULL;
+		while ((st = ucl_object_iterate(jget(h, "step"), &sit, true)) !=
+		    NULL) {
+			s = ucl_object_typed_new(UCL_OBJECT);
+			put_str(s, "id", jstr(st, "id"));
+			for (k = 0; sstrs[k] != NULL; k++)
+				put_str(s, sstrs[k], jstr(st, sstrs[k]));
+			if (jget(st, "job") != NULL)
+				put(s, "job", ucl_object_fromint(jint(st, "job",
+				    0)));
+			time_of(s, "started", st);
+			time_of(s, "ended", st);
+			if (jstr(st, "trace") != NULL && (t = data_parse(jstr(st,
+			    "trace"), err, sizeof(err))) != NULL)
+				put(s, "trace", t);
+			ucl_array_append(sl, s);
+		}
+		put(e, "steps", sl);
+		ucl_array_append(a, e);
+	}
+	put(r, "hosts", a);
+	return (r);
+}
+
 /* ---- Reading -------------------------------------------------------- */
 
 static void
 list_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	ucl_object_t	**slot = arg;
+	ucl_object_t		**slot = arg, *m, *a;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
 
 	wf.loading = false;
 	if (status != 200) {
@@ -88,7 +455,20 @@ list_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	wf.load_error[0] = '\0';
 	if (*slot != NULL)
 		ucl_object_unref(*slot);
-	*slot = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	/* arcana-console's workflows, runs and one run, as kept. */
+	if (slot == &wf.run)
+		*slot = run_of(o);
+	else if (slot == &wf.list || slot == &wf.runs) {
+		a = ucl_object_typed_new(UCL_ARRAY);
+		while ((e = ucl_object_iterate(jget(o, slot == &wf.list ?
+		    "workflow" : "run"), &it, true)) != NULL)
+			ucl_array_append(a, slot == &wf.list ? wf_of(e) :
+			    run_of(e));
+		m = ucl_object_typed_new(UCL_OBJECT);
+		put(m, slot == &wf.list ? "workflows" : "runs", a);
+		*slot = m;
+	} else
+		*slot = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
 	if (slot == &wf.runs)
 		runs_watch();
 }
@@ -181,15 +561,15 @@ wf_load(void)
 {
 
 	wf.at = arc_now();
-	api("GET", "/api/workflows", NULL, list_cb, &wf.list);
-	api("GET", "/api/runs", NULL, list_cb, &wf.runs);
+	rc_get(RC_C "workflows", NULL, list_cb, &wf.list);
+	rc_get(RC_C "runs", NULL, list_cb, &wf.runs);
 	if (wf.jobs == NULL)
 		api("GET", "/jobs.json", NULL, list_cb, &wf.jobs);
 	if (wf.mode == WM_RUN && wf.run_id[0] != '\0') {
-		char	url[64];
+		char	url[200];
 
-		snprintf(url, sizeof(url), "/api/runs/%s", wf.run_id);
-		api("GET", url, NULL, list_cb, &wf.run);
+		rc_get(rc_c(url, sizeof(url), "runs/run=%s", rc_key(wf.run_id)),
+		    NULL, list_cb, &wf.run);
 	}
 }
 
@@ -226,7 +606,7 @@ workflows_tick(double now)
 	if (wf.nwatched > 0 && app.online && now - wf.watched_at >
 	    WF_EVERY_MS) {
 		wf.watched_at = now;
-		api("GET", "/api/runs", NULL, list_cb, &wf.runs);
+		rc_get(RC_C "runs", NULL, list_cb, &wf.runs);
 	}
 	if (app.node != NODE_WORKFLOWS || !app.visible || wf.mode == WM_EDIT)
 		return;
@@ -2423,10 +2803,9 @@ saved_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	(void)arg;
-	if (status != 200) {
-		snprintf(wf.error, sizeof(wf.error), "%s", jstr(o,
-		    "error.message") != NULL ? jstr(o, "error.message") : err !=
-		    NULL ? err : "no answer");
+	if (status < 200 || status > 299) {
+		snprintf(wf.error, sizeof(wf.error), "%s", err != NULL ? err :
+		    "no answer");
 		return;
 	}
 	wf.error[0] = '\0';
@@ -2465,10 +2844,42 @@ done_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	(void)arg;
-	if (status != 200)
-		toast(true, "%s", jstr(o, "error.message") != NULL ? jstr(o,
-		    "error.message") : err != NULL ? err : "no answer");
+	if (status < 200 || status > 299)
+		toast(true, "%s", err != NULL ? err : "no answer");
 	wf_load();
+}
+
+/* The draft kept as its entry; a new one with an id the page draws. */
+static void
+wf_put(void)
+{
+	unsigned char	 r[4];
+	ucl_object_t	*e, *a, *top;
+	char		 id[9], url[200], *json;
+
+	if (wf.draft == NULL)
+		return;
+	if (jstr(wf.draft, "id") == NULL || jstr(wf.draft, "id")[0] == '\0') {
+		if (getentropy(r, sizeof(r)) != 0) {
+			snprintf(wf.error, sizeof(wf.error), "no random bytes "
+			    "for its id");
+			return;
+		}
+		snprintf(id, sizeof(id), "%02x%02x%02x%02x", r[0], r[1], r[2],
+		    r[3]);
+		put_str(wf.draft, "id", id);
+	}
+	snprintf(id, sizeof(id), "%s", jstr(wf.draft, "id"));
+	e = wf_entry(wf.draft);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(a, e);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	put(top, "arcana-console:workflow", a);
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	rc_edit("PUT", rc_c(url, sizeof(url), "workflows/workflow=%s",
+	    rc_key(id)), json, saved_cb, NULL);
+	free(json);
 }
 
 static void
@@ -2476,23 +2887,30 @@ run_now(const char *id, const ucl_object_t *f)
 {
 	const ucl_object_t	*w, *p, *v;
 	ucl_object_iter_t	 it;
-	ucl_object_t		*body, *params, *hosts;
+	ucl_object_t		*body, *params, *hosts, *e;
 	unsigned char		*json;
-	char			 url[64], key[64];
+	char			 url[200], key[64];
 	int			 k;
 
+	/* The run action's input: param entries, host ids (none: the
+	 * workflow's own). */
 	w = wf_by_id(id);
 	body = ucl_object_typed_new(UCL_OBJECT);
-	params = ucl_object_typed_new(UCL_OBJECT);
+	params = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
 	while ((p = ucl_object_iterate(jget(w, "params"), &it, true)) != NULL) {
 		snprintf(key, sizeof(key), "p_%s", jstr(p, "name"));
-		if ((v = jget(f, key)) != NULL)
-			ucl_object_insert_key(params, ucl_object_fromstring(
-			    ucl_object_tostring_forced(v)), jstr(p, "name"), 0,
-			    true);
+		if ((v = jget(f, key)) == NULL)
+			continue;
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put_str(e, "name", jstr(p, "name"));
+		put_str(e, "value", ucl_object_tostring_forced(v));
+		ucl_array_append(params, e);
 	}
-	ucl_object_insert_key(body, params, "params", 0, false);
+	if (ucl_array_size(params) > 0)
+		put(body, "param", params);
+	else
+		ucl_object_unref(params);
 	hosts = ucl_object_typed_new(UCL_ARRAY);
 	for (k = 0; f != NULL && k < app.nservers; k++) {
 		snprintf(key, sizeof(key), "h_%s", app.servers[k].id);
@@ -2500,11 +2918,14 @@ run_now(const char *id, const ucl_object_t *f)
 			ucl_array_append(hosts, ucl_object_fromstring(
 			    app.servers[k].id));
 	}
-	ucl_object_insert_key(body, hosts, "hosts", 0, false);
+	if (ucl_array_size(hosts) > 0)
+		put(body, "host", hosts);
+	else
+		ucl_object_unref(hosts);
 	json = ucl_object_emit(body, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(body);
-	snprintf(url, sizeof(url), "/api/workflows/%s/run", id);
-	api("POST", url, (char *)json, started_cb, NULL);
+	rc_action(rc_c(url, sizeof(url), "workflows/workflow=%s/run",
+	    rc_key(id)), (char *)json, NULL, started_cb, NULL);
 	free(json);
 }
 
@@ -2941,8 +3362,7 @@ workflows_action(const char *act, const char *arg, const char *value)
 {
 	ucl_object_t		*a, *o, *st;
 	const ucl_object_t	*w;
-	unsigned char		*json;
-	char			 url[80], id[16], buf[64];
+	char			 url[200], id[16], buf[64];
 	int			 i, k;
 
 	if (strcmp(act, "wf-runs-all") == 0) {
@@ -3088,9 +3508,7 @@ workflows_action(const char *act, const char *arg, const char *value)
 		wf.mode = WM_LIST;
 		wf_load();
 	} else if (strcmp(act, "wf-save") == 0) {
-		json = ucl_object_emit(wf.draft, UCL_EMIT_JSON_COMPACT);
-		api("POST", "/api/workflows", (char *)json, saved_cb, NULL);
-		free(json);
+		wf_put();
 	} else if (strcmp(act, "wf-runs-clear") == 0) {
 		confirm("Clear the history", "Every run that has ended is "
 		    "forgotten, with what its steps answered; a run going on "
@@ -3099,7 +3517,7 @@ workflows_action(const char *act, const char *arg, const char *value)
 		/* The run shown goes with the rest. */
 		if (wf.mode == WM_RUN)
 			wf.mode = WM_LIST;
-		api("DELETE", "/api/runs", NULL, done_cb, NULL);
+		rc_action(RC_C "runs/clear", NULL, NULL, done_cb, NULL);
 	} else if (strcmp(act, "wf-del") == 0) {
 		w = wf_by_id(arg);
 		confirm("Delete the workflow", "It no longer runs, by itself or "
@@ -3107,8 +3525,8 @@ workflows_action(const char *act, const char *arg, const char *value)
 		    "do-wf-del", arg, "");
 		(void)w;
 	} else if (strcmp(act, "do-wf-del") == 0) {
-		snprintf(url, sizeof(url), "/api/workflows/%.8s", arg);
-		api("DELETE", url, NULL, done_cb, NULL);
+		rc_c(url, sizeof(url), "workflows/workflow=%.8s", rc_key(arg));
+		rc_edit("DELETE", url, NULL, done_cb, NULL);
 	} else if (strcmp(act, "wf-run") == 0) {
 		snprintf(wf.run_wf, sizeof(wf.run_wf), "%.8s", arg);
 		if ((w = wf_by_id(arg)) == NULL)
@@ -3124,17 +3542,17 @@ workflows_action(const char *act, const char *arg, const char *value)
 		wf.run = NULL;
 		wf_load();
 	} else if (strcmp(act, "wf-run-stop") == 0) {
-		snprintf(url, sizeof(url), "/api/runs/%.15s", arg);
-		api("DELETE", url, NULL, done_cb, NULL);
+		rc_c(url, sizeof(url), "runs/run=%.15s/stop", rc_key(arg));
+		rc_action(url, NULL, NULL, done_cb, NULL);
 	} else if (strcmp(act, "wf-run-approve") == 0) {
 		const char	*colon = strchr(arg, ':');
 
 		if (colon == NULL)
 			return (true);
-		snprintf(url, sizeof(url), "/api/runs/%.*s/approve", (int)(colon -
+		rc_c(url, sizeof(url), "runs/run=%.*s/approve", (int)(colon -
 		    arg), arg);
 		snprintf(buf, sizeof(buf), "{\"step\":\"%.16s\"}", colon + 1);
-		api("POST", url, buf, done_cb, NULL);
+		rc_action(url, buf, NULL, done_cb, NULL);
 	} else if (strcmp(act, "wf-step-pick") == 0) {
 		snprintf(wf.pick, sizeof(wf.pick), "%s", strcmp(wf.pick, arg) ==
 		    0 ? "" : arg);

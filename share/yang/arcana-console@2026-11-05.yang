@@ -1348,6 +1348,12 @@ module arcana-console {
             description
               "What it answered, as RFC 8259's JSON.";
           }
+          leaf detail {
+            type string;
+            description
+              "What the console says of it, beside its error (one
+               the console stopped during).";
+          }
         }
       }
       action approve {

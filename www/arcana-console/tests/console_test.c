@@ -5278,6 +5278,15 @@ ATF_TC_BODY(workflows_arcana, tc)
 	    &r, "hosts.0.steps.0.detail"), "the console stopped") != NULL);
 	ATF_CHECK_STREQ("not run", jstr(&r, "hosts.0.steps.1.state"));
 	resp_free(&r);
+	/* RESTCONF says why too: the step's detail. */
+	snprintf(body, sizeof(body), "/restconf/data/arcana-console:runs/"
+	    "run=%s", run);
+	http("GET", body, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "arcana-console:run.0.host.0.step.0.detail") !=
+	    NULL && strstr(jstr(&r, "arcana-console:run.0.host.0.step.0."
+	    "detail"), "the console stopped") != NULL);
+	resp_free(&r);
 	/* What a run whose worker died is not, the console's end. */
 	ATF_REQUIRE(system("sed -i '' '/exited with status/d' console.out") == 0);
 }

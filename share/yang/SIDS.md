@@ -181,7 +181,7 @@ on the wire.
 | 91 700 | 100 | `arcana-sdwan-underlay`, the VN view's bounds and underlay, the console's | `share/yang/arcana-sdwan-underlay@2026-11-05.sid` (39 used) |
 | 91 800 | 300 | `arcana-console`, the console's own configuration and state (settings, tokens, users, roles, groups, enrolment, workflows, runs, then the first of the parts below) | `share/yang/arcana-console@2026-11-05.sid` (300 used) |
 | 92 100 | 200 | `arcana-console`, its second range, for what did not fit the first: the settings' test actions, the templates, interface labels, prefix lists, threat feeds, transfers, Web Push subscriptions, the hosts and the first of the SD-WAN's verbs | `share/yang/arcana-console@2026-11-05.sid` (200 used) |
-| 92 300 | 300 | `arcana-console`, its third range: the SD-WAN's verbs (their first in the second), the console's update, notes, cluster, CA, plugins, security keys, the path finder and the WireGuard key pair | `share/yang/arcana-console@2026-11-05.sid` (137 used) |
+| 92 300 | 300 | `arcana-console`, its third range: the SD-WAN's verbs (their first in the second), the console's update, notes, cluster, CA, plugins, security keys, the path finder and the WireGuard key pair | `share/yang/arcana-console@2026-11-05.sid` (138 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

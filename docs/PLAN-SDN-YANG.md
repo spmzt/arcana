@@ -2378,6 +2378,31 @@ whose first part is served.
   one node each down with its reason; the L3NM's version unchanged.
 - 4.8.1 P: the page's fetch layer on RESTCONF JSON (or CBOR
   pass-through); check: the browser test.
+- 4.8.1 the console's own done (console 0.375.0 to 0.380.0; page
+  rc.c): the page's requests to the console's own RESTCONF, JSON
+  (`application/yang-data+json`) both ways; the YANG-CBOR pass-through
+  not used, the page having no host's `.sid` files to name it by.  A
+  read hands its callback the node unwrapped; a change sends If-Match
+  with the tag last read at the node or above it and keeps the one it
+  gets back, the others forgotten; an action's input wrapped in its
+  module's, its output unwrapped (a bridge's, its result);
+  `ietf-restconf:errors` and a YANG Patch's errors said as the page's
+  (message, at its path; the app-tag by `rc_tag()`); the warnings
+  accepted by `arcana-accept`; the CSRF header as before.  Moved, a
+  commit each: settings (a YANG Patch, a number emptied removed),
+  tokens, users, roles, groups, enrolment; the hosts registry and the
+  console's verbs on a host; the SD-WAN (`sdwan/` of arcana-console
+  over the L3NM; the CSVs by Accept); the CA, plugins and their
+  stores, update, cluster, security keys, the path finder and the key
+  pair; templates, labels, prefix lists, threat feeds, transfers and
+  push; workflows and runs.  Each screen reads the module's shape made
+  the one it read (the page's converters); what the console's
+  RESTCONF lacked was added: settings/source label and help,
+  users/user from-directory, runs' step detail.  Open: the host's tabs
+  (the agents' modules through the fleet mount: each tab's reading of
+  YANG's shapes where the console's /api translated), the Security
+  page, an edge's SD-WAN state; then `/api` keeps D-10's resources
+  alone.
 - 4.8.2 P: SSE subscriptions replace the page's polling; check:
   timings in the browser test.
 - 4.8.3 P: forms generated from the yang-library for the Arcana

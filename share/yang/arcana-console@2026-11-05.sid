@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-console",
     "module-revision": "2026-11-05",
-    "sid-file-version": 6,
+    "sid-file-version": 7,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -3213,6 +3213,11 @@
         "namespace": "data",
         "identifier": "/arcana-console:users/user/from-directory",
         "sid": "92436"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-console:runs/run/host/step/detail",
+        "sid": "92437"
       }
     ]
   }

@@ -3613,7 +3613,8 @@ run_yang(const ucl_object_t *r)
 {
 	static const char *const strs[] = { "workflow", "name", "trigger",
 	    "state" };
-	static const char *const sstrs[] = { "state", "title", "error" };
+	static const char *const sstrs[] = { "state", "title", "error",
+	    "detail" };
 	ucl_object_t		*o, *l, *e, *hl, *sl, *s;
 	const ucl_object_t	*v, *h, *st, *x;
 	ucl_object_iter_t	 it, hit, sit;
