@@ -14150,6 +14150,14 @@ ATF_TC_BODY(l3nm_vn_compute, tc)
 	http("POST", VNC, "{\"vn-member-list\":[]}", &r);
 	EXPECT(&r, 400);
 	resp_free(&r);
+	/* A member list that is an object: refused, its keys not taken
+	 * for entries (as many as an array's size, none, would have room). */
+	http("POST", VNC, "{\"ietf-vn:input\":{\"vn-member-list\":{"
+	    "\"a\":{\"id\":1},\"b\":{\"id\":2},\"c\":{\"id\":3},\"d\":"
+	    "{\"id\":4}}}}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "is a list") != NULL,
+	    "%d %s", r.status, r.body);
+	resp_free(&r);
 	/* hq to branch: up; bounded by delay, which nothing has measured:
 	 * unknown; by a TE metric no edge measures; from no AP; between
 	 * two accesses of one node. */

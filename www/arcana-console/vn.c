@@ -1504,10 +1504,10 @@ api_restconf_operations(struct http_request *req)
 	struct ask		 d, ma;
 	struct vctx		 x;
 	struct mres		*rs;
-	const ucl_object_t	*in, *e;
+	const ucl_object_t	*in, *e, *ml;
 	ucl_object_iter_t	 it = NULL;
 	ucl_object_t		*body, *y, *top, *list, *o;
-	size_t			 n;
+	size_t			 n, cap;
 	int			 ok, vdis = 0;
 
 	if (!guard(req, false))
@@ -1542,10 +1542,16 @@ api_restconf_operations(struct http_request *req)
 		return (restconf_error_tag(req, 400, "malformed-message",
 		    "the body is {\"ietf-vn:input\": {...}}"));
 	}
+	/* A list, or none: an object's keys are not its entries. */
+	ml = ucl_object_lookup(in, "vn-member-list");
+	if (ml != NULL && ucl_object_type(ml) != UCL_ARRAY) {
+		ucl_object_unref(body);
+		return (restconf_error_tag(req, 400, "malformed-message",
+		    "vn-member-list is a list"));
+	}
 	ok = ask_in(in, &d) == 0 && (vdis = dis_of(ucl_object_lookup(in,
 	    "vn-level-diversity"))) >= 0;
-	while (ok && (e = ucl_object_iterate(ucl_object_lookup(in,
-	    "vn-member-list"), &it, true)) != NULL)
+	while (ok && (e = ucl_object_iterate(ml, &it, true)) != NULL)
 		ok = ucl_str(e, "id") != NULL && ask_in(e, &ma) == 0;
 	if (!ok) {
 		ucl_object_unref(body);
@@ -1557,12 +1563,11 @@ api_restconf_operations(struct http_request *req)
 	}
 	y = l3nm_kept();
 	top = view_make(req, y, &x);
-	n = ucl_array_size(ucl_object_lookup(in, "vn-member-list"));
-	rs = xcalloc(n > 0 ? n : 1, sizeof(*rs));
+	cap = ucl_array_size(ml);
+	rs = xcalloc(cap > 0 ? cap : 1, sizeof(*rs));
 	n = 0;
 	it = NULL;
-	while ((e = ucl_object_iterate(ucl_object_lookup(in, "vn-member-list"),
-	    &it, true)) != NULL)
+	while (n < cap && (e = ucl_object_iterate(ml, &it, true)) != NULL)
 		compute_one(&x, y, top, e, &d, &rs[n++]);
 	if (vdis != 0)
 		diversity(rs, n, vdis);
