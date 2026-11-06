@@ -118,11 +118,11 @@ TESTDIRS+=	usr.sbin/arcana-agent/tests \
 # (is.exclusive).  The build before is made with CHECK_JOBS jobs.  A
 # failed or broken test fails the target, with kyua's report on it
 # (less the environment, which can hold secrets).  Each line names its
-# suite's directory, then its case.  One and a half cases a CPU: most
-# wait on a daemon or a browser; at two, the browsers' waits run out.
+# suite's directory, then its case.  One case a CPU: at one and a half
+# the load went past twice the CPUs and cases ran out of time.
 CHECK_JOBS?=	12
 .if !defined(CHECK_PARALLEL)
-CHECK_PARALLEL!=	echo $$(($$(sysctl -n hw.ncpu) * 3 / 2))
+CHECK_PARALLEL!=	sysctl -n hw.ncpu
 .endif
 # check-root's cases: those of the host's shared state are exclusive.
 CHECK_ROOT_PARALLEL?=	6
