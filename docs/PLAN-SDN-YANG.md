@@ -2446,6 +2446,21 @@ whose first part is served.
 - 4.10.1 L: a service written as L3NM through RESTCONF, applied on
   the lab, read back as VN and SAP, exported as MEF and re-imported
   unchanged; written to TODO's verified list.
+  Done (the root test console_test:sdwan_l3nm_lab, run by `make
+  check-root` beside sdwan_lab, jails of its own): sdwan_lab's two
+  vnet jails and real agents, the hosts added at
+  `arcana-console:hosts`, nothing through /api.  The UCS and edges PUT
+  with If-None-Match, the service (hq's access, b's node bare) PATCHed
+  with If-Match; branch's access placed by `sdwan/attach` on b's UNI,
+  free and up in `ietf-network:networks`; applied by `sdwan/plan` and
+  `sdwan/apply` with the plan's warnings accepted, the tunnel, UNIs,
+  FIB 1 routes and Arcana's rc.conf file checked in the jails and a
+  ping UNI to UNI; `ietf-vn` one VN, the member hq to branch with the
+  gre tunnel as its underlay, up and selected; both SAPs the
+  service's, made, not free; `sdwan/document` read and PUT back, the
+  L3NM equal node for node, the document but its version, the next
+  plan empty; DELETE with If-Match and an apply leave the jails as
+  before.  Found nothing to fix.  TODO's "Verified for real" has it.
 
 ### Y-5
 

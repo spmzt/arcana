@@ -184,6 +184,7 @@ check: .PHONY
 _ROOT_CASES=	usr.sbin/arcana-agent/tests/agent_root_test
 .if ${MK_CONSOLE} != "no"
 _ROOT_CASES+=	www/arcana-console/tests/console_test:sdwan_lab
+_ROOT_CASES+=	www/arcana-console/tests/console_test:sdwan_l3nm_lab
 .endif
 check-root: .PHONY
 	@${MAKE} -j${CHECK_JOBS} -C ${.CURDIR} all kyuafile

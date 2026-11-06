@@ -12978,6 +12978,494 @@ ATF_TC_BODY(sdwan_lab, tc)
 	    "rc.conf.d/arcana") != 0, "still in Arcana's rc.conf file");
 }
 
+/*
+ * PLAN-SDN-YANG 4.10.1 (sdwan_l3nm_lab): sdwan_lab's lab in jails of its
+ * own, its service written as L3NM through RESTCONF alone (no /api):
+ * hq's access in the L3NM, branch's placed on a free SAP; applied, read
+ * back as VN and SAP, exported as the MEF document and imported again,
+ * the L3NM unchanged, then taken away.
+ */
+#define	L3LAB_A		"arcw_l3a"
+#define	L3LAB_B		"arcw_l3b"
+#define	L3LAB_SA	"00000a3a"
+#define	L3LAB_SB	"00000a3b"
+#define	L3SD		"/restconf/data/arcana-console:sdwan/"
+
+/* The UCS and the edges, a's then b's Internet interface. */
+#define	L3LAB_TOP							\
+    "{\"ietf-l3vpn-ntw:l3vpn-ntw\":{\"arcana-l3nm:sdwan\":{\"ucs\":[{\"id\""\
+    ":\"inet\",\"type\":\"public\",\"billing\":\"flat-rate\",\"tunnel\":{"\
+    "\"kind\":\"gre\",\"ipsec\":false}}],\"edge\":[{\"server\":\""	\
+    L3LAB_SA "\",\"ucs-end-point\":[{\"id\":\"a-inet\",\"ucs\":\"inet\","\
+    "\"interface\":\"%s\",\"address\":\"10.203.0.1\"}]},{\"server\":\""	\
+    L3LAB_SB "\",\"ucs-end-point\":[{\"id\":\"b-inet\",\"ucs\":\"inet\","\
+    "\"interface\":\"%s\",\"address\":\"10.203.0.2\"}]}]}}}"
+
+/* The service: hq at a's UNI (static, 10.1.8.0/22 by 10.1.0.2), b's
+ * node with no access yet. */
+#define	L3LAB_SVC							\
+    "{\"ietf-l3vpn-ntw:l3vpn-ntw\":{\"vpn-services\":{\"vpn-service\":[{"	\
+    "\"vpn-id\":\"acme\",\"vpn-instance-profiles\":{\"vpn-instance-"	\
+    "profile\":[{\"profile-id\":\"subscriber\",\"arcana-l3nm:domain\":"	\
+    "\"subscriber\",\"arcana-l3nm:fib\":1}]},\"vpn-nodes\":{\"vpn-node\":"\
+    "[{\"vpn-node-id\":\"" L3LAB_SA "\",\"ne-id\":\"" L3LAB_SA "\","	\
+    "\"active-vpn-instance-profiles\":{\"vpn-instance-profile\":[{"	\
+    "\"profile-id\":\"subscriber\"}]},\"vpn-network-accesses\":{\"vpn-"	\
+    "network-access\":[{\"id\":\"hq\",\"interface-id\":\"%s\",\"vpn-"	\
+    "network-access-type\":\"ietf-vpn-common:multipoint\",\"vpn-instance-"\
+    "profile\":\"subscriber\",\"ip-connection\":{\"ipv4\":{\"local-address"\
+    "\":\"10.1.0.1\",\"prefix-length\":24,\"address-allocation-type\":"	\
+    "\"ietf-l3vpn-ntw:static-address\",\"arcana-l3nm:mode\":\"static\","	\
+    "\"arcana-l3nm:provider\":[\"10.1.0.1\"]}},\"routing-protocols\":{"	\
+    "\"routing-protocol\":[{\"id\":\"static\",\"type\":\"ietf-vpn-common:"\
+    "static-routing\",\"static\":{\"cascaded-lan-prefixes\":{\"ipv4-lan-"	\
+    "prefixes\":[{\"lan\":\"10.1.8.0/22\",\"next-hop\":\"10.1.0.2\"}]}}}]"\
+    "},\"arcana-l3nm:sdwan\":{\"uni-id\":\"uni-hq\",\"policy-map\":[{"	\
+    "\"zone\":\"rest\",\"app\":\"all\",\"ingress\":\"open\"}]}}]}},{"	\
+    "\"vpn-node-id\":\"" L3LAB_SB "\",\"ne-id\":\"" L3LAB_SB "\","	\
+    "\"active-vpn-instance-profiles\":{\"vpn-instance-profile\":[{"	\
+    "\"profile-id\":\"subscriber\"}]}}]},\"arcana-l3nm:sdwan\":{\"fib\":1,"\
+    "\"ucs\":[\"inet\"],\"reserved-prefix\":[\"100.64.0.0/24\"],\"zone\":"\
+    "[{\"name\":\"rest\",\"default\":[null]}],\"intervals\":{\"eval\":1000,"\
+    "\"arrival\":100,\"ir\":500},\"application-flow\":[{\"name\":\"all\","\
+    "\"criteria\":{\"any\":true}}],\"policy\":[{\"name\":\"open\","	\
+    "\"direction\":\"ingress\",\"criteria\":{}}]}}]}}}"
+
+/* branch's access, at the SAP named (static, 10.2.0.0/24). */
+#define	L3LAB_ATTACH							\
+    "{\"arcana-console:input\":{\"vpn-id\":\"acme\",\"vpn-node-id\":\""	\
+    L3LAB_SB "\",\"sap-id\":\"%s\",\"access\":{\"vpn-network-access-type"\
+    "\":\"ietf-vpn-common:multipoint\",\"vpn-instance-profile\":"	\
+    "\"subscriber\",\"ip-connection\":{\"ipv4\":{\"local-address\":"	\
+    "\"10.2.0.1\",\"prefix-length\":24,\"address-allocation-type\":"	\
+    "\"ietf-l3vpn-ntw:static-address\",\"arcana-l3nm:mode\":\"static\","	\
+    "\"arcana-l3nm:provider\":[\"10.2.0.1\"]}},\"arcana-l3nm:sdwan\":{"	\
+    "\"uni-id\":\"uni-br\",\"policy-map\":[{\"zone\":\"rest\",\"app\":"	\
+    "\"all\",\"ingress\":\"open\"}]}}}}"
+
+/* The apply's end, read at sdwan/apply-state, into r. */
+static void
+l3lab_wait(struct resp *r)
+{
+	const char	*ing, *st;
+	int		 i;
+
+	for (i = 0; i < 750; i++) {
+		http("GET", L3SD "apply-state", NULL, r);
+		ing = jstr(r, "arcana-console:apply-state.applying");
+		st = jstr(r, "arcana-console:apply-state.apply.state");
+		if (r->status == 200 && ing != NULL && strcmp(ing, "false") ==
+		    0 && st != NULL && strcmp(st, "running") != 0)
+			return;
+		resp_free(r);
+		usleep(200000);
+	}
+	show("console.out");
+	show("la/agent.out");
+	show("lb/agent.out");
+	ATF_REQUIRE_MSG(false, "the apply did not end");
+}
+
+/* The plan read at sdwan/plan, applied with every warning it lists
+ * accepted; the apply's end into r. */
+static void
+l3lab_apply(struct resp *r, bool fresh)
+{
+	struct resp		 p;
+	const ucl_object_t	*acc;
+	ucl_object_t		*in, *o;
+	char			*json;
+
+	http("GET", L3SD "plan", NULL, &p);
+	EXPECT(&p, 200);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	if (fresh)
+		ucl_object_insert_key(o, ucl_object_frombool(true), "fresh", 0,
+		    false);
+	acc = ucl_object_lookup_path(p.json, "arcana-console:plan.accept");
+	ucl_object_insert_key(o, acc != NULL ? ucl_object_copy(acc) :
+	    ucl_object_typed_new(UCL_ARRAY), "accept", 0, false);
+	in = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(in, o, "arcana-console:input", 0, false);
+	json = (char *)ucl_object_emit(in, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(in);
+	resp_free(&p);
+	http("POST", L3SD "apply", json, r);
+	free(json);
+	EXPECT(r, 200);
+	ATF_CHECK_MSG(jstr(r, "arcana-console:output.result.steps") != NULL,
+	    "%s", r->body);
+	resp_free(r);
+	l3lab_wait(r);
+}
+
+/* How many of the plan's changes make, remake or unmake something. */
+static int
+l3lab_changes(void)
+{
+	struct resp		 r;
+	const ucl_object_t	*c;
+	ucl_object_iter_t	 it = NULL;
+	const char		*k;
+	int			 n = 0;
+
+	http("GET", L3SD "plan", NULL, &r);
+	EXPECT(&r, 200);
+	while ((c = ucl_object_iterate(ucl_object_lookup_path(r.json,
+	    "arcana-console:plan.changes"), &it, true)) != NULL)
+		if ((k = ucl_object_tostring(ucl_object_lookup(c, "change"))) !=
+		    NULL && strcmp(k, "keep") != 0)
+			n++;
+	if (n > 0)
+		printf("plan: %s\n", r.body);
+	resp_free(&r);
+	return (n);
+}
+
+/* The L3NM kept, read through RESTCONF; its entity-tag into etag. */
+static ucl_object_t *
+l3lab_kept(char *etag, size_t len)
+{
+	struct resp	 r;
+	ucl_object_t	*o;
+
+	http("GET", L3NM, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(resp_header(&r, "etag", etag, len) != NULL);
+	o = ucl_object_ref(r.json);
+	resp_free(&r);
+	return (o);
+}
+
+/* SAP id of host h in the SAP network now; free, attached to acme and
+ * made, or neither, as said. */
+static void
+l3lab_sap(const char *h, const char *id, bool used, bool made)
+{
+	struct resp		 r;
+	ucl_object_t		*top;
+	const ucl_object_t	*s;
+	const char		*v;
+
+	http("GET", SAPNET, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE((top = body_of(&r)) != NULL);
+	s = sn_sap(sn_node(top, "arcana-sap", h), id);
+	ATF_REQUIRE_MSG(s != NULL, "no SAP %s at %s: %s", id, h, r.body);
+	ATF_CHECK_STREQ("ietf-vpn-common:op-up", ucl_object_tostring(
+	    ucl_object_lookup_path(s, "sap-status.status")));
+	ATF_CHECK_MSG(ucl_object_toboolean(ucl_object_lookup(s,
+	    "arcana-l3nm:free")) == !used, "%s at %s: free wrong: %s", id, h,
+	    r.body);
+	v = ucl_object_tostring(ucl_object_lookup_path(s,
+	    "arcana-l3nm:attachment.0.vpn-id"));
+	ATF_CHECK_MSG(used ? v != NULL && strcmp(v, "acme") == 0 : v == NULL,
+	    "%s at %s: attachment wrong: %s", id, h, r.body);
+	if (used) {
+		ATF_CHECK_MSG(ucl_object_toboolean(ucl_object_lookup_path(s,
+		    "arcana-l3nm:attachment.0.made")) == made, "%s at %s: "
+		    "made wrong: %s", id, h, r.body);
+		ATF_CHECK_STREQ(made ? "ietf-vpn-common:op-up" :
+		    "ietf-vpn-common:op-down", ucl_object_tostring(
+		    ucl_object_lookup_path(s, "service-status.oper-status."
+		    "status")));
+	}
+	ucl_object_unref(top);
+	resp_free(&r);
+}
+
+ATF_TC_WITH_CLEANUP(sdwan_l3nm_lab);
+ATF_TC_HEAD(sdwan_l3nm_lab, tc)
+{
+	atf_tc_set_md_var(tc, "descr", "PLAN-SDN-YANG 4.10.1 on a lab, as "
+	    "root: a service written as L3NM through RESTCONF, an access "
+	    "placed on a free SAP, applied on two vnet jails' agents, read "
+	    "back as VN and SAP, exported as the MEF document and imported "
+	    "again unchanged, then taken away");
+	atf_tc_set_md_var(tc, "require.user", "root");
+	atf_tc_set_md_var(tc, "timeout", "300");
+}
+ATF_TC_CLEANUP(sdwan_l3nm_lab, tc)
+{
+
+	stop();
+	/* Interfaces out of the jails before they go (sdwan_lab's). */
+	if (access("lab.sh", X_OK) == 0)
+		(void)system("./lab.sh down");
+}
+ATF_TC_BODY(sdwan_l3nm_lab, tc)
+{
+	struct authn		 a;
+	struct resp		 r;
+	ucl_object_t		*y0, *y1, *d0, *d1, *o;
+	const ucl_object_t	*v;
+	char			 cwd[MAXPATHLEN], body[MAXPATHLEN + 128];
+	char			 script[sizeof(lab_sh) + 64];
+	char			 t[sizeof(lab_sh) + 64], doc[8192], line[128];
+	char			 etag[64], hdr[96], path[256], where[256];
+	char			 ifs[4][IFNAMSIZ];
+	char			*before, *after, *json;
+	FILE			*fp;
+	int			 i;
+
+	if (system("jls -j " L3LAB_A " >/dev/null 2>&1 || jls -j " L3LAB_B
+	    " >/dev/null 2>&1") == 0)
+		atf_tc_skip("a jail of the lab's names is there already");
+	if (system("ifconfig -C | grep -qw gre && ifconfig -C | grep -qw "
+	    "epair") != 0)
+		atf_tc_skip("no gre(4) or epair(4)");
+	/* sdwan_lab's lab.sh, its jails named for this case. */
+	snprintf(script, sizeof(script), "%s", lab_sh);
+	while (swap_in(script, LAB_A, L3LAB_A, t, sizeof(t)))
+		snprintf(script, sizeof(script), "%s", t);
+	while (swap_in(script, LAB_B, L3LAB_B, t, sizeof(t)))
+		snprintf(script, sizeof(script), "%s", t);
+	put("lab.sh", script);
+	ATF_REQUIRE(chmod("lab.sh", 0755) == 0);
+	ATF_REQUIRE((fp = popen("./lab.sh up", "r")) != NULL);
+	ATF_REQUIRE(fgets(line, sizeof(line), fp) != NULL);
+	ATF_REQUIRE(pclose(fp) == 0);
+	ATF_REQUIRE(sscanf(line, "%15s %15s %15s %15s", ifs[0], ifs[1],
+	    ifs[2], ifs[3]) == 4);
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	agent_jailed(L3LAB_A, "la");
+	agent_jailed(L3LAB_B, "lb");
+	snprintf(body, sizeof(body), "{\"arcana-console:host\":[{\"id\":\""
+	    L3LAB_SA "\",\"name\":\"a\",\"uri\":\"unix:%s/la/agent.sock\"}]}",
+	    cwd);
+	http("POST", "/restconf/data/arcana-console:hosts", body, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"arcana-console:host\":[{\"id\":\""
+	    L3LAB_SB "\",\"name\":\"b\",\"uri\":\"unix:%s/lb/agent.sock\"}]}",
+	    cwd);
+	http("POST", "/restconf/data/arcana-console:hosts", body, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	before = lab_snap();
+
+	/*
+	 * 1. Written as L3NM: the UCS and the edges where none was, then
+	 * the service by the entity-tag read; a stale one refused.
+	 */
+	snprintf(doc, sizeof(doc), L3LAB_TOP, ifs[0], ifs[1]);
+	http_with("PUT", L3NM, "If-None-Match: *\r\n", doc, &r);
+	EXPECT(&r, 201);
+	resp_free(&r);
+	http_with("PUT", L3NM, "If-None-Match: *\r\n", doc, &r);
+	EXPECT(&r, 412);
+	resp_free(&r);
+	y0 = l3lab_kept(etag, sizeof(etag));
+	ucl_object_unref(y0);
+	snprintf(doc, sizeof(doc), L3LAB_SVC, ifs[2]);
+	http_with("PATCH", L3NM, "If-Match: \"0-0\"\r\n", doc, &r);
+	EXPECT(&r, 412);
+	resp_free(&r);
+	snprintf(hdr, sizeof(hdr), "If-Match: %s\r\n", etag);
+	http_with("PATCH", L3NM, hdr, doc, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+
+	/*
+	 * 2. branch placed by the SAP flow: b's UNI a free SAP, up; hq's
+	 * the service's already, not made yet.
+	 */
+	l3lab_sap(L3LAB_SB, ifs[3], false, false);
+	l3lab_sap(L3LAB_SA, ifs[2], true, false);
+	snprintf(body, sizeof(body), L3LAB_ATTACH, ifs[3]);
+	http("POST", L3SD "attach", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(ifs[3], jstr(&r, "arcana-console:output.result."
+	    "sap-id"));
+	ATF_CHECK_STREQ(ifs[3], jstr(&r, "arcana-console:output.result."
+	    "access-id"));
+	resp_free(&r);
+	l3lab_sap(L3LAB_SB, ifs[3], true, false);
+	snprintf(body, sizeof(body), L3LAB_ATTACH, ifs[3]);
+	http("POST", L3SD "attach", body, &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+
+	/*
+	 * 3. Planned and applied through RESTCONF, the warnings accepted:
+	 * the tunnel, both UNIs and hq's route made in the jails, kept in
+	 * Arcana's rc.conf file; a ping across, UNI to UNI.
+	 */
+	http("GET", L3SD "plan", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(t, sizeof(t), "\"key\":\"uni:%s\"", ifs[3]);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"tvc:acme/a-inet-b-inet\"") !=
+	    NULL && strstr(r.body, "\"key\":\"uni:hq\"") != NULL &&
+	    strstr(r.body, t) != NULL && strstr(r.body, "\"key\":\"route:acme:"
+	    "10.1.8.0/22\"") != NULL && strstr(r.body, "\"warning\":"
+	    "\"rc-conf-files\"") != NULL, "%s", r.body);
+	resp_free(&r);
+	l3lab_apply(&r, true);
+	ATF_REQUIRE_MSG(strcmp(jstr(&r, "arcana-console:apply-state.apply."
+	    "state"), "done") == 0, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK_MSG(system("grep -q '^cloned_interfaces=\"[^\"]*gre100' "
+	    "la/root/usr/local/etc/rc.conf.d/arcana && grep -q "
+	    "'10.1.8.0/22 10.1.0.2' la/root/usr/local/etc/rc.conf.d/arcana && "
+	    "grep -q 'inet 10.2.0.1/24' lb/root/usr/local/etc/rc.conf.d/"
+	    "arcana") == 0, "not kept in Arcana's rc.conf file");
+	after = lab_snap();
+	snprintf(t, sizeof(t), "%s: inet 10.1.0.1 netmask 0xffffff00\n"
+	    "%s: fib: 1", ifs[2], ifs[2]);
+	snprintf(line, sizeof(line), "%s: inet 10.2.0.1 netmask 0xffffff00\n"
+	    "%s: fib: 1", ifs[3], ifs[3]);
+	ATF_CHECK_MSG(strstr(after, "gre100: tunnel inet 10.203.0.1 -->\n"
+	    "gre100: inet 100.64.0.0 --> 100.64.0.1\ngre100: fib: 1") != NULL &&
+	    strstr(after, "gre101: inet 100.64.0.1 --> 100.64.0.0\n"
+	    "gre101: fib: 1") != NULL && strstr(after, t) != NULL &&
+	    strstr(after, line) != NULL, "%s", after);
+	ATF_CHECK_MSG(strstr(after, "1 10.1.0.0/24 link#") != NULL &&
+	    strstr(after, "1 10.1.8.0/22 10.1.0.2 ") != NULL && strstr(after,
+	    "1 10.1.8.0/22 100.64.0.0 gre101") != NULL && strstr(after,
+	    "1 10.2.0.0/24 100.64.0.1 gre100") != NULL && strstr(after,
+	    "1 10.2.0.0/24 link#") != NULL, "%s", after);
+	free(after);
+	ATF_CHECK_EQ(2, lab_sysctl(L3LAB_A, "net.fibs"));
+	ATF_CHECK_EQ(2, lab_sysctl(L3LAB_B, "net.fibs"));
+	ATF_CHECK_MSG(system("jexec " L3LAB_A " setfib 1 ping -c 1 -t 5 "
+	    "100.64.0.1 >/dev/null") == 0, "no answer through the tunnel");
+	ATF_CHECK_MSG(system("jexec " L3LAB_A " setfib 1 ping -c 1 -t 5 -S "
+	    "10.1.0.1 10.2.0.1 >/dev/null") == 0, "hq's UNI not answered by "
+	    "branch's");
+
+	/*
+	 * 4. Read back as VN: one, its member hq to branch, the tunnel its
+	 * underlay, up by the probes at its ends; as SAP: both UNIs the
+	 * service's, made, not free.
+	 */
+	http("GET", VN_VN, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("acme", jstr(&r, "ietf-vn:virtual-network.vn.0.id"));
+	ATF_CHECK(jstr(&r, "ietf-vn:virtual-network.vn.1") == NULL);
+	snprintf(t, sizeof(t), L3LAB_SA ":hq~" L3LAB_SB ":%s", ifs[3]);
+	ATF_CHECK_STREQ(t, jstr(&r, "ietf-vn:virtual-network.vn.0.vn-member."
+	    "0.id"));
+	ATF_CHECK(jstr(&r, "ietf-vn:virtual-network.vn.0.vn-member.1") ==
+	    NULL);
+	snprintf(t, sizeof(t), L3LAB_SA ":%s", ifs[2]);
+	ATF_CHECK_STREQ(t, jstr(&r, "ietf-vn:virtual-network.vn.0.vn-member."
+	    "0.src.ap"));
+	snprintf(t, sizeof(t), L3LAB_SB ":%s", ifs[3]);
+	ATF_CHECK_STREQ(t, jstr(&r, "ietf-vn:virtual-network.vn.0.vn-member."
+	    "0.dest.ap"));
+	snprintf(t, sizeof(t), "acme:%s", ifs[3]);
+	ATF_CHECK_STREQ(t, jstr(&r, "ietf-vn:virtual-network.vn.0.vn-member."
+	    "0.dest.vn-ap-id"));
+	resp_free(&r);
+#define	L3LAB_TUN	"ietf-vn:vn-member.0.underlay.arcana-sdwan-underlay:" \
+	"sdwan.tunnel.0."
+	snprintf(path, sizeof(path), VN_VN "/vn=acme/vn-member=" L3LAB_SA
+	    "%%3Ahq~" L3LAB_SB "%%3A%s", ifs[3]);
+	for (i = 0; i < 300; i++) {
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		if (jstr(&r, L3LAB_TUN "state") != NULL && strcmp(jstr(&r,
+		    L3LAB_TUN "state"), "up") == 0)
+			break;
+		resp_free(&r);
+		usleep(200000);
+	}
+	ATF_REQUIRE_MSG(i < 300, "the tunnel not up in the VN view: %s",
+	    r.body);
+	ATF_CHECK_STREQ("acme/a-inet-b-inet", jstr(&r, L3LAB_TUN "id"));
+	ATF_CHECK_STREQ("gre", jstr(&r, L3LAB_TUN "encapsulation"));
+	ATF_CHECK_STREQ("1", jstr(&r, L3LAB_TUN "fib"));
+	ATF_CHECK_STREQ(L3LAB_SA, jstr(&r, L3LAB_TUN "src.edge"));
+	ATF_CHECK_STREQ("10.203.0.1", jstr(&r, L3LAB_TUN "src.outer-address"));
+	ATF_CHECK_STREQ(L3LAB_SB, jstr(&r, L3LAB_TUN "dest.edge"));
+	ATF_CHECK_STREQ("10.203.0.2", jstr(&r, L3LAB_TUN
+	    "dest.outer-address"));
+	ATF_CHECK_STREQ("true", jstr(&r, L3LAB_TUN "selected"));
+	ATF_CHECK_STREQ("up", jstr(&r, "ietf-vn:vn-member.0.oper-status"));
+	ATF_CHECK(jstr(&r, "ietf-vn:vn-member.0.underlay."
+	    "arcana-sdwan-underlay:sdwan.tunnel.1") == NULL);
+	resp_free(&r);
+#undef	L3LAB_TUN
+	l3lab_sap(L3LAB_SA, ifs[2], true, true);
+	l3lab_sap(L3LAB_SB, ifs[3], true, true);
+
+	/*
+	 * 5. Exported as the MEF document and imported again: the L3NM
+	 * kept as it was, node for node, the document the same but its
+	 * version; a second plan makes nothing.
+	 */
+	y0 = l3lab_kept(etag, sizeof(etag));
+	http("GET", L3SD "document", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("acme", jstr(&r, "arcana-console:document.swvcs.0."
+	    "id"));
+	ATF_CHECK_STREQ("hq", jstr(&r, "arcana-console:document.swvcs.0."
+	    "end_points.0.id"));
+	ATF_CHECK_STREQ(ifs[3], jstr(&r, "arcana-console:document.swvcs.0."
+	    "end_points.1.id"));
+	ATF_CHECK_STREQ("10.2.0.0/24", jstr(&r, "arcana-console:document."
+	    "swvcs.0.end_points.1.uni.ipv4.prefix"));
+	ATF_CHECK_STREQ("a-inet", jstr(&r, "arcana-console:document.edges.0."
+	    "ucs_end_points.0.id"));
+	d0 = ucl_object_ref(r.json);
+	json = (char *)ucl_object_emit(r.json, UCL_EMIT_JSON_COMPACT);
+	resp_free(&r);
+	http("PUT", L3SD "document", json, &r);
+	free(json);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	y1 = l3lab_kept(etag, sizeof(etag));
+	snprintf(where, sizeof(where), "l3vpn-ntw");
+	ATF_CHECK_MSG(same_json(y0, y1, where, sizeof(where)), "the L3NM "
+	    "not as it was at %s: %s", where, ucl_object_emit(y1,
+	    UCL_EMIT_JSON_COMPACT));
+	http("GET", L3SD "document", NULL, &r);
+	EXPECT(&r, 200);
+	d1 = ucl_object_ref(r.json);
+	resp_free(&r);
+	ATF_CHECK_EQ(ucl_object_toint(ucl_object_lookup_path(d0,
+	    "arcana-console:document.version")) + 1, ucl_object_toint(
+	    ucl_object_lookup_path(d1, "arcana-console:document.version")));
+	for (i = 0; i < 2; i++) {
+		o = __DECONST(ucl_object_t *, ucl_object_lookup(i == 0 ? d0 :
+		    d1, "arcana-console:document"));
+		(void)ucl_object_delete_key(o, "version");
+		(void)ucl_object_delete_key(o, "changed");
+	}
+	snprintf(where, sizeof(where), "document");
+	ATF_CHECK_MSG(same_json(d0, d1, where, sizeof(where)), "the document "
+	    "not as it was at %s", where);
+	ucl_object_unref(d0);
+	ucl_object_unref(d1);
+	ucl_object_unref(y0);
+	ucl_object_unref(y1);
+	ATF_CHECK_EQ(0, l3lab_changes());
+
+	/*
+	 * 6. Taken away by the entity-tag: what it made goes, the jails as
+	 * they were, the SAP free again.
+	 */
+	snprintf(hdr, sizeof(hdr), "If-Match: %s\r\n", etag);
+	http_with("DELETE", L3NM, hdr, NULL, &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	l3lab_apply(&r, false);
+	v = ucl_object_lookup_path(r.json, "arcana-console:apply-state.apply."
+	    "state");
+	ATF_CHECK_MSG(v != NULL && strcmp(ucl_object_tostring(v), "done") ==
+	    0, "%s", r.body);
+	resp_free(&r);
+	after = lab_snap();
+	ATF_CHECK_STREQ(before, after);
+	free(after);
+	free(before);
+	ATF_CHECK_MSG(system("grep -q 'gre100\\|10.1.8.0' la/root/usr/local/"
+	    "etc/rc.conf.d/arcana") != 0, "still in Arcana's rc.conf file");
+	l3lab_sap(L3LAB_SB, ifs[3], false, false);
+}
+
 CONSOLE_TC(sdwan_mesh, "Several transports on a pair of edges: two Internet "
     "Accesses join only when their tunnels are of one kind, IPsec alike, so "
     "K transports give K tunnels; a UCS End Point's preference orders the "
@@ -20281,6 +20769,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_sfp);
 	ATF_TP_ADD_TC(tp, sdwan_jail);
 	ATF_TP_ADD_TC(tp, sdwan_lab);
+	ATF_TP_ADD_TC(tp, sdwan_l3nm_lab);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, churn);
 	ATF_TP_ADD_TC(tp, session_restart);

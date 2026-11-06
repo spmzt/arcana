@@ -140,6 +140,28 @@ Written and tested with stand-ins only:
 - `arcana-enrol -s` on a real host, the container image, and the update
   check against GitHub's live feed.
 
+## Verified for real
+
+- A service written as L3NM through RESTCONF alone (PLAN-SDN-YANG
+  4.10.1; 2026-11-06, the lab VM as root, console 0.380.0, agent
+  0.248.1, the root test console_test:sdwan_l3nm_lab): two vnet jails,
+  each an agent's host, an epair(4) their Internet and another their
+  UNIs.  The UCS and the edges PUT at `ietf-l3vpn-ntw:l3vpn-ntw` with
+  If-None-Match, the service PATCHed with If-Match (a stale tag 412);
+  branch's access placed on b's UNI, a free SAP of
+  `ietf-network:networks`, by `arcana-console:sdwan/attach`.  Planned
+  and applied at `sdwan/plan` and `sdwan/apply`, rc-conf-files
+  accepted: gre(4) both ends with their /31 in FIB 1, both UNIs
+  addressed in it, hq's static route, kept in Arcana's rc.conf file; a
+  ping through the tunnel and one UNI to UNI.  Read back as `ietf-vn`:
+  one VN, its member hq to branch, the gre tunnel its underlay, up and
+  selected by the edges' probes; as SAP: both UNIs the service's,
+  made, op-up, not free.  Exported at `sdwan/document` and PUT back:
+  the L3NM node for node as it was, the document the same but its
+  version, a second plan making nothing.  Taken away by DELETE with
+  If-Match: the jails' addresses, tunnels and routes as before, the
+  SAP free again.
+
 ## Known limits
 
 - A query argument's value with an "=" in it (encoded %3D, or even
