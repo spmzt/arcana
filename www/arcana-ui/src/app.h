@@ -129,6 +129,7 @@ int64_t		 jint(const ucl_object_t *, const char *, int64_t);
 double		 jnum(const ucl_object_t *, const char *, double);
 bool		 jbool(const ucl_object_t *, const char *);
 char		*json_quote(const char *);
+void		 sha256_hex(const char *, char [65]);
 ucl_object_t	*jmap(const ucl_object_t *, const char *const *);
 ucl_object_t	*jmap_each(const ucl_object_t *, const char *const *);
 ucl_object_t	*jflat(const ucl_object_t *, const char *const *);
@@ -1165,7 +1166,8 @@ void		 refresh_system(struct server *, bool);
  * multicast, kept-routes, ipsec, ipfw, netgraph, wireguard, bird,
  * bird-routes, bird-ospf (filter its protocol with topology), lookup or
  * traceroute (address); family 0 all, 4 or 6; jail NULL or "" the
- * host's.  net_plain(): a node by its module's names, the 64-bit
+ * host's; title, a read asked for made a task of its own.  net_plain():
+ * a node by its module's names, the 64-bit
  * leaves (nums, NULL the network modules') numbers; net_fw():
  * arcana-firewall's firewall as the Firewall tab draws it.
  */
@@ -1179,6 +1181,7 @@ struct netq {
 	const char	*address;
 	bool		 yang;
 	bool		 topology;
+	const char	*title;		/* asked for: its own task, so named */
 };
 void		 net_yread(const char *, const struct netq *, bool, api_cb *,
 		    void *);

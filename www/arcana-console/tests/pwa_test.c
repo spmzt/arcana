@@ -5440,11 +5440,11 @@ part_firewall_files(void)
 	    "host.rules\"\\n' \"$(pwd)\" >> rc.conf") == 0);
 	/* Read with GET, or over the console's socket. */
 	run("window.fwn = 0; window.fetch1 = window.fetch; window.fetch = "
-	    "function (u, o) { if (String(u).includes('/net/ipfw')) window.fwn"
-	    "++; return window.fetch1(u, o); }; const os = WebSocket.prototype."
-	    "send; WebSocket.prototype.send = function (m) { if (String(m)."
-	    "includes('\"read\":\"net/ipfw')) window.fwn++; return os.call("
-	    "this, m); };");
+	    "function (u, o) { if (String(u).endsWith('/arcana-firewall:"
+	    "firewall')) window.fwn++; return window.fetch1(u, o); }; const os "
+	    "= WebSocket.prototype.send; WebSocket.prototype.send = function "
+	    "(m) { if (String(m).includes('\"path\":\"arcana-firewall:"
+	    "firewall\"')) window.fwn++; return os.call(this, m); };");
 	wait_js("window.fwn >= 2", 15);
 	run("window.fetch = window.fetch1;");
 	/* A state pressed leads to the rule that made it. */
@@ -5491,6 +5491,30 @@ part_firewall_files(void)
 	    "\\nadd 200 allow ip from any to any via lo0\\n'", 10);
 	ATF_REQUIRE(system("sed -i '' -e '/^firewall_type=/d' -e "
 	    "'/^firewall_script=/d' rc.conf") == 0);
+	/*
+	 * Kept through the fleet mount: a first commit that would boot
+	 * other rules than those loaded is the host's to refuse, and the
+	 * file stays as it was; a change made from a file changed
+	 * meanwhile is refused before it is sent, and the file keeps what
+	 * was put in it.
+	 */
+	run("const f = document.querySelector('form[data-form=fw-text]'); "
+	    "f.text.value = 'add 01500 allow tcp from any to me6 8443 in\\n"
+	    "add 01501 allow tcp from any to me6 8444 in\\n'; f.requestSubmit("
+	    "f.querySelector('button[value=write]'));");
+	wait_js("document.querySelector('.notice.bad') && document."
+	    "querySelector('.notice.bad').textContent.includes('first "
+	    "commit')", 30);
+	ATF_CHECK(system("grep -q '^add 01501 allow' ipfw.rules") != 0);
+	ATF_REQUIRE(system("printf 'add 01502 allow tcp from any to me6 8445 "
+	    "in\\n' >> ipfw.rules") == 0);
+	run("const f = document.querySelector('form[data-form=fw-text]'); "
+	    "f.text.value = 'add 01500 allow tcp from any to me6 8443 in\\n'; "
+	    "f.requestSubmit(f.querySelector('button[value=write]'));");
+	wait_js("document.querySelector('.notice.bad') && document."
+	    "querySelector('.notice.bad').textContent.includes('somebody "
+	    "changed it')", 20);
+	ATF_CHECK(system("grep -q '^add 01502 allow' ipfw.rules") == 0);
 }
 
 /*

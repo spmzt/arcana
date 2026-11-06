@@ -868,8 +868,8 @@ ifs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
  * connections, sockets, interfaces, neighbours, bridges, geneve,
  * multicast, kept-routes, ipsec, ipfw, netgraph, wireguard, bird,
  * bird-routes, bird-ospf, lookup or traceroute.  One the user asked for
- * (user) is the task app.ops[0] just made, its steps drawn as the host
- * takes them.
+ * (user) is a task, q->title's or app.ops[0] just made, its steps drawn
+ * as the host takes them.
  */
 void
 net_yread(const char *sid, const struct netq *q, bool user, api_cb *cb,
@@ -896,14 +896,14 @@ net_yread(const char *sid, const struct netq *q, bool user, api_cb *cb,
 	jail = q->jail != NULL && q->jail[0] != '\0' ? q->jail : NULL;
 	/* The host's interfaces by the standard models. */
 	if (strcmp(k, "interfaces") == 0 && q->yang && jail == NULL) {
-		host_yread(s, "ietf-interfaces:interfaces", NULL, NULL, user,
-		    ifs_cb, r);
+		host_yread(s, "ietf-interfaces:interfaces", NULL, q->title,
+		    user, ifs_cb, r);
 		return;
 	}
 	/* The host's firewall, its own node. */
 	if (strcmp(k, "ipfw") == 0 && jail == NULL) {
-		host_yread(s, "arcana-firewall:firewall", NULL, NULL, user,
-		    action_cb, r);
+		host_yread(s, "arcana-firewall:firewall", NULL, q->title,
+		    user, action_cb, r);
 		return;
 	}
 	memset(&b, 0, sizeof(b));
@@ -968,7 +968,7 @@ net_yread(const char *sid, const struct netq *q, bool user, api_cb *cb,
 		snprintf(act, sizeof(act), "arcana-network:network/%s", k);
 		path = act;
 	}
-	host_yread(s, path, b.s, NULL, user, action_cb, r);
+	host_yread(s, path, b.s, q->title, user, action_cb, r);
 	free(b.s);
 }
 

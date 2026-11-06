@@ -2472,8 +2472,22 @@ whose first part is served.
   map's sysctls by arcana-sysctl's read).  Decided: a change of BIRD's
   file is refused when running's text is not the one it was made from
   (the text compared, the page having it); the routes, connections and
-  sockets read in parts stay on the socket's stream until 4.8.2.  A
-  tab's export names a read by its nodes
+  sockets read in parts stay on the socket's stream until 4.8.2.
+  Firewall (console 0.392.0; ipfw.c): the state arcana-firewall's (a
+  vnet jail's by arcana-network's ipfw), ipfw's names made of the
+  model's (net_fw()); the kept rules as ynet.c kept them, now the
+  page's: read from running's kept text (a jail's entry), from-rc for
+  the file the host loads now, check, and a Keep as the kept text
+  alone merged into the candidate, committed confirmed and confirmed,
+  the warnings accepted with it (arcana-accept), the candidate
+  discarded where the commit is refused, made from the file read (its
+  SHA-256, the page's own sha256_hex(), against running's) and a
+  first Keep saying where the rules came from; the kernel's trace
+  arcana-firewall's trace, a packet's path arcana-troubleshoot's
+  path-check, the log's ipfw lines arcana-log's read.  Check: pwa_test
+  pwa_firewall_files (a first Keep the host refuses leaves the file as
+  it was; a Keep made from a file changed meanwhile refused, the change
+  in the file kept).  A tab's export names a read by its nodes
   without their modules ("services").  Added to the console's RESTCONF
   side: the socket's `{"what": "restconf"}`, a GET or an action that reads below a host's
   entry with its steps (hosts_restconf_live(); console_test
@@ -2482,8 +2496,7 @@ whose first part is served.
   restconf_job_confirm).  Decided: the Log tab's events stay on /api
   with the socket's events, the same shape, until the stream is
   RESTCONF's (4.8.2).  Open: a dataset's key (its name has a /, which
-  no path below the mount carries, as 4.4.1 found), Firewall
-  (ipfw.c), the Security page (secpage.c, surules.c,
+  no path below the mount carries, as 4.4.1 found), the Security page (secpage.c, surules.c,
   idsstats.c), an edge's SD-WAN state and the interfaces its forms read
   (sdwan.c), builder.c, the events read (logs.c, 4.8.2); then `/api`
   keeps D-10's resources alone.

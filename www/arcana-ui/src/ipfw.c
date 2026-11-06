@@ -15,11 +15,17 @@
  * loads when it starts; or both.  "Apply" makes the kept rules the
  * whole ruleset without a gap, through set 1, and takes them back
  * unless the console still reaches the host afterwards.
+ *
+ * Through the fleet mount: the firewall arcana-firewall's (a vnet
+ * jail's by arcana-network's ipfw), the kept rules its kept text in
+ * running (fwk_go()), the kernel's trace its trace, a packet's path
+ * arcana-troubleshoot's path-check, the log arcana-log's read.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "app.h"
 
@@ -413,35 +419,374 @@ file_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	free(what);
 }
 
+/*
+ * The kept rules through the fleet mount: arcana-firewall's kept text
+ * (a vnet jail's, its entry of the firewall's jail list) read from
+ * running; the file the host loads now made into kept rules by
+ * from-rc, not written; a text checked by check, ipfw -n; kept by the
+ * text merged into the candidate and committed confirmed, then
+ * confirmed, the warnings accepted (arcana-accept) said with the change
+ * and the commit, the candidate discarded where the commit is refused.
+ * Nothing else of the firewall is touched: the kept text alone, which
+ * Apply makes the ruleset (the kernel's rules before the first kept one
+ * kept, set 0 alone).  A change is made from the file read: refused
+ * when the file is another by then (its SHA-256).  A host's first Keep
+ * says where its rules came from (from-rc's file).
+ */
+enum { FK_READ, FK_RC, FK_CHECK, FK_WRITE };
+
+struct fwk {
+	int	 how;
+	char	 sid[9];
+	char	 jail[256];
+	char	*text;		/* a check's or a write's */
+	char	 sha[65];	/* of the file it was made from */
+	char	 accept[200];	/* the warnings accepted, by commas */
+	char	 from[300];	/* a first Keep: where the rules came from */
+	char	 token[33];
+};
+
+static const char *const fwk_what[] = { "read", "rc", "check", "write" };
+
+static void
+fwk_free(struct fwk *c)
+{
+
+	free(c->text);
+	free(c);
+}
+
+/* file_cb() told: the reply as the kept rules' read had it. */
+static void
+fwk_reply(struct fwk *c, const char *text, const char *sha, const char *rc,
+    const char *migrated)
+{
+	ucl_object_t	*r;
+
+	r = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(r, ucl_object_frombool(true), "ok", 0, false);
+	if (text != NULL)
+		ucl_object_insert_key(r, ucl_object_fromstring(text), "text", 0,
+		    false);
+	if (sha != NULL)
+		ucl_object_insert_key(r, ucl_object_fromstring(sha), "sha256",
+		    0, false);
+	if (rc != NULL)
+		ucl_object_insert_key(r, ucl_object_fromstring(rc), "rc_file", 0,
+		    false);
+	if (migrated != NULL)
+		ucl_object_insert_key(r, ucl_object_fromstring(migrated),
+		    "migrated", 0, false);
+	file_cb(200, r, NULL, strdup(fwk_what[c->how]));
+	ucl_object_unref(r);
+	fwk_free(c);
+}
+
+/* Refused: why, and the warning to accept where it is one. */
+static void
+fwk_fail(struct fwk *c, const ucl_object_t *o, const char *why)
+{
+	ucl_object_t	*r;
+
+	r = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(r, ucl_object_frombool(false), "ok", 0, false);
+	ucl_object_insert_key(r, ucl_object_fromstring(why != NULL ? why :
+	    "no answer"), "error", 0, false);
+	if (rc_tag(o) != NULL && h_word(rc_tag(o), "")[0] != '\0')
+		ucl_object_insert_key(r, ucl_object_fromstring(rc_tag(o)),
+		    "error_tag", 0, false);
+	file_cb(200, r, NULL, strdup(fwk_what[c->how]));
+	ucl_object_unref(r);
+	fwk_free(c);
+}
+
+/* The host's rpc of ietf-netconf's, with the warnings accepted. */
+static void
+fwk_rpc(struct fwk *c, const char *rpc, const char *body, api_cb *cb)
+{
+	char	url[600];
+
+	rc_h(url, sizeof(url), c->sid, "ietf-netconf:%s", rpc);
+	if (c->accept[0] != '\0')
+		snprintf(url + strlen(url), sizeof(url) - strlen(url),
+		    "?arcana-accept=%s", c->accept);
+	api("POST", url, body, cb, c);
+}
+
+static void
+fwk_discard_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+
+	(void)status;
+	(void)o;
+	(void)err;
+	(void)arg;
+}
+
+static void
+fwk_confirm_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+	struct fwk	*c = arg;
+	char		 sha[65];
+
+	if (status != 200 && status != 204) {
+		fwk_fail(c, o, err != NULL ? err : "the commit was not "
+		    "confirmed: the host takes the change back");
+		return;
+	}
+	sha256_hex(c->text, sha);
+	fwk_reply(c, c->text, sha, NULL, c->from[0] != '\0' ? c->from :
+	    NULL);
+}
+
+static void
+fwk_commit_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+	struct fwk	*c = arg;
+	char		 body[160], url[300];
+
+	if (status != 200 && status != 204) {
+		/* Nothing of it left in the candidate. */
+		api("POST", rc_h(url, sizeof(url), c->sid, "ietf-netconf:"
+		    "discard-changes"), "{\"ietf-netconf:input\":{}}",
+		    fwk_discard_cb, NULL);
+		fwk_fail(c, o, err);
+		return;
+	}
+	snprintf(body, sizeof(body), "{\"ietf-netconf:input\":{\"persist-id\":"
+	    "\"%s\"}}", c->token);
+	rc_h(url, sizeof(url), c->sid, "ietf-netconf:commit");
+	api("POST", url, body, fwk_confirm_cb, c);
+}
+
+/* The candidate has the text: committed confirmed, then confirmed. */
+static void
+fwk_edit_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct fwk	*c = arg;
+	uint8_t		 r[16];
+	char		 body[200];
+
+	if (status != 200 && status != 204 && status != 201) {
+		fwk_fail(c, o, err);
+		return;
+	}
+	if (getentropy(r, sizeof(r)) != 0) {
+		fwk_fail(c, NULL, "no randomness for the commit's token");
+		return;
+	}
+	for (size_t i = 0; i < sizeof(r); i++)
+		snprintf(c->token + 2 * i, sizeof(c->token) - 2 * i, "%02x",
+		    r[i]);
+	snprintf(body, sizeof(body), "{\"ietf-netconf:input\":{\"confirmed\":"
+	    "[null],\"confirm-timeout\":%d,\"persist\":\"%s\"}}", YC_TIMEOUT,
+	    c->token);
+	fwk_rpc(c, "commit", body, fwk_commit_cb);
+}
+
+/* The kept text into the candidate: the host's, or the jail's entry. */
+static void
+fwk_edit(struct fwk *c)
+{
+	struct html	 b;
+	char		 url[600], *q;
+
+	memset(&b, 0, sizeof(b));
+	q = json_quote(c->text);
+	if (c->jail[0] == '\0')
+		h_fmt(&b, "{\"arcana-firewall:firewall\":{\"kept\":{\"text\":"
+		    "%s}}}", q);
+	else {
+		char	*qj = json_quote(c->jail);
+
+		h_fmt(&b, "{\"arcana-firewall:firewall\":{\"jail\":[{\"name\":"
+		    "%s,\"text\":%s}]}}", qj, q);
+		free(qj);
+	}
+	free(q);
+	rc_ds(url, sizeof(url), "candidate", c->sid,
+	    "arcana-firewall:firewall");
+	if (c->accept[0] != '\0')
+		snprintf(url + strlen(url), sizeof(url) - strlen(url),
+		    "?arcana-accept=%s", c->accept);
+	api("PATCH", url, b.s, fwk_edit_cb, c);
+	free(b.s);
+}
+
+/* A first Keep migrates: where from, unless the host boots by Arcana's
+ * script already. */
+static void
+fwk_from_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct fwk	*c = arg;
+	const char	*f;
+
+	(void)err;
+	if (status == 200 && (f = jstr(o, "rc-file")) != NULL &&
+	    strstr(f, "script already") == NULL)
+		snprintf(c->from, sizeof(c->from), "%s", f);
+	fwk_edit(c);
+}
+
+static void
+fwk_check_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct fwk	*c = arg;
+
+	if (status != 200 && status != 204) {
+		fwk_fail(c, o, err);
+		return;
+	}
+	fwk_reply(c, NULL, NULL, NULL, NULL);
+}
+
+static void
+fwk_rc_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct fwk	*c = arg;
+
+	if (status != 200) {
+		fwk_fail(c, o, err);
+		return;
+	}
+	fwk_reply(c, jstr(o, "text") != NULL ? jstr(o, "text") : "", jstr(o,
+	    "sha256"), jstr(o, "rc-file"), NULL);
+}
+
+/* The jail's input of an action: {} for the host's. */
+static void
+fwk_in(const struct fwk *c, struct html *b, const char *more)
+{
+	char	*q;
+
+	h_raw(b, "{");
+	if (c->jail[0] != '\0') {
+		q = json_quote(c->jail);
+		h_fmt(b, "\"jail\":%s%s", q, more != NULL ? "," : "");
+		free(q);
+	}
+	if (more != NULL)
+		h_raw(b, more);
+	h_raw(b, "}");
+}
+
+/* Running's kept text: the read's, or what a change is checked by. */
+static void
+fwk_running_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+	struct fwk		*c = arg;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	struct html		 b;
+	const char		*was = NULL;
+	char			 sha[65], url[300], *q, *more;
+
+	/* None kept at all (404): an empty file. */
+	if (status != 200 && status != 404) {
+		fwk_fail(c, o, err);
+		return;
+	}
+	if (status == 200 && c->jail[0] == '\0')
+		was = jstr(o, "kept.text");
+	else if (status == 200)
+		while ((e = ucl_object_iterate(jget(o, "jail"), &it, true)) !=
+		    NULL)
+			if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"),
+			    c->jail) == 0)
+				was = jstr(e, "text");
+	sha256_hex(was != NULL ? was : "", sha);
+	if (c->how == FK_READ) {
+		fwk_reply(c, was != NULL ? was : "", sha, NULL, NULL);
+		return;
+	}
+	if (strcmp(sha, c->sha) != 0) {
+		fwk_fail(c, NULL, "the file is not the one this was made from: "
+		    "somebody changed it meanwhile.  Read it again");
+		return;
+	}
+	memset(&b, 0, sizeof(b));
+	if (c->how == FK_CHECK) {
+		q = json_quote(c->text);
+		if (asprintf(&more, "\"text\":%s", q) == -1)
+			abort();
+		free(q);
+		fwk_in(c, &b, more);
+		free(more);
+		rc_read(rc_h(url, sizeof(url), c->sid,
+		    "arcana-firewall:firewall/check"), b.s, NULL, fwk_check_cb,
+		    c);
+		free(b.s);
+		return;
+	}
+	if (c->jail[0] != '\0') {
+		fwk_edit(c);
+		return;
+	}
+	rc_read(rc_h(url, sizeof(url), c->sid,
+	    "arcana-firewall:firewall/from-rc"), "{}", NULL, fwk_from_cb, c);
+}
+
+/* One of the kept rules' requests, of the host shown. */
+static void
+fwk_go(struct server *s, int how, const char *text, const char *acc)
+{
+	struct fwk	*c;
+	struct html	 b;
+	char		 url[300];
+	size_t		 n;
+
+	if ((c = calloc(1, sizeof(*c))) == NULL)
+		abort();
+	c->how = how;
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(c->jail, sizeof(c->jail), "%s", fw.jail);
+	snprintf(c->sha, sizeof(c->sha), "%s", fw.sha);
+	if (text != NULL && (c->text = strdup(text)) == NULL)
+		abort();
+	/* The page keeps them as JSON strings: by commas, unquoted. */
+	for (n = 0; acc != NULL && *acc != '\0' && n + 1 < sizeof(c->accept);
+	    acc++)
+		if (*acc != '"')
+			c->accept[n++] = *acc;
+	c->accept[n] = '\0';
+	fw.file_loading = true;
+	fw.file_note[0] = '\0';
+	if (how == FK_RC) {
+		memset(&b, 0, sizeof(b));
+		fwk_in(c, &b, NULL);
+		rc_read(rc_h(url, sizeof(url), c->sid,
+		    "arcana-firewall:firewall/from-rc"), b.s, NULL, fwk_rc_cb,
+		    c);
+		free(b.s);
+		return;
+	}
+	rc_get(rc_ds(url, sizeof(url), "running", c->sid,
+	    "arcana-firewall:firewall"), NULL, fwk_running_cb, c);
+}
+
 static void
 file_read(struct server *s)
 {
-	char	url[400];
 
-	fw.file_loading = true;
-	fw.file_note[0] = '\0';
-	snprintf(url, sizeof(url), "/api/servers/%s/ipfw/rules%s%s", s->id,
-	    fw.jail[0] != '\0' ? "?jail=" : "", fw.jail);
-	api("GET", url, NULL, file_cb, strdup("read"));
+	fwk_go(s, FK_READ, NULL, NULL);
 }
 
 /* The file the firewall loads now, rc.conf's firewall_type, as kept. */
 static void
 file_read_rc(struct server *s)
 {
-	char	url[400];
 
-	fw.file_loading = true;
-	fw.file_note[0] = '\0';
-	snprintf(url, sizeof(url), "/api/servers/%s/ipfw/rules?from=rc%s%s",
-	    s->id, fw.jail[0] != '\0' ? "&jail=" : "", fw.jail);
-	api("GET", url, NULL, file_cb, strdup("rc"));
+	fwk_go(s, FK_RC, NULL, NULL);
 }
 
 void
 refresh_firewall(struct server *s, bool again)
 {
-	char	url[400];
+	struct netq	q;
 
 	/*
 	 * One for this host on its way is waited for, not another's; asked
@@ -478,9 +823,12 @@ refresh_firewall(struct server *s, bool again)
 	snprintf(fw.sid, sizeof(fw.sid), "%s", s->id);
 	fw.loading = true;
 	fw.asked_at = arc_now();
-	snprintf(url, sizeof(url), "net/ipfw%s%s", fw.jail[0] != '\0' ?
-	    "?jail=" : "", fw.jail);
-	host_read(s, url, "read the firewall", true, fw_cb, strdup(s->id));
+	/* arcana-firewall's, or a vnet jail's by arcana-network's ipfw. */
+	memset(&q, 0, sizeof(q));
+	q.kind = "ipfw";
+	q.jail = fw.jail;
+	q.title = "read the firewall";
+	net_yread(s->id, &q, true, fw_cb, strdup(s->id));
 }
 
 static int
@@ -1567,22 +1915,128 @@ num_cmp(const void *a, const void *b)
 
 static void	view_ktrace(struct html *);
 
+/* One of path-check's walks of the ruleset, as the panel draws it. */
+static ucl_object_t *
+walk_of(const ucl_object_t *w)
+{
+	static const char *const walk[] = { "rule", "rule", "text", "text",
+	    "setfib", "setfib", "fwd", "fwd", "note", "note", NULL };
+	static const char *const step[] = { "rule", "rule", "text", "text",
+	    "how", "how", NULL };
+	static const char *const unsure[] = { "text", "text", "because",
+	    "because", NULL };
+	const char	*v;
+	ucl_object_t	*o;
+
+	o = jmap(w, walk);
+	if ((v = jstr(w, "verdict")) != NULL)
+		ucl_object_insert_key(o, ucl_object_fromstring(strcmp(v,
+		    "other") == 0 && jstr(w, "action") != NULL ? jstr(w,
+		    "action") : v), "verdict", 0, false);
+	if (jbool(w, "by-state"))
+		ucl_object_insert_key(o, ucl_object_frombool(true), "by_state",
+		    0, false);
+	if (jbool(w, "keep-state"))
+		ucl_object_insert_key(o, ucl_object_frombool(true),
+		    "keep_state", 0, false);
+	if (jget(w, "step") != NULL)
+		ucl_object_insert_key(o, jmap_each(jget(w, "step"), step),
+		    "walk", 0, false);
+	if (jget(w, "uncertain") != NULL)
+		ucl_object_insert_key(o, jmap_each(jget(w, "uncertain"),
+		    unsure), "uncertain", 0, false);
+	return (o);
+}
+
+/* arcana-troubleshoot's path-check as the panel draws it. */
+static ucl_object_t *
+path_of(const ucl_object_t *p)
+{
+	static const char *const top[] = { "host", "host", "forwarding",
+	    "forwarding", "fib", "fib", NULL };
+	static const char *const addr[] = { "address", "address",
+	    "prefix-length", "prefixlen", "interface", "interface", "fib",
+	    "fib", "up", "up", "loopback", "loopback", NULL };
+	static const char *const end[] = { "local", "local", "connected",
+	    "connected", NULL };
+	static const char *const ingress[] = { "interface", "interface",
+	    "how", "how", NULL };
+	static const char *const route[] = { "to", "to", "destination",
+	    "destination", "prefix-length", "prefixlen", "gateway", "gateway",
+	    "interface", "interface", "flags", "flags", "metric", "metric",
+	    "weight", "weight", NULL };
+	static const char *const nb[] = { "address", "address", "state",
+	    "state", NULL };
+	static const char *const ret[] = { "fib", "fib", "interface",
+	    "interface", "gateway", "gateway", "symmetric", "symmetric", NULL };
+	static const char *const finding[] = { "severity", "severity", "what",
+	    "what", NULL };
+	static const char *const walks[][2] = { { "in", "in" }, { "out",
+	    "out" }, { "reply-in", "reply_in" }, { "reply-out", "reply_out" } };
+	ucl_object_t	*o, *x;
+
+	o = jmap(p, top);
+	ucl_object_insert_key(o, jmap_each(jget(p, "address"), addr),
+	    "addresses", 0, false);
+	if (jget(p, "source") != NULL)
+		ucl_object_insert_key(o, jmap(jget(p, "source"), end), "src", 0,
+		    false);
+	if (jget(p, "destination") != NULL)
+		ucl_object_insert_key(o, jmap(jget(p, "destination"), end),
+		    "dst", 0, false);
+	if (jget(p, "ingress") != NULL)
+		ucl_object_insert_key(o, jmap(jget(p, "ingress"), ingress),
+		    "ingress", 0, false);
+	if (jbool(p, "delivered"))
+		ucl_object_insert_key(o, ucl_object_frombool(true), "delivered",
+		    0, false);
+	/* The route as the route lookup has it, its FIB a string. */
+	if (jget(p, "route") != NULL) {
+		x = jmap(jget(p, "route"), route);
+		if (jget(p, "route.fib") != NULL)
+			ucl_object_insert_key(x, ucl_object_fromstring(
+			    ucl_object_tostring_forced(jget(p, "route.fib"))),
+			    "fib", 0, true);
+		ucl_object_insert_key(o, x, "route", 0, false);
+	}
+	if (jget(p, "neighbor") != NULL)
+		ucl_object_insert_key(o, jmap(jget(p, "neighbor"), nb),
+		    "neighbor", 0, false);
+	if (jget(p, "return") != NULL)
+		ucl_object_insert_key(o, jmap(jget(p, "return"), ret), "return",
+		    0, false);
+	if (jget(p, "firewall") != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		if (jget(p, "firewall.on") != NULL)
+			ucl_object_insert_key(x, ucl_object_frombool(jbool(p,
+			    "firewall.on")), "on", 0, false);
+		for (size_t i = 0; i < nitems(walks); i++)
+			if (jget(jget(p, "firewall"), walks[i][0]) != NULL)
+				ucl_object_insert_key(x, walk_of(jget(jget(p,
+				    "firewall"), walks[i][0])), walks[i][1], 0,
+				    false);
+		ucl_object_insert_key(o, x, "firewall", 0, false);
+	}
+	ucl_object_insert_key(o, jmap_each(jget(p, "finding"), finding),
+	    "findings", 0, false);
+	return (o);
+}
+
 static void
 trace_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	(void)arg;
 	fw.t_loading = false;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
-		snprintf(fw.t_error, sizeof(fw.t_error), "%s", status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
+	if (status != 200 || o == NULL) {
+		snprintf(fw.t_error, sizeof(fw.t_error), "%s", err != NULL ?
 		    err : "no answer");
 		return;
 	}
 	fw.t_error[0] = '\0';
 	if (fw.t_data != NULL)
 		ucl_object_unref(fw.t_data);
-	fw.t_data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	fw.t_data = path_of(o);
 }
 
 /* What a walk's verdict comes to, in words. */
@@ -1788,19 +2242,40 @@ static void
 ktrace_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
+	static const char *const top[] = { "seconds", "seconds", "limit",
+	    "limit", NULL };
+	static const char *const pkt[] = { "ms", "ms", "verdict", "verdict",
+	    "source", "source", "destination", "destination", "proto",
+	    "proto", "sport", "sport", "dport", "dport", "rule", "rule",
+	    "interface", "interface", "direction", "direction", NULL };
+	const ucl_object_t	*p;
+	ucl_object_iter_t	 it = NULL;
+	ucl_object_t		*a, *x;
+
 	(void)arg;
 	fw.k_loading = false;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
+	if (status != 200 || o == NULL) {
 		/* What was shown stays, the error beside it. */
-		snprintf(fw.k_error, sizeof(fw.k_error), "%s", status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
+		snprintf(fw.k_error, sizeof(fw.k_error), "%s", err != NULL ?
 		    err : "no answer");
 		return;
 	}
 	fw.k_error[0] = '\0';
 	if (fw.k_data != NULL)
 		ucl_object_unref(fw.k_data);
-	fw.k_data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	/* arcana-firewall's trace as the panel draws it. */
+	fw.k_data = jmap(o, top);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((p = ucl_object_iterate(jget(o, "packet"), &it, true)) !=
+	    NULL) {
+		x = jmap(p, pkt);
+		if (jstr(p, "family") != NULL)
+			ucl_object_insert_key(x, ucl_object_fromstring(strcmp(
+			    jstr(p, "family"), "ipv6") == 0 ? "inet6" : "inet"),
+			    "family", 0, false);
+		ucl_array_append(a, x);
+	}
+	ucl_object_insert_key(fw.k_data, a, "packets", 0, false);
 }
 
 /*
@@ -1892,33 +2367,36 @@ view_ktrace(struct html *h)
 static void
 fwlog_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
+	static const char *const line_map[] = { "time", "time", "host",
+	    "host", "tag", "tag", "pid", "pid", "text", "text", NULL };
 
 	(void)arg;
 	fw.log_loading = false;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
+	if (status != 200 || o == NULL) {
 		/* What was shown stays, the error beside it. */
-		snprintf(fw.log_error, sizeof(fw.log_error), "%s", status ==
-		    200 && jstr(o, "error") != NULL ? jstr(o, "error") : err !=
-		    NULL ? err : "no answer");
+		snprintf(fw.log_error, sizeof(fw.log_error), "%s", err != NULL ?
+		    err : "no answer");
 		return;
 	}
 	fw.log_error[0] = '\0';
 	if (fw.log != NULL)
 		ucl_object_unref(fw.log);
-	fw.log = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	/* arcana-log's lines, by the names the table has. */
+	fw.log = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(fw.log, jmap_each(jget(o, "line"), line_map),
+	    "lines", 0, false);
 }
 
 static void
 fwlog_read(struct server *s)
 {
-	char	url[128];
 
 	if (fw.log_loading)
 		return;
 	fw.log_loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/log?name=security&filter="
-	    "ipfw%%3A&lines=300", s->id);
-	api("GET", url, NULL, fwlog_cb, NULL);
+	host_yread(s, "arcana-log:logs/read", "{\"name\":\"security\","
+	    "\"filter\":\"ipfw:\",\"lines\":300}", NULL, false, fwlog_cb,
+	    NULL);
 }
 
 /* What the rules with log wrote into the security log. */
@@ -2868,7 +3346,7 @@ more_form(const char *form, const ucl_object_t *f)
 		return (true);
 	}
 	if (strcmp(form, "fw-ktrace") == 0) {
-		char	url[512];
+		char	url[512], path[400];
 
 		a = jstr(f, "address") != NULL ? jstr(f, "address") : "";
 		if (a[0] == '\0' || strlen(a) >= sizeof(fw.k_addr) ||
@@ -2886,10 +3364,16 @@ more_form(const char *form, const ucl_object_t *f)
 			return (true);
 		fw.k_loading = true;
 		fw.k_error[0] = '\0';
-		snprintf(url, sizeof(url), "/api/servers/%s/ipfw/trace?address="
-		    "%s&seconds=%d%s%s", s->id, fw.k_addr, fw.k_secs,
-		    fw.jail[0] != '\0' ? "&jail=" : "", fw.jail);
-		api("GET", url, NULL, ktrace_cb, NULL);
+		/* arcana-firewall's trace, the host's or the vnet jail's. */
+		if (fw.jail[0] != '\0')
+			snprintf(path, sizeof(path), "arcana-jails:jails/jail=%s/"
+			    "arcana-firewall:firewall/trace", rc_key(fw.jail));
+		else
+			snprintf(path, sizeof(path), "arcana-firewall:firewall/"
+			    "trace");
+		snprintf(url, sizeof(url), "{\"address\":\"%s\",\"seconds\":%d}",
+		    fw.k_addr, fw.k_secs);
+		host_yread(s, path, url, NULL, false, ktrace_cb, NULL);
 		return (true);
 	}
 	if (strcmp(form, "fw-trace") == 0) {
@@ -2919,14 +3403,32 @@ more_form(const char *form, const ucl_object_t *f)
 		fw.t_loading = true;
 		fw.t_error[0] = '\0';
 		{
-			char	url[640];
+			struct html	 in;
+			char		*q;
 
-			snprintf(url, sizeof(url), "/api/servers/%s/ipfw/path?"
-			    "src=%s&dst=%s&proto=%s&port=%s&interface=%s%s%s",
-			    s->id, fw.t_src, fw.t_dst, fw.t_proto, fw.t_port,
-			    fw.t_if, fw.jail[0] != '\0' ? "&jail=" : "",
-			    fw.jail);
-			api("GET", url, NULL, trace_cb, NULL);
+			/* arcana-troubleshoot's path-check. */
+			memset(&in, 0, sizeof(in));
+			h_fmt(&in, "{\"source\":\"%s\",\"destination\":\"%s\"",
+			    fw.t_src, fw.t_dst);
+			if (fw.t_proto[0] != '\0')
+				h_fmt(&in, ",\"protocol\":\"%s\"",
+				    h_word(fw.t_proto, "tcp"));
+			if (atoi(fw.t_port) > 0)
+				h_fmt(&in, ",\"port\":%d", atoi(fw.t_port));
+			if (fw.t_if[0] != '\0') {
+				q = json_quote(fw.t_if);
+				h_fmt(&in, ",\"interface\":%s", q);
+				free(q);
+			}
+			if (fw.jail[0] != '\0') {
+				q = json_quote(fw.jail);
+				h_fmt(&in, ",\"jail\":%s", q);
+				free(q);
+			}
+			h_raw(&in, "}");
+			host_yread(s, "arcana-troubleshoot:troubleshoot/"
+			    "path-check", in.s, NULL, false, trace_cb, NULL);
+			free(in.s);
 		}
 		return (true);
 	}
@@ -4054,7 +4556,7 @@ firewall_form(const char *form, const ucl_object_t *f)
 	struct server	*s;
 	struct html	 b;
 	const char	*rule, *how;
-	char		*copy, *q, url[400], title[200], del[200];
+	char		*copy, *q, title[200], del[200];
 	const ucl_object_t *o;
 	ucl_object_iter_t it;
 	int		 num, lo, hi;
@@ -4078,19 +4580,9 @@ firewall_form(const char *form, const ucl_object_t *f)
 		if (asprintf(&copy, "%s%s", rule, rule[0] != '\0' && rule[
 		    strlen(rule) - 1] != '\n' ? "\n" : "") == -1)
 			abort();
-		q = json_quote(copy);
+		fwk_go(s, strcmp(how, "check") == 0 ? FK_CHECK : FK_WRITE, copy,
+		    fw.file_acc);
 		free(copy);
-		h_fmt(&b, "{\"text\":%s,\"sha256\":\"%s\",\"check\":%s,"
-		    "\"accept\":[%s]}", q, fw.sha, strcmp(how, "check") == 0 ?
-		    "true" : "false", fw.file_acc);
-		free(q);
-		fw.file_loading = true;
-		fw.file_note[0] = '\0';
-		snprintf(url, sizeof(url), "/api/servers/%s/ipfw/rules%s%s",
-		    s->id, fw.jail[0] != '\0' ? "?jail=" : "", fw.jail);
-		api("POST", url, b.s, file_cb, strdup(strcmp(how, "check") ==
-		    0 ? "check" : "write"));
-		free(b.s);
 		return (true);
 	}
 	edit = strcmp(form, "fw-edit") == 0;
@@ -4309,25 +4801,12 @@ firewall_action(const char *act, const char *arg, const char *value)
 		if (fw.file_tag[0] != '\0' && fw.text != NULL &&
 		    strlen(fw.file_acc) + strlen(fw.file_tag) + 4 <
 		    sizeof(fw.file_acc)) {
-			struct html	b;
-			char		url[400], *q;
-
 			snprintf(fw.file_acc + strlen(fw.file_acc),
 			    sizeof(fw.file_acc) - strlen(fw.file_acc),
 			    "%s\"%s\"", fw.file_acc[0] != '\0' ? "," : "",
 			    fw.file_tag);
 			fw.file_tag[0] = '\0';
-			memset(&b, 0, sizeof(b));
-			q = json_quote(fw.text);
-			h_fmt(&b, "{\"text\":%s,\"sha256\":\"%s\",\"accept\":"
-			    "[%s]}", q, fw.sha, fw.file_acc);
-			free(q);
-			fw.file_loading = true;
-			snprintf(url, sizeof(url), "/api/servers/%s/ipfw/rules"
-			    "%s%s", s->id, fw.jail[0] != '\0' ? "?jail=" : "",
-			    fw.jail);
-			api("POST", url, b.s, file_cb, strdup("write"));
-			free(b.s);
+			fwk_go(s, FK_WRITE, fw.text, fw.file_acc);
 		}
 	} else if (strcmp(act, "fw-skeleton") == 0) {
 		free(fw.text);
