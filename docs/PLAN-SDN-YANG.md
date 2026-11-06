@@ -2398,11 +2398,44 @@ whose first part is served.
   push; workflows and runs.  Each screen reads the module's shape made
   the one it read (the page's converters); what the console's
   RESTCONF lacked was added: settings/source label and help,
-  users/user from-directory, runs' step detail.  Open: the host's tabs
-  (the agents' modules through the fleet mount: each tab's reading of
-  YANG's shapes where the console's /api translated), the Security
-  page, an edge's SD-WAN state; then `/api` keeps D-10's resources
-  alone.
+  users/user from-directory, runs' step detail.
+- 4.8.1 the host's tabs begun (console 0.381.0 to 0.389.0): a tab reads
+  its agent's module through the fleet mount itself, a small parser in
+  the screen's file making of the YANG JSON what it draws (json.c's
+  jmap() renames, jflat() a yflat names table), no translator of the
+  console's between.  host_yread() (actions.c) reads a node or a read
+  action below a host's entry; one asked for is a task read over the
+  console's socket, its steps drawn as the host takes them (live.c,
+  rc_live()); the others plain, a read action not a change's task
+  (rc_read(), api_reads()).  A module the host's own schema lacks (its
+  404) is said as needing a newer arcana-agent than the host's.
+  Moved: Kernel (arcana-kernel), System (arcana-system's read, the
+  sysctls by arcana-sysctl's read with kept from running and boot,
+  arcana-processes and a process's read, mac_do's), Security's SSH and
+  certificates (arcana-sshd's read, arcana-host's read-certificates),
+  Log's files (arcana-log's read), Monitoring and the hosts' stats
+  (arcana-history's read, sampling as a confirmed commit of the
+  candidate; arcana-host's stats), Packages (arcana-packages' read,
+  refresh and upgrade, a jail's below its entry), Services and Mail
+  (arcana-services, a service's read and its variables from running;
+  arcana-smtpd's read), jobs (arcana-jobs' submit, a job's read,
+  confirm and cancel, lanes committed; the page's job JSON a change of
+  its kind, safe-wait the host's timer; a trace the agent's steps under
+  the three a live read has), Jails (arcana-jails with arcana-host's
+  host, jail files, the address preview a dry run of arcana-network's
+  address).  Added to the console's RESTCONF side: the socket's
+  `{"what": "restconf"}`, a GET or an action that reads below a host's
+  entry with its steps (hosts_restconf_live(); console_test
+  stream_restconf); arcana-jobs' confirm over a connection the console
+  dials for it, as a confirming commit (restconf_confirms(); console_test
+  restconf_job_confirm).  Decided: the Log tab's events stay on /api
+  with the socket's events, the same shape, until the stream is
+  RESTCONF's (4.8.2).  Open: Storage (storage.c, nas.c), Network
+  (net/*, BIRD, IPsec, FEC relay, monitors, netview, topo, ecmp, mtr,
+  span), Firewall (ipfw.c), the Security page (secpage.c, surules.c,
+  idsstats.c), an edge's SD-WAN state and the interfaces its forms read
+  (sdwan.c), builder.c, the events read (logs.c, 4.8.2); then `/api`
+  keeps D-10's resources alone.
 - 4.8.2 P: SSE subscriptions replace the page's polling; check:
   timings in the browser test.
 - 4.8.3 P: forms generated from the yang-library for the Arcana
