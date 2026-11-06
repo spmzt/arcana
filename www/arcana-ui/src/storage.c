@@ -9,7 +9,10 @@
  * the snapshots; its disks with their partitions; what is mounted and
  * what fstab says to mount.  What is changed is a job for the host,
  * which checks every word of it; what cannot be taken back asks first,
- * and what destroys asks for the name to be typed.
+ * and what destroys asks for the name to be typed.  Read by
+ * arcana-storage's read through the fleet mount, fstab replaced by its
+ * fstab/replace; a dataset's key still by /api (a dataset's name has a
+ * /, which no path below the mount can carry).
  */
 
 #include <stdarg.h>
@@ -167,6 +170,138 @@ struct sctx {
 };
 
 static void
+put(ucl_object_t *o, const char *key, ucl_object_t *v)
+{
+
+	ucl_object_replace_key(o, v, key, 0, true);
+}
+
+/* A boolean of zfs's as zfs list -p prints it, where it is said. */
+static void
+put_word(ucl_object_t *o, const char *key, const ucl_object_t *from,
+    const char *yes, const char *no)
+{
+
+	if (jget(from, key) != NULL)
+		put(o, key, ucl_object_fromstring(jbool(from, key) ? yes : no));
+}
+
+/*
+ * arcana-storage's read of kind k as the tab draws it: each list by the
+ * names the tab has always read, the datasets' words as zfs list -p
+ * prints them.
+ */
+static ucl_object_t *
+storage_conv(int k, const ucl_object_t *o, bool *cut)
+{
+	static const char *const disk[] = { "name", "name", "size", "size",
+	    "sectorsize", "sectorsize", "ident", "ident", "descr", "descr",
+	    "rotation", "rotation", "cam", "cam", "scheme", "scheme", "first",
+	    "first", "last", "last", NULL };
+	static const char *const part[] = { "name", "name", "index", "index",
+	    "type", "type", "label", "label", "start", "start", "end", "end",
+	    "size", "size", "mounted", "mounted", NULL };
+	static const char *const health[] = { "name", "name", "health.by",
+	    "by", "health.ok", "ok", "health.temperature", "temperature",
+	    "health.spare-pct", "spare_pct", "health.used-pct", "used_pct",
+	    "health.power-on-hours", "power_on_hours",
+	    "health.unsafe-shutdowns", "unsafe_shutdowns",
+	    "health.media-errors", "media_errors", "health.power-cycles",
+	    "power_cycles", "health.reallocated", "reallocated",
+	    "health.pending", "pending", "health.uncorrectable",
+	    "uncorrectable", "health.crc-errors", "crc_errors",
+	    "health.wear-level", "wear_level", "health.life-left", "life_left",
+	    "health.media-wearout", "media_wearout", "health.note", "note",
+	    NULL };
+	static const char *const pool[] = { "name", "name", "size", "size",
+	    "alloc", "alloc", "free", "free", "frag", "frag", "cap", "cap",
+	    "dedup", "dedup", "health", "health", "state", "state", "status",
+	    "status", "action", "action", "scan", "scan", "errors", "errors",
+	    "see", "see", NULL };
+	static const char *const vdev[] = { "name", "name", "depth", "depth",
+	    "state", "state", "read", "read", "write", "write", "cksum",
+	    "cksum", "note", "note", NULL };
+	static const char *const ds[] = { "name", "name", "type", "type",
+	    "used", "used", "avail", "avail", "refer", "refer", "mountpoint",
+	    "mountpoint", "compression", "compression", "ratio", "ratio",
+	    "quota", "quota", "reservation", "reservation", "canmount",
+	    "canmount", "origin", "origin", "volsize", "volsize", "encryption",
+	    "encryption", "keystatus", "keystatus", "keylocation",
+	    "keylocation", NULL };
+	static const char *const snap[] = { "name", "name", "used", "used",
+	    "refer", "refer", "creation", "creation", NULL };
+	static const char *const mnt[] = { "from", "from", "on", "on", "type",
+	    "type", "options", "options", "size", "size", "used", "used",
+	    "avail", "avail", NULL };
+	static const char *const fst[] = { "spec", "spec", "file", "file",
+	    "vfstype", "vfstype", "mntops", "mntops", "type", "type", "freq",
+	    "freq", "passno", "passno", "mounted", "mounted", NULL };
+	static const char *const swp[] = { "device", "device", "size", "size",
+	    "used", "used", NULL };
+	const ucl_object_t	*e;
+	ucl_object_t		*r, *a, *x;
+	ucl_object_iter_t	 it = NULL;
+
+	r = ucl_object_typed_new(UCL_OBJECT);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	*cut = false;
+	switch (k) {
+	case SK_DISKS:
+		while ((e = ucl_object_iterate(jget(o, "disk"), &it, true)) !=
+		    NULL) {
+			x = jmap(e, disk);
+			put(x, "parts", jmap_each(jget(e, "partition"), part));
+			ucl_array_append(a, x);
+		}
+		put(r, "disks", a);
+		break;
+	case SK_HEALTH:
+		while ((e = ucl_object_iterate(jget(o, "disk"), &it, true)) !=
+		    NULL)
+			if (jget(e, "health") != NULL)
+				ucl_array_append(a, jmap(e, health));
+		put(r, "disks", a);
+		break;
+	case SK_POOLS:
+		while ((e = ucl_object_iterate(jget(o, "pool"), &it, true)) !=
+		    NULL) {
+			x = jmap(e, pool);
+			put(x, "vdevs", jmap_each(jget(e, "vdev"), vdev));
+			ucl_array_append(a, x);
+		}
+		put(r, "pools", a);
+		break;
+	case SK_DATASETS:
+		while ((e = ucl_object_iterate(jget(o, "dataset"), &it,
+		    true)) != NULL) {
+			x = jmap(e, ds);
+			put_word(x, "mounted", e, "yes", "no");
+			put_word(x, "readonly", e, "on", "off");
+			put_word(x, "jailed", e, "on", "off");
+			ucl_array_append(a, x);
+		}
+		put(r, "datasets", a);
+		*cut = jget(o, "datasets-total") != NULL;
+		break;
+	case SK_SNAPSHOTS:
+		ucl_object_unref(a);
+		put(r, "snapshots", jmap_each(jget(o, "snapshot"), snap));
+		*cut = jget(o, "snapshots-total") != NULL;
+		break;
+	case SK_MOUNTS:
+		ucl_object_unref(a);
+		put(r, "mounts", jmap_each(jget(o, "mount"), mnt));
+		put(r, "fstab", jmap_each(jget(o, "fstab.entry"), fst));
+		put(r, "swap", jmap_each(jget(o, "swap"), swp));
+		break;
+	default:
+		ucl_object_unref(a);
+		break;
+	}
+	return (r);
+}
+
+static void
 storage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	struct sctx	*c = arg;
@@ -180,18 +315,15 @@ storage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	free(c);
 	sg.loading[k] = false;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
-		snprintf(sg.error[k], sizeof(sg.error[k]), "%s", status ==
-		    200 && jstr(o, "error") != NULL ? jstr(o, "error") :
-		    err != NULL ? err : "no answer");
+	if (status != 200 || o == NULL) {
+		snprintf(sg.error[k], sizeof(sg.error[k]), "%s", err != NULL ?
+		    err : "no answer");
 		return;
 	}
 	sg.error[k][0] = '\0';
 	if (sg.data[k] != NULL)
 		ucl_object_unref(sg.data[k]);
-	sg.data[k] = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o,
-	    "data"));
-	sg.cut[k] = jbool(o, "truncated");
+	sg.data[k] = storage_conv(k, o, &sg.cut[k]);
 	sg.fetched[k] = arc_now();
 }
 
@@ -200,7 +332,7 @@ void
 refresh_storage(struct server *s, bool again)
 {
 	struct sctx	*c;
-	char		 url[400], title[64];
+	char		 in[600], title[64], *q;
 	int		 k;
 
 	if (!app.online)
@@ -229,11 +361,14 @@ refresh_storage(struct server *s, bool again)
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	c->kind = k;
 	snprintf(c->of, sizeof(c->of), "%s", sg.of);
-	snprintf(url, sizeof(url), "storage/%s%s%s", kind_arg[k], k ==
-	    SK_SNAPSHOTS && sg.of[0] != '\0' ? "?filter=" : "", k ==
-	    SK_SNAPSHOTS ? sg.of : "");
+	q = json_quote(sg.of);
+	snprintf(in, sizeof(in), "{\"kind\":\"%s\"%s%s}", kind_arg[k], k ==
+	    SK_SNAPSHOTS && sg.of[0] != '\0' ? ",\"filter\":" : "", k ==
+	    SK_SNAPSHOTS && sg.of[0] != '\0' ? q : "");
+	free(q);
 	snprintf(title, sizeof(title), "read the %s", kind_arg[k]);
-	host_read(s, url, title, true, storage_cb, c);
+	host_yread(s, "arcana-storage:storage/read", in, title, true,
+	    storage_cb, c);
 }
 
 /*
@@ -1448,15 +1583,21 @@ fstab_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	save = arg != NULL;
 	sg.saving = false;
-	if (status != 200 || !jbool(o, "ok")) {
+	if (status != 200 && status != 204) {
 		snprintf(app.modal_error, sizeof(app.modal_error), "%s",
-		    status == 200 && jstr(o, "error") != NULL ? jstr(o,
-		    "error") : err != NULL ? err : "no answer");
+		    err != NULL ? err : "no answer");
 		return;
 	}
-	if (jstr(o, "text") != NULL) {
+	/* Read: the mounts' fstab, its text and hash; saved: the new
+	 * hash, the text the one sent. */
+	if (!save && jstr(o, "fstab.text") != NULL) {
 		free(sg.fstab);
-		sg.fstab = strdup(jstr(o, "text"));
+		sg.fstab = strdup(jstr(o, "fstab.text"));
+		snprintf(sg.fstab_sha, sizeof(sg.fstab_sha), "%s", jstr(o,
+		    "fstab.sha256") != NULL ? jstr(o, "fstab.sha256") : "");
+	} else if (save && sg.draft != NULL) {
+		free(sg.fstab);
+		sg.fstab = strdup(sg.draft);
 		snprintf(sg.fstab_sha, sizeof(sg.fstab_sha), "%s", jstr(o,
 		    "sha256") != NULL ? jstr(o, "sha256") : "");
 	}
@@ -1474,20 +1615,21 @@ fstab_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 import_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
+	static const char *const imp[] = { "name", "name", "id", "id",
+	    "state", "state", "status", "status", NULL };
 
 	(void)arg;
 	sg.importing = false;
 	if (sg.importable != NULL)
 		ucl_object_unref(sg.importable);
 	sg.importable = NULL;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
+	if (status != 200 || o == NULL) {
 		snprintf(app.modal_error, sizeof(app.modal_error), "%s",
-		    status == 200 && jstr(o, "error") != NULL ? jstr(o,
-		    "error") : err != NULL ? err : "no answer");
+		    err != NULL ? err : "no answer");
 		return;
 	}
-	sg.importable = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o,
-	    "data"));
+	sg.importable = ucl_object_typed_new(UCL_OBJECT);
+	put(sg.importable, "importable", jmap_each(jget(o, "importable"), imp));
 }
 
 /* The boxes of storage: true when the one open is one of them. */
@@ -2314,14 +2456,15 @@ storage_form(const char *form, const ucl_object_t *f)
 	} else if (strcmp(form, "st-pool-import") == 0) {
 		return (true);
 	} else if (strcmp(form, "st-fstab") == 0) {
-		char	url[96], *qt, *body;
+		char	url[300], *qt, *body;
 
 		if (sg.saving)
 			return (true);
 		free(sg.draft);
 		sg.draft = strdup(jstr(f, "text") != NULL ? jstr(f, "text") :
 		    "");
-		snprintf(url, sizeof(url), "/api/servers/%s/fstab", s->id);
+		rc_h(url, sizeof(url), s->id, "arcana-storage:storage/fstab/"
+		    "replace");
 		qt = json_quote(sg.draft);
 		if (asprintf(&body, "{\"text\":%s,\"sha256\":\"%s\"}", qt,
 		    sg.fstab_sha) == -1)
@@ -2329,7 +2472,7 @@ storage_form(const char *form, const ucl_object_t *f)
 		free(qt);
 		sg.saving = true;
 		app.modal_error[0] = '\0';
-		api("POST", url, body, fstab_cb, &sg);
+		rc_action(url, body, NULL, fstab_cb, &sg);
 		free(body);
 		return (true);
 	} else
@@ -2354,7 +2497,7 @@ storage_action(const char *act, const char *arg, const char *value)
 {
 	struct server	*s;
 	const char	*dev;
-	char		 body[500], url[96], first[256];
+	char		 body[500], first[256];
 	int		 k;
 
 	/* Where a value is two words, the second is a device's name. */
@@ -2421,8 +2564,8 @@ storage_action(const char *act, const char *arg, const char *value)
 		free(sg.draft);
 		sg.draft = NULL;
 		box(SM_FSTAB, "", "");
-		snprintf(url, sizeof(url), "/api/servers/%s/fstab", s->id);
-		api("GET", url, NULL, fstab_cb, NULL);
+		host_yread(s, "arcana-storage:storage/read", "{\"kind\":"
+		    "\"mounts\"}", NULL, false, fstab_cb, NULL);
 	} else if (strcmp(act, "st-zpool") == 0) {
 		/* arg: the verb; value: the pool. */
 		if (strcmp(arg, "scrub") == 0 || strcmp(arg, "scrub-stop") ==
@@ -2435,9 +2578,8 @@ storage_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "st-pool-import") == 0) {
 		box(SM_POOL_IMPORT, "", "");
 		sg.importing = true;
-		snprintf(url, sizeof(url), "/api/servers/%s/storage/importable",
-		    s->id);
-		api("GET", url, NULL, import_cb, NULL);
+		host_yread(s, "arcana-storage:storage/read", "{\"kind\":"
+		    "\"importable\"}", NULL, false, import_cb, NULL);
 	} else if (strcmp(act, "st-import") == 0) {
 		sjob(s, "zpool", "import", "", arg, 1, arg);
 		app.modal = MODAL_NONE;
@@ -2702,24 +2844,26 @@ static void
 jail_ds_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
+	bool	cut;
+
 	(void)arg;
 	jd.loading = false;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
-		snprintf(jd.error, sizeof(jd.error), "%s", jstr(o, "error") !=
-		    NULL ? jstr(o, "error") : err != NULL ? err : "no answer");
+	if (status != 200 || o == NULL) {
+		snprintf(jd.error, sizeof(jd.error), "%s", err != NULL ? err :
+		    "no answer");
 		return;
 	}
 	jd.error[0] = '\0';
 	if (jd.data != NULL)
 		ucl_object_unref(jd.data);
-	jd.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	jd.data = storage_conv(SK_DATASETS, o, &cut);
 }
 
 /* What the jail's own zfs sees: the datasets given to it. */
 void
 refresh_jail_datasets(struct server *s, const char *jail)
 {
-	char	url[400];
+	char	in[400], *q;
 
 	if (!app.online || jd.loading)
 		return;
@@ -2732,9 +2876,11 @@ refresh_jail_datasets(struct server *s, const char *jail)
 	snprintf(jd.sid, sizeof(jd.sid), "%s", s->id);
 	snprintf(jd.jail, sizeof(jd.jail), "%s", jail);
 	jd.loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/storage/datasets?jail=%s",
-	    s->id, jail);
-	api("GET", url, NULL, jail_ds_cb, NULL);
+	q = json_quote(jail);
+	snprintf(in, sizeof(in), "{\"kind\":\"datasets\",\"jail\":%s}", q);
+	free(q);
+	host_yread(s, "arcana-storage:storage/read", in, NULL, false,
+	    jail_ds_cb, NULL);
 }
 
 void

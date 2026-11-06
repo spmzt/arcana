@@ -7546,7 +7546,7 @@ part_netsect_paths(void)
 	 * page is told that gw does.
 	 */
 	run("window.fetch0 = window.fetch; window.fetch = (u, o) => "
-	    "window.fetch0(u, o).then(r => String(u).endsWith('/jails') ? "
+	    "window.fetch0(u, o).then(r => String(u).endsWith(':jails') ? "
 	    "r.text().then(t => { const j = JSON.parse(t), walk = v => { if "
 	    "(v && typeof v === 'object') { if (v.name === 'gw' && 'vnet' in "
 	    "v) v.state = 'running'; Object.values(v).forEach(walk); } }; "

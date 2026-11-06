@@ -53,6 +53,7 @@ void
 export_note(const char *url, int node, int tab, const ucl_object_t *o)
 {
 	const char	*p, *sl;
+	char		 path[300];
 	struct kept	*k, *old;
 	size_t		 n;
 	int		 i;
@@ -68,10 +69,20 @@ export_note(const char *url, int node, int tab, const ucl_object_t *o)
 		return;
 	if ((sl = strchr(p, '/')) == NULL || (n = (size_t)(sl - p)) >= 9)
 		return;
+	/* A node of a module's by its own names: "services", "sshd/read". */
+	snprintf(path, sizeof(path), "%s", sl + 1);
+	if (url[1] == 'r')
+		for (char *s = path, *c; (c = strchr(s, ':')) != NULL &&
+		    (strchr(s, '/') == NULL || c < strchr(s, '/'));) {
+			memmove(s, c + 1, strlen(c + 1) + 1);
+			if ((s = strchr(s, '/')) == NULL)
+				break;
+			s++;
+		}
 	k = old = NULL;
 	for (i = 0; i < KEPT_MAX; i++) {
 		if (kept[i].o != NULL && strncmp(kept[i].sid, p, n) == 0 &&
-		    kept[i].sid[n] == '\0' && strcmp(kept[i].path, sl + 1) ==
+		    kept[i].sid[n] == '\0' && strcmp(kept[i].path, path) ==
 		    0 && kept[i].node == node && kept[i].tab == tab) {
 			k = &kept[i];
 			break;
@@ -87,7 +98,7 @@ export_note(const char *url, int node, int tab, const ucl_object_t *o)
 		ucl_object_unref(k->o);
 	memset(k, 0, sizeof(*k));
 	memcpy(k->sid, p, n);
-	snprintf(k->path, sizeof(k->path), "%s", sl + 1);
+	snprintf(k->path, sizeof(k->path), "%s", path);
 	k->node = node;
 	k->tab = tab;
 	snprintf(k->jail, sizeof(k->jail), "%s", app.jail);

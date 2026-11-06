@@ -10,7 +10,7 @@
  * themselves (sharenfs), NFSv4 up to 4.2 and pNFS (pnfsserver(4)).  iSCSI: the target, ctld(8) and
  * ctl.conf(5), its LUNs and sessions by ctladm(8).  HAST: hastd(8) and
  * hast.conf(5), its resources' roles by hastctl(8).  A host at a time
- * (GET /api/servers/<id>/netstore); each change a job of the nfs, iscsi
+ * (arcana-netstore's read); each change a job of the nfs, iscsi
  * or hast kind.
  */
 
@@ -33,13 +33,22 @@ static struct {
 	bool		 target;	/* the iSCSI target form open */
 } nas;
 
+/* arcana-netstore's read as the tab draws it: by its names. */
+static ucl_object_t *
+nas_conv(const ucl_object_t *o)
+{
+	static const char *const names[] = { "share=shares",
+	    "resources=list", NULL };
+
+	return (jflat(o, names));
+}
+
 static void
 nas_load_of(const char *sid)
 {
-	char	url[96];
 
-	snprintf(url, sizeof(url), "/api/servers/%s/netstore", sid);
-	res_load(&nas.r, sid, url);
+	res_yread(&nas.r, sid, "arcana-netstore:netstore/read", "{}",
+	    nas_conv);
 }
 
 static void
