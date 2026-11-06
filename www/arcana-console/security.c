@@ -14,8 +14,9 @@
  * form; here it is checked and passed on as what the agent's
  * sdwan-proxy and sdwan-ids take, as group "security": instances named
  * sec-, kept apart from SD-WAN's, each with its form as spec, which the
- * agent renders into the daemons' files (and shows again).  An
- * intrusion detection the admin stopped stays in the list, not run.
+ * agent renders into the daemons' files (and shows again).  A URL
+ * filter or an intrusion detection the admin stopped stays in the list,
+ * not run.
  */
 
 #include <sys/types.h>
@@ -239,6 +240,10 @@ proxy_one(const ucl_object_t *in, const char *host, char *err,
 	ucl_object_insert_key(o, ucl_object_fromstring(mode), "mode", 0, false);
 	ucl_object_insert_key(o, ucl_object_fromstring(host), "host", 0,
 	    false);
+	/* Stopped by the admin: kept, not run (agent 0.248.0 on). */
+	if (ucl_object_toboolean(ucl_object_lookup(in, "stopped")))
+		ucl_object_insert_key(o, ucl_object_frombool(true), "stopped", 0,
+		    false);
 	ucl_object_insert_key(o, ucl_object_copy(in), "spec", 0, false);
 	return (o);
 }

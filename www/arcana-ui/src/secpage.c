@@ -218,7 +218,18 @@ chip_run(struct html *h, const ucl_object_t *l, const char *key)
 	else if (jbool(l, key))
 		h_raw(h, "<span class=\"chip st-up\">running</span>");
 	else
-		h_raw(h, "<span class=\"chip st-down\">stopped</span>");
+		h_raw(h, "<span class=\"chip st-down\" title=\"Not stopped here: "
+		    "it failed or was stopped on the host\">not running</span>");
+}
+
+/* One stopped here: kept, not run until it is started. */
+static void
+chip_kept(struct html *h)
+{
+
+	h_raw(h, "<span class=\"chip st-down\" title=\"Stopped here: its "
+	    "configuration kept, not run, nor at boot, until it is started"
+	    "\">stopped (kept)</span>");
 }
 
 static void
@@ -409,9 +420,26 @@ view_url(struct html *h, bool malware_only)
 		else
 			h_raw(h, "<span class=\"chip warn\">not applied</span>");
 		h_raw(h, "</td><td>");
-		chip_run(h, l, "running");
+		if (jbool(f, "stopped"))
+			chip_kept(h);
+		else
+			chip_run(h, l, "running");
 		h_raw(h, "</td><td class=\"acts\">");
-		start_button(h, l, false);
+		/* Stopped here: Start; running: Stop; else the list again. */
+		if (!malware_only && jbool(f, "stopped")) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "sec-proxy-run\" data-value=\"start\" title=\""
+			    "Started on the host, its configuration as it is\"");
+			h_attr(h, "data-arg", jstr(f, "name"));
+			h_raw(h, ">Start</button>");
+		} else if (!malware_only && l != NULL && jbool(l, "running")) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "sec-proxy-stop\" title=\"Stopped on the host, and "
+			    "not at boot; its configuration kept for Start\"");
+			h_attr(h, "data-arg", jstr(f, "name"));
+			h_raw(h, ">Stop</button>");
+		} else
+			start_button(h, l, false);
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"%s\"",
 		    malware_only ? "sec-unscan" : "sec-edit");
 		h_attr(h, "data-arg", jstr(f, "name"));
@@ -1128,9 +1156,7 @@ view_ids(struct html *h)
 		h_fmt(h, "<td>%lld</td><td>", (long long)jint(l, "alerts_seen",
 		    0));
 		if (jbool(f, "stopped"))
-			h_raw(h, "<span class=\"chip st-down\" title=\"Stopped "
-			    "here: kept, not run until it is started\">stopped"
-			    "</span>");
+			chip_kept(h);
 		else
 			chip_run(h, l, "running");
 		h_raw(h, "</td><td class=\"acts\">");
@@ -1594,6 +1620,21 @@ secpage_form(const char *form, const ucl_object_t *f)
 		ucl_object_insert_key(o, ucl_object_frombool(jbool(f,
 		    "malware")), "malware", 0, false);
 		put_num(o, "fib", jstr(f, "fib"));
+		/* One stopped stays stopped, changed. */
+		{
+			const ucl_object_t	*e;
+			ucl_object_iter_t	 it;
+
+			it = NULL;
+			while ((e = ucl_object_iterate(specs(false), &it,
+			    true)) != NULL)
+				if (jstr(f, "orig") != NULL && jstr(e, "name") !=
+				    NULL && strcmp(jstr(e, "name"), jstr(f,
+				    "orig")) == 0 && jbool(e, "stopped"))
+					ucl_object_insert_key(o,
+					    ucl_object_frombool(true), "stopped",
+					    0, false);
+		}
 	} else {
 		ucl_object_insert_key(o, words(jstr(f, "interfaces")),
 		    "interfaces", 0, false);
@@ -1863,11 +1904,24 @@ secpage_action(const char *act, const char *arg, const char *value)
 		    "sec-ids-run", arg, "stop");
 		return (true);
 	}
+	if (strcmp(act, "sec-proxy-stop") == 0) {
+		char	body[300];
+
+		snprintf(body, sizeof(body), "Squid %s, and its c-icap, are "
+		    "stopped on the host and not started at boot; its "
+		    "configuration is kept, to start it again. Its clients "
+		    "cannot browse through it meanwhile.", arg);
+		confirm("Stop it?", body, "Stop", false, NULL, "sec-proxy-run",
+		    arg, "stop");
+		return (true);
+	}
 	/* One's stopped set or cleared, the whole list applied again. */
-	if (strcmp(act, "sec-ids-run") == 0) {
+	if (strcmp(act, "sec-ids-run") == 0 || strcmp(act, "sec-proxy-run") ==
+	    0) {
 		ucl_object_t	*list;
 
-		list = specs_but(true, NULL);
+		ids = strcmp(act, "sec-ids-run") == 0;
+		list = specs_but(ids, NULL);
 		it = NULL;
 		while ((e = ucl_object_iterate(list, &it, true)) != NULL)
 			if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"),
@@ -1876,7 +1930,7 @@ secpage_action(const char *act, const char *arg, const char *value)
 				    e, ucl_object_frombool(value != NULL &&
 				    strcmp(value, "stop") == 0), "stopped", 0,
 				    false);
-		save(true, list);
+		save(ids, list);
 		return (true);
 	}
 	if (strcmp(act, "sec-start") == 0) {

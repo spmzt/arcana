@@ -141,6 +141,27 @@ yh_takes_gzip(const ucl_object_t *host)
 	return (false);
 }
 
+bool
+yh_agent_before(const ucl_object_t *host, const char *version)
+{
+	const ucl_object_t	*v;
+	const char		*a, *b;
+	char			*ea, *eb;
+	long			 x, y;
+
+	v = host != NULL ? ucl_object_lookup(host, "version") : NULL;
+	if (v == NULL || (a = ucl_object_tostring(v)) == NULL)
+		return (true);
+	for (b = version;; a = ea + 1, b = eb + 1) {
+		x = strtol(a, &ea, 10);
+		y = strtol(b, &eb, 10);
+		if (x != y)
+			return (x < y);
+		if (*ea != '.' || *eb != '.')
+			return (false);
+	}
+}
+
 int
 yh_stats(cbl_conn *conn, ucl_object_t **data, char *err, size_t errlen)
 {

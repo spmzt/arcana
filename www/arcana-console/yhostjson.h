@@ -30,6 +30,8 @@ struct arcana_jobs_step;
  * "safe_wait", "features"}, the times seconds of the epoch; an agent
  * that has no features has none.  yh_takes_gzip(): whether that host's
  * agent takes its program compressed (zprog.h's feature).
+ * yh_agent_before(): whether that host's agent is of a version before
+ * version ("0.248.0"); one that says none is.
  *
  * yh_stats(): how busy the host is, a read of arcana-host's host,
  * {"cpu_pct", "load1", "load5", "load15", "mem_total", "mem_used",
@@ -45,6 +47,7 @@ struct arcana_jobs_step;
 int	yh_hello(cbl_conn *conn, ucl_object_t **data, char *err,
 	    size_t errlen);
 bool	yh_takes_gzip(const ucl_object_t *host);
+bool	yh_agent_before(const ucl_object_t *host, const char *version);
 int	yh_stats(cbl_conn *conn, ucl_object_t **data, char *err,
 	    size_t errlen);
 /* yh_stats_of(): the same of arcana-host's data, as a push held it. */

@@ -389,6 +389,7 @@ instance_of(const char *kind, const ucl_object_t *in)
 	if (strcmp(kind, "proxy") == 0) {
 		copy(m, "mode", in, "mode");
 		put_list(m, "named-list", named(ucl_object_lookup(in, "lists")));
+		copy(m, "stopped", in, "stopped");
 	}
 	return (m);
 }

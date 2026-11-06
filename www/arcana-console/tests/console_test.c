@@ -9909,6 +9909,14 @@ ATF_TC_BODY(agent_update_bridge, tc)
 	ATF_CHECK_MSG(jstr(&r, "data.kept") != NULL && jstr(&r, "data.boot") ==
 	    NULL, "%s", r.body);
 	resp_free(&r);
+	/* A URL filter stopped: refused before the edit, the version said. */
+	snprintf(became, sizeof(became), "/api/servers/%s/security", id);
+	http("POST", became, "{\"what\":\"proxy\",\"instances\":[{\"name\":"
+	    "\"sec-web\",\"listen\":[\"10.1.0.1\"],\"allow\":[\"10.1.0.0/24\"],"
+	    "\"stopped\":true}]}", &r);
+	ATF_CHECK_MSG(strstr(r.body, "\"ok\":false") != NULL && strstr(r.body,
+	    "arcana-agent 0.248.0 or later") != NULL, "%s", r.body);
+	resp_free(&r);
 
 	/* Over the unix socket: as it is, taken unsigned. */
 	bridge_update(id, false, &r);
@@ -15483,6 +15491,66 @@ ATF_TC_BODY(sdwan_apply_security, tc)
 	    "\"security\"") != NULL && strstr(r.body, "acl localnet") == NULL,
 	    "%s", r.body);
 	resp_free(&r);
+	/* Stopped: its c-icap with it, its files kept, stopped in running
+	 * as the fleet mount has it; started again. */
+	{
+		const char	*stop = "{\"what\":\"proxy\",\"instances\":[{"
+		    "\"name\":\"sec-web\",\"listen\":[\"10.1.0.1\",\"2001:db8::1\"],"
+		    "\"allow\":[\"10.1.0.0/24\"],\"deny\":[\".bad.example\","
+		    "\"worse.example\"],\"malware\":true%s}]}";
+		char		 sbody[512], spath[256];
+		FILE		*pf;
+		long		 ipid;
+		int		 k;
+
+		ipid = 0;
+		if ((pf = fopen("sdwan-icap-sec-web.pid", "r")) != NULL) {
+			if (fscanf(pf, "%ld", &ipid) != 1)
+				ipid = 0;
+			fclose(pf);
+		}
+		ATF_CHECK(ipid > 0 && kill((pid_t)ipid, 0) == 0);
+		snprintf(sbody, sizeof(sbody), stop, ",\"stopped\":true");
+		http("POST", t2, sbody, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strstr(r.body, "\"ok\":true") != NULL &&
+		    strstr(r.body, "squid sec-web stopped, kept") != NULL, "%s",
+		    r.body);
+		resp_free(&r);
+		for (k = 0; k < 50 && ipid > 0 && kill((pid_t)ipid, 0) == 0;
+		    k++)
+			usleep(100000);
+		ATF_CHECK_MSG(ipid > 0 && kill((pid_t)ipid, 0) != 0,
+		    "its c-icap still runs");
+		ATF_CHECK(access("sdwan-proxy-sec-web.conf", F_OK) == 0 &&
+		    access("sdwan-icap-sec-web.conf", F_OK) == 0 &&
+		    access("sdwan-proxy-sec-web.deny", F_OK) == 0);
+		ATF_CHECK(system("grep -q '\"stopped\":true' "
+		    "security-proxy.json") == 0);
+		snprintf(spath, sizeof(spath), "/restconf/data/arcana-fleet:fleet/"
+		    "host=%s/arcana-sdwan:sdwan/proxy-instance=sec-web/stopped",
+		    sa);
+		rc_get(spath, &r);
+		ATF_CHECK_MSG(r.status == 200 && strstr(r.body, "true") !=
+		    NULL, "%d %s", r.status, r.body);
+		resp_free(&r);
+		snprintf(sbody, sizeof(sbody), stop, "");
+		http("POST", t2, sbody, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strstr(r.body, "\"ok\":true") != NULL, "%s",
+		    r.body);
+		resp_free(&r);
+		ipid = 0;
+		if ((pf = fopen("sdwan-icap-sec-web.pid", "r")) != NULL) {
+			if (fscanf(pf, "%ld", &ipid) != 1)
+				ipid = 0;
+			fclose(pf);
+		}
+		ATF_CHECK_MSG(ipid > 0 && kill((pid_t)ipid, 0) == 0,
+		    "its c-icap was not started again");
+		ATF_CHECK(system("grep -q '\"stopped\"' security-proxy.json") !=
+		    0);
+	}
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"]}]}", &r);
 	EXPECT(&r, 400);

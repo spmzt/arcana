@@ -10304,6 +10304,11 @@ part_security(void)
 	    "'form[data-form=sec-proxy]').allow.value === '10.0.0.0/8, "
 	    "192.168.0.0/16'", 10);
 	click_when("form[data-form=sec-proxy] button[data-act=sec-cancel]", 10);
+	/*
+	 * Stop and Start are tested by agent_test:sdwan and console_test:
+	 * sdwan_apply: this harness's squid ends at once, never seen running,
+	 * so the row offers Start, not Stop.
+	 */
 	/* Antivirus: ClamAV's scanning and its signatures, one tab. */
 	click_when("button[data-act=sec-tab][data-arg=antivirus]", 10);
 	wait_js("location.hash.startsWith('#/security/antivirus/') && document."

@@ -2699,8 +2699,32 @@ connected:
 			    "bird" : c->op == OP_SDWAN_DHCP ? "dhcp" : c->op ==
 			    OP_SDWAN_DNS ? "dns" : c->op == OP_SDWAN_PROXY ?
 			    "proxy" : "ids";
-			ok = ysdwan_edit(conn, part, c->text, &same, ywhy,
-			    sizeof(ywhy), &esid, ytag, sizeof(ytag)) == 0;
+			ok = true;
+			/* A URL filter stopped: an agent before has no
+			 * proxy-instance stopped, and would refuse the edit
+			 * by a SID it does not know. */
+			if (c->op == OP_SDWAN_PROXY && strstr(c->text,
+			    "\"stopped\":true") != NULL) {
+				if (yh_hello(conn, &e, ywhy, sizeof(ywhy)) != 0)
+					ok = false;
+				else if (yh_agent_before(e, "0.248.0")) {
+					snprintf(ywhy, sizeof(ywhy), "this host's "
+					    "agent (%s) cannot stop a URL filter "
+					    "and keep it: arcana-agent 0.248.0 or "
+					    "later can; update the agent, or "
+					    "Remove it", ucl_str(e, "version") !=
+					    NULL ? ucl_str(e, "version") :
+					    "unknown");
+					ok = false;
+				}
+				if (e != NULL)
+					ucl_object_unref(e);
+				e = NULL;
+			}
+			if (ok)
+				ok = ysdwan_edit(conn, part, c->text, &same,
+				    ywhy, sizeof(ywhy), &esid, ytag,
+				    sizeof(ytag)) == 0;
 			if (ok && same)
 				ok = ysdwan_apply(conn, part, c->text, ywhy,
 				    sizeof(ywhy)) == 0;

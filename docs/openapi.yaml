@@ -1936,7 +1936,10 @@ paths:
         name, interfaces (watched by pcap), home (HOME_NET; the private
         ranges when empty), rules (of its own, a line each), ruleset
         (the one suricata-update keeps) and divert (a port: it
-        prevents, taking what an ipfw divert rule sends). The plugins
+        prevents, taking what an ipfw divert rule sends). Either with
+        stopped true is kept, its files too, but not run, now or at the
+        agent's start (a URL filter's c-icap with it; agent 0.248.0 and
+        later for a URL filter, refused for one before). The plugins
         are the host's own: Arcana installs none.
       parameters:
         - $ref: "#/components/parameters/server"
