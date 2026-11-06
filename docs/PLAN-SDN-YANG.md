@@ -2001,7 +2001,7 @@ whose first part is served.
   | servers/<id>/services, services/<n>/action, config | `H/arcana-services:services`, `service=<n>/{start,stop,restart,reload}` (enable: `enabled` edited), `service=<n>/variable` (read; edited and committed) |
   | servers/<id>/net/* | `H/arcana-network:network/<kind>` (lookup too), `ietf-interfaces:interfaces`, `arcana-troubleshoot:troubleshoot/traceroute`, `arcana-netgraph:netgraph/read`, `arcana-wireguard:wireguard/read`, `arcana-bird:bird/{read,routes,ospf}`, `arcana-firewall:firewall` (state) |
   | servers/<id>/bird/config | `H/arcana-bird:bird/configuration` (edited, committed; `bird/check`) |
-  | servers/<id>/storage/*, fstab, zfs/key | `H/arcana-storage:storage` and `storage/read`, `storage/fstab` (`fstab/replace`), `dataset=<ds>/{load-key,change-key}`, `create-encrypted` |
+  | servers/<id>/storage/*, fstab, zfs/key | `H/arcana-storage:storage` and `storage/read`, `storage/fstab` (`fstab/replace`), `create-encrypted`; a dataset's key `C hosts/host=<id>/dataset-key` (its name's / no path below the mount carries) |
   | servers/<id>/builder, builder/options | `H/arcana-builder:builder`, `builder/port-options` |
   | servers/<id>/suricata/rules, netstore, system, smtpd, speeder, monitors, ssh | `H/arcana-suricata:suricata/read-rules`, `arcana-netstore:netstore/read`, `arcana-system:system/read`, `arcana-smtpd:smtpd/read`, `arcana-speeder:speeder/read`, `arcana-probe:probes/read`, `arcana-sshd:sshd/read` |
   | servers/<id>/kernel, sysctl, processes, log, events | `H/arcana-kernel:kernel`, `arcana-sysctl:sysctl/read`, `arcana-processes:processes`, `arcana-log:logs/read`, `arcana-events:events/read` |
@@ -2510,7 +2510,18 @@ whose first part is served.
   pwa_flows_sdwan.  The Builder page (console 0.395.0; builder.c):
   arcana-builder's builder, a port's options its port-options (the
   ports tree default where none is said).  Check: pwa_test
-  pwa_flows_builder (a port's options no test reads yet).  A tab's
+  pwa_flows_builder (a port's options no test reads yet).  A
+  dataset's key (console 0.396.0): made encrypted by arcana-storage's
+  create-encrypted (the dataset in its input); loaded or changed by
+  arcana-console's `hosts/host=<id>/dataset-key` (input dataset, key,
+  new-key; SIDs 92438-92444), a bridge of cyang.c's to /api's
+  api_zfs_key, the keys in no job, trace or log and zeroed as the call
+  ends, the page's wrapped input too.  Decided: the console's own
+  action, not a path below the mount: a dataset's name has a /, which
+  libwebsockets decodes from %2F before restconf.c's parse_segs() sees
+  the path.  Check: console_test cyang_dataset_key (loaded and changed,
+  in no log, a bad input, /api's body and a viewer refused); pwa_test
+  pwa_storage_zfs.  A tab's
   export names a read by its nodes
   without their modules ("services").  Added to the console's RESTCONF
   side: the socket's `{"what": "restconf"}`, a GET or an action that reads below a host's
@@ -2519,9 +2530,8 @@ whose first part is served.
   dials for it, as a confirming commit (restconf_confirms(); console_test
   restconf_job_confirm).  Decided: the Log tab's events stay on /api
   with the socket's events, the same shape, until the stream is
-  RESTCONF's (4.8.2).  Open: a dataset's key (its name has a /, which
-  no path below the mount carries, as 4.4.1 found), the events read
-  (logs.c, 4.8.2); then `/api` keeps D-10's resources alone.
+  RESTCONF's (4.8.2).  Open: the events read (logs.c, 4.8.2); then
+  `/api` keeps D-10's resources alone.
 - 4.8.2 P: SSE subscriptions replace the page's polling; check:
   timings in the browser test.
 - 4.8.3 P: forms generated from the yang-library for the Arcana

@@ -66,6 +66,8 @@ const struct route routes[] = {
 	    api_call_free, HTTP_METHOD_POST },
 	{ "^" CYANG_HOST "[0-9a-f]{1,16}/capture$", api_capture,
 	    api_call_free, HTTP_METHOD_POST },
+	{ "^" CYANG_HOST "[0-9a-f]{1,16}/dataset-key$", api_zfs_key,
+	    api_call_free, HTTP_METHOD_POST },
 	/* The SD-WAN's verbs (cyang.c's bridges). */
 	{ CYANG_DATA "sdwan/document", api_sdwan, NULL,
 	    HTTP_METHOD_GET | HTTP_METHOD_PUT },

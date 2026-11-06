@@ -20624,6 +20624,68 @@ ATF_TC_BODY(cyang_host_verbs, tc)
 #undef	SAME
 }
 
+CONSOLE_TC(cyang_dataset_key, "arcana-console's dataset-key: a dataset's "
+    "key loaded and changed by /api's handler, in no log; a bad input, "
+    "/api's body and a viewer refused")
+ATF_TC_BODY(cyang_dataset_key, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		sa[16], cc[160], body[512];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	cc_host("a", "jgd.sock", sa, sizeof(sa));
+	snprintf(cc, sizeof(cc), CC "hosts/host=%s/dataset-key", sa);
+	/* Loaded: the dataset's name with its /, in the input. */
+	http("POST", cc, "{\"arcana-console:input\":{\"dataset\":"
+	    "\"tank/vault\",\"key\":\"correct horse battery\"}}", &r);
+	ATF_CHECK_MSG(r.status == 200 && strstr(r.body,
+	    "\"arcana-console:output\":{\"result\"") != NULL, "%d %s",
+	    r.status, r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -qx 'key=correct horse battery' storage.log && "
+	    "grep -qx 'zfs load-key tank/vault' storage.log") == 0);
+	/* Changed: the new key, its leaf's name - for _. */
+	http("POST", cc, "{\"arcana-console:input\":{\"dataset\":"
+	    "\"tank/vault\",\"key\":\"correct horse battery\","
+	    "\"new-key\":\"tr0ub4dor and more\"}}", &r);
+	ATF_CHECK_MSG(r.status == 200, "%d %s", r.status, r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^zfs change-key' storage.log") == 0);
+	/* The keys are in no log of the console's, nor in its data. */
+	ATF_CHECK(system("grep -rqs 'correct horse battery' console.out "
+	    "data") != 0);
+	ATF_CHECK(system("grep -rqs 'tr0ub4dor and more' console.out data")
+	    != 0);
+	/* Neither key: refused, as /api refused it. */
+	http("POST", cc, "{\"arcana-console:input\":{\"dataset\":"
+	    "\"tank/vault\"}}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK(strstr(r.body, "ietf-restconf:errors") != NULL);
+	resp_free(&r);
+	/* No dataset; one too long for its leaf. */
+	http("POST", cc, "{\"arcana-console:input\":{\"key\":\"x\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	memset(body, 0, sizeof(body));
+	snprintf(body, sizeof(body), "{\"arcana-console:input\":{\"dataset\":"
+	    "\"tank/%0300d\",\"key\":\"x\"}}", 0);
+	http("POST", cc, body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* /api's body is no input. */
+	http("POST", cc, "{\"dataset\":\"tank/vault\",\"key\":\"x\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* A viewer types no key. */
+	cc_member(&b);
+	http("POST", cc, "{\"arcana-console:input\":{\"dataset\":"
+	    "\"tank/vault\",\"key\":\"x\"}}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+}
+
 /* GET of /api's api and arcana-console's cc: node's value is /api's
  * document. */
 static void
@@ -21166,6 +21228,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, tls_ec);
 	ATF_TP_ADD_TC(tp, cyang_hosts);
 	ATF_TP_ADD_TC(tp, cyang_host_verbs);
+	ATF_TP_ADD_TC(tp, cyang_dataset_key);
 	ATF_TP_ADD_TC(tp, cyang_sdwan);
 	ATF_TP_ADD_TC(tp, cyang_console);
 	ATF_TP_ADD_TC(tp, cyang_plugins);

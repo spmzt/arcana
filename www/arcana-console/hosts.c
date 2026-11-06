@@ -5235,7 +5235,10 @@ api_capture(struct http_request *req)
  * "create"}: the key of an encrypted dataset asked for at a prompt,
  * typed: loaded, or changed; with create (its encryption), the dataset
  * made encrypted, the new key its passphrase.  Not a job: a job is kept.
- * The keys are zeroed as the call ends, and are in no log.
+ * The keys are zeroed as the call ends, and are in no log.  The same,
+ * create aside, at arcana-console's hosts/host=<id>/dataset-key (cyang.c's
+ * bridge): a dataset's name has a /, which no path below the host's
+ * entry in the fleet mount carries.
  */
 int
 api_zfs_key(struct http_request *req)

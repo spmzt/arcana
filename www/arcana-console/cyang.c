@@ -144,6 +144,7 @@ static const struct bridge {
 	{ H "export-configuration", "result", NULL, true },
 	{ H "apply-configuration", "result", NULL, true },
 	{ H "capture", "result", NULL, true },
+	{ H "dataset-key", "result", NULL, true },
 	{ H "subscription-token", "result", NULL, true },
 #undef	H
 #define	S	"data/arcana-console:sdwan/"

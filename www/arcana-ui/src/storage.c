@@ -11,8 +11,10 @@
  * which checks every word of it; what cannot be taken back asks first,
  * and what destroys asks for the name to be typed.  Read by
  * arcana-storage's read through the fleet mount, fstab replaced by its
- * fstab/replace; a dataset's key still by /api (a dataset's name has a
- * /, which no path below the mount can carry).
+ * fstab/replace, a dataset made encrypted by its create-encrypted; a
+ * dataset's key loaded or changed by arcana-console's
+ * hosts/host=<id>/dataset-key (a dataset's name has a /, which no path
+ * below the mount can carry).
  */
 
 #include <stdarg.h>
@@ -1709,11 +1711,11 @@ zenc_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	int		 i;
 
 	(void)arg;
+	(void)o;
 	sg.saving = false;
-	if (status != 200 || !jbool(o, "ok")) {
-		snprintf(app.modal_error, sizeof(app.modal_error), "%s", jstr(o,
-		    "error") != NULL ? jstr(o, "error") : err != NULL ? err :
-		    "not made");
+	if (status != 200 && status != 204) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "%s", err !=
+		    NULL ? err : "not made");
 		free(zenc.json);
 		zenc.json = NULL;
 		render();
@@ -2109,7 +2111,7 @@ static bool
 typekey_form(struct server *s, const ucl_object_t *f)
 {
 	const char	*k, *n, *a;
-	char		*qd, *qk, *body, url[96];
+	char		*qd, *qk, *body, url[300];
 
 	k = jstr(f, "key") != NULL ? jstr(f, "key") : "";
 	n = jstr(f, "new_key") != NULL ? jstr(f, "new_key") : "";
@@ -2126,15 +2128,16 @@ typekey_form(struct server *s, const ucl_object_t *f)
 	qd = json_quote(sg.target);
 	qk = json_quote(strcmp(sg.part, "load") == 0 ? k : n);
 	if (asprintf(&body, "{\"dataset\":%s,\"%s\":%s}", qd, strcmp(sg.part,
-	    "load") == 0 ? "key" : "new_key", qk) == -1)
+	    "load") == 0 ? "key" : "new-key", qk) == -1)
 		abort();
 	explicit_bzero(qk, strlen(qk));
 	free(qd);
 	free(qk);
-	snprintf(url, sizeof(url), "/api/servers/%s/zfs/key", s->id);
+	/* arcana-console's: the dataset's name has a /. */
+	rc_c(url, sizeof(url), "hosts/host=%s/dataset-key", rc_key(s->id));
 	sg.saving = true;
 	app.modal_error[0] = '\0';
-	api("POST", url, body, typekey_cb, NULL);
+	rc_verb(url, body, NULL, typekey_cb, NULL);
 	explicit_bzero(body, strlen(body));
 	free(body);
 	return (true);
@@ -2279,7 +2282,7 @@ storage_form(const char *form, const ucl_object_t *f)
 		    "z_encryption")[0] != '\0') {
 			const char	*pw = jstr(f, "z_pass") != NULL ? jstr(f,
 			    "z_pass") : "";
-			char		*body, *qd, *qp, *qe, url[96];
+			char		*body, *qd, *qp, *qe, url[300];
 			struct html	 jb;
 
 			if (strlen(pw) < 8 || jstr(f, "z_again") == NULL ||
@@ -2317,18 +2320,20 @@ storage_form(const char *form, const ucl_object_t *f)
 			qd = json_quote(name);
 			qp = json_quote(pw);
 			qe = json_quote(jstr(f, "z_encryption"));
-			if (asprintf(&body, "{\"dataset\":%s,\"new_key\":%s,"
-			    "\"create\":%s}", qd, qp, qe) == -1)
+			if (asprintf(&body, "{\"dataset\":%s,\"encryption\":%s,"
+			    "\"key\":%s}", qd, qe, qp) == -1)
 				abort();
 			explicit_bzero(qp, strlen(qp));
 			free(qd);
 			free(qp);
 			free(qe);
-			snprintf(url, sizeof(url), "/api/servers/%s/zfs/key",
-			    s->id);
+			/* arcana-storage's create-encrypted: the dataset in
+			 * its input, the passphrase in no job. */
+			rc_h(url, sizeof(url), s->id, "arcana-storage:storage/"
+			    "create-encrypted");
 			sg.saving = true;
 			app.modal_error[0] = '\0';
-			api("POST", url, body, zenc_cb, NULL);
+			rc_action(url, body, NULL, zenc_cb, NULL);
 			explicit_bzero(body, strlen(body));
 			free(body);
 			free(text);

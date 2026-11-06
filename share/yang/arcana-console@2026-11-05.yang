@@ -2758,6 +2758,46 @@ module arcana-console {
           }
         }
       }
+      action dataset-key {
+        description
+          "The key of an encrypted ZFS dataset of the host's, typed:
+           loaded (key), or changed (key and new-key), by
+           arcana-storage's load-key and change-key.  Here and not below
+           the host's entry in the fleet mount: a dataset's name has a
+           /, which no path there carries.  Not a job: the keys are in
+           no job, no trace and no log, and are zeroed as the call
+           ends.";
+        input {
+          leaf dataset {
+            type string {
+              length "1..255";
+            }
+            mandatory true;
+            description
+              "The dataset, pool/name.";
+          }
+          leaf key {
+            type string {
+              length "0..512";
+            }
+            description
+              "Its key now.";
+          }
+          leaf new-key {
+            type string {
+              length "0..512";
+            }
+            description
+              "The key it is to have.";
+          }
+        }
+        output {
+          anydata result {
+            description
+              "What the host said.";
+          }
+        }
+      }
       action subscription-token {
         description
           "A new receiver token made for the host, the one before

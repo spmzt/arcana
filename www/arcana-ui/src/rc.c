@@ -355,6 +355,8 @@ invoke(int kind, const char *path, const char *input, const char *query,
 	snprintf(url, sizeof(url), "%s%s%s", path, query != NULL &&
 	    query[0] != '\0' ? "?" : "", query != NULL ? query : "");
 	id = api("POST", url, body, done_cb, r);
+	/* It may carry a key (a dataset's): not left in freed memory. */
+	explicit_bzero(body, strlen(body));
 	free(body);
 	return (id);
 }
