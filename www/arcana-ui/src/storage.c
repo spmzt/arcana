@@ -1183,7 +1183,11 @@ xfers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	if (xfers != NULL)
 		ucl_object_unref(xfers);
-	xfers = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	/* arcana-console's transfer entries, as /api's transfers. */
+	xfers = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(xfers, jget(o, "transfer") != NULL ?
+	    ucl_object_copy(jget(o, "transfer")) : ucl_object_typed_new(
+	    UCL_ARRAY), "transfers", 0, false);
 }
 
 static void
@@ -1194,7 +1198,7 @@ xfers_load(void)
 		return;
 	xfers_loading = true;
 	xfers_at = arc_now();
-	api("GET", "/api/transfers", NULL, xfers_cb, NULL);
+	rc_get(RC_C "transfers", NULL, xfers_cb, NULL);
 }
 
 static const char *
@@ -1307,9 +1311,8 @@ xfer_started_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	(void)arg;
-	if (status != 200)
-		toast(true, "Not sent: %s", jstr(o, "error.message") != NULL ?
-		    jstr(o, "error.message") : err != NULL ? err : "no answer");
+	if (status < 200 || status > 299)
+		toast(true, "Not sent: %s", err != NULL ? err : "no answer");
 	else
 		toast(false, "Sending: it is listed under Storage");
 	xfers_load();
@@ -1321,9 +1324,8 @@ xfers_stopped_cb(int status, const ucl_object_t *o, const char *err,
 {
 
 	(void)arg;
-	if (status != 200)
-		toast(true, "Not stopped: %s", jstr(o, "error.message") !=
-		    NULL ? jstr(o, "error.message") : err != NULL ? err :
+	if (status < 200 || status > 299)
+		toast(true, "Not stopped: %s", err != NULL ? err :
 		    "no answer");
 	xfers_load();
 }
@@ -1340,16 +1342,17 @@ transfer_start(struct server *s, const char *to, const char *snap,
 	qs = json_quote(snap);
 	qi = json_quote(since != NULL ? since : "");
 	qd = json_quote(dataset);
-	if (asprintf(&body, "{\"from\":%s,\"to\":%s,\"snapshot\":%s,"
-	    "\"since\":%s,\"dataset\":%s,\"recursive\":%s}", qf, qt, qs, qi,
-	    qd, recursive ? "true" : "false") == -1)
+	if (asprintf(&body, "{\"from\":%s,\"to\":%s,\"snapshot\":%s%s%s,"
+	    "\"dataset\":%s,\"recursive\":%s}", qf, qt, qs, since != NULL &&
+	    since[0] != '\0' ? ",\"since\":" : "", since != NULL && since[0] !=
+	    '\0' ? qi : "", qd, recursive ? "true" : "false") == -1)
 		abort();
 	free(qf);
 	free(qt);
 	free(qs);
 	free(qi);
 	free(qd);
-	api("POST", "/api/transfers", body, xfer_started_cb, NULL);
+	rc_action(RC_C "transfers/start", body, NULL, xfer_started_cb, NULL);
 	free(body);
 	app.modal = MODAL_NONE;
 }
@@ -2494,11 +2497,11 @@ storage_action(const char *act, const char *arg, const char *value)
 		    "nothing of it is kept there.", "Stop", true, "",
 		    "do-st-xfer-stop", arg, "");
 	} else if (strcmp(act, "do-st-xfer-stop") == 0) {
-		char	url[64];
+		char	url[200];
 
-		snprintf(url, sizeof(url), "/api/transfers/%u", (unsigned int)
-		    strtoul(arg, NULL, 10));
-		api("DELETE", url, NULL, xfers_stopped_cb, NULL);
+		rc_c(url, sizeof(url), "transfers/transfer=%u/stop",
+		    (unsigned int)strtoul(arg, NULL, 10));
+		rc_action(url, NULL, NULL, xfers_stopped_cb, NULL);
 	} else if (strcmp(act, "st-rollback") == 0) {
 		snprintf(body, sizeof(body), "zfs rollback %s, on %s: the "
 		    "dataset becomes what it was when the snapshot was "

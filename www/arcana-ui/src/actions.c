@@ -4281,11 +4281,27 @@ static void
 push_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	ucl_object_t		*a, *d;
+
 	if (status != 200)
 		return;
 	if (app.push != NULL)
 		ucl_object_unref(app.push);
-	app.push = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	/* arcana-console's push: the user's own subscriptions, devices. */
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(jget(o, "subscription"), &it, true)) !=
+	    NULL) {
+		d = ucl_object_copy(e);
+		ucl_object_delete_key(d, "added");
+		if (jstr(e, "added") != NULL)
+			kput(d, "added", ucl_object_fromint(rc_time(jstr(e,
+			    "added"))));
+		ucl_array_append(a, d);
+	}
+	app.push = ucl_object_typed_new(UCL_OBJECT);
+	kput(app.push, "devices", a);
 }
 
 /*
@@ -4394,7 +4410,7 @@ void
 load_push(void)
 {
 
-	api("GET", "/api/push", NULL, push_cb, NULL);
+	rc_get(RC_C "push", NULL, push_cb, NULL);
 }
 
 

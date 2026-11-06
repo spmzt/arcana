@@ -290,7 +290,7 @@ addToLibrary({
 				arcPlug.screen(arcPlug.want, true);
 		},
 		/*
-		 * The list from GET /api/plugins: each enabled plugin with
+		 * The list arcana-console's plugins give: each enabled plugin with
 		 * nothing wrong and not loaded yet, its styles and then its
 		 * scripts in their order.  A plugin disabled since stays
 		 * until the page is loaded again.
@@ -2044,13 +2044,50 @@ addToLibrary({
 	 * the others.  Only with notifications allowed.
 	 */
 	$arcPush: { endpoint: "" },
-	$arcPushPost: function (path, body) {
-		return (fetch(path, {
-			method: "POST",
-			credentials: "same-origin",
-			headers: { "Content-Type": "application/json",
-			    "X-Arcana": "1" },
-			body: JSON.stringify(body)
+	/*
+	 * arcana-console's push (RESTCONF): what, "read", "subscribe" (a
+	 * subscription merged), "unsubscribe" (the user's others put back,
+	 * their keys kept by the console) or "send" (the action).
+	 */
+	$arcPushPost: function (what, body) {
+		var url = "/restconf/data/arcana-console:push";
+		var h = { "Content-Type": "application/yang-data+json",
+		    Accept: "application/yang-data+json", "X-Arcana": "1" };
+
+		function req(method, u, b) {
+			return (fetch(u, { method: method, credentials:
+			    "same-origin", cache: "no-store", headers: h,
+			    body: b === undefined ? undefined :
+			    JSON.stringify(b) }).then(function (r) {
+				if (!r.ok)
+					throw new Error("HTTP " + r.status);
+				return (r.status === 204 ? null : r.json());
+			}));
+		}
+		if (what === "read")
+			return (req("GET", url).then(function (j) {
+				return (j["arcana-console:push"]);
+			}));
+		if (what === "subscribe")
+			return (req("PATCH", url, { "arcana-console:push": {
+			    subscription: [body] } }));
+		if (what === "send")
+			return (req("POST", url + "/send", {
+			    "arcana-console:input": body }));
+		return (req("GET", url).then(function (j) {
+			var p = j["arcana-console:push"] || {};
+
+			return (req("PUT", url, { "arcana-console:push": {
+			    subscription: (p.subscription || []).filter(
+			    function (s) {
+				return (s.endpoint !== body.endpoint);
+			    }).map(function (s) {
+				var o = { endpoint: s.endpoint };
+
+				if (s.name)
+					o.name = s.name;
+				return (o);
+			    }) } }));
 		}));
 	},
 	arc_push_sync__deps: ["$arcPush", "$arcPushPost", "$arcStr"],
@@ -2089,13 +2126,10 @@ addToLibrary({
 		    window) || !("Notification" in window) ||
 		    Notification.permission !== "granted")
 			return;
-		fetch("/api/push", { credentials: "same-origin" })
-		    .then(function (r) {
-			return (r.ok ? r.json() : null);
-		}).then(function (j) {
-			if (!j || !j.public_key)
+		arcPushPost("read").then(function (j) {
+			if (!j || !j["public-key"])
 				return (null);
-			key = j.public_key;
+			key = j["public-key"];
 			return (navigator.serviceWorker.ready);
 		}).then(function (reg) {
 			if (!reg)
@@ -2114,7 +2148,7 @@ addToLibrary({
 				return (null);
 			j = sub.toJSON();
 			arcPush.endpoint = j.endpoint;
-			return (arcPushPost("/api/push/subscribe", {
+			return (arcPushPost("subscribe", {
 				endpoint: j.endpoint,
 				p256dh: j.keys.p256dh,
 				auth: j.keys.auth,
@@ -2129,7 +2163,7 @@ addToLibrary({
 	},
 	arc_push_send__deps: ["$arcPush", "$arcPushPost", "$UTF8ToString"],
 	arc_push_send: function (titlep, bodyp) {
-		arcPushPost("/api/push/send", {
+		arcPushPost("send", {
 			title: UTF8ToString(titlep),
 			body: UTF8ToString(bodyp),
 			except: arcPush.endpoint
@@ -2145,7 +2179,7 @@ addToLibrary({
 			Module._arc_on_action(arcStr("push-changed"),
 			    arcStr(""), arcStr(""));
 		}
-		arcPushPost("/api/push/unsubscribe", { endpoint: endpoint })
+		arcPushPost("unsubscribe", { endpoint: endpoint })
 		    .then(done).catch(done);
 		/* This browser itself: its subscription goes too. */
 		if (endpoint === arcPush.endpoint && navigator.serviceWorker) {
@@ -2178,7 +2212,7 @@ addToLibrary({
 		}).then(function (sub) {
 			if (!sub)
 				return (null);
-			return (arcPushPost("/api/push/unsubscribe", {
+			return (arcPushPost("unsubscribe", {
 				endpoint: sub.endpoint
 			}).then(function () {
 				return (sub.unsubscribe());

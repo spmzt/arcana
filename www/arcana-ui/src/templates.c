@@ -47,6 +47,126 @@ why(int status, const ucl_object_t *o, const char *err)
 	    status == 0 ? "no answer" : "it failed");
 }
 
+/* ---- arcana-console's templates as the page's documents ------------ */
+
+static const char *const fkeys[] = { "path", "mode", "owner", "group",
+    "text", NULL };
+static const char *const pkeys[] = { "name", "origin", "version", NULL };
+static const char *const vkeys[] = { "description", "default", NULL };
+
+static void
+put(ucl_object_t *o, const char *key, ucl_object_t *v)
+{
+
+	ucl_object_insert_key(o, v, key, 0, true);
+}
+
+/* Each element of list, those of keys it has as text, into an array. */
+static ucl_object_t *
+each(const ucl_object_t *list, const char *const *keys)
+{
+	ucl_object_t		*a, *x;
+	const ucl_object_t	*f;
+	const char *const	*k;
+	ucl_object_iter_t	 it = NULL;
+
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((f = ucl_object_iterate(list, &it, true)) != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		for (k = keys; *k != NULL; k++)
+			if (jstr(f, *k) != NULL)
+				put(x, *k, ucl_object_fromstring(jstr(f, *k)));
+		ucl_array_append(a, x);
+	}
+	return (a);
+}
+
+/* A template's entry as /api had it: {name, description, from, files,
+ * packages, facts, variables: {name: {...}}, placeholders, updated}. */
+static ucl_object_t *
+tpl_doc(const ucl_object_t *y)
+{
+	ucl_object_t		*d, *v, *x;
+	const ucl_object_t	*f;
+	ucl_object_iter_t	 it = NULL;
+	const char *const	*k;
+	char			 err[80];
+
+	d = ucl_object_typed_new(UCL_OBJECT);
+	put(d, "name", ucl_object_fromstring(jstr(y, "name")));
+	if (jstr(y, "description") != NULL)
+		put(d, "description", ucl_object_fromstring(jstr(y,
+		    "description")));
+	if (jstr(y, "from") != NULL)
+		put(d, "from", ucl_object_fromstring(jstr(y, "from")));
+	put(d, "files", each(jget(y, "file"), fkeys));
+	put(d, "packages", each(jget(y, "package"), pkeys));
+	if (jstr(y, "facts") != NULL && (x = data_parse(jstr(y, "facts"), err,
+	    sizeof(err))) != NULL)
+		put(d, "facts", x);
+	if (jget(y, "variable") != NULL) {
+		v = ucl_object_typed_new(UCL_OBJECT);
+		while ((f = ucl_object_iterate(jget(y, "variable"), &it,
+		    true)) != NULL) {
+			if (jstr(f, "name") == NULL)
+				continue;
+			x = ucl_object_typed_new(UCL_OBJECT);
+			for (k = vkeys; *k != NULL; k++)
+				if (jstr(f, *k) != NULL)
+					put(x, *k, ucl_object_fromstring(
+					    jstr(f, *k)));
+			put(v, jstr(f, "name"), x);
+		}
+		put(d, "variables", v);
+	}
+	put(d, "placeholders", jget(y, "placeholder") != NULL ?
+	    ucl_object_copy(jget(y, "placeholder")) : ucl_object_typed_new(
+	    UCL_ARRAY));
+	if (jstr(y, "updated") != NULL)
+		put(d, "updated", ucl_object_fromint(rc_time(jstr(y,
+		    "updated"))));
+	return (d);
+}
+
+/* The page's document of template name as its entry, to be put. */
+static ucl_object_t *
+tpl_entry(const char *name, const ucl_object_t *d)
+{
+	ucl_object_t		*e, *a, *x;
+	const ucl_object_t	*f;
+	ucl_object_iter_t	 it = NULL;
+	const char *const	*k;
+	unsigned char		*json;
+
+	e = ucl_object_typed_new(UCL_OBJECT);
+	put(e, "name", ucl_object_fromstring(name));
+	if (jstr(d, "description") != NULL && jstr(d, "description")[0] !=
+	    '\0')
+		put(e, "description", ucl_object_fromstring(jstr(d,
+		    "description")));
+	if (jstr(d, "from") != NULL)
+		put(e, "from", ucl_object_fromstring(jstr(d, "from")));
+	put(e, "file", each(jget(d, "files"), fkeys));
+	put(e, "package", each(jget(d, "packages"), pkeys));
+	if (jget(d, "facts") != NULL && (json = ucl_object_emit(jget(d,
+	    "facts"), UCL_EMIT_JSON_COMPACT)) != NULL) {
+		put(e, "facts", ucl_object_fromstring((char *)json));
+		free(json);
+	}
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((f = ucl_object_iterate(jget(d, "variables"), &it, true)) !=
+	    NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		put(x, "name", ucl_object_fromstring(ucl_object_key(f)));
+		for (k = vkeys; *k != NULL; k++)
+			if (jstr(f, *k) != NULL)
+				put(x, *k, ucl_object_fromstring(jstr(f, *k)));
+		ucl_array_append(a, x);
+	}
+	put(e, "variable", a);
+	return (e);
+}
+
 static struct server *
 host_of(const char *sid)
 {
@@ -62,16 +182,34 @@ static void
 list_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	ucl_object_t		*d;
+
 	(void)arg;
 	tp.loading = false;
-	if (status != 200 || jget(o, "templates") == NULL) {
+	if (status != 200) {
 		snprintf(tp.error, sizeof(tp.error), "The templates were not "
 		    "read: %s", why(status, o, err));
 		return;
 	}
 	if (tp.list != NULL)
 		ucl_object_unref(tp.list);
-	tp.list = ucl_object_copy(jget(o, "templates"));
+	/* Each one's row: its files and packages counted. */
+	tp.list = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(jget(o, "template"), &it, true)) !=
+	    NULL) {
+		d = tpl_doc(e);
+		put(d, "files", ucl_object_fromint((int64_t)ucl_array_size(
+		    jget(e, "file"))));
+		put(d, "packages", ucl_object_fromint((int64_t)ucl_array_size(
+		    jget(e, "package"))));
+		ucl_object_delete_key(d, "facts");
+		ucl_object_delete_key(d, "variables");
+		if (jget(d, "description") == NULL)
+			put(d, "description", ucl_object_fromstring(""));
+		ucl_array_append(tp.list, d);
+	}
 }
 
 void
@@ -79,7 +217,7 @@ templates_load(void)
 {
 
 	tp.loading = true;
-	api("GET", "/api/templates", NULL, list_cb, NULL);
+	rc_get(RC_C "templates", NULL, list_cb, NULL);
 }
 
 static void
@@ -88,14 +226,14 @@ open_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	(void)arg;
 	tp.busy = false;
-	if (status != 200 || jget(o, "files") == NULL) {
+	if (status != 200 || o == NULL) {
 		snprintf(tp.error, sizeof(tp.error), "%s", why(status, o, err));
 		tp.open[0] = '\0';
 		return;
 	}
 	if (tp.doc != NULL)
 		ucl_object_unref(tp.doc);
-	tp.doc = ucl_object_copy(o);
+	tp.doc = tpl_doc(o);
 	tp.dirty = false;
 	tp.error[0] = '\0';
 }
@@ -103,7 +241,7 @@ open_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 open_one(const char *name)
 {
-	char	url[160];
+	char	url[300];
 
 	snprintf(tp.open, sizeof(tp.open), "%s", name);
 	if (tp.report != NULL)
@@ -113,8 +251,8 @@ open_one(const char *name)
 		ucl_object_unref(tp.values);
 	tp.values = ucl_object_typed_new(UCL_OBJECT);
 	tp.busy = true;
-	snprintf(url, sizeof(url), "/api/templates/%s", name);
-	api("GET", url, NULL, open_cb, NULL);
+	rc_get(rc_c(url, sizeof(url), "templates/template=%s", rc_key(name)),
+	    NULL, open_cb, NULL);
 }
 
 /* Opened by name, from elsewhere (a host's Save as a template). */
@@ -134,7 +272,7 @@ saved_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	char	*name = arg;
 
 	tp.busy = false;
-	if (status != 200 || !jbool(o, "ok"))
+	if (status < 200 || status > 299)
 		snprintf(tp.error, sizeof(tp.error), "%s was not kept: %s", name,
 		    why(status, o, err));
 	else {
@@ -150,18 +288,18 @@ saved_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 void
 template_put(const char *name, const ucl_object_t *doc)
 {
-	ucl_object_t	*b;
-	char		 url[160], *json;
+	ucl_object_t	*b, *a;
+	char		 url[300], *json;
 
-	b = ucl_object_copy(doc);
-	(void)ucl_object_delete_key(b, "name");
-	(void)ucl_object_delete_key(b, "placeholders");
-	(void)ucl_object_delete_key(b, "updated");
+	a = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(a, tpl_entry(name, doc));
+	b = ucl_object_typed_new(UCL_OBJECT);
+	put(b, "arcana-console:template", a);
 	json = (char *)ucl_object_emit(b, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(b);
-	snprintf(url, sizeof(url), "/api/templates/%s", name);
+	rc_c(url, sizeof(url), "templates/template=%s", rc_key(name));
 	tp.busy = true;
-	api("PUT", url, json, saved_cb, strdup(name));
+	rc_edit("PUT", url, json, saved_cb, strdup(name));
 	free(json);
 }
 
@@ -171,7 +309,7 @@ deleted_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	(void)arg;
 	tp.busy = false;
-	if (status != 200) {
+	if (status < 200 || status > 299) {
 		snprintf(tp.error, sizeof(tp.error), "%s", why(status, o, err));
 		return;
 	}
@@ -540,9 +678,9 @@ templates_action(const char *act, const char *arg, const char *value)
 		confirm("Delete the template", base, "Delete", true, "",
 		    "tp-delete-do", tp.open, "");
 	} else if (strcmp(act, "tp-delete-do") == 0) {
-		snprintf(base, sizeof(base), "/api/templates/%s", arg);
+		rc_c(base, sizeof(base), "templates/template=%s", rc_key(arg));
 		tp.busy = true;
-		api("DELETE", base, NULL, deleted_cb, NULL);
+		rc_edit("DELETE", base, NULL, deleted_cb, NULL);
 	} else if (strcmp(act, "file:tp-upload") == 0) {
 		/* A template saved before: kept under its file's name. */
 		err[0] = '\0';

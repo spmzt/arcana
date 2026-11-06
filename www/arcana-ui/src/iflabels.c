@@ -29,6 +29,10 @@ static void
 labels_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	char			 key[40];
+
 	(void)err;
 	(void)arg;
 	lb.loading = false;
@@ -36,8 +40,17 @@ labels_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	if (lb.all != NULL)
 		ucl_object_unref(lb.all);
-	lb.all = jget(o, "labels") != NULL ? ucl_object_copy(jget(o, "labels")) :
-	    ucl_object_typed_new(UCL_OBJECT);
+	/* arcana-console's labels, each {host, interface, text}. */
+	lb.all = ucl_object_typed_new(UCL_OBJECT);
+	while ((e = ucl_object_iterate(jget(o, "label"), &it, true)) != NULL) {
+		if (jstr(e, "host") == NULL || jstr(e, "interface") == NULL ||
+		    jstr(e, "text") == NULL)
+			continue;
+		snprintf(key, sizeof(key), "%s/%s", jstr(e, "host"), jstr(e,
+		    "interface"));
+		ucl_object_insert_key(lb.all, ucl_object_fromstring(jstr(e,
+		    "text")), key, 0, true);
+	}
 	lb.loaded = true;
 	render();
 }
@@ -50,7 +63,7 @@ labels_load(void)
 	if (lb.loading)
 		return;
 	lb.loading = true;
-	api("GET", "/api/labels", NULL, labels_cb, NULL);
+	rc_get(RC_C "labels", NULL, labels_cb, NULL);
 }
 
 /* The label of an interface of a server, or NULL. */
@@ -110,30 +123,45 @@ saved_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	(void)arg;
-	if (status != 200) {
+	if (status < 200 || status > 299) {
 		toast(true, "The label was not kept: %s", err != NULL ? err :
-		    jstr(o, "error.message") != NULL ? jstr(o, "error.message") :
 		    "no answer");
 		return;
 	}
-	labels_cb(status, o, err, NULL);
+	lb.loading = false;
+	labels_load();
 }
 
+/* A label put as the host's interface's entry, or, empty, taken off. */
 bool
 iflabel_form(const char *form, const ucl_object_t *f)
 {
-	char	url[96], *q, *body;
+	const char	*l;
+	char		 url[300], *qh, *qi, *ql, *body;
 
 	if (strcmp(form, "if-label") != 0)
 		return (false);
 	if (lb.edit_sid[0] == '\0' || lb.edit_if[0] == '\0')
 		return (true);
-	snprintf(url, sizeof(url), "/api/labels/%s/%s", lb.edit_sid, lb.edit_if);
-	q = json_quote(jstr(f, "label") != NULL ? jstr(f, "label") : "");
-	if (asprintf(&body, "{\"label\":%s}", q) == -1)
+	rc_c(url, sizeof(url), "labels/label=%s,%s", rc_key(lb.edit_sid),
+	    rc_key(lb.edit_if));
+	l = jstr(f, "label") != NULL ? jstr(f, "label") : "";
+	if (l[0] == '\0') {
+		if (label_of(lb.edit_sid, lb.edit_if) != NULL)
+			rc_edit("DELETE", url, NULL, saved_cb, NULL);
+		lb.edit_sid[0] = lb.edit_if[0] = '\0';
+		return (true);
+	}
+	qh = json_quote(lb.edit_sid);
+	qi = json_quote(lb.edit_if);
+	ql = json_quote(l);
+	if (asprintf(&body, "{\"arcana-console:label\":[{\"host\":%s,"
+	    "\"interface\":%s,\"text\":%s}]}", qh, qi, ql) == -1)
 		abort();
-	free(q);
-	api("PUT", url, body, saved_cb, NULL);
+	free(qh);
+	free(qi);
+	free(ql);
+	rc_edit("PUT", url, body, saved_cb, NULL);
 	free(body);
 	lb.edit_sid[0] = lb.edit_if[0] = '\0';
 	return (true);

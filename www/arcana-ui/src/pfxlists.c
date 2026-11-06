@@ -31,6 +31,10 @@ static void
 px_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	ucl_object_t		*l;
+
 	(void)err;
 	(void)arg;
 	px.loading = false;
@@ -38,8 +42,22 @@ px_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	if (px.all != NULL)
 		ucl_object_unref(px.all);
-	px.all = jget(o, "lists") != NULL ? ucl_object_copy(jget(o, "lists")) :
-	    ucl_object_typed_new(UCL_OBJECT);
+	/* arcana-console's prefix-list entries, by name: {description,
+	 * prefixes}. */
+	px.all = ucl_object_typed_new(UCL_OBJECT);
+	while ((e = ucl_object_iterate(jget(o, "prefix-list"), &it, true)) !=
+	    NULL) {
+		if (jstr(e, "name") == NULL)
+			continue;
+		l = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(l, ucl_object_fromstring(jstr(e,
+		    "description") != NULL ? jstr(e, "description") : ""),
+		    "description", 0, false);
+		ucl_object_insert_key(l, jget(e, "prefix") != NULL ?
+		    ucl_object_copy(jget(e, "prefix")) : ucl_object_typed_new(
+		    UCL_ARRAY), "prefixes", 0, false);
+		ucl_object_insert_key(px.all, l, jstr(e, "name"), 0, true);
+	}
 	px.loaded = true;
 	render();
 }
@@ -51,7 +69,20 @@ pfxlists_load(void)
 	if (px.loading)
 		return;
 	px.loading = true;
-	api("GET", "/api/prefix-lists", NULL, px_cb, NULL);
+	rc_get(RC_C "prefix-lists", NULL, px_cb, NULL);
+}
+
+/* A change kept (204): the lists read again. */
+static void
+changed_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	if (status < 200 || status > 299) {
+		toast(true, "Not kept: %s", err != NULL ? err : "no answer");
+		return;
+	}
+	px.loading = false;
+	pfxlists_load();
 }
 
 /* The list named, or NULL; read once when first wanted. */
@@ -162,17 +193,25 @@ static void
 saved_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
-	(void)arg;
-	if (status != 200) {
-		toast(true, "Not kept: %s", err != NULL ? err : jstr(o,
-		    "error.message") != NULL ? jstr(o, "error.message") :
-		    "no answer");
+	char	*was = arg, url[300];
+
+	if (status < 200 || status > 299) {
+		free(was);
+		toast(true, "Not kept: %s", err != NULL ? err : "no answer");
 		render();
 		return;
 	}
 	px.edit[0] = '\0';
 	px.adding = false;
-	px_cb(status, o, err, NULL);
+	/* Renamed: the old name goes after the new is kept. */
+	if (was != NULL) {
+		rc_c(url, sizeof(url), "prefix-lists/prefix-list=%s",
+		    rc_key(was));
+		free(was);
+		rc_edit("DELETE", url, NULL, changed_cb, NULL);
+		return;
+	}
+	changed_cb(status, o, err, NULL);
 }
 
 static void
@@ -297,7 +336,7 @@ bool
 pfxlists_form(const char *form_name, const ucl_object_t *f)
 {
 	const char	*name, *was, *text, *desc;
-	char		*json, *q, *qd, url[96], *copy, *it, *w;
+	char		*json, *q, *qd, url[300], *copy, *it, *w;
 	struct html	 b;
 	bool		 first;
 
@@ -327,26 +366,25 @@ pfxlists_form(const char *form_name, const ucl_object_t *f)
 	free(copy);
 	h_raw(&b, "]");
 	qd = json_quote(desc);
-	if (asprintf(&json, "{\"description\":%s,\"prefixes\":%s}", qd, b.s !=
-	    NULL ? b.s : "[]") == -1)
+	q = json_quote(name);
+	if (asprintf(&json, "{\"arcana-console:prefix-list\":[{\"name\":%s,"
+	    "\"description\":%s%s%s}]}", q, qd, first ? "" : ",\"prefix\":",
+	    first ? "" : b.s) == -1)
 		abort();
+	free(q);
 	free(qd);
 	free(b.s);
-	snprintf(url, sizeof(url), "/api/prefix-lists/%s", name);
-	api("PUT", url, json, saved_cb, NULL);
+	rc_c(url, sizeof(url), "prefix-lists/prefix-list=%s", rc_key(name));
+	rc_edit("PUT", url, json, saved_cb, was[0] != '\0' && strcmp(was,
+	    name) != 0 ? strdup(was) : NULL);
 	free(json);
-	/* Renamed: the old name goes. */
-	if (was[0] != '\0' && strcmp(was, name) != 0) {
-		snprintf(url, sizeof(url), "/api/prefix-lists/%s", was);
-		api("DELETE", url, NULL, px_cb, NULL);
-	}
 	return (true);
 }
 
 bool
 pfxlists_action(const char *act, const char *arg, const char *value)
 {
-	char	url[96], body[200];
+	char	url[300], body[200];
 
 	if (strcmp(act, "input:px-filter") == 0) {
 		snprintf(px.filter, sizeof(px.filter), "%s", value != NULL ?
@@ -378,8 +416,9 @@ pfxlists_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strcmp(act, "px-del-do") == 0) {
-		snprintf(url, sizeof(url), "/api/prefix-lists/%s", arg);
-		api("DELETE", url, NULL, px_cb, NULL);
+		rc_c(url, sizeof(url), "prefix-lists/prefix-list=%s",
+		    rc_key(arg));
+		rc_edit("DELETE", url, NULL, changed_cb, NULL);
 		return (true);
 	}
 	return (false);

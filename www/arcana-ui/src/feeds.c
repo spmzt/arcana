@@ -39,6 +39,185 @@ static struct {
 	char		 dfilter[64];
 } fd;
 
+/* ---- arcana-console's threat-feeds as /api had them ------------------ */
+
+static void
+put(ucl_object_t *o, const char *key, ucl_object_t *v)
+{
+
+	ucl_object_insert_key(o, v, key, 0, true);
+}
+
+/* Of y, the keys named in pairs (YANG's, /api's) copied into o: numbers,
+ * or times as seconds. */
+static void
+nums(ucl_object_t *o, const ucl_object_t *y, const char *const *k,
+    bool time)
+{
+
+	for (; k[0] != NULL; k += 2)
+		if (jget(y, k[0]) != NULL)
+			put(o, k[1], ucl_object_fromint(time ? rc_time(jstr(y,
+			    k[0])) : jint(y, k[0], 0)));
+}
+
+static void
+strs(ucl_object_t *o, const ucl_object_t *y, const char *const *k)
+{
+
+	for (; *k != NULL; k++)
+		if (jstr(y, *k) != NULL)
+			put(o, *k, ucl_object_fromstring(jstr(y, *k)));
+}
+
+/* feed-host entries as {id: {...}}. */
+static ucl_object_t *
+hosts_of(const ucl_object_t *a)
+{
+	static const char *const n[] = { "count", "count", "added", "added",
+	    "removed", "removed", "set", "set", "left-out", "left_out", NULL };
+	static const char *const t[] = { "at", "at", "tried-at", "tried_at",
+	    NULL };
+	static const char *const s[] = { "name", "table", "error", NULL };
+	ucl_object_t		*o, *x;
+	const ucl_object_t	*h;
+	ucl_object_iter_t	 it = NULL;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	while ((h = ucl_object_iterate(a, &it, true)) != NULL) {
+		if (jstr(h, "host") == NULL)
+			continue;
+		x = ucl_object_typed_new(UCL_OBJECT);
+		strs(x, h, s);
+		nums(x, h, t, true);
+		nums(x, h, n, false);
+		put(o, jstr(h, "host"), x);
+	}
+	return (o);
+}
+
+/* The dropped entries and the hidden count of y into o. */
+static void
+dropped_of(ucl_object_t *o, const ucl_object_t *y)
+{
+	static const char *const s[] = { "entry", "reason", "detail", NULL };
+	ucl_object_t		*a, *x;
+	const ucl_object_t	*d;
+	ucl_object_iter_t	 it = NULL;
+
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((d = ucl_object_iterate(jget(y, "dropped"), &it, true)) !=
+	    NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		strs(x, d, s);
+		ucl_array_append(a, x);
+	}
+	put(o, "dropped", a);
+	if (jget(y, "protected-hidden") != NULL)
+		put(o, "protected_hidden", ucl_object_fromint(jint(y,
+		    "protected-hidden", 0)));
+}
+
+/* A feed entry as /api's feed: its state and what was last fetched. */
+static ucl_object_t *
+feed_of(const ucl_object_t *y)
+{
+	static const char *const s[] = { "id", "name", "url", "format",
+	    "table", "preset", "error", NULL };
+	static const char *const n[] = { "interval", "interval",
+	    "hosts-hidden", "hosts_hidden", "count", "count", "dropped-count",
+	    "dropped_count", "covered", "covered", "failures", "failures",
+	    "delivered-hidden", "delivered_hidden", NULL };
+	static const char *const t[] = { "fetched-at", "fetched_at",
+	    "tried-at", "tried_at", "changed-at", "changed_at", NULL };
+	static const char *const pn[] = { "count", "count", "dropped-count",
+	    "dropped_count", "covered", "covered", "hosts-hidden",
+	    "hosts_hidden", NULL };
+	ucl_object_t		*o, *x, *a;
+	const ucl_object_t	*v, *e;
+	ucl_object_iter_t	 it = NULL;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	strs(o, y, s);
+	put(o, "enabled", ucl_object_frombool(jbool(y, "enabled")));
+	if (jget(y, "bogons") != NULL)
+		put(o, "bogons", ucl_object_frombool(jbool(y, "bogons")));
+	put(o, "hosts", jget(y, "host") != NULL ? ucl_object_copy(jget(y,
+	    "host")) : ucl_object_typed_new(UCL_ARRAY));
+	nums(o, y, n, false);
+	nums(o, y, t, true);
+	if ((v = jget(y, "alarm")) != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		if (jstr(v, "since") != NULL)
+			put(x, "since", ucl_object_fromint(rc_time(jstr(v,
+			    "since"))));
+		if (jstr(v, "text") != NULL)
+			put(x, "text", ucl_object_fromstring(jstr(v, "text")));
+		put(o, "alarm", x);
+	}
+	put(o, "delivered", hosts_of(jget(y, "delivered")));
+	dropped_of(o, jget(y, "last-fetch"));
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(jget(y, "event"), &it, true)) != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		if (jstr(e, "at") != NULL)
+			put(x, "at", ucl_object_fromint(rc_time(jstr(e,
+			    "at"))));
+		put(x, "count", ucl_object_fromint(jint(e, "count", 0)));
+		put(x, "was", ucl_object_fromint(jint(e, "was", 0)));
+		ucl_array_append(a, x);
+	}
+	put(o, "events", a);
+	if ((v = jget(y, "last-preview")) != NULL) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		if (jstr(v, "at") != NULL)
+			put(x, "at", ucl_object_fromint(rc_time(jstr(v,
+			    "at"))));
+		if (jstr(v, "error") != NULL)
+			put(x, "error", ucl_object_fromstring(jstr(v,
+			    "error")));
+		nums(x, v, pn, false);
+		dropped_of(x, v);
+		put(x, "hosts", hosts_of(jget(v, "host")));
+		put(o, "preview", x);
+	}
+	put(o, "sample", jget(y, "sample") != NULL ? ucl_object_copy(jget(y,
+	    "sample")) : ucl_object_typed_new(UCL_ARRAY));
+	return (o);
+}
+
+/* The whole: {presets, feeds, floor, max_entries}. */
+static ucl_object_t *
+all_of(const ucl_object_t *y)
+{
+	ucl_object_t		*o, *a, *p;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(y, "preset"), &it, true)) !=
+	    NULL) {
+		p = ucl_object_copy(e);
+		if (jget(p, "terms-url") != NULL) {
+			put(p, "terms_url", ucl_object_copy(jget(e,
+			    "terms-url")));
+			ucl_object_delete_key(p, "terms-url");
+		}
+		ucl_array_append(a, p);
+	}
+	put(o, "presets", a);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(y, "feed"), &it, true)) != NULL)
+		ucl_array_append(a, feed_of(e));
+	put(o, "feeds", a);
+	put(o, "floor", ucl_object_fromint(jint(y, "floor", 0)));
+	put(o, "max_entries", ucl_object_fromint(jint(y, "max-entries", 0)));
+	return (o);
+}
+
 static void
 all_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -51,7 +230,7 @@ all_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	if (fd.all != NULL)
 		ucl_object_unref(fd.all);
-	fd.all = ucl_object_copy(o);
+	fd.all = all_of(o);
 	render();
 }
 
@@ -66,23 +245,23 @@ detail_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	if (fd.detail != NULL)
 		ucl_object_unref(fd.detail);
-	fd.detail = ucl_object_copy(o);
+	fd.detail = feed_of(o);
 	render();
 }
 
 void
 feeds_load(void)
 {
-	char	url[80];
+	char	url[300];
 
 	if (!fd.loading) {
 		fd.loading = true;
-		api("GET", "/api/feeds", NULL, all_cb, NULL);
+		rc_get(RC_C "threat-feeds", NULL, all_cb, NULL);
 	}
 	if (fd.open[0] != '\0' && !fd.dloading) {
 		fd.dloading = true;
-		snprintf(url, sizeof(url), "/api/feeds/%s", fd.open);
-		api("GET", url, NULL, detail_cb, NULL);
+		rc_get(rc_c(url, sizeof(url), "threat-feeds/feed=%s",
+		    rc_key(fd.open)), NULL, detail_cb, NULL);
 	}
 }
 
@@ -127,10 +306,8 @@ saved_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	(void)arg;
-	if (status != 200 && status != 202) {
-		toast(true, "Not done: %s", err != NULL ? err : jstr(o,
-		    "error.message") != NULL ? jstr(o, "error.message") :
-		    "no answer");
+	if (status < 200 || status > 299) {
+		toast(true, "Not done: %s", err != NULL ? err : "no answer");
 		render();
 		return;
 	}
@@ -613,7 +790,8 @@ feeds_form(const char *form_name, const ucl_object_t *f)
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
 	struct html		 b;
-	char			*q, url[80];
+	ucl_object_t		*y, *a, *top;
+	char			*q, url[300], *json;
 	const char		*id;
 	bool			 first;
 
@@ -659,16 +837,39 @@ feeds_form(const char *form_name, const ucl_object_t *f)
 		first = false;
 	}
 	h_raw(&b, "]}");
-	snprintf(url, sizeof(url), "/api/feeds/%s", id);
-	api("PUT", url, b.s, saved_cb, NULL);
+	/* /api's body as the feed's entry: its id, its hosts a host
+	 * leaf-list. */
+	if ((y = json_parse(b.s)) == NULL) {
+		free(b.s);
+		return (true);
+	}
 	free(b.s);
+	put(y, "id", ucl_object_fromstring(id));
+	/* Left empty: the preset's or the console's own (a leaf left
+	 * out). */
+	if (jstr(y, "table") != NULL && jstr(y, "table")[0] == '\0')
+		ucl_object_delete_key(y, "table");
+	if (jstr(y, "url") != NULL && jstr(y, "url")[0] == '\0')
+		ucl_object_delete_key(y, "url");
+	if (ucl_array_size(jget(y, "hosts")) > 0)
+		put(y, "host", ucl_object_copy(jget(y, "hosts")));
+	ucl_object_delete_key(y, "hosts");
+	a = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(a, y);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	put(top, "arcana-console:feed", a);
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	rc_edit("PUT", rc_c(url, sizeof(url), "threat-feeds/feed=%s",
+	    rc_key(id)), json, saved_cb, NULL);
+	free(json);
 	return (true);
 }
 
 bool
 feeds_action(const char *act, const char *arg, const char *value)
 {
-	char	url[96], body[300];
+	char	url[300], body[300];
 
 	if (strcmp(act, "input:fd-filter") == 0) {
 		snprintf(fd.filter, sizeof(fd.filter), "%s", value != NULL ?
@@ -702,9 +903,9 @@ feeds_action(const char *act, const char *arg, const char *value)
 		fd.open[0] = '\0';
 	else if (strcmp(act, "fd-fetch") == 0 || strcmp(act, "fd-preview") ==
 	    0) {
-		snprintf(url, sizeof(url), "/api/feeds/%s/%s", arg, strcmp(act,
-		    "fd-fetch") == 0 ? "fetch" : "preview");
-		api("POST", url, NULL, saved_cb, NULL);
+		rc_c(url, sizeof(url), "threat-feeds/feed=%s/%s", rc_key(arg),
+		    strcmp(act, "fd-fetch") == 0 ? "fetch" : "preview");
+		rc_action(url, NULL, NULL, saved_cb, NULL);
 	} else if (strcmp(act, "fd-del") == 0) {
 		snprintf(body, sizeof(body), "The feed %s goes, and the hosts "
 		    "give up its tables; a rule that names one matches nothing "
@@ -712,10 +913,10 @@ feeds_action(const char *act, const char *arg, const char *value)
 		confirm("Take the feed away", body, "Take away", true, "",
 		    "fd-del-do", arg, "");
 	} else if (strcmp(act, "fd-del-do") == 0) {
-		snprintf(url, sizeof(url), "/api/feeds/%s", arg);
+		rc_c(url, sizeof(url), "threat-feeds/feed=%s", rc_key(arg));
 		if (strcmp(fd.open, arg) == 0)
 			fd.open[0] = '\0';
-		api("DELETE", url, NULL, saved_cb, NULL);
+		rc_edit("DELETE", url, NULL, saved_cb, NULL);
 	} else
 		return (false);
 	return (true);

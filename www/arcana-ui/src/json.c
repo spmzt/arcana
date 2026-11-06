@@ -57,9 +57,19 @@ int64_t
 jint(const ucl_object_t *o, const char *path, int64_t def)
 {
 	const ucl_object_t	*v;
+	const char		*s;
+	char			*end;
 	int64_t			 i;
 
-	if ((v = jget(o, path)) == NULL || !ucl_object_toint_safe(v, &i))
+	if ((v = jget(o, path)) == NULL)
+		return (def);
+	/* RFC 7951's 64-bit integers are strings. */
+	if (ucl_object_type(v) == UCL_STRING) {
+		s = ucl_object_tostring(v);
+		i = strtoll(s, &end, 10);
+		return (s[0] != '\0' && *end == '\0' ? i : def);
+	}
+	if (!ucl_object_toint_safe(v, &i))
 		return (def);
 	return (i);
 }
@@ -68,9 +78,19 @@ double
 jnum(const ucl_object_t *o, const char *path, double def)
 {
 	const ucl_object_t	*v;
+	const char		*s;
+	char			*end;
 	double			 d;
 
-	if ((v = jget(o, path)) == NULL || !ucl_object_todouble_safe(v, &d))
+	if ((v = jget(o, path)) == NULL)
+		return (def);
+	/* RFC 7951's 64-bit integers and decimal64 are strings. */
+	if (ucl_object_type(v) == UCL_STRING) {
+		s = ucl_object_tostring(v);
+		d = strtod(s, &end);
+		return (s[0] != '\0' && *end == '\0' ? d : def);
+	}
+	if (!ucl_object_todouble_safe(v, &d))
 		return (def);
 	return (d);
 }
