@@ -132,7 +132,7 @@ void
 ecmp_tick(double now)
 {
 	struct ehost	*e;
-	char		 url[160];
+	struct netq	 q;
 	int		 i;
 
 	if (!ecmp_shown() || !app.visible)
@@ -150,9 +150,10 @@ ecmp_tick(double now)
 			continue;
 		e->loading = true;
 		e->asked = now;
-		snprintf(url, sizeof(url), "/api/servers/%s/net/nhgroups?"
-		    "family=all", app.servers[i].id);
-		api("GET", url, NULL, groups_cb, strdup(app.servers[i].id));
+		memset(&q, 0, sizeof(q));
+		q.kind = "nhgroups";
+		net_yread(app.servers[i].id, &q, false, groups_cb,
+		    strdup(app.servers[i].id));
 	}
 }
 

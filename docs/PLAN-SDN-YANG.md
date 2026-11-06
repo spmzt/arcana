@@ -2457,7 +2457,23 @@ whose first part is served.
   the three a live read has), Jails (arcana-jails with arcana-host's
   host, jail files, the address preview a dry run of arcana-network's
   address), Storage (arcana-storage's read, fstab/replace;
-  arcana-netstore's read).  A tab's export names a read by its nodes
+  arcana-netstore's read), Network (console 0.391.0; the page's
+  netread.c: arcana-network's read actions, the Interfaces table by
+  ietf-interfaces and RFC 8529's network instances, a vnet jail's
+  firewall by arcana-network's ipfw, arcana-netgraph's,
+  arcana-wireguard's and arcana-bird's reads, arcana-troubleshoot's
+  traceroute, arcana-probe's monitors with running's settings, made
+  the tables the tabs drew: the network modules' 64-bit leaves numbers
+  by their names, the routes, nexthops, sockets wrapped as netstat's
+  libxo document; BIRD's configuration from running, a file changed
+  merged into the candidate and committed, in safe mode confirmed with
+  the page's own token for Confirm, the host's rollback timer; the FEC
+  relay by arcana-speeder's read, jflat() taking yflat's # and ?; the
+  map's sysctls by arcana-sysctl's read).  Decided: a change of BIRD's
+  file is refused when running's text is not the one it was made from
+  (the text compared, the page having it); the routes, connections and
+  sockets read in parts stay on the socket's stream until 4.8.2.  A
+  tab's export names a read by its nodes
   without their modules ("services").  Added to the console's RESTCONF
   side: the socket's `{"what": "restconf"}`, a GET or an action that reads below a host's
   entry with its steps (hosts_restconf_live(); console_test
@@ -2466,9 +2482,8 @@ whose first part is served.
   restconf_job_confirm).  Decided: the Log tab's events stay on /api
   with the socket's events, the same shape, until the stream is
   RESTCONF's (4.8.2).  Open: a dataset's key (its name has a /, which
-  no path below the mount carries, as 4.4.1 found), Network
-  (net/*, BIRD, IPsec, FEC relay, monitors, netview, topo, ecmp, mtr,
-  span), Firewall (ipfw.c), the Security page (secpage.c, surules.c,
+  no path below the mount carries, as 4.4.1 found), Firewall
+  (ipfw.c), the Security page (secpage.c, surules.c,
   idsstats.c), an edge's SD-WAN state and the interfaces its forms read
   (sdwan.c), builder.c, the events read (logs.c, 4.8.2); then `/api`
   keeps D-10's resources alone.

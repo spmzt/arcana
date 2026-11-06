@@ -89,7 +89,7 @@ capture_send(struct server *s, const char *body)
 void
 span_refresh(struct server *s)
 {
-	char	url[400];
+	struct netq	q;
 
 	if (strcmp(sp.sid, s->id) != 0 || strcmp(sp.jail, net_scope()) != 0) {
 		if (sp.fw != NULL)
@@ -104,9 +104,10 @@ span_refresh(struct server *s)
 	}
 	snprintf(sp.sid, sizeof(sp.sid), "%s", s->id);
 	snprintf(sp.jail, sizeof(sp.jail), "%s", net_scope());
-	snprintf(url, sizeof(url), "/api/servers/%s/net/ipfw?family=all%s%s",
-	    s->id, sp.jail[0] != '\0' ? "&jail=" : "", sp.jail);
-	api("GET", url, NULL, fw_cb, NULL);
+	memset(&q, 0, sizeof(q));
+	q.kind = "ipfw";
+	q.jail = sp.jail;
+	net_yread(s->id, &q, false, fw_cb, NULL);
 	capture_send(s, "{}");
 }
 

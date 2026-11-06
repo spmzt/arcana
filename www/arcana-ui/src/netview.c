@@ -1331,7 +1331,7 @@ bool
 nhop_action(const char *act, const char *arg, const char *value)
 {
 	struct server	*s;
-	char		 url[400];
+	struct netq	 q;
 
 	if (strcmp(act, "net-nhop-all") == 0) {
 		app.modal = MODAL_NONE;
@@ -1355,10 +1355,10 @@ nhop_action(const char *act, const char *arg, const char *value)
 	nb.loading = true;
 	app.modal = MODAL_NHOP;
 	app.modal_error[0] = '\0';
-	snprintf(url, sizeof(url), "/api/servers/%s/net/%s?family=all%s%s",
-	    s->id, nb.group ? "nhgroups" : "nexthops", net_scope()[0] != '\0' ?
-	    "&jail=" : "", net_scope());
-	api("GET", url, NULL, nhop_cb, NULL);
+	memset(&q, 0, sizeof(q));
+	q.kind = nb.group ? "nhgroups" : "nexthops";
+	q.jail = net_scope();
+	net_yread(s->id, &q, false, nhop_cb, NULL);
 	return (true);
 }
 

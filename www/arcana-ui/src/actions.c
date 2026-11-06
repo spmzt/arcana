@@ -2848,7 +2848,7 @@ void
 network_more(struct server *s)
 {
 	struct ctx	*c;
-	char		 url[640], fib[24], jail[270];
+	struct netq	 q;
 
 	if (!app.online || app.net.loading || app.net.data == NULL ||
 	    app.net.kind != NET_ROUTES)
@@ -2860,17 +2860,14 @@ network_more(struct server *s)
 	c->op_family = app.net.family;
 	snprintf(c->jail, sizeof(c->jail), "%s", app.net.jail);
 	c->more = true;
-	fib[0] = '\0';
-	if (app.net.fib > 0)
-		snprintf(fib, sizeof(fib), "&fib=%d", app.net.fib);
-	snprintf(jail, sizeof(jail), "%s%s", app.net.jail[0] != '\0' ?
-	    "&jail=" : "", app.net.jail);
-	snprintf(url, sizeof(url), "/api/servers/%s/net/routes?family=%s%s%s"
-	    "&offset=%d%s%s", s->id, app.net.family == 4 ? "inet" :
-	    app.net.family == 6 ? "inet6" : "all", app.net.host_filter[0] !=
-	    '\0' ? "&filter=" : "", app.net.host_filter, routes_held(), fib,
-	    jail);
-	api("GET", url, NULL, network_cb, c);
+	memset(&q, 0, sizeof(q));
+	q.kind = "routes";
+	q.family = app.net.family;
+	q.fib = app.net.fib;
+	q.offset = routes_held();
+	q.jail = app.net.jail;
+	q.filter = app.net.host_filter;
+	net_yread(s->id, &q, false, network_cb, c);
 }
 
 static void
@@ -3109,7 +3106,8 @@ refresh_network(struct server *s, bool user)
 	    "interfaces" };
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[640], title[160], fib[24], c0jail[270];
+	struct netq	 q;
+	char		 title[160];
 
 	if (!app.online)
 		return;
@@ -3152,8 +3150,6 @@ refresh_network(struct server *s, bool user)
 	}
 	snprintf(app.net.sid, sizeof(app.net.sid), "%s", s->id);
 	snprintf(app.net.jail, sizeof(app.net.jail), "%s", net_scope());
-	snprintf(c0jail, sizeof(c0jail), "%s%s", app.net.jail[0] != '\0' ?
-	    "&jail=" : "", app.net.jail);
 	app.net.loading = true;
 	/* Span is the bridges, and the firewall's taps and the sources. */
 	if (app.net.kind == NET_SPAN)
@@ -3175,25 +3171,19 @@ refresh_network(struct server *s, bool user)
 		c->op = op->id;
 		app.trace_op = op->id;
 	}
-	fib[0] = '\0';
-	if (app.net.fib > 0 && (app.net.kind == NET_ROUTES || app.net.kind ==
-	    NET_NEXTHOPS))
-		snprintf(fib, sizeof(fib), "&fib=%d", app.net.fib);
-	/* The Interfaces table by the standard models (the console's
-	 * ytrans.c); the other tabs of the same table by the agent's. */
-	snprintf(url, sizeof(url), "/api/servers/%s/net/%s?family=%s%s%s%s%s%s",
-	    s->id, kinds[app.net.kind], app.net.family == 4 ? "inet" :
-	    app.net.family == 6 ? "inet6" : "all", app.net.kind ==
-	    NET_ROUTES && app.net.host_filter[0] != '\0' ? "&filter=" : "",
-	    app.net.kind == NET_ROUTES ? app.net.host_filter : "", fib,
-	    c0jail, app.net.kind == NET_INTERFACES ? "&source=yang" : "");
-	if (user) {
-		/* Asked for: its steps drawn as the host takes them. */
-		live_read(s->id, url + strlen("/api/servers/") +
-		    strlen(s->id) + 1, url, c->op, network_cb, c);
-		return;
-	}
-	api("GET", url, NULL, network_cb, c);
+	memset(&q, 0, sizeof(q));
+	q.kind = kinds[app.net.kind];
+	q.family = app.net.family;
+	if (app.net.kind == NET_ROUTES || app.net.kind == NET_NEXTHOPS)
+		q.fib = app.net.fib;
+	q.jail = app.net.jail;
+	if (app.net.kind == NET_ROUTES)
+		q.filter = app.net.host_filter;
+	/* The Interfaces table by the standard models; the other tabs of
+	 * the same table by arcana-network's. */
+	q.yang = app.net.kind == NET_INTERFACES;
+	/* Asked for: its steps drawn as the host takes them. */
+	net_yread(s->id, &q, user, network_cb, c);
 }
 
 static void

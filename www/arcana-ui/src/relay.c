@@ -11,7 +11,8 @@
  * on the host: a relay often carries the tunnel the console reaches the
  * host by, and a change it cannot answer after is undone.  The admin's
  * own relay, run by the port's rc script (speederv2), is shown as read,
- * never changed.
+ * never changed.  Read through the fleet mount: arcana-speeder's read,
+ * the monitors arcana-probe's (netread.c).
  */
 
 #include <stdio.h>
@@ -55,10 +56,8 @@ relay_refresh(void)
 static void
 rl_load_monitors(const char *sid)
 {
-	char	url[96];
 
-	snprintf(url, sizeof(url), "/api/servers/%s/monitors", sid);
-	res_load(&rl.m, sid, url);
+	res_call(&rl.m, sid, monitors_yread);
 }
 
 static void rl_load(const char *);
@@ -91,19 +90,44 @@ rl_where(struct server *s)
 	return (at != NULL ? at : "");
 }
 
+/*
+ * arcana-speeder's read as the tab draws it: the names its read has
+ * always had (yflat's rules), the counts and rates numbers.
+ */
+static ucl_object_t *
+rl_conv(const ucl_object_t *o)
+{
+	static const char *const names[] = {
+	    "fec-group?[size,redundant]=fec_groups",
+	    "period[time,to-server,to-client,plain-to-server,plain-to-client]="
+	    "series", "profile?=profiles", NULL };
+	static const char *const nums[] = { "plain_packets", "plain_bytes",
+	    "fec_packets", "fec_bytes", "overhead", "overhead_now",
+	    "plain_rate", "fec_rate", "interval", "fec_groups", "series",
+	    "mode", "mtu", "timeout", "report_every", NULL };
+	ucl_object_t	*f, *r;
+
+	f = jflat(o, names);
+	r = net_plain(f, nums);
+	ucl_object_unref(f);
+	return (r);
+}
+
 static void
 rl_load(const char *sid)
 {
 	struct server	*s;
-	char		 url[128], q[80];
+	char		 in[120], *q;
 
 	if (strcmp(sid, rl.r.sid) != 0)
 		rl.picked = false;
-	q[0] = '\0';
-	if ((s = cur_server()) != NULL && rl_where(s)[0] != '\0')
-		snprintf(q, sizeof(q), "?jail=%s", rl_where(s));
-	snprintf(url, sizeof(url), "/api/servers/%s/speeder%s", sid, q);
-	res_load(&rl.r, sid, url);
+	snprintf(in, sizeof(in), "{}");
+	if ((s = cur_server()) != NULL && rl_where(s)[0] != '\0') {
+		q = json_quote(rl_where(s));
+		snprintf(in, sizeof(in), "{\"jail\":%s}", q);
+		free(q);
+	}
+	res_yread(&rl.r, sid, "arcana-speeder:speeder/read", in, rl_conv);
 }
 
 /*

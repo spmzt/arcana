@@ -132,6 +132,7 @@ char		*json_quote(const char *);
 ucl_object_t	*jmap(const ucl_object_t *, const char *const *);
 ucl_object_t	*jmap_each(const ucl_object_t *, const char *const *);
 ucl_object_t	*jflat(const ucl_object_t *, const char *const *);
+ucl_object_t	*jnumber(const char *);
 /* yaml.c: YAML written and read. */
 char		*yaml_emit(const ucl_object_t *);
 ucl_object_t	*yaml_parse(const char *, char *, size_t);
@@ -1156,6 +1157,35 @@ void		 secpage_refresh(void);
 /* sysview.c: a host's own configuration, of the system read. */
 void		 refresh_system(struct server *, bool);
 
+/*
+ * netread.c: a host's network tables through the fleet mount, made the
+ * JSON the pages draw ({"ok": true, "data": ...}).  kind is routes,
+ * nexthops, nhgroups, connections, sockets, interfaces (by the standard
+ * models with yang, the host's), neighbours, bridges, geneve,
+ * multicast, kept-routes, ipsec, ipfw, netgraph, wireguard, bird,
+ * bird-routes, bird-ospf (filter its protocol with topology), lookup or
+ * traceroute (address); family 0 all, 4 or 6; jail NULL or "" the
+ * host's.  net_plain(): a node by its module's names, the 64-bit
+ * leaves (nums, NULL the network modules') numbers; net_fw():
+ * arcana-firewall's firewall as the Firewall tab draws it.
+ */
+struct netq {
+	const char	*kind;
+	int		 family;
+	int		 fib;
+	int		 offset;
+	const char	*jail;
+	const char	*filter;
+	const char	*address;
+	bool		 yang;
+	bool		 topology;
+};
+void		 net_yread(const char *, const struct netq *, bool, api_cb *,
+		    void *);
+void		 monitors_yread(const char *, api_cb *, void *);
+ucl_object_t	*net_plain(const ucl_object_t *, const char *const *);
+ucl_object_t	*net_fw(const ucl_object_t *);
+
 /* res.c: a page's read of one host's resource, and a job's JSON. */
 struct res {
 	char		 sid[16];	/* the host read */
@@ -1167,6 +1197,8 @@ struct res {
 void		 res_load(struct res *, const char *, const char *);
 void		 res_yread(struct res *, const char *, const char *,
 		    const char *, ucl_object_t *(*)(const ucl_object_t *));
+void		 res_call(struct res *, const char *,
+		    void (*)(const char *, api_cb *, void *));
 void		 res_drop(struct res *);
 bool		 res_shown(struct html *, struct res *, const char *,
 		    void (*)(const char *), const char *);

@@ -145,22 +145,24 @@ egress_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 egress_ask(int s)
 {
-	char	url[200];
+	struct netq	q;
 
 	if (s < 0 || s >= app.nservers || mt.out[s].asked)
 		return;
 	mt.out[s].asked = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/net/lookup?to=%s",
-	    app.servers[s].id, mt.to);
-	api("GET", url, NULL, egress_cb, (void *)(intptr_t)s);
+	memset(&q, 0, sizeof(q));
+	q.kind = "lookup";
+	q.address = mt.to;
+	net_yread(app.servers[s].id, &q, false, egress_cb,
+	    (void *)(intptr_t)s);
 }
 
 void
 mtr_tick(double now)
 {
-	char	url[200];
-	int	ttl, s;
-	char	ifn[16], jail[64];
+	struct netq	q;
+	int		ttl, s;
+	char		ifn[16], jail[64];
 
 	if (app.node != NODE_NETWORK || app.netsect != NETSECT_TRACE ||
 	    !mt.running || mt.busy || now - mt.asked < MTR_EVERY ||
@@ -168,9 +170,11 @@ mtr_tick(double now)
 		return;
 	mt.busy = true;
 	mt.asked = now;
-	snprintf(url, sizeof(url), "/api/servers/%s/net/traceroute?to=%s",
-	    app.servers[mt.from].id, mt.to);
-	api("GET", url, NULL, round_cb, (void *)(intptr_t)mt.gen);
+	memset(&q, 0, sizeof(q));
+	q.kind = "traceroute";
+	q.address = mt.to;
+	net_yread(app.servers[mt.from].id, &q, false, round_cb,
+	    (void *)(intptr_t)mt.gen);
 	/* The hosts of ours on the way: which way each sends on. */
 	egress_ask(mt.from);
 	for (ttl = 1; ttl <= mt.maxttl; ttl++)

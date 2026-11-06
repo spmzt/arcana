@@ -17,6 +17,11 @@
  * parse it first: what does not parse does not stay.  Filters and
  * functions are edited as they are written; a definition that is a set,
  * of communities, large communities or prefixes, as a list.
+ *
+ * Through the fleet mount: birdc's by arcana-bird's read, routes and
+ * ospf (netread.c); the configuration arcana-bird's in running, a file
+ * changed merged into the candidate and committed, in safe mode
+ * confirmed with this page's own token, which Confirm commits again.
  */
 
 #include <ctype.h>
@@ -25,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "app.h"
 
@@ -47,7 +53,6 @@ static struct {
 	char		 jail[256];	/* the vnet jail it is in; "" the host */
 	char		 path[256];	/* the file shown; "" the main one */
 	char		*text;
-	char		 sha[65];
 	ucl_object_t	*files;
 	bool		 loading;
 	char		 error[300];
@@ -75,6 +80,7 @@ static struct {
 	long long	 shown_left;	/* the seconds left as last drawn */
 	char		 confirm_sid[9];
 	char		 confirm_jail[256];
+	char		 token[33];	/* the confirmed commit's persist */
 	bool		 confirming;
 	double		 reload_at;	/* when to read the file again, or 0 */
 } bd = { .edit = -1 };
@@ -419,11 +425,9 @@ conf_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		    status == 200 && jstr(o, "error") != NULL ? jstr(o,
 		    "error") : err != NULL ? err : "no answer");
 		/* Refused: the text there is the one to start from again. */
-		if (status == 200 && jstr(o, "sha256") != NULL && jstr(o,
-		    "text") != NULL && !save) {
+		if (status == 200 && jstr(o, "text") != NULL && !save) {
 			free(bd.text);
 			bd.text = strdup(jstr(o, "text"));
-			snprintf(bd.sha, sizeof(bd.sha), "%s", jstr(o, "sha256"));
 			blocks();
 		}
 		return;
@@ -432,8 +436,6 @@ conf_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (jstr(o, "text") != NULL) {
 		free(bd.text);
 		bd.text = strdup(jstr(o, "text"));
-		snprintf(bd.sha, sizeof(bd.sha), "%s", jstr(o, "sha256") !=
-		    NULL ? jstr(o, "sha256") : "");
 		blocks();
 		want_open();
 		sess_open();
@@ -479,14 +481,14 @@ confirm_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	(void)arg;
+	(void)o;
 	bd.confirming = false;
-	if (status == 200 && jbool(o, "ok")) {
+	if (status == 200 || status == 204) {
 		toast(false, "BIRD keeps its new configuration");
 		return;
 	}
 	toast(true, "BIRD's new configuration was not confirmed, and is taken "
-	    "back: %s", status == 200 && jstr(o, "error") != NULL ? jstr(o,
-	    "error") : err != NULL ? err : "the host did not answer");
+	    "back: %s", err != NULL ? err : "the host did not answer");
 	/* The file is the old one again soon: read then. */
 	bd.reload_at = arc_now() + 4 * CONFIRM_AFTER_MS;
 }
@@ -495,20 +497,18 @@ confirm_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 confirm_now(void)
 {
-	char	 url[96], *qj, *body;
+	char	 url[300], body[120];
 
-	if (bd.confirm_by == 0 || bd.confirming)
+	if (bd.confirm_by == 0 || bd.confirming || bd.token[0] == '\0')
 		return;
 	bd.confirm_by = 0;
 	bd.confirming = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/bird/config",
-	    bd.confirm_sid);
-	qj = json_quote(bd.confirm_jail);
-	if (asprintf(&body, "{\"confirm\":true,\"jail\":%s}", qj) == -1)
-		abort();
-	free(qj);
+	/* The confirmed commit made, committed again by its persist-id. */
+	rc_h(url, sizeof(url), bd.confirm_sid, "ietf-netconf:commit");
+	snprintf(body, sizeof(body), "{\"ietf-netconf:input\":{\"persist-id\":"
+	    "\"%s\"}}", bd.token);
+	bd.token[0] = '\0';
 	api("POST", url, body, confirm_cb, NULL);
-	free(body);
 	render();
 }
 
@@ -1050,11 +1050,275 @@ filter_now(const char *text, const char *chan, const char *dir, char *buf,
 	}
 }
 
+/*
+ * BIRD's configuration in running, the host's or a vnet jail's: read,
+ * and a change checked or saved by what is there now.
+ */
+#define	SAFE_WAIT	60	/* s, where the host has no timer of its own */
+
+enum { BC_READ, BC_CHECK, BC_SAVE };
+
+struct bconf {
+	int	 how;
+	char	 sid[9];
+	char	 jail[256];
+	char	 path[256];
+	char	*text;		/* a check's or a save's */
+	char	*base;		/* what it was made from */
+	int	 wait;		/* s: safe mode's; 0 a plain commit */
+	ucl_object_t *files;	/* the files after the change */
+};
+
+static void
+bconf_free(struct bconf *c)
+{
+
+	free(c->text);
+	free(c->base);
+	if (c->files != NULL)
+		ucl_object_unref(c->files);
+	free(c);
+}
+
+/* The configuration of the host's BIRD or a jail's, in running's. */
+static const ucl_object_t *
+bconf_of(const ucl_object_t *b, const char *jail)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+
+	if (jail[0] == '\0')
+		return (jget(b, "configuration"));
+	while ((e = ucl_object_iterate(jget(b, "jail"), &it, true)) != NULL)
+		if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"), jail) ==
+		    0)
+			return (jget(e, "configuration"));
+	return (NULL);
+}
+
+/* The files of conf, path among them; *file the one of path. */
+static ucl_object_t *
+bconf_files(const ucl_object_t *conf, const char *path,
+    const ucl_object_t **file)
+{
+	const ucl_object_t	*f;
+	ucl_object_iter_t	 it = NULL;
+	ucl_object_t		*arr;
+
+	*file = NULL;
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	while ((f = ucl_object_iterate(jget(conf, "file"), &it, true)) !=
+	    NULL) {
+		if (jstr(f, "path") == NULL)
+			continue;
+		ucl_array_append(arr, ucl_object_fromstring(jstr(f, "path")));
+		if (strcmp(jstr(f, "path"), path) == 0)
+			*file = f;
+	}
+	return (arr);
+}
+
+/* What conf_cb() takes: ok, or the error; the files, path and text. */
+static void
+bconf_reply(struct bconf *c, bool ok, const char *error, ucl_object_t *files,
+    const char *text, long long confirm_by)
+{
+	ucl_object_t	*r;
+
+	r = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(r, ucl_object_frombool(ok), "ok", 0, false);
+	if (error != NULL)
+		ucl_object_insert_key(r, ucl_object_fromstring(error), "error",
+		    0, false);
+	if (files != NULL)
+		ucl_object_insert_key(r, files, "files", 0, false);
+	ucl_object_insert_key(r, ucl_object_fromstring(c->path), "path", 0,
+	    false);
+	if (text != NULL)
+		ucl_object_insert_key(r, ucl_object_fromstring(text), "text", 0,
+		    false);
+	if (confirm_by > 0)
+		ucl_object_insert_key(r, ucl_object_fromint(confirm_by),
+		    "confirm_by", 0, false);
+	conf_cb(200, r, NULL, c->how == BC_SAVE ? &bd : NULL);
+	ucl_object_unref(r);
+}
+
+static void
+bconf_commit_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+	struct bconf	*c = arg;
+	ucl_object_t	*files;
+
+	if (status != 200 && status != 204) {
+		bd.token[0] = '\0';
+		conf_cb(status, o, err, &bd);
+		bconf_free(c);
+		return;
+	}
+	files = c->files;
+	c->files = NULL;
+	bconf_reply(c, true, NULL, files, c->text, c->wait > 0 ?
+	    (long long)(arc_now() / 1000) + c->wait : 0);
+	bconf_free(c);
+}
+
+/* Merged into the candidate: committed, in safe mode confirmed. */
+static void
+bconf_edit_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct bconf	*c = arg;
+	uint8_t		 r[16];
+	char		 url[300], body[200];
+
+	if (status != 200 && status != 204 && status != 201) {
+		conf_cb(status, o, err, &bd);
+		bconf_free(c);
+		return;
+	}
+	rc_h(url, sizeof(url), c->sid, "ietf-netconf:commit");
+	if (c->wait > 0 && getentropy(r, sizeof(r)) == 0) {
+		for (size_t i = 0; i < sizeof(r); i++)
+			snprintf(bd.token + 2 * i, sizeof(bd.token) - 2 * i,
+			    "%02x", r[i]);
+		snprintf(body, sizeof(body), "{\"ietf-netconf:input\":{"
+		    "\"confirmed\":[null],\"confirm-timeout\":%d,\"persist\":"
+		    "\"%s\"}}", c->wait, bd.token);
+	} else {
+		c->wait = 0;
+		snprintf(body, sizeof(body), "{\"ietf-netconf:input\":{}}");
+	}
+	api("POST", url, body, bconf_commit_cb, c);
+}
+
+static void
+bconf_check_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+	struct bconf	*c = arg;
+
+	if (status == 200 || status == 204)
+		bconf_reply(c, true, NULL, NULL, NULL, 0);
+	else
+		conf_cb(status, o, err, NULL);
+	bconf_free(c);
+}
+
+/* Running's read: the file shown, or a change made from it. */
+static void
+bconf_read_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct bconf		*c = arg;
+	const ucl_object_t	*conf, *file;
+	ucl_object_t		*files;
+	struct html		 b;
+	char			 url[300], why[400], *q;
+	const char		*was;
+
+	/* None kept at all (404): no configuration there. */
+	if (status != 200 && status != 404) {
+		conf_cb(status, o, err, c->how == BC_SAVE ? &bd : NULL);
+		bconf_free(c);
+		return;
+	}
+	conf = status == 200 ? bconf_of(o, c->jail) : NULL;
+	if (c->path[0] == '\0')
+		snprintf(c->path, sizeof(c->path), "%s", jstr(conf, "path") !=
+		    NULL ? jstr(conf, "path") : "/usr/local/etc/bird.conf");
+	files = bconf_files(conf, c->path, &file);
+	if (c->how == BC_READ) {
+		if (file == NULL) {
+			snprintf(why, sizeof(why), "%s: %s", c->path, conf ==
+			    NULL ? "BIRD has no configuration there" :
+			    "no such file of BIRD's configuration");
+			bconf_reply(c, false, why, files, NULL, 0);
+		} else
+			bconf_reply(c, true, NULL, files, jstr(file, "text") !=
+			    NULL ? jstr(file, "text") : "", 0);
+		bconf_free(c);
+		return;
+	}
+	/* Made from what is there now, or refused. */
+	was = jstr(file, "text") != NULL ? jstr(file, "text") : "";
+	if (strcmp(was, c->base != NULL ? c->base : "") != 0) {
+		ucl_object_unref(files);
+		bconf_reply(c, false, "the file is not the one this was made "
+		    "from: somebody changed it meanwhile.  Read it again", NULL,
+		    NULL, 0);
+		bconf_free(c);
+		return;
+	}
+	memset(&b, 0, sizeof(b));
+	if (c->how == BC_CHECK) {
+		ucl_object_unref(files);
+		h_raw(&b, "{");
+		if (c->jail[0] != '\0') {
+			q = json_quote(c->jail);
+			h_fmt(&b, "\"jail\":%s,", q);
+			free(q);
+		}
+		q = json_quote(c->path);
+		h_fmt(&b, "\"path\":%s,", q);
+		free(q);
+		q = json_quote(c->text);
+		h_fmt(&b, "\"text\":%s}", q);
+		free(q);
+		rc_action(rc_h(url, sizeof(url), c->sid,
+		    "arcana-bird:bird/check"), b.s, NULL, bconf_check_cb, c);
+		free(b.s);
+		return;
+	}
+	/* The file's text in its place, or the file added. */
+	if (file == NULL)
+		ucl_array_append(files, ucl_object_fromstring(c->path));
+	c->files = files;
+	h_raw(&b, "{\"arcana-bird:bird\":{");
+	if (c->jail[0] != '\0') {
+		q = json_quote(c->jail);
+		h_fmt(&b, "\"jail\":[{\"name\":%s,", q);
+		free(q);
+	}
+	q = json_quote(c->path);
+	h_fmt(&b, "\"configuration\":{\"file\":[{\"path\":%s,", q);
+	free(q);
+	q = json_quote(c->text);
+	h_fmt(&b, "\"text\":%s}]}", q);
+	free(q);
+	h_raw(&b, c->jail[0] != '\0' ? "}]}}" : "}}");
+	api("PATCH", rc_ds(url, sizeof(url), "candidate", c->sid,
+	    "arcana-bird:bird"), b.s, bconf_edit_cb, c);
+	free(b.s);
+}
+
+/* Running's BIRD read, for c. */
+static void
+bconf_go(struct bconf *c)
+{
+	char	url[300];
+
+	rc_get(rc_ds(url, sizeof(url), "running", c->sid, "arcana-bird:bird"),
+	    NULL, bconf_read_cb, c);
+}
+
+static struct bconf *
+bconf_new(int how, const struct server *s)
+{
+	struct bconf	*c;
+
+	if ((c = calloc(1, sizeof(*c))) == NULL)
+		abort();
+	c->how = how;
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(c->jail, sizeof(c->jail), "%s", bd.jail);
+	snprintf(c->path, sizeof(c->path), "%s", bd.path);
+	return (c);
+}
+
 /* Read the configuration of the host shown, once for each host. */
 static void
 conf_load(struct server *s, bool again)
 {
-	char	url[700];
 
 	if (bd.loading || (!again && strcmp(bd.sid, s->id) == 0 && strcmp(
 	    bd.jail, net_scope()) == 0 && (bd.text != NULL || bd.error[0] !=
@@ -1070,32 +1334,25 @@ conf_load(struct server *s, bool again)
 	snprintf(bd.sid, sizeof(bd.sid), "%s", s->id);
 	snprintf(bd.jail, sizeof(bd.jail), "%s", net_scope());
 	bd.loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/bird/config?path=%s%s%s",
-	    s->id, bd.path, bd.jail[0] != '\0' ? "&jail=" : "", bd.jail);
-	api("GET", url, NULL, conf_cb, NULL);
+	bconf_go(bconf_new(BC_READ, s));
 }
 
 /* Put text in the file's place; the box stays until the host took it. */
 static void
 conf_save(struct server *s, const char *text, bool check)
 {
-	char	url[96], *qt, *qp, *qj, *body;
+	struct bconf	*c;
 
-	snprintf(url, sizeof(url), "/api/servers/%s/bird/config", s->id);
-	qt = json_quote(text);
-	qp = json_quote(bd.path);
-	qj = json_quote(bd.jail);
-	if (asprintf(&body, "{\"path\":%s,\"jail\":%s,\"text\":%s,\"sha256\":"
-	    "\"%s\",\"check\":%s,\"safe\":%s}", qp, qj, qt, bd.sha, check ?
-	    "true" : "false", !check && !bd.unsafe ? "true" : "false") == -1)
+	c = bconf_new(check ? BC_CHECK : BC_SAVE, s);
+	if ((c->text = strdup(text)) == NULL || (c->base = strdup(bd.text !=
+	    NULL ? bd.text : "")) == NULL)
 		abort();
-	free(qt);
-	free(qp);
-	free(qj);
+	/* Safe: BIRD takes it back by the host's rollback timer. */
+	if (!check && !bd.unsafe)
+		c->wait = s->safe_wait > 0 ? s->safe_wait : SAFE_WAIT;
 	bd.saving = true;
 	app.modal_error[0] = '\0';
-	api("POST", url, body, conf_cb, check ? NULL : &bd);
-	free(body);
+	bconf_go(c);
 }
 
 /* The whole text with part i replaced by with ("" takes it out). */
@@ -1283,7 +1540,8 @@ routes_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 routes_ask(struct server *s, const char *words)
 {
-	char	url[640];
+	struct netq	q;
+	char		filter[200], *p;
 
 	/* Something else asked: the routes of the last are not its. */
 	if (strcmp(br.sid, s->id) != 0 || strcmp(br.jail, net_scope()) != 0 ||
@@ -1297,9 +1555,15 @@ routes_ask(struct server *s, const char *words)
 	snprintf(br.words, sizeof(br.words), "%s", words);
 	br.loading = true;
 	br.error[0] = '\0';
-	snprintf(url, sizeof(url), "/api/servers/%s/net/bird-routes?filter=%s"
-	    "%s%s", s->id, words, br.jail[0] != '\0' ? "&jail=" : "", br.jail);
-	api("GET", url, NULL, routes_cb, NULL);
+	/* birdc's words, a space between each. */
+	snprintf(filter, sizeof(filter), "%s", words);
+	for (p = filter; (p = strchr(p, ',')) != NULL; p++)
+		*p = ' ';
+	memset(&q, 0, sizeof(q));
+	q.kind = "bird-routes";
+	q.jail = br.jail;
+	q.filter = filter;
+	net_yread(s->id, &q, false, routes_cb, NULL);
 }
 
 /*

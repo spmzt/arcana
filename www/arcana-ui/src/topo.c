@@ -403,14 +403,73 @@ node_host(int i)
 	return (node_index(app.servers[tn[i].srv].id));
 }
 
-/* Where the console asks about a node's network. */
+/* A node's network table of q's kind, read through the fleet mount:
+ * its host's, or its jail's. */
 static void
-node_url(int i, const char *what, const char *more, char *url, size_t len)
+node_read(int i, struct netq *q, api_cb *cb, void *arg)
 {
 
-	snprintf(url, len, "/api/servers/%s/net/%s?%s%s%s",
-	    app.servers[tn[i].srv].id, what, more, tn[i].jail[0] != '\0' ?
-	    "&jail=" : "", tn[i].jail);
+	q->jail = tn[i].jail;
+	net_yread(app.servers[tn[i].srv].id, q, false, cb, arg);
+}
+
+/* The same of a kind alone. */
+static void
+node_kind(int i, const char *kind, api_cb *cb, void *arg)
+{
+	struct netq	q;
+
+	memset(&q, 0, sizeof(q));
+	q.kind = kind;
+	node_read(i, &q, cb, arg);
+}
+
+/* A sysctl of a node's, arcana-sysctl's read of it as the values /api
+ * gave: {"ok": true, "data": {"values": [...]}}. */
+struct sysq {
+	api_cb	*cb;
+	void	*arg;
+};
+
+static void
+sysq_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct sysq	 q = *(struct sysq *)arg;
+	ucl_object_t	*r, *d;
+
+	free(arg);
+	if (status != 200) {
+		q.cb(status, o, err, q.arg);
+		return;
+	}
+	r = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(r, ucl_object_frombool(true), "ok", 0, false);
+	d = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(d, sysctl_rows(jget(o, "value")), "values", 0,
+	    false);
+	ucl_object_insert_key(r, d, "data", 0, false);
+	q.cb(200, r, NULL, q.arg);
+	ucl_object_unref(r);
+}
+
+static void
+node_sysctl(int i, const char *name, api_cb *cb, void *arg)
+{
+	struct sysq	*q;
+	char		 in[400], *qn, *qj;
+
+	if ((q = calloc(1, sizeof(*q))) == NULL)
+		abort();
+	q->cb = cb;
+	q->arg = arg;
+	qn = json_quote(name);
+	qj = json_quote(tn[i].jail);
+	snprintf(in, sizeof(in), "{\"prefix\":%s%s%s}", qn, tn[i].jail[0] !=
+	    '\0' ? ",\"jail\":" : "", tn[i].jail[0] != '\0' ? qj : "");
+	free(qn);
+	free(qj);
+	host_yread(&app.servers[tn[i].srv], "arcana-sysctl:sysctl/read", in,
+	    NULL, false, sysq_cb, q);
 }
 
 /* A job for a node: the server's, naming the jail when it is one. */
@@ -1999,31 +2058,24 @@ static void
 node_poll(int i)
 {
 	struct thost	*t;
-	char		 url[240];
 
 	if (!app.online || (t = thost(tn[i].key, true)) == NULL || t->loading)
 		return;
 	t->loading = true;
-	node_url(i, "interfaces", "", url, sizeof(url));
-	api("GET", url, NULL, poll_cb, strdup(tn[i].key));
+	node_kind(i, "interfaces", poll_cb, strdup(tn[i].key));
 	/* Its bridges change less often than its counters. */
 	if (!t->br_loading && arc_now() - t->br_fetched > 15000) {
 		t->br_loading = true;
-		node_url(i, "bridges", "", url, sizeof(url));
-		api("GET", url, NULL, bridges_cb, strdup(tn[i].key));
+		node_kind(i, "bridges", bridges_cb, strdup(tn[i].key));
 	}
 	/* The diagram draws a router or a server by whether it forwards. */
 	if (tp.stencil && !t->fwd_loading && arc_now() - t->fwd_fetched >
 	    60000) {
 		t->fwd_loading = true;
-		snprintf(url, sizeof(url), "/api/servers/%s/sysctl?filter=net.inet."
-		    "ip.forwarding%s%s", app.servers[tn[i].srv].id, tn[i].jail[0] !=
-		    '\0' ? "&jail=" : "", tn[i].jail);
-		api("GET", url, NULL, fwd4_cb, strdup(tn[i].key));
-		snprintf(url, sizeof(url), "/api/servers/%s/sysctl?filter=net.inet6."
-		    "ip6.forwarding%s%s", app.servers[tn[i].srv].id, tn[i].jail[0] !=
-		    '\0' ? "&jail=" : "", tn[i].jail);
-		api("GET", url, NULL, fwd6_cb, strdup(tn[i].key));
+		node_sysctl(i, "net.inet.ip.forwarding", fwd4_cb,
+		    strdup(tn[i].key));
+		node_sysctl(i, "net.inet6.ip6.forwarding", fwd6_cb,
+		    strdup(tn[i].key));
 	}
 }
 
@@ -2179,15 +2231,13 @@ static void
 bird_poll(int i)
 {
 	struct thost	*t;
-	char		 url[240];
 
 	/* Asked only of who has it: it is a plugin. */
 	if (!app.online || !plugin_at(&app.servers[tn[i].srv], tn[i].jail,
 	    "bird") || (t = thost(tn[i].key, true)) == NULL || t->bird_loading)
 		return;
 	t->bird_loading = true;
-	node_url(i, "bird", "", url, sizeof(url));
-	api("GET", url, NULL, bird_cb, strdup(tn[i].key));
+	node_kind(i, "bird", bird_cb, strdup(tn[i].key));
 }
 
 /* Read a host's WireGuard interfaces, quietly, for the map's links. */
@@ -2195,15 +2245,13 @@ static void
 wg_poll(int i)
 {
 	struct thost	*t;
-	char		 url[240];
 
 	/* wg(8) is the base system's: every host and vnet jail has it. */
 	if (!app.online || (t = thost(tn[i].key, true)) == NULL ||
 	    t->wg_loading)
 		return;
 	t->wg_loading = true;
-	node_url(i, "wireguard", "", url, sizeof(url));
-	api("GET", url, NULL, wg_cb, strdup(tn[i].key));
+	node_kind(i, "wireguard", wg_cb, strdup(tn[i].key));
 }
 
 /* From the tick: the map watches every host, a host's tab its own. */
@@ -4328,7 +4376,7 @@ om_plan(void)
 {
 	const ucl_object_t	*p;
 	ucl_object_iter_t	 it;
-	char			 more[120], url[240];
+	struct netq		 q;
 	int			 i, k;
 
 	if (om.wait > 0)
@@ -4352,11 +4400,12 @@ om_plan(void)
 			om.asked[om.nasked].node = i;
 			snprintf(om.asked[om.nasked].proto,
 			    sizeof(om.asked[0].proto), "%s", jstr(p, "name"));
-			snprintf(more, sizeof(more), "filter=topology,%s",
-			    jstr(p, "name"));
-			node_url(i, "bird-ospf", more, url, sizeof(url));
+			memset(&q, 0, sizeof(q));
+			q.kind = "bird-ospf";
+			q.topology = true;
+			q.filter = jstr(p, "name");
 			om.wait++;
-			api("GET", url, NULL, om_topo_cb, (void *)(intptr_t)
+			node_read(i, &q, om_topo_cb, (void *)(intptr_t)
 			    om.nasked++);
 			snprintf(om.note, sizeof(om.note), "Asking %s for its "
 			    "link-state database (%s)…", tn[i].name, jstr(p,
@@ -4374,7 +4423,6 @@ om_start(void)
 	const ucl_object_t	*p;
 	ucl_object_iter_t	 it;
 	struct thost		*t;
-	char			 url[240];
 	int			 i;
 
 	om_reset();
@@ -4390,9 +4438,8 @@ om_start(void)
 				break;
 		if (p == NULL)
 			continue;
-		node_url(i, "bird-ospf", "", url, sizeof(url));
 		om.wait++;
-		api("GET", url, NULL, om_sum_cb, strdup(tn[i].key));
+		node_kind(i, "bird-ospf", om_sum_cb, strdup(tn[i].key));
 	}
 	snprintf(om.note, sizeof(om.note), om.wait > 0 ? "Asking each host "
 	    "with OSPF for its areas…" : "No host's BIRD runs OSPF.");
@@ -5528,17 +5575,13 @@ static void
 lk_ask(int i, int k)
 {
 	struct lkreq	*rq;
-	char		 url[240];
 
 	if ((rq = calloc(1, sizeof(*rq))) == NULL)
 		abort();
 	snprintf(rq->key, sizeof(rq->key), "%s", tn[i].key);
 	rq->what = k;
-	snprintf(url, sizeof(url), "/api/servers/%s/sysctl?filter=%s%s%s",
-	    app.servers[tn[i].srv].id, lk_names[k], tn[i].jail[0] != '\0' ?
-	    "&jail=" : "", tn[i].jail);
 	lkg.wait[i]++;
-	api("GET", url, NULL, lk_sysctl_cb, rq);
+	node_sysctl(i, lk_names[k], lk_sysctl_cb, rq);
 }
 
 static void	lk_routes_cb(int, const ucl_object_t *, const char *, void *);
@@ -5548,16 +5591,17 @@ static void
 lk_table(int i, int f)
 {
 	struct lkreq	*rq;
-	char		 url[240], more[32];
+	struct netq	 q;
 
 	if ((rq = calloc(1, sizeof(*rq))) == NULL)
 		abort();
 	snprintf(rq->key, sizeof(rq->key), "%s", tn[i].key);
 	rq->what = 100 + f;
-	snprintf(more, sizeof(more), "fib=%d", f);
-	node_url(i, "routes", more, url, sizeof(url));
+	memset(&q, 0, sizeof(q));
+	q.kind = "routes";
+	q.fib = f;
 	lkg.wait[i]++;
-	api("GET", url, NULL, lk_routes_cb, rq);
+	node_read(i, &q, lk_routes_cb, rq);
 }
 
 static void
@@ -5648,11 +5692,16 @@ lk_sys_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		lkg.sys_loading[i] = false;
 		free(lkg.loader[i]);
 		lkg.loader[i] = NULL;
-		if (status == 200 && jbool(o, "ok")) {
-			/* Its name has dots: looked up as one key. */
-			const ucl_object_t	*lf = ucl_object_lookup(jget(o,
-			    "data.files"), "loader.conf.d");
+		if (status == 200 && o != NULL) {
+			const ucl_object_t	*lf;
+			ucl_object_iter_t	 fit = NULL;
 
+			/* arcana-system's file of the name. */
+			while ((lf = ucl_object_iterate(jget(o, "file"), &fit,
+			    true)) != NULL)
+				if (jstr(lf, "name") != NULL && strcmp(jstr(lf,
+				    "name"), "loader.conf.d") == 0)
+					break;
 			lkg.loader[i] = strdup(jstr(lf, "text") != NULL ?
 			    jstr(lf, "text") : "");
 		}
@@ -6157,15 +6206,14 @@ leaks_action(const char *act, const char *arg, const char *value)
 			return (true);
 		/* The file is written whole: read first, when it was not. */
 		if (lkg.loader[i] == NULL) {
-			char	url[240];
-
 			lkg.boot_k[i] = k;
 			lkg.boot_v[i] = v;
 			if (!lkg.sys_loading[i]) {
 				lkg.sys_loading[i] = true;
-				snprintf(url, sizeof(url), "/api/servers/%s/system",
-				    app.servers[tn[i].srv].id);
-				api("GET", url, NULL, lk_sys_cb, strdup(tn[i].key));
+				host_yread(&app.servers[tn[i].srv],
+				    "arcana-system:system/read", "{\"name\":"
+				    "[\"loader.conf.d\"]}", NULL, false, lk_sys_cb,
+				    strdup(tn[i].key));
 			}
 			return (true);
 		}
@@ -6489,7 +6537,7 @@ static void
 trace_next(int from, const char *unused)
 {
 	struct tctx	*x;
-	char		 url[400], to[80];
+	struct netq	 q;
 
 	(void)unused;
 	if (owner(path.to, NULL, 0) == from) {
@@ -6508,9 +6556,10 @@ trace_next(int from, const char *unused)
 	x->gen = path.gen;
 	x->from = from;
 	path.busy = true;
-	snprintf(to, sizeof(to), "to=%s", path.to);
-	node_url(from, "lookup", to, url, sizeof(url));
-	api("GET", url, NULL, trace_cb, x);
+	memset(&q, 0, sizeof(q));
+	q.kind = "lookup";
+	q.address = path.to;
+	node_read(from, &q, trace_cb, x);
 }
 
 static void
@@ -9366,7 +9415,8 @@ void
 topo_lookup(struct server *s, const char *addr, int fib)
 {
 	unsigned char	raw[16];
-	char		url[520], clean[80];
+	char		clean[80];
+	struct netq	q;
 	size_t		n;
 	int		af;
 
@@ -9393,10 +9443,12 @@ topo_lookup(struct server *s, const char *addr, int fib)
 	addr = lk.addr;
 	lk.error[0] = '\0';
 	lk.busy = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/net/lookup?to=%s&fib=%d"
-	    "%s%s", s->id, addr, fib, net_scope()[0] != '\0' ? "&jail=" : "",
-	    net_scope());
-	api("GET", url, NULL, lookup_cb, NULL);
+	memset(&q, 0, sizeof(q));
+	q.kind = "lookup";
+	q.address = addr;
+	q.fib = fib;
+	q.jail = net_scope();
+	net_yread(s->id, &q, false, lookup_cb, NULL);
 }
 
 void
@@ -9828,7 +9880,6 @@ tq_mon_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static const ucl_object_t *
 tq_monitors(const char *sid, bool again)
 {
-	char	url[96];
 	int	k;
 
 	for (k = 0; k < tq.nmon; k++)
@@ -9843,8 +9894,7 @@ tq_monitors(const char *sid, bool again)
 	}
 	if ((tq.mon[k].o == NULL || again) && !tq.mon[k].loading) {
 		tq.mon[k].loading = true;
-		snprintf(url, sizeof(url), "/api/servers/%s/monitors", sid);
-		api("GET", url, NULL, tq_mon_cb, (void *)(intptr_t)k);
+		monitors_yread(sid, tq_mon_cb, (void *)(intptr_t)k);
 	}
 	return (tq.mon[k].o);
 }

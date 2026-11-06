@@ -122,6 +122,28 @@ res_yread(struct res *r, const char *sid, const char *path,
 	host_yread(s, path, input, NULL, false, res_cb, a);
 }
 
+/* The same by a reader of the page's own (netread.c's), whose callback
+ * gets what /api's reads gave. */
+void
+res_call(struct res *r, const char *sid, void (*read)(const char *,
+    api_cb *, void *))
+{
+	struct res_ask	*a;
+
+	if (sid == NULL || sid[0] == '\0')
+		return;
+	if (strcmp(sid, r->sid) != 0) {
+		snprintf(r->sid, sizeof(r->sid), "%s", sid);
+		res_drop(r);
+	}
+	if ((a = calloc(1, sizeof(*a))) == NULL)
+		abort();
+	a->r = r;
+	a->gen = ++r->gen;
+	r->loading = true;
+	read(sid, res_cb, a);
+}
+
 /*
  * The read, when it is this host's: true, its error (with a Try again
  * when retry names an action) drawn first when it failed.  Otherwise

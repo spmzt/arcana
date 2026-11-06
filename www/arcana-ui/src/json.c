@@ -145,6 +145,8 @@ jmap_each(const ucl_object_t *list, const char *const *map)
  *			value its entry's one other node, or its others
  *	node[a,b]	a list as an array of arrays of a's and b's values
  *	node^		a container's members are its parent's
+ *	node#		a string leaf a number where it is one
+ *	node?		left out when empty (as RESTCONF leaves it out)
  * as "node{k}=key".
  */
 static const char *
@@ -161,17 +163,20 @@ jflat_rule(const char *const *names, const char *node, char *key, size_t
 		key[p - key] = '_';
 	for (; names != NULL && *names != NULL; names++) {
 		r = *names;
-		n = strcspn(r, "{[^=");
+		n = strcspn(r, "{[^=#?");
 		if (strlen(node) != n || strncmp(node, r, n) != 0)
 			continue;
 		r += n;
+		/* ? says what RESTCONF does anyway: nothing to do. */
+		if (*r == '?')
+			r++;
 		if (*r == '{' || *r == '[') {
 			*how = *r;
 			n = strcspn(r + 1, "}]");
 			snprintf(list, llen, "%.*s", (int)n, r + 1);
 			r += n + 2;
 		}
-		if (*r == '^')
+		if (*r == '^' || *r == '#')
 			*how = *r++;
 		if (*r == '=')
 			snprintf(key, klen, "%s", r + 1);
@@ -181,6 +186,26 @@ jflat_rule(const char *const *names, const char *node, char *key, size_t
 }
 
 static ucl_object_t *jflat_v(const ucl_object_t *, const char *const *);
+
+/* A number written as a string (RFC 7951's 64-bit and decimal64
+ * leaves), as a number; NULL where it is none. */
+ucl_object_t *
+jnumber(const char *s)
+{
+	char	*end;
+	double	 d;
+	int64_t	 i;
+
+	if (s == NULL || s[0] == '\0')
+		return (NULL);
+	i = strtoll(s, &end, 10);
+	if (*end == '\0')
+		return (ucl_object_fromint(i));
+	d = strtod(s, &end);
+	if (*end == '\0')
+		return (ucl_object_fromdouble(d));
+	return (NULL);
+}
 
 /* The members of o into r, flattened. */
 static void
@@ -240,7 +265,10 @@ jflat_into(ucl_object_t *r, const ucl_object_t *o, const char *const *names)
 				free((void *)(uintptr_t)c);
 				ucl_array_append(x, t);
 			}
-		} else
+		} else if (how == '#' && ucl_object_type(v) == UCL_STRING &&
+		    (x = jnumber(ucl_object_tostring(v))) != NULL)
+			;
+		else
 			x = jflat_v(v, names);
 		ucl_object_replace_key(r, x, key, 0, true);
 	}

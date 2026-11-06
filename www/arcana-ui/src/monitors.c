@@ -31,10 +31,8 @@ static struct {
 static void
 mn_load(const char *sid)
 {
-	char	url[96];
 
-	snprintf(url, sizeof(url), "/api/servers/%s/monitors", sid);
-	res_load(&mn.r, sid, url);
+	res_call(&mn.r, sid, monitors_yread);
 }
 
 void
