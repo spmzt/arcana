@@ -124,6 +124,8 @@ devs(const ucl_object_t *arr, char v[DEVS][DEVNAME], int *n)
 	return (other);
 }
 
+static void	usage_set_cb(int, const ucl_object_t *, const char *, void *);
+
 static void
 usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -1111,8 +1113,22 @@ usage_form(const char *form, const ucl_object_t *f)
 	u->loading = true;
 	u->asked = arc_now();
 	u->cfg = false;
-	api("POST", url, body, usage_cb, strdup(u->sid));
+	api("POST", url, body, usage_set_cb, strdup(u->sid));
 	return (true);
+}
+
+/* A Set's answer: said either way, then read as any other. */
+static void
+usage_set_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	if (status != 200 || !jbool(o, "ok"))
+		toast(true, "Sampling not set: %s", status == 200 && jstr(o,
+		    "error") != NULL ? jstr(o, "error") : err != NULL ? err :
+		    "no answer");
+	else
+		toast(false, "Sampling set");
+	usage_cb(status, o, err, arg);
 }
 
 bool
