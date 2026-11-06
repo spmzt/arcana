@@ -8,8 +8,9 @@
  * Jails: the build jails, made, updated and deleted, and poudriere.conf.
  * Ports: the ports trees.  Bulk: a build of some ports in a jail with a
  * tree and a set, each make.conf, the latest builds, the repositories
- * they fill.  A host at a time, as GET /api/servers/<id>/builder reads
- * it; a change is a poudriere job.  What takes long (a jail or a tree
+ * they fill.  A host at a time, as arcana-builder's builder has it
+ * through the fleet mount, a port's options its port-options; a change
+ * is a poudriere job.  What takes long (a jail or a tree
  * made or updated, a build) is a run the job starts and leaves: its
  * output is read with the rest, every few seconds while one runs.
  *
@@ -45,7 +46,7 @@ static struct {
 	bool		 busy;
 	/* A port's options, as builder/options read them. */
 	ucl_object_t	*opts;
-	char		 optq[512];	/* their query, to read them again */
+	char		 optq[512];	/* their input, to read them again */
 	bool		 optloading;
 	char		 opterr[256];
 } bld;
@@ -81,17 +82,195 @@ bld_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 }
 
 static void
+put(ucl_object_t *o, const char *key, ucl_object_t *v)
+{
+
+	ucl_object_replace_key(o, v, key, 0, true);
+}
+
+/* A text of from's, "" where it has none. */
+static void
+put_text(ucl_object_t *o, const char *key, const ucl_object_t *from,
+    const char *path)
+{
+
+	put(o, key, ucl_object_fromstring(jstr(from, path) != NULL ?
+	    jstr(from, path) : ""));
+}
+
+/* A build as the page draws it: its counts "" where unknown. */
+static ucl_object_t *
+build_of(const ucl_object_t *b)
+{
+	static const char *const counts[] = { "queued", "inspected",
+	    "ignored", "built", "failed", "skipped", "fetched", "remaining" };
+	static const char *const failed[] = { "origin", "origin", "package",
+	    "package", "phase", "phase", "elapsed", "elapsed", "reason",
+	    "reason", "log-file", "log_file", "log", "log", NULL };
+	static const char *const skipped[] = { "origin", "origin", "package",
+	    "package", "because", "because", NULL };
+	ucl_object_t	*o;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put_text(o, "set", b, "set");
+	put_text(o, "ports", b, "ports");
+	if (jstr(b, "jail") != NULL)
+		put_text(o, "jail", b, "jail");
+	put_text(o, "build", b, "build");
+	put_text(o, "status", b, "status");
+	for (size_t i = 0; i < nitems(counts); i++)
+		put(o, counts[i], jget(b, counts[i]) != NULL ?
+		    ucl_object_fromint(jint(b, counts[i], 0)) :
+		    ucl_object_fromstring(""));
+	put_text(o, "time", b, "time");
+	put_text(o, "logs", b, "logs");
+	/* Read from the log directory, when it is one. */
+	if (jstr(b, "logs") == NULL || jstr(b, "logs")[0] != '/')
+		return (o);
+	put(o, "failed_ports", jmap_each(jget(b, "failed-port"), failed));
+	put(o, "skipped_ports", jmap_each(jget(b, "skipped-port"), skipped));
+	return (o);
+}
+
+/* arcana-builder's builder as the page draws it. */
+static ucl_object_t *
+builder_of(const ucl_object_t *d)
+{
+	static const char *const top[] = { "program", "program", "conf-file",
+	    "conf_file", "basefs", "basefs", "data", "data", "builds-error",
+	    "builds_error", NULL };
+	static const char *const jail[] = { "name", "name", "version",
+	    "version", "arch", "arch", "method", "method", "mnt", "mnt", "fs",
+	    "fs", NULL };
+	static const char *const ports[] = { "name", "name", "method",
+	    "method", "mnt", "mnt", NULL };
+	static const char *const port[] = { "name", "name", "pkgname",
+	    "pkgname", "set", "set", "unset", "unset", NULL };
+	static const char *const repo[] = { "name", "name", "path", "path",
+	    NULL };
+	static const char *const run[] = { "title", "title", "argv", "argv",
+	    "state", "state", "log-file", "log_file", "log", "log", NULL };
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*o, *arr, *e, *c;
+
+	o = jmap(d, top);
+	put(o, "installed", ucl_object_frombool(jbool(d, "installed")));
+	put(o, "configured", ucl_object_frombool(jbool(d, "configured")));
+	c = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(d, "conf"), &it, true)) != NULL)
+		if (jstr(v, "name") != NULL)
+			put(c, jstr(v, "name"), ucl_object_fromstring(jstr(v,
+			    "value") != NULL ? jstr(v, "value") : ""));
+	put(o, "conf", c);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(d, "jail"), &it, true)) != NULL) {
+		e = jmap(v, jail);
+		if (jstr(v, "timestamp") != NULL)
+			put(e, "timestamp", ucl_object_fromint(rc_time(jstr(v,
+			    "timestamp"))));
+		ucl_array_append(arr, e);
+	}
+	put(o, "jails", arr);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(d, "ports"), &it, true)) != NULL) {
+		e = jmap(v, ports);
+		if (jstr(v, "timestamp") != NULL)
+			put(e, "timestamp", ucl_object_fromint(rc_time(jstr(v,
+			    "timestamp"))));
+		ucl_array_append(arr, e);
+	}
+	put(o, "ports", arr);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(d, "make-conf"), &it, true)) !=
+	    NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put_text(e, "name", v, "name");
+		put_text(e, "file", v, "file");
+		put_text(e, "text", v, "text");
+		ucl_array_append(arr, e);
+	}
+	put(o, "makeconf", arr);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(d, "options"), &it, true)) !=
+	    NULL) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put_text(e, "name", v, "name");
+		put_text(e, "dir", v, "dir");
+		put(e, "ports", jmap_each(jget(v, "port"), port));
+		ucl_array_append(arr, e);
+	}
+	put(o, "options", arr);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(d, "repo"), &it, true)) != NULL) {
+		e = jmap(v, repo);
+		put(e, "packages", ucl_object_fromint(jint(v, "packages", 0)));
+		ucl_array_append(arr, e);
+	}
+	put(o, "repos", arr);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(d, "build"), &it, true)) != NULL)
+		ucl_array_append(arr, build_of(v));
+	put(o, "builds", arr);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(d, "run"), &it, true)) != NULL) {
+		e = jmap(v, run);
+		put(e, "id", ucl_object_fromint(jint(v, "id", 0)));
+		put(e, "started", ucl_object_fromint(rc_time(jstr(v,
+		    "started"))));
+		if (jget(v, "pid") != NULL)
+			put(e, "pid", ucl_object_fromint(jint(v, "pid", 0)));
+		if (jget(v, "exit") != NULL)
+			put(e, "exit", ucl_object_fromint(jint(v, "exit", 0)));
+		ucl_array_append(arr, e);
+	}
+	put(o, "runs", arr);
+	return (o);
+}
+
+/* The builder read, as bld_cb() takes it. */
+static void
+bld_ycb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	ucl_object_t	*r;
+
+	if (status != 200 || o == NULL) {
+		bld_cb(status != 200 ? status : 500, o, err != NULL ? err :
+		    "poudriere was not read", arg);
+		return;
+	}
+	r = ucl_object_typed_new(UCL_OBJECT);
+	put(r, "data", builder_of(o));
+	bld_cb(200, r, NULL, arg);
+	ucl_object_unref(r);
+}
+
+static void
 bld_load(void)
 {
-	char	url[96], *sid;
+	const struct server	*s = NULL;
+	char			*sid;
 
 	if (bld.sid[0] == '\0' || bld.loading)
 		return;
+	for (int i = 0; i < app.nservers && s == NULL; i++)
+		if (strcmp(app.servers[i].id, bld.sid) == 0)
+			s = &app.servers[i];
+	if (s == NULL)
+		return;
 	if ((sid = strdup(bld.sid)) == NULL)
 		abort();
-	snprintf(url, sizeof(url), "/api/servers/%s/builder", bld.sid);
 	bld.loading = true;
-	api("GET", url, NULL, bld_cb, sid);
+	host_yread(s, "arcana-builder:builder", NULL, NULL, false, bld_ycb,
+	    sid);
 }
 
 static void
@@ -114,17 +293,75 @@ opts_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	render();
 }
 
+/* A port's options as the page draws them, what was asked beside. */
+static void
+opts_ycb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	static const char *const opt[] = { "name", "name", "description",
+	    "description", NULL };
+	const ucl_object_t	*in, *v, *w;
+	ucl_object_iter_t	 it = NULL, wit;
+	ucl_object_t		*r, *d, *arr, *s, *os, *e;
+
+	(void)arg;
+	if (status != 200 || o == NULL) {
+		opts_cb(status != 200 ? status : 500, o, err, NULL);
+		return;
+	}
+	in = json_parse(bld.optq);
+	d = ucl_object_typed_new(UCL_OBJECT);
+	put_text(d, "jail", in, "jail");
+	put_text(d, "ports", in, "ports");
+	put_text(d, "set", in, "set");
+	put_text(d, "origin", in, "origin");
+	put_text(d, "pkgname", o, "pkgname");
+	put_text(d, "options_dir", o, "options-dir");
+	put(d, "options_dir_exists", ucl_object_frombool(jbool(o,
+	    "options-dir-exists")));
+	put_text(d, "options_file", o, "options-file");
+	put(d, "configured", ucl_object_frombool(jbool(o, "configured")));
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	while ((v = ucl_object_iterate(jget(o, "section"), &it, true)) !=
+	    NULL) {
+		s = ucl_object_typed_new(UCL_OBJECT);
+		put_text(s, "title", v, "title");
+		os = ucl_object_typed_new(UCL_ARRAY);
+		wit = NULL;
+		while ((w = ucl_object_iterate(jget(v, "option"), &wit,
+		    true)) != NULL) {
+			e = jmap(w, opt);
+			put(e, "on", ucl_object_frombool(jbool(w, "on")));
+			if (jget(e, "description") == NULL)
+				put(e, "description", ucl_object_fromstring(""));
+			ucl_array_append(os, e);
+		}
+		put(s, "options", os);
+		ucl_array_append(arr, s);
+	}
+	put(d, "sections", arr);
+	if (in != NULL)
+		ucl_object_unref((ucl_object_t *)(uintptr_t)in);
+	r = ucl_object_typed_new(UCL_OBJECT);
+	put(r, "data", d);
+	opts_cb(200, r, NULL, NULL);
+	ucl_object_unref(r);
+}
+
 static void
 opts_load(void)
 {
-	char	url[640];
+	const struct server	*s = NULL;
 
 	if (bld.sid[0] == '\0' || bld.optq[0] == '\0')
 		return;
-	snprintf(url, sizeof(url), "/api/servers/%s/builder/options?%s",
-	    bld.sid, bld.optq);
+	for (int i = 0; i < app.nservers && s == NULL; i++)
+		if (strcmp(app.servers[i].id, bld.sid) == 0)
+			s = &app.servers[i];
+	if (s == NULL)
+		return;
 	bld.optloading = true;
-	api("GET", url, NULL, opts_cb, NULL);
+	host_yread(s, "arcana-builder:builder/port-options", bld.optq, NULL,
+	    false, opts_ycb, NULL);
 }
 
 /* After a job of the page's: read again, a port's options too. */
@@ -1356,26 +1593,33 @@ builder_form(const char *form, const ucl_object_t *f)
 	if (strcmp(form, "bld-optshow") == 0) {
 		static const char *const k[] = { "jail", "ports", "set",
 		    "origin" };
-		size_t	 len;
+		struct html	 in;
+		char		*q;
 
-		len = 0;
-		bld.optq[0] = '\0';
+		/* arcana-builder's port-options' input: the ports tree
+		 * default where none is said. */
+		if (jstr(f, "jail") == NULL || jstr(f, "jail")[0] == '\0' ||
+		    jstr(f, "origin") == NULL || jstr(f, "origin")[0] == '\0') {
+			snprintf(bld.opterr, sizeof(bld.opterr), "a port's "
+			    "options need its jail and its origin");
+			return (true);
+		}
+		memset(&in, 0, sizeof(in));
+		h_raw(&in, "{");
 		for (i = 0; i < nitems(k); i++) {
 			v = jstr(f, k[i]);
+			if (i == 1 && (v == NULL || v[0] == '\0'))
+				v = "default";
 			if (v == NULL || v[0] == '\0')
 				continue;
-			/* No room left for a key: the query as far as it got. */
-			if (len + strlen(k[i]) + 2 >= sizeof(bld.optq))
-				break;
-			len += (size_t)snprintf(bld.optq + len,
-			    sizeof(bld.optq) - len, "%s%s=", len > 0 ? "&" : "",
-			    k[i]);
-			for (; *v != '\0' && len + 4 < sizeof(bld.optq); v++)
-				len += (size_t)snprintf(bld.optq + len,
-				    sizeof(bld.optq) - len, isalnum((unsigned
-				    char)*v) || strchr("-_.:+", *v) != NULL ?
-				    "%c" : "%%%02X", (unsigned char)*v);
+			q = json_quote(v);
+			h_fmt(&in, "%s\"%s\":%s", in.len > 1 ? "," : "", k[i],
+			    q);
+			free(q);
 		}
+		h_raw(&in, "}");
+		snprintf(bld.optq, sizeof(bld.optq), "%s", in.s);
+		free(in.s);
 		bld.opterr[0] = '\0';
 		opts_load();
 		return (true);

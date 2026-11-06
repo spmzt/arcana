@@ -2507,7 +2507,11 @@ whose first part is served.
   samples after the last as arcana-probe's read takes after; the
   interfaces its link and endpoint forms offer arcana-network's
   interfaces (a vnet jail's edge its own).  Check: pwa_test
-  pwa_flows_sdwan.  A tab's export names a read by its nodes
+  pwa_flows_sdwan.  The Builder page (console 0.395.0; builder.c):
+  arcana-builder's builder, a port's options its port-options (the
+  ports tree default where none is said).  Check: pwa_test
+  pwa_flows_builder (a port's options no test reads yet).  A tab's
+  export names a read by its nodes
   without their modules ("services").  Added to the console's RESTCONF
   side: the socket's `{"what": "restconf"}`, a GET or an action that reads below a host's
   entry with its steps (hosts_restconf_live(); console_test
@@ -2516,8 +2520,8 @@ whose first part is served.
   restconf_job_confirm).  Decided: the Log tab's events stay on /api
   with the socket's events, the same shape, until the stream is
   RESTCONF's (4.8.2).  Open: a dataset's key (its name has a /, which
-  no path below the mount carries, as 4.4.1 found), builder.c, the events read (logs.c, 4.8.2); then `/api`
-  keeps D-10's resources alone.
+  no path below the mount carries, as 4.4.1 found), the events read
+  (logs.c, 4.8.2); then `/api` keeps D-10's resources alone.
 - 4.8.2 P: SSE subscriptions replace the page's polling; check:
   timings in the browser test.
 - 4.8.3 P: forms generated from the yang-library for the Arcana
