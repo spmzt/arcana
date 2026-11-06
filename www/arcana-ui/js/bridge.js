@@ -2225,6 +2225,42 @@ addToLibrary({
 		setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
 	},
 	/*
+	 * A resource of the console's saved as a file, asked for as type
+	 * (RESTCONF's text/csv by Accept); the console's error said in a
+	 * notice of the browser's when it has none.
+	 */
+	arc_download__deps: ["$UTF8ToString"],
+	arc_download: function (urlp, typep, namep) {
+		var url = UTF8ToString(urlp), type = UTF8ToString(typep);
+		var name = UTF8ToString(namep);
+
+		fetch(url, { credentials: "same-origin", cache: "no-store",
+		    headers: { Accept: type, "X-Arcana": "1" } }).then(
+		    function (r) {
+			return (r.text().then(function (t) {
+				var u, a;
+
+				if (!r.ok)
+					throw new Error("HTTP " + r.status);
+				window.arcSaved = { name: name, type: type,
+				    text: t };
+				u = URL.createObjectURL(new Blob([t], { type:
+				    type }));
+				a = document.createElement("a");
+				a.href = u;
+				a.download = name;
+				document.body.appendChild(a);
+				a.click();
+				a.remove();
+				setTimeout(function () {
+					URL.revokeObjectURL(u);
+				}, 10000);
+			}));
+		}).catch(function (e) {
+			console.error("download " + url + ": " + e);
+		});
+	},
+	/*
 	 * A drawing of the page saved as a PNG picture, as it is shown but
 	 * in the light theme (paper), whatever the page wears: a copy of the
 	 * SVG with every element's computed style written on it (the page's

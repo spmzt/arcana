@@ -504,7 +504,7 @@ sd_load(void)
 {
 
 	sd.loading = true;
-	api("GET", "/api/sdwan", NULL, doc_cb, NULL);
+	rc_get(RC_C "sdwan/document", NULL, doc_cb, NULL);
 }
 
 void
@@ -564,7 +564,7 @@ applied_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		    "apply.state") : "", "done") != 0, "SD-WAN apply %s",
 		    jstr(o, "apply.state") != NULL ? jstr(o, "apply.state") :
 		    "ended");
-		api("GET", "/api/sdwan/plan", NULL, plan_cb, NULL);
+		rc_get(RC_C "sdwan/plan", NULL, plan_cb, NULL);
 	}
 }
 
@@ -573,8 +573,8 @@ plan_load(void)
 {
 
 	sd.plan_at = sd.apply_at = arc_now();
-	api("GET", "/api/sdwan/plan", NULL, plan_cb, NULL);
-	api("GET", "/api/sdwan/apply", NULL, applied_cb, NULL);
+	rc_get(RC_C "sdwan/plan", NULL, plan_cb, NULL);
+	rc_get(RC_C "sdwan/apply-state", NULL, applied_cb, NULL);
 }
 
 /*
@@ -718,7 +718,7 @@ static void
 identities_load(void)
 {
 
-	api("GET", "/api/sdwan/identities", NULL, identities_cb, NULL);
+	rc_get(RC_C "sdwan/identities", NULL, identities_cb, NULL);
 }
 
 static void
@@ -740,7 +740,7 @@ static void
 audit_load(void)
 {
 
-	api("GET", "/api/sdwan/audit", NULL, audit_cb, NULL);
+	rc_get(RC_C "sdwan/audit", NULL, audit_cb, NULL);
 }
 
 /* MEF 138's notifications: the SENs and the SANs kept. */
@@ -763,8 +763,8 @@ static void
 notices_load(void)
 {
 
-	api("GET", "/api/sdwan/sen", NULL, notices_cb, &sd.sen);
-	api("GET", "/api/sdwan/san", NULL, notices_cb, &sd.san);
+	rc_get(RC_C "sdwan/sen", NULL, notices_cb, &sd.sen);
+	rc_get(RC_C "sdwan/san", NULL, notices_cb, &sd.san);
 }
 
 /* An identity issued: its configuration, shown once. */
@@ -827,21 +827,20 @@ lists_put_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	(void)arg;
-	if (status != 200) {
-		toast(true, "The lists not kept: %s", jstr(o, "error.message") !=
-		    NULL ? jstr(o, "error.message") : err != NULL ? err : "no "
+	if (status < 200 || status > 299) {
+		toast(true, "The lists not kept: %s", err != NULL ? err : "no "
 		    "answer");
 		return;
 	}
 	app.modal = MODAL_NONE;
-	api("GET", "/api/sdwan/lists", NULL, lists_cb, NULL);
+	rc_get(RC_C "sdwan/lists", NULL, lists_cb, NULL);
 }
 
 /* The feeds as kept, with one changed or added, sent to be kept. */
 static void
 lists_send(const char *was, ucl_object_t *feed)
 {
-	ucl_object_t		*body, *feeds;
+	ucl_object_t		*body, *feeds, *top;
 	const ucl_object_t	*f;
 	ucl_object_iter_t	 it;
 	unsigned char		*json;
@@ -883,9 +882,13 @@ lists_send(const char *was, ucl_object_t *feed)
 	if (feed != NULL)
 		ucl_array_append(feeds, feed);
 	ucl_object_insert_key(body, feeds, "feeds", 0, false);
-	json = ucl_object_emit(body, UCL_EMIT_JSON_COMPACT);
-	ucl_object_unref(body);
-	api("PUT", "/api/sdwan/lists", (const char *)json, lists_put_cb, NULL);
+	/* The node's value, its own name around it (RFC 8040's PUT). */
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, body, "arcana-console:lists", 0, false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	rc_edit("PUT", RC_C "sdwan/lists", (const char *)json, lists_put_cb,
+	    NULL);
 	free(json);
 }
 
@@ -1003,7 +1006,7 @@ paths_load(void)
 
 	sd.paths_at = arc_now();
 	if (sd.plan == NULL) {
-		api("GET", "/api/sdwan/plan", NULL, plan_cb, NULL);
+		rc_get(RC_C "sdwan/plan", NULL, plan_cb, NULL);
 		return;
 	}
 	asked = ucl_object_typed_new(UCL_OBJECT);
@@ -1029,10 +1032,10 @@ paths_load(void)
 		}
 	}
 	ucl_object_unref(asked);
-	api("GET", "/api/sdwan/rekey", NULL, rekeys_cb, NULL);
-	api("GET", "/api/sdwan/steer", NULL, steer_cb, NULL);
+	rc_get(RC_C "sdwan/rekeys", NULL, rekeys_cb, NULL);
+	rc_get(RC_C "sdwan/steering", NULL, steer_cb, NULL);
 	if (sd.tab == SD_SECURITY)
-		api("GET", "/api/sdwan/lists", NULL, lists_cb, NULL);
+		rc_get(RC_C "sdwan/lists", NULL, lists_cb, NULL);
 }
 
 /* ---- Small things ---------------------------------------------------- */
@@ -4108,9 +4111,9 @@ view_zt(struct html *h, const ucl_object_t *sw)
 	    "sd-audit-filter\" placeholder=\"filter: an identity, a zone, a "
 	    "key\"");
 	h_attr(h, "value", sd.audit_filter);
-	h_raw(h, "><a class=\"ghost small\" href=\"/api/sdwan/audit.csv\" "
-	    "download=\"sdwan-audit.csv\" title=\"The audit trail as CSV\">CSV"
-	    "</a></span></h4>");
+	h_raw(h, "><button type=\"button\" class=\"ghost small\" data-act=\""
+	    "sd-csv\" data-arg=\"audit\" title=\"The audit trail as CSV\">CSV"
+	    "</button></span></h4>");
 	if (sd.audit == NULL)
 		h_raw(h, "<p class=\"dim\">Reading…</p>");
 	else {
@@ -4205,10 +4208,10 @@ view_notices(struct html *h)
 		int			 ncols = k == 0 ? 10 : 7;
 
 		h_fmt(h, "<h4>Security %s Notifications<span class=\"pane-actions"
-		    "\"><a class=\"ghost small\" href=\"/api/sdwan/%s.csv\" "
-		    "download=\"sdwan-%s.csv\" title=\"The notifications as CSV"
-		    "\">CSV</a></span></h4>", k == 0 ? "Event" : "Admin", k == 0 ?
-		    "sen" : "san", k == 0 ? "sen" : "san");
+		    "\"><button type=\"button\" class=\"ghost small\" data-act=\""
+		    "sd-csv\" data-arg=\"%s\" title=\"The notifications as CSV"
+		    "\">CSV</button></span></h4>", k == 0 ? "Event" : "Admin",
+		    k == 0 ? "sen" : "san");
 		if (n == NULL) {
 			h_raw(h, "<p class=\"dim\">Reading…</p>");
 			continue;
@@ -4747,9 +4750,10 @@ view_security(struct html *h)
 		    "type=\"search\" data-input=\"sd-record-filter\" placeholder=\""
 		    "filter: an address, a policy, an edge\"");
 		h_attr(h, "value", sd.record_filter);
-		h_raw(h, "><a class=\"ghost small\" href=\"/api/sdwan/record.csv\" "
-		    "download=\"sdwan-record.csv\" title=\"Every edge's record of "
-		    "the day as CSV, from the console\">CSV</a></span></h3><table "
+		h_raw(h, "><button type=\"button\" class=\"ghost small\" "
+		    "data-act=\"sd-csv\" data-arg=\"record\" title=\"Every edge's "
+		    "record of the day as CSV, from the console\">CSV</button>"
+		    "</span></h3><table "
 		    "class=\"net sd\"><thead><tr><th>When</th><th>Edge</th><th>Rule"
 		    "</th><th>Action</th><th>From</th><th>To</th><th>Interface</th>"
 		    "<th>Policy</th></tr></thead><tbody>");
@@ -8083,7 +8087,7 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		*p++ = '\0';
 		b = ucl_object_typed_new(UCL_OBJECT);
 		put_str(b, "swvc", at);
-		put_str(b, "end_point", p);
+		put_str(b, "end-point", p);
 		put_str(b, "name", jstr(f, "name"));
 		if (jstr(f, "group") != NULL && jstr(f, "group")[0] != '\0')
 			put_str(b, "group", jstr(f, "group"));
@@ -8094,8 +8098,8 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		json = ucl_object_emit(b, UCL_EMIT_JSON_COMPACT);
 		ucl_object_unref(b);
 		app.modal_busy = true;
-		api("POST", "/api/sdwan/identities", (const char *)json, issue_cb,
-		    NULL);
+		rc_verb(RC_C "sdwan/issue-identity", (const char *)json, NULL,
+		    issue_cb, NULL);
 		free(json);
 		return (true);
 	}
@@ -9086,20 +9090,26 @@ sent_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	bool	keep = arg != NULL;
 
-	sd.busy = false;
-	if (status != 200) {
-		snprintf(sd.error, sizeof(sd.error), "%s", jstr(o,
-		    "error.message") != NULL ? jstr(o, "error.message") : err !=
-		    NULL ? err : "no answer");
+	if (status < 200 || status > 299) {
+		sd.busy = false;
+		snprintf(sd.error, sizeof(sd.error), "%s", err != NULL ? err :
+		    "no answer");
 		sd.note[0] = '\0';
 		return;
 	}
 	sd.error[0] = '\0';
 	if (!keep) {
+		sd.busy = false;
 		snprintf(sd.note, sizeof(sd.note), "It is one MEF 70.2 allows, "
 		    "as far as the console checks.");
 		return;
 	}
+	/* Kept (204): the document read again, its version the new one. */
+	if (status == 204) {
+		rc_get(RC_C "sdwan/document", NULL, sent_cb, arg);
+		return;
+	}
+	sd.busy = false;
 	snprintf(sd.note, sizeof(sd.note), "Kept as version %lld.",
 	    (long long)jint(o, "version", 0));
 	toast(false, "SD-WAN kept");
@@ -9114,7 +9124,7 @@ sent_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 send(const char *text, bool keep)
 {
-	ucl_object_t	*o;
+	ucl_object_t	*o, *top;
 	unsigned char	*json;
 
 	/* What is in the box: JSON, or YAML pasted in. */
@@ -9130,11 +9140,18 @@ send(const char *text, bool keep)
 	(void)ucl_object_delete_key(o, "version");
 	ucl_object_insert_key(o, ucl_object_fromint(jint(sd.doc, "version",
 	    0)), "version", 0, false);
-	json = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
-	ucl_object_unref(o);
+	/* Kept: the node's value; checked: the input's document. */
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, o, keep ? "arcana-console:document" :
+	    "document", 0, false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
 	sd.busy = true;
-	api(keep ? "PUT" : "POST", keep ? "/api/sdwan" : "/api/sdwan/check",
-	    (char *)json, sent_cb, keep ? (void *)1 : NULL);
+	if (keep)
+		rc_edit("PUT", RC_C "sdwan/document", (char *)json, sent_cb,
+		    (void *)1);
+	else
+		rc_verb(RC_C "sdwan/check", (char *)json, NULL, sent_cb, NULL);
 	free(json);
 }
 
@@ -9260,7 +9277,7 @@ apply_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		    jstr(o, "error.message") : err != NULL ? err : "no answer");
 		return;
 	}
-	api("GET", "/api/sdwan/apply", NULL, applied_cb, NULL);
+	rc_get(RC_C "sdwan/apply-state", NULL, applied_cb, NULL);
 }
 
 bool
@@ -9710,7 +9727,9 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		    "by the apply that follows; it can be issued again, with a "
 		    "new key.", "Revoke", true, "", "do-sd-ident-revoke", arg, "");
 	} else if (strcmp(act, "do-sd-ident-revoke") == 0) {
-		char	url[400], a[300], *p, *q;
+		ucl_object_t	*b;
+		unsigned char	*json;
+		char		 a[300], *p, *q;
 
 		snprintf(a, sizeof(a), "%s", arg);
 		p = strchr(a, '|');
@@ -9718,9 +9737,15 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		if (p != NULL && q != NULL) {
 			*p++ = '\0';
 			*q++ = '\0';
-			snprintf(url, sizeof(url), "/api/sdwan/identities?swvc=%s&"
-			    "end_point=%s&name=%s", a, p, q);
-			api("DELETE", url, NULL, revoke_cb, NULL);
+			b = ucl_object_typed_new(UCL_OBJECT);
+			put_str(b, "swvc", a);
+			put_str(b, "end-point", p);
+			put_str(b, "name", q);
+			json = ucl_object_emit(b, UCL_EMIT_JSON_COMPACT);
+			ucl_object_unref(b);
+			rc_verb(RC_C "sdwan/revoke-identity", (const char *)json,
+			    NULL, revoke_cb, NULL);
+			free(json);
 		}
 	} else if (strcmp(act, "sd-config-done") == 0) {
 		free(sd.config);
@@ -9732,8 +9757,17 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		    "do-sd-list-del", arg, value);
 	} else if (strcmp(act, "do-sd-list-del") == 0) {
 		lists_send(arg, NULL);
+	} else if (strcmp(act, "sd-csv") == 0 && (strcmp(arg, "audit") == 0 ||
+	    strcmp(arg, "sen") == 0 || strcmp(arg, "san") == 0 ||
+	    strcmp(arg, "record") == 0)) {
+		char	url[200], name[64];
+
+		/* RESTCONF's CSV: the node read with text/csv in Accept. */
+		snprintf(url, sizeof(url), RC_C "sdwan/%s", arg);
+		snprintf(name, sizeof(name), "sdwan-%s.csv", arg);
+		arc_download(url, "text/csv", name);
 	} else if (strcmp(act, "sd-lists-fetch") == 0) {
-		api("POST", "/api/sdwan/lists/fetch", "{}", lists_put_cb, NULL);
+		rc_verb(RC_C "sdwan/fetch-lists", NULL, NULL, lists_put_cb, NULL);
 	} else if (strcmp(act, "sd-rekey") == 0) {
 		ucl_object_t	*o;
 		unsigned char	*json;
@@ -9743,7 +9777,8 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		    false);
 		json = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
 		ucl_object_unref(o);
-		api("POST", "/api/sdwan/rekey", (const char *)json, rekey_cb, NULL);
+		rc_verb(RC_C "sdwan/rekey", (const char *)json, NULL, rekey_cb,
+		    NULL);
 		free(json);
 	} else if (strcmp(act, "sd-apply") == 0 || strcmp(act,
 	    "do-sd-apply-fresh") == 0) {
@@ -9751,7 +9786,7 @@ sdwan_action(const char *act, const char *arg, const char *value)
 
 		sd.applying = true;
 		json = apply_body(strcmp(act, "sd-apply") != 0);
-		api("POST", "/api/sdwan/apply", json, apply_cb, NULL);
+		rc_verb(RC_C "sdwan/apply", json, NULL, apply_cb, NULL);
 		free(json);
 	} else if (strcmp(act, "sd-needs-check") == 0) {
 		plan_load();
@@ -9824,12 +9859,12 @@ sdwan_tick(double now)
 	if (app.node == NODE_SDWAN && app.visible && sd.tab == SD_OVERVIEW &&
 	    sd.applied == NULL && now - sd.apply_at > 5000) {
 		sd.apply_at = now;
-		api("GET", "/api/sdwan/apply", NULL, applied_cb, NULL);
+		rc_get(RC_C "sdwan/apply-state", NULL, applied_cb, NULL);
 	}
 	if (app.node == NODE_SDWAN && app.visible && sd.tab == SD_EDGES &&
 	    sd.applying && now - sd.apply_at > 1000) {
 		sd.apply_at = now;
-		api("GET", "/api/sdwan/apply", NULL, applied_cb, NULL);
+		rc_get(RC_C "sdwan/apply-state", NULL, applied_cb, NULL);
 	}
 	/* Kept elsewhere meanwhile: read again, unless a change is typed. */
 	if (app.node != NODE_SDWAN || !app.visible || sd.tab == SD_DOCUMENT ||

@@ -6909,8 +6909,8 @@ part_flows_sdwan(void)
 	    "h.textContent.startsWith('Record')) && document.querySelector("
 	    "'section.sdwan').textContent.includes('Nothing logged yet')", 20);
 	ATF_CHECK(js_true("document.querySelector('input[data-input="
-	    "sd-record-filter]') !== null && document.querySelector('a[href="
-	    "\"/api/sdwan/record.csv\"]') !== null"));
+	    "sd-record-filter]') !== null && document.querySelector('button"
+	    "[data-act=sd-csv][data-arg=record]') !== null"));
 	/* Zero trust (MEF 118.1): the Access Control Policies, Subject Actor
 	 * to Target Actor, the staff zone Allowed to every zone and the
 	 * Internet, anything else Blocked; the Policy End Points; the audit
@@ -6925,9 +6925,16 @@ part_flows_sdwan(void)
 	    "table.sd tbody tr')].some(tr => tr.textContent.startsWith('any "
 	    "other') && tr.textContent.includes('Block')) && [...document"
 	    ".querySelectorAll('section.sdwan .chip')].some(c => c.textContent "
-	    "=== 'intact') && document.querySelector('a[href=\"/api/sdwan/audit"
-	    ".csv\"]') !== null && [...document.querySelectorAll('section.sdwan "
-	    "h4')].some(h => h.textContent.startsWith('Policy End Points'))"));
+	    "=== 'intact') && document.querySelector('button[data-act=sd-csv]"
+	    "[data-arg=audit]') !== null && [...document.querySelectorAll("
+	    "'section.sdwan h4')].some(h => h.textContent.startsWith('Policy "
+	    "End Points'))"));
+	/* The trail as CSV, RESTCONF's by Accept, saved as a file. */
+	run("window.arcSaved = null; document.querySelector('button[data-act="
+	    "sd-csv][data-arg=audit]').click()");
+	wait_js("window.arcSaved?.name === 'sdwan-audit.csv' && window.arcSaved"
+	    ".text.split('\\n').length > 2 && window.arcSaved.text.includes("
+	    "'policies-applied')", 10);
 	/* MEF 138's notifications: the SENs and SANs kept, the SANs of the
 	 * example's function policies there, with their IDs. */
 	wait_js("[...document.querySelectorAll('section.sdwan h4')].some(h => "
@@ -6936,7 +6943,8 @@ part_flows_sdwan(void)
 	    20);
 	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h4')]"
 	    ".some(h => h.textContent.startsWith('Security Event Notifications'"
-	    ")) && document.querySelector('a[href=\"/api/sdwan/sen.csv\"]') !== "
+	    ")) && document.querySelector('button[data-act=sd-csv][data-arg="
+	    "sen]') !== "
 	    "null && document.querySelector('table.sd-san tbody tr td:nth-child"
 	    "(2)').textContent.length === 36"));
 	/* Intrusion detection: the policy's IDS in its column, the block of

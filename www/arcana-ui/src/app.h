@@ -54,6 +54,7 @@ char		*arc_theme_get(void);
 void		 arc_theme_set(const char *);
 void		 arc_save_b64(const char *, const char *, const char *);
 void		 arc_save_text(const char *, const char *, const char *);
+void		 arc_download(const char *, const char *, const char *);
 void		 arc_svg_png(const char *, const char *);
 void		 arc_webauthn(int, int, const char *);
 void		 arc_sw_register(void);
