@@ -360,6 +360,16 @@ rc_action(const char *path, const char *input, const char *query,
 	return (invoke(RK_ACTION, path, input, query, cb, arg));
 }
 
+/* The same of an action that only reads: a read's task, not a change's. */
+int
+rc_read(const char *path, const char *input, const char *query,
+    api_cb *cb, void *arg)
+{
+
+	api_reads();
+	return (invoke(RK_ACTION, path, input, query, cb, arg));
+}
+
 /*
  * The same of a verb the console answers with /api's handler
  * (arcana-console's, cyang.c's bridges): the callback gets its output's

@@ -33,6 +33,7 @@ struct inflight {
 
 static struct inflight	pend[MAX_PENDING];
 static int		lastid;
+static bool		reads;		/* the next request only reads */
 
 static struct inflight *
 slot(void)
@@ -70,13 +71,25 @@ api(const char *method, const char *url, const char *body, api_cb *cb,
 	return (api_hdr(method, url, body, NULL, cb, arg));
 }
 
+/* The next request, though a POST, only reads (an action's read). */
+void
+api_reads(void)
+{
+
+	reads = true;
+}
+
 /* The same with headers of the caller's own, "Name: value" a line. */
 int
 api_hdr(const char *method, const char *url, const char *body,
     const char *hdrs, api_cb *cb, void *arg)
 {
 	struct inflight	*p;
+	bool		 rd;
 	int		 id;
+
+	rd = reads || strcmp(method, "GET") == 0;
+	reads = false;
 
 	/* Not sent is not "no answer": the console is not to blame. */
 	if ((p = slot()) == NULL) {
@@ -88,7 +101,7 @@ api_hdr(const char *method, const char *url, const char *body,
 	p->arg = arg;
 	id = p->id;
 	p->url[0] = '\0';
-	if (strcmp(method, "GET") == 0 && strlen(url) < sizeof(p->url)) {
+	if (rd && strlen(url) < sizeof(p->url)) {
 		snprintf(p->url, sizeof(p->url), "%s", url);
 		export_where(&p->node, &p->tab);
 	}
@@ -108,12 +121,12 @@ api_hdr(const char *method, const char *url, const char *body,
 		p->op = app.ops[0].id;
 		p->awaited = true;
 		app.ops[0].req = id;
-	} else if (strcmp(method, "GET") != 0 && strncmp(url, "/api/auth/",
+	} else if (!rd && strncmp(url, "/api/auth/",
 	    10) != 0 && strcmp(url, "/api/health") != 0) {
 		/* A change no part made a task for: one of its own. */
 		p->op = op_auto(method, url, id);
 		p->awaited = true;
-	} else if (app.quiet && strcmp(method, "GET") == 0)
+	} else if (app.quiet && rd)
 		/* The page's own poll: a task too, shown apart from what
 		 * was asked for, so that every exchange can be seen. */
 		p->op = op_quiet_begin(method, url);

@@ -57,9 +57,15 @@ export_note(const char *url, int node, int tab, const ucl_object_t *o)
 	size_t		 n;
 	int		 i;
 
-	if (o == NULL || strncmp(url, "/api/servers/", 13) != 0)
+	if (o == NULL)
 		return;
-	p = url + 13;
+	if (strncmp(url, "/api/servers/", 13) == 0)
+		p = url + 13;
+	else if (strncmp(url, "/restconf/", 10) == 0 && (p = strstr(url,
+	    "/host=")) != NULL)
+		p += 6;
+	else
+		return;
 	if ((sl = strchr(p, '/')) == NULL || (n = (size_t)(sl - p)) >= 9)
 		return;
 	k = old = NULL;

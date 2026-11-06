@@ -7,7 +7,8 @@
 /*
  * A host's kernel: the files linked into it and the modules each holds,
  * to be unloaded, and others loaded; what rc.conf loads at boot; and
- * what the kernel's memory went to.
+ * what the kernel's memory went to: arcana-kernel's kernel, read
+ * through the fleet mount.
  */
 
 #include <stdio.h>
@@ -51,16 +52,15 @@ kernel_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	free(sid);
 	kn.loading = false;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
-		snprintf(kn.error, sizeof(kn.error), "%s", status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
-		    err : "no answer");
+	if (status != 200 || o == NULL) {
+		snprintf(kn.error, sizeof(kn.error), "%s", err != NULL ? err :
+		    "no answer");
 		return;
 	}
 	kn.error[0] = '\0';
 	if (kn.data != NULL)
 		ucl_object_unref(kn.data);
-	kn.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	kn.data = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
 	kn.fetched = arc_now();
 }
 
@@ -82,8 +82,8 @@ refresh_kernel(struct server *s, bool again)
 		return;
 	snprintf(kn.sid, sizeof(kn.sid), "%s", s->id);
 	kn.loading = true;
-	host_read(s, "kernel", "read the kernel", true, kernel_cb,
-	    strdup(s->id));
+	host_yread(s, "arcana-kernel:kernel", NULL, "read the kernel", true,
+	    kernel_cb, strdup(s->id));
 }
 
 static bool
@@ -187,16 +187,16 @@ view_kernel(struct html *h, struct server *s)
 		return;
 	}
 	mem = jget(kn.data, "memory");
-	used = jint(mem, "kmem_map_size", 0);
+	used = jint(mem, "kmem-map-size", 0);
 	h_raw(h, "<div class=\"facts kmem\">");
 	snprintf(buf, sizeof(buf), "%d files", (int)ucl_array_size(jget(
-	    kn.data, "files")));
+	    kn.data, "file")));
 	tile(h, "the kernel and its modules", jint(mem, "files", 0), buf);
-	size(buf, sizeof(buf), jint(mem, "kmem_size", 0));
+	size(buf, sizeof(buf), jint(mem, "kmem-size", 0));
 	snprintf(base, sizeof(base), "of %s", buf);
 	tile(h, "kernel memory in use", used, base);
-	tile(h, "in malloc(9) types", jint(mem, "malloc_total", 0), NULL);
-	tile(h, "kernel memory free", jint(mem, "kmem_map_free", 0), NULL);
+	tile(h, "in malloc(9) types", jint(mem, "malloc-total", 0), NULL);
+	tile(h, "kernel memory free", jint(mem, "kmem-map-free", 0), NULL);
 	h_raw(h, "</div>");
 
 	/* Whatever rc.conf loads at boot and is not in now. */
@@ -206,7 +206,7 @@ view_kernel(struct html *h, struct server *s)
 	    NULL) {
 		name = ucl_object_tostring_forced(o);
 		mit = NULL;
-		while ((m = ucl_object_iterate(jget(kn.data, "files"), &mit,
+		while ((m = ucl_object_iterate(jget(kn.data, "file"), &mit,
 		    true)) != NULL) {
 			snprintf(base, sizeof(base), "%s", jstr(m, "name") !=
 			    NULL ? jstr(m, "name") : "");
@@ -236,14 +236,14 @@ view_kernel(struct html *h, struct server *s)
 	tbl_head(h, "kmods", fcols, 6, 1);
 	h_raw(h, "<tbody>");
 	/* The filter is its own here: a file's name, or a module's in it. */
-	rows = tbl_rows("kmods", jget(kn.data, "files"), fcols, 6, NULL);
+	rows = tbl_rows("kmods", jget(kn.data, "file"), fcols, 6, NULL);
 	shown = 0;
 	for (r = 0; (o = rows[r]) != NULL; r++) {
 		name = jstr(o, "name") != NULL ? jstr(o, "name") : "";
 		if (app.filter[0] != '\0' && strstr(name, app.filter) == NULL) {
 			/* Or one of the modules it holds. */
 			mit = NULL;
-			while ((m = ucl_object_iterate(jget(o, "modules"),
+			while ((m = ucl_object_iterate(jget(o, "module"),
 			    &mit, true)) != NULL)
 				if (strstr(ucl_object_tostring_forced(m),
 				    app.filter) != NULL)
@@ -264,7 +264,7 @@ view_kernel(struct html *h, struct server *s)
 		h_txt(h, buf);
 		h_fmt(h, "</td><td>%lld</td><td class=\"mods\"", (long long)
 		    jint(o, "refs", 0));
-		n = (int)ucl_array_size(jget(o, "modules"));
+		n = (int)ucl_array_size(jget(o, "module"));
 		if (n > 6) {
 			/* The kernel itself holds hundreds: counted. */
 			h_fmt(h, "><details><summary>%d modules</summary>", n);
@@ -272,7 +272,7 @@ view_kernel(struct html *h, struct server *s)
 			h_raw(h, ">");
 		mit = NULL;
 		first = true;
-		while ((m = ucl_object_iterate(jget(o, "modules"), &mit,
+		while ((m = ucl_object_iterate(jget(o, "module"), &mit,
 		    true)) != NULL) {
 			h_raw(h, first ? "" : ", ");
 			h_txt(h, ucl_object_tostring_forced(m));
@@ -326,12 +326,12 @@ view_kernel(struct html *h, struct server *s)
 	/* The bars are to the largest of all, whatever the order. */
 	top = 0;
 	it = NULL;
-	while ((o = ucl_object_iterate(jget(mem, kn.zones ? "zones" :
+	while ((o = ucl_object_iterate(jget(mem, kn.zones ? "zone" :
 	    "malloc"), &it, true)) != NULL)
 		if (jint(o, "bytes", 0) > top)
 			top = jint(o, "bytes", 0);
 	rows = tbl_rows(kn.zones ? "kzones" : "kmalloc", jget(mem, kn.zones ?
-	    "zones" : "malloc"), kn.zones ? zcols : mcols, kn.zones ? 7 : 5,
+	    "zone" : "malloc"), kn.zones ? zcols : mcols, kn.zones ? 7 : 5,
 	    app.filter);
 	for (r = 0; (o = rows[r]) != NULL; r++) {
 		name = jstr(o, "name") != NULL ? jstr(o, "name") : "";

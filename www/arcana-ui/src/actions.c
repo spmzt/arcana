@@ -327,8 +327,9 @@ op_quiet_begin(const char *method, const char *url)
 
 	server[0] = '\0';
 	snprintf(title, sizeof(title), "%s", url);
-	if ((p = strstr(url, "/api/servers/")) != NULL) {
-		p += strlen("/api/servers/");
+	if ((p = strstr(url, "/api/servers/")) != NULL ||
+	    (p = strstr(url, "/host=")) != NULL) {
+		p += p[1] == 'h' ? strlen("/host=") : strlen("/api/servers/");
 		q = strchr(p, '/');
 		snprintf(sid, sizeof(sid), "%.*s", (int)(q != NULL ? q - p :
 		    (ptrdiff_t)strlen(p)), p);
@@ -1543,6 +1544,69 @@ host_read(const struct server *s, const char *read, const char *title,
 	h->cb = cb;
 	h->arg = arg;
 	live_read(s->id, read, url, op->id, hread_cb, h);
+}
+
+struct hrc {
+	api_cb	*cb;
+	void	*arg;
+	char	 sid[9];
+};
+
+/* A module the host's agent lacks (its own schema's 404), said so. */
+static void
+hrc_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct hrc		 h = *(struct hrc *)arg;
+	const struct server	*s;
+	const char		*m, *v;
+	char			 why[400];
+	int			 i;
+
+	free(arg);
+	if (status == 404 && err != NULL && (m = strstr(err, "modules have no "))
+	    != NULL) {
+		m += strlen("modules have no ");
+		for (i = 0, v = NULL; i < app.nservers && v == NULL; i++) {
+			s = &app.servers[i];
+			if (strcmp(s->id, h.sid) == 0)
+				v = jstr(s->list, "host.version");
+		}
+		snprintf(why, sizeof(why), "%.*s needs a newer arcana-agent "
+		    "than this host's%s%s", (int)strcspn(m, " (\""), m, v !=
+		    NULL ? " " : "", v != NULL ? v : "");
+		err = why;
+	}
+	h.cb(status, o, err, h.arg);
+}
+
+/*
+ * A read of host s's through the fleet mount: path below its entry
+ * ("arcana-kernel:kernel", a query after ?), or, with input, the read
+ * action there.  The callback gets the node or the action's output.  One
+ * the user asked for is a task called title; the others a plain read.
+ */
+void
+host_yread(const struct server *s, const char *path, const char *input,
+    const char *title, bool user, api_cb *cb, void *arg)
+{
+	struct hrc	*h;
+	char		 url[512], q[400];
+	size_t		 n;
+
+	if ((h = calloc(1, sizeof(*h))) == NULL)
+		abort();
+	h->cb = cb;
+	h->arg = arg;
+	snprintf(h->sid, sizeof(h->sid), "%s", s->id);
+	n = strcspn(path, "?");
+	snprintf(q, sizeof(q), "%s", path[n] == '?' ? path + n + 1 : "");
+	rc_h(url, sizeof(url), s->id, "%.*s", (int)n, path);
+	if (user && !app.quiet)
+		(void)op_new(title, s->name);
+	if (input != NULL)
+		rc_read(url, input, q[0] != '\0' ? q : NULL, hrc_cb, h);
+	else
+		rc_get(url, q[0] != '\0' ? q : NULL, hrc_cb, h);
 }
 
 /*

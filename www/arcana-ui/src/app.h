@@ -151,6 +151,7 @@ int		 api(const char *, const char *, const char *, api_cb *,
 int		 api_hdr(const char *, const char *, const char *,
 		    const char *, api_cb *, void *);
 const char	*api_etag(void);
+void		 api_reads(void);
 
 /*
  * rc.c: the console's RESTCONF (RFC 8040), JSON.  rc_c() and rc_h()
@@ -161,7 +162,8 @@ const char	*api_etag(void);
  * rc_action() an action's or rpc's input wrapped and its output
  * unwrapped (NULL on 204), with a query when not NULL (arcana-accept=
  * the warnings accepted); rc_verb() the same of a verb of the console's
- * own that /api's handler answers (cyang.c's bridges), its result.
+ * own that /api's handler answers (cyang.c's bridges), its result;
+ * rc_read() an action that only reads, a read's task and not a change's.
  * rc_error(): an ietf-restconf:errors' words (message, app-tag, path).
  */
 #define	RC_C		"/restconf/data/arcana-console:"
@@ -176,6 +178,8 @@ int		 rc_edit(const char *, const char *, const char *, api_cb *,
 int		 rc_action(const char *, const char *, const char *, api_cb *,
 		    void *);
 int		 rc_verb(const char *, const char *, const char *, api_cb *,
+		    void *);
+int		 rc_read(const char *, const char *, const char *, api_cb *,
 		    void *);
 const char	*rc_error(const ucl_object_t *, char *, size_t);
 const char	*rc_tag(const ucl_object_t *);
@@ -661,6 +665,8 @@ void		 host_read(const struct server *, const char *, const char *,
 		    bool, api_cb *, void *);
 void		 live_read(const char *, const char *, const char *, int,
 		    api_cb *, void *);
+void		 host_yread(const struct server *, const char *, const char *,
+		    const char *, bool, api_cb *, void *);
 void		 live_stream(const ucl_object_t *);
 const char	*op_class(const struct op *);
 struct op	*op_begin(const char *, const char *);
