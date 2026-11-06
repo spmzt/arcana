@@ -489,7 +489,7 @@ Depends on Y-2 for every write.
 - **3.8 The switch.** A, C (done, agent 0.238.0, console 0.336.0):
   the interim module gone with its last operation.
 
-### Y-4 RESTCONF and the service models (16 weeks)
+### Y-4 RESTCONF and the service models
 
 Depends on Y-3.
 
@@ -525,7 +525,7 @@ Depends on Y-3.
   calls.
 - **4.8 PWA.** P: RESTCONF JSON or CBOR pass-through, SSE
   subscriptions, forms generated from the yang-library (the schema
-  page already renders a schema). 3–4 weeks.
+  page already renders a schema).
 - **4.9 Book and openapi.** D: the API page from the RESTCONF
   description; the SD-WAN part rewritten over L3NM with the MEF terms
   kept in the page.
@@ -533,7 +533,7 @@ Depends on Y-3.
   RESTCONF, applied on the lab's jails, read back as VN and SAP, the
   same service exported as a MEF document and re-imported unchanged.
 
-### Y-5 Measurement, alarms, telemetry (12 weeks)
+### Y-5 Measurement, alarms, telemetry
 
 Depends on Y-3; independent of Y-4.
 
@@ -579,7 +579,7 @@ Depends on Y-3; independent of Y-4.
 - **5.7 Phase close.** L, D: the measurement chapter; TODO's verified
   list.
 
-### Y-6 ACLs, IPsec, FlowSpec (12 weeks)
+### Y-6 ACLs, IPsec, FlowSpec
 
 Depends on Y-3; independent of Y-4 and Y-5.
 
@@ -626,7 +626,7 @@ Depends on Y-3; independent of Y-4 and Y-5.
   encapsulation; RD/RT become operational.
 - **6.7 Phase close.** L, D.
 
-### Y-7 The frameworks (16 weeks)
+### Y-7 The frameworks
 
 Depends on Y-4 and Y-5.
 
@@ -679,7 +679,7 @@ Depends on Y-4 and Y-5.
 - **7.9 Phase close.** L, D: ARCHITECTURE.md rewritten in RFC 7426's
   terms; the conformance chapter of the book extended to these RFCs.
 
-### Y-8 Benchmarks, conformance, second console (6 weeks)
+### Y-8 Benchmarks, conformance, second console
 
 - **8.1 Benchmarks.** L: `bench/` with vnet jails, epairs, bridges,
   cpuset separation, agent and console timestamp logs (a test-only
@@ -2618,20 +2618,20 @@ whose first part is served.
 
 ## Order
 
-| Phase | Weeks | Needs | Delivers |
-|---|---|---|---|
-| Y-0 | — | — | D-5, D-6, D-11, D-12; a registered SID block, later |
-| Y-1 | — | — | the Network tab wholly by YANG |
-| Y-2 | — | — | datastores, edits, static routes, RA, FIB and jail mounts |
-| Y-3 | — | Y-2 | the operations converted, subscriptions' rest, NACM, event-driven console, the CAL |
-| Y-4 | 16 | Y-3 | RESTCONF, L3NM/SAP/VN, the PWA on RESTCONF |
-| Y-5 | 12 | Y-3 | STAMP, PM, alarms' rest, alternate marking, flow telemetry |
-| Y-6 | 12 | Y-3 | ACLs, IPsec by the models, key chains, FlowSpec, D-5(b) |
-| Y-7 | 16 | Y-4, Y-5 | NRP, slices, DetNet-f, CATS, ACP, ADVPN, ASAs, intent |
-| Y-8 | 6 | Y-4 | benchmarks, conformance, second console |
+| Phase | Needs | Delivers |
+|---|---|---|
+| Y-0 | — | D-5, D-6, D-11, D-12; a registered SID block, later |
+| Y-1 | — | the Network tab wholly by YANG |
+| Y-2 | — | datastores, edits, static routes, RA, FIB and jail mounts |
+| Y-3 | Y-2 | the operations converted, subscriptions' rest, NACM, event-driven console, the CAL |
+| Y-4 | Y-3 | RESTCONF, L3NM/SAP/VN, the PWA on RESTCONF |
+| Y-5 | Y-3 | STAMP, PM, alarms' rest, alternate marking, flow telemetry |
+| Y-6 | Y-3 | ACLs, IPsec by the models, key chains, FlowSpec, D-5(b) |
+| Y-7 | Y-4, Y-5 | NRP, slices, DetNet-f, CATS, ACP, ADVPN, ASAs, intent |
+| Y-8 | Y-4 | benchmarks, conformance, second console |
 
 Y-4, Y-5 and Y-6 are independent and can run in parallel. The
-configuration files' round trip (2.3) is where the work would overrun.
+configuration files' round trip (2.3) is the riskiest part.
 
 ## Risks
 
