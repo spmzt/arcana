@@ -746,8 +746,12 @@ ietf_network_instance_network_instances_edit(cbl_req *req,
 		(void)cbl_req_set_yerr(req, err, 0);
 		return (EEXIST);
 	}
-	(void)snprintf(lpath, sizeof(lpath), "%s/boot/loader.conf.d/arcana.conf",
-	    opts.root != NULL ? opts.root : "");
+	/* Arcana's loader file, or the system's that sets it (config-files). */
+	if (cf_system())
+		(void)cf_loader_target("net.fibs", lpath, sizeof(lpath));
+	else
+		(void)snprintf(lpath, sizeof(lpath), "%s" LOADER_ARCANA,
+		    opts.root != NULL ? opts.root : "");
 	sdwan_conf_path(FIBS_CONF, fpath, sizeof(fpath));
 	ltext = file_text(lpath, &llen, &lthere);
 	ftext = file_text(fpath, &flen, &fthere);

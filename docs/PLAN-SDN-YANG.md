@@ -745,6 +745,16 @@ whose first part is served.
     each variable taken with its file and line, and gives them back
     with its `release` action (`arcanactl services release [-n] name
     ...`, 3.1.2).
+  - Since agent 0.249.0 (docs/notes/config-files.md): nothing of the
+    user's is commented out; an accepted conflict merges a word list
+    additively (`sysrc var+=`), a value is asked for again
+    (`rc-conf-merge`, the page's merge editor, config-files'
+    `resolve`), what Arcana changed kept in a ledger for `release`.
+    And a host may use the system's files instead (arcana-agent's
+    `config-files` mode `system`, its `switch` action): each variable
+    written where the user's is, else `/etc/rc.conf`, tunables in
+    `/boot/loader.conf`, no `rc_conf_files` line; back to Arcana's
+    files by a clone.
   - Changes through `candidate` and a confirmed commit, undone unless
     confirmed.
   - A boot-time tunable written to its file with a "takes effect after

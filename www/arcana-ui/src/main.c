@@ -694,7 +694,7 @@ submit(const char *form, const ucl_object_t *f)
 	    trouble_form(form, f) || secpage_form(form, f) ||
 	    naspage_form(form, f) || sysview_form(form, f) || mail_form(form, f) || relay_form(form, f) || monitor_form(form, f) ||
 	    builder_form(form, f) ||
-	    kernel_form(form, f) || storage_form(form, f) ||
+	    kernel_form(form, f) || storage_form(form, f) || cfg_form(form, f) ||
 	    sysctl_form(form, f) || nacm_form(form, f) || ra_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
 	    macdo_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
@@ -1145,7 +1145,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    sysview_action(act, arg, value) || mail_action(act, arg, value) || relay_action(act, arg, value) ||
 	    monitor_action(act, arg, value) ||
 	    secpage_action(act, arg, value) || naspage_action(act, arg, value) ||
-	    builder_action(act, arg, value) ||
+	    builder_action(act, arg, value) || cfg_action(act, arg, value) ||
 	    iflabel_action(act, arg) || pfxlists_action(act, arg, value) ||
 	    feeds_action(act, arg, value) ||
 	    user_action(act, arg) ||

@@ -369,7 +369,8 @@ service_job_rc(struct work *w, const struct arc_job_spec *sp,
 		return (-1);
 	}
 	step = step_begin(w, STEP_FILE, "write", "%s: %s, as a "
-	    "commit writes it", name, RC_ARCANA);
+	    "commit writes it", name, cf_system() ? "your rc.conf files" :
+	    RC_ARCANA);
 	err[0] = '\0';
 	if ((error = rca_open(x, name, err, sizeof(err))) != 0) {
 		free(x);
@@ -408,7 +409,7 @@ service_job_rc(struct work *w, const struct arc_job_spec *sp,
 			    "\"%s\"", sp->variables.v[k].value != NULL ?
 			    sp->variables.v[k].value : ""));
 		step_end(w, step, true, "%s: %s%s%s; not done: a dry run",
-		    RC_ARCANA, said, err[0] != '\0' ? "; " : "", err);
+		    rca_where(x), said, err[0] != '\0' ? "; " : "", err);
 		service_job_forget(x);
 		return (0);
 	}
@@ -566,6 +567,12 @@ yservices_convert(cbl_req *req, const char *const *names, size_t n, bool dry,
 	size_t			 nall, nsv = 0, cap = 0, nx = 0;
 	int			 error = 0;
 
+	if (cf_system()) {
+		(void)cbl_req_set_yerr(req, "the host's rc.conf variables are "
+		    "in its own files (arcana-agent's config-files system): "
+		    "nothing to convert", 0);
+		return (EINVAL);
+	}
 	work_init(&w);
 	memset(&r, 0, sizeof(r));
 	service_scripts(&w, &r);
@@ -899,6 +906,79 @@ give_back(cbl_yarena *a, struct rca *x, const char *svc, struct vc_file *uf,
 }
 
 /*
+ * One service given back in the system's files (config-files system):
+ * what the ledger says Arcana added to the admin's <svc>_* variables
+ * taken back (rca_release()), written unless dry.  *vp: each, a's.
+ */
+static int
+given_back(cbl_yarena *a, struct rca *x, const char *svc, bool dry,
+    yvar_given **vp, size_t *nvp, char *err, size_t errlen)
+{
+	struct rca_rel	*rel;
+	yvar_given	*v = NULL;
+	yline_given	*l;
+	char		 prefix[80];
+	size_t		 nrel, nv = 0, cap = 0;
+	int		 error;
+
+	(void)snprintf(prefix, sizeof(prefix), "%s_", svc);
+	if ((error = rca_release(x, prefix, dry, &rel, &nrel, err,
+	    errlen)) != 0)
+		return (error);
+	for (size_t i = 0; error == 0 && i < nrel; i++) {
+		yvar_given *t;
+
+		if ((t = given(a, &v, &nv, &cap, rel[i].name,
+		    strlen(rel[i].name))) == NULL) {
+			error = ENOMEM;
+			break;
+		}
+		if (rel[i].why != NULL) {
+			if ((t->dropped = astrdup(a, rel[i].why)) == NULL)
+				error = ENOMEM;
+			continue;
+		}
+		if ((l = cbl_yarena_alloc(a, sizeof(*l))) == NULL) {
+			error = ENOMEM;
+			break;
+		}
+		memset(l, 0, sizeof(*l));
+		l->file = astrdup(a, rel[i].file);
+		l->line = (uint32_t)rel[i].line;
+		l->value = rel[i].value != NULL ? astrdup(a, rel[i].value) :
+		    NULL;
+		t->restored.v = l;
+		t->restored.n = 1;
+		if (rel[i].value == NULL && (t->dropped = astrdup(a, "taken "
+		    "out: your files did not set it before Arcana")) == NULL)
+			error = ENOMEM;
+	}
+	/* None: nothing to give back, as the output says it. */
+	rca_rel_free(rel, nrel);
+	*vp = v;
+	*nvp = nv;
+	return (error);
+}
+
+/* The ledger's entries of svc's out (Arcana's file's merges go with
+ * its lines), kept for rca_undo(). */
+static int
+ledger_forget(struct rca *x, const char *svc, char *err, size_t errlen)
+{
+	struct rca_rel	*rel;
+	char		 prefix[80];
+	size_t		 nrel;
+	int		 error;
+
+	(void)snprintf(prefix, sizeof(prefix), "%s_", svc);
+	if ((error = rca_release(x, prefix, false, &rel, &nrel, err,
+	    errlen)) != 0)
+		return (error);
+	rca_rel_free(rel, nrel);
+	return (0);
+}
+
+/*
  * The release action (arcana-services), convert's inverse: the n
  * services named given back to the user's files, each <name>_* variable
  * out of Arcana's file and every line of theirs convert commented out
@@ -961,10 +1041,26 @@ yservices_release(cbl_req *req, const char *const *names, size_t n,
 			error = ENOMEM;
 			break;
 		}
-		error = give_back(a, r, names[i], uf, ufc, &mine, &v, &nv, err,
-		    sizeof(err));
+		if (r->sys)
+			error = given_back(a, r, names[i], dry, &v, &nv, err,
+			    sizeof(err));
+		else
+			error = give_back(a, r, names[i], uf, ufc, &mine, &v, &nv,
+			    err, sizeof(err));
+		/* The ledger's merges go with Arcana's file's lines. */
+		if (error == 0 && !r->sys && !dry)
+			error = ledger_forget(r, names[i], err, sizeof(err));
 		sv[i].variable.v = v;
 		sv[i].variable.n = nv;
+		/* The system's: written already, kept for an undo. */
+		if (r->sys && error == 0 && !dry && r->nwas > 0) {
+			nx++;
+			for (size_t k = 0; k < nuser; k++)
+				vc_free(&uf[k]);
+			free(ufc);
+			free(uf);
+			continue;
+		}
 		for (size_t k = 0; k < nuser; k++)
 			any = any || ufc[k];
 		if (error == 0 && !dry && (any || mine)) {

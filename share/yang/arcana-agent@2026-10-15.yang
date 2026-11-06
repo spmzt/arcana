@@ -853,5 +853,360 @@ module arcana-agent {
         }
       }
     }
+    container config-files {
+      config false;
+      description
+        "Where a commit writes the host's rc.conf(5) variables and the
+         loader's tunables (loader.conf(5)): in Arcana's own files
+         (/usr/local/etc/rc.conf.d/arcana, named in rc_conf_files, and
+         /boot/loader.conf.d/arcana.conf), or in the system's (the file
+         rc(8) or the loader takes the variable from, else /etc/rc.conf
+         and /boot/loader.conf).  Changed by switch alone: it moves the
+         files.  A variable a commit writes that the admin's files set
+         too is a warning first (rc-conf-conflict, loader-conf-
+         conflict); a word list (sysrc(8) +=) is then merged, the
+         admin's words kept; a value that cannot be merged is refused
+         with rc-conf-merge, its rows in pending, until resolve gives
+         the value or the warning is accepted for Arcana's.";
+      leaf mode {
+        type enumeration {
+          enum arcana {
+            description
+              "Arcana's own files, read after the admin's.";
+          }
+          enum system {
+            description
+              "The system's files, where the variables are.";
+          }
+        }
+        description
+          "The files a commit writes.";
+      }
+      leaf rc-file {
+        type string;
+        description
+          "Where a variable no file of the admin's sets goes.";
+      }
+      leaf loader-file {
+        type string;
+        description
+          "Where a tunable no loader file sets goes.";
+      }
+      leaf firewall-rules {
+        type string;
+        description
+          "The kept firewall rules' file; its boot script beside it,
+           .sh for .rules (firewall_script).";
+      }
+      list pending {
+        key "kind variable";
+        description
+          "What the last commit refused with rc-conf-merge: a value of
+           the admin's that Arcana's would replace, no word list to
+           merge.";
+        leaf kind {
+          type enumeration {
+            enum rc {
+              description
+                "An rc.conf variable.";
+            }
+            enum loader {
+              description
+                "A loader tunable.";
+            }
+          }
+          description
+            "Which files.";
+        }
+        leaf variable {
+          type string;
+          description
+            "Its name.";
+        }
+        leaf file {
+          type string;
+          description
+            "The admin's file that sets it, the last one.";
+        }
+        leaf line {
+          type uint32;
+          description
+            "Its line there.";
+        }
+        leaf yours {
+          type string;
+          description
+            "The admin's value.";
+        }
+        leaf proposed {
+          type string;
+          description
+            "Arcana's.";
+        }
+        leaf value {
+          type string;
+          description
+            "The value resolve gave, written by the next commit.";
+        }
+      }
+      list ledger {
+        key "kind variable";
+        description
+          "What Arcana changed of a variable the admin's files set, kept
+           in /var/db/arcana/config-ledger: release and switch give it
+           back from here.";
+        leaf kind {
+          type enumeration {
+            enum rc {
+              description
+                "An rc.conf variable.";
+            }
+            enum loader {
+              description
+                "A loader tunable.";
+            }
+          }
+          description
+            "Which files.";
+        }
+        leaf variable {
+          type string;
+          description
+            "Its name.";
+        }
+        leaf file {
+          type string;
+          description
+            "Where Arcana wrote it.";
+        }
+        leaf before {
+          type string;
+          description
+            "The admin's value before; none, it was not set.";
+        }
+        leaf after {
+          type string;
+          description
+            "What Arcana wrote.";
+        }
+        leaf arcana {
+          type string;
+          description
+            "Arcana's own value, before any merge.";
+        }
+      }
+      action switch {
+        nacm:default-deny-all;
+        description
+          "The files changed: arcana to system moves each variable of
+           Arcana's files into the system's, as the merge rows say;
+           system to arcana clones the admin's rc.conf variables and
+           loader.conf tunables into Arcana's files, theirs as they
+           are.  Every file changed is copied first into a directory
+           of /var/db/arcana/config-switch; a failure puts all back.
+           Nothing is loaded: rc(8) and the loader read them at the
+           next start or boot.";
+        input {
+          leaf to {
+            type enumeration {
+              enum arcana {
+                description
+                  "Arcana's own files.";
+              }
+              enum system {
+                description
+                  "The system's files.";
+              }
+            }
+            mandatory true;
+            description
+              "The mode to switch to.";
+          }
+          leaf dry-run {
+            type boolean;
+            default "false";
+            description
+              "Only the rows: nothing written.";
+          }
+          list merge {
+            key "kind variable";
+            description
+              "A choice for a variable both Arcana's and the admin's
+               files set.";
+            leaf kind {
+              type enumeration {
+                enum rc {
+                  description
+                    "An rc.conf variable.";
+                }
+                enum loader {
+                  description
+                    "A loader tunable.";
+                }
+              }
+              description
+                "Which files.";
+            }
+            leaf variable {
+              type string;
+              description
+                "Its name.";
+            }
+            leaf choice {
+              type enumeration {
+                enum additive {
+                  description
+                    "A word list: the admin's words, then Arcana's not
+                     among them, as sysrc(8) += adds them.";
+                }
+                enum arcana {
+                  description
+                    "Arcana's value, what boots now.";
+                }
+                enum yours {
+                  description
+                    "The admin's value.";
+                }
+                enum edit {
+                  description
+                    "The value given.";
+                }
+              }
+              description
+                "What is written.";
+            }
+            leaf value {
+              type string;
+              description
+                "With edit: the value.";
+            }
+          }
+        }
+        output {
+          leaf from {
+            type string;
+            description
+              "The mode before.";
+          }
+          leaf to {
+            type string;
+            description
+              "The mode after, or that would be.";
+          }
+          leaf done {
+            type boolean;
+            description
+              "Written; false for a dry run or a refusal.";
+          }
+          list row {
+            key "kind variable";
+            description
+              "Each variable of Arcana's files.";
+            leaf kind {
+              type string;
+              description
+                "rc or loader.";
+            }
+            leaf variable {
+              type string;
+              description
+                "Its name.";
+            }
+            leaf file {
+              type string;
+              description
+                "The file it ends in.";
+            }
+            leaf yours {
+              type string;
+              description
+                "The admin's value, an active line's or one commented
+                 out as taken by Arcana; none, not set.";
+            }
+            leaf arcana {
+              type string;
+              description
+                "Arcana's value.";
+            }
+            leaf list {
+              type boolean;
+              description
+                "A word list, merged additively by default.";
+            }
+            leaf choice {
+              type string;
+              description
+                "The choice taken; none, one is needed.";
+            }
+            leaf result {
+              type string;
+              description
+                "The value written, or that would be.";
+            }
+          }
+          leaf-list moved {
+            type string;
+            description
+              "Firewall files moved, from and to.";
+          }
+          leaf backup {
+            type string;
+            description
+              "The directory the files before are copied into.";
+          }
+          leaf-list note {
+            type string;
+            description
+              "What else to know.";
+          }
+        }
+      }
+      action resolve {
+        nacm:default-deny-all;
+        description
+          "The values the admin merged by hand for pending rows: the
+           next commit, accepting rc-conf-merge, writes each where the
+           admin's file sets it.";
+        input {
+          list row {
+            key "kind variable";
+            description
+              "A value for a pending row.";
+            leaf kind {
+              type enumeration {
+                enum rc {
+                  description
+                    "An rc.conf variable.";
+                }
+                enum loader {
+                  description
+                    "A loader tunable.";
+                }
+              }
+              description
+                "Which files.";
+            }
+            leaf variable {
+              type string;
+              description
+                "Its name.";
+            }
+            leaf value {
+              type string;
+              mandatory true;
+              description
+                "The value.";
+            }
+          }
+        }
+        output {
+          leaf resolved {
+            type uint32;
+            description
+              "Rows given a value.";
+          }
+        }
+      }
+    }
   }
 }

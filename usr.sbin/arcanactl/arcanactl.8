@@ -369,7 +369,9 @@ of a module the agent serves on the node
 names from its top
 .Pq Li jails/jail ,
 a list entry by its keys, the action's input leaves given as
-.Ar leaf Ns = Ns Ar value ;
+.Ar leaf Ns = Ns Ar value ,
+an entry of an input list as
+.Ar list Ns = Ns Ar leaf : Ns Ar value , Ns ... ;
 its output is printed as RFC 7951's JSON.
 A module's rpc is called by its name alone, its input after it.
 Every action and rpc of the models is served but a snapshot's

@@ -2539,6 +2539,10 @@ modal(struct html *h)
 		if (!storage_modal(h))
 			return;
 		break;
+	case MODAL_CFG:
+		if (!cfg_modal(h))
+			return;
+		break;
 	case MODAL_WG_INIT:
 	case MODAL_WG_PEER:
 	case MODAL_WG_CLIENT:
@@ -3114,6 +3118,9 @@ modal(struct html *h)
 			break;
 		case MODAL_STORAGE:
 			storage_modal_buttons(h);
+			break;
+		case MODAL_CFG:
+			cfg_modal_buttons(h);
 			break;
 		case MODAL_LOOKUP:
 			h_raw(h, "<button class=\"primary\">Look up</button>");

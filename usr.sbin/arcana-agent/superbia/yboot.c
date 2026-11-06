@@ -224,6 +224,67 @@ same(const char *s, const char *run, u_int type)
 }
 
 /*
+ * The system's files as one (config-files system): each tunable the
+ * loader's files set, the last value of each, in f.
+ */
+static int
+sys_view(struct vc_file *f)
+{
+	struct vc_file	 g;
+	char		**v, err[256];
+	size_t		 n;
+
+	if (vc_parse(f, VC_LOADER, "", 0, err, sizeof(err)) == -1)
+		return (ENOMEM);
+	if (cf_loader_files(&v, &n) != 0)
+		return (0);
+	for (size_t i = 0; i < n; i++) {
+		if (vc_read(&g, VC_LOADER, v[i], err, sizeof(err)) == -1) {
+			logmsg(LOG_WARNING, "%s: %s", v[i], err);
+			continue;
+		}
+		for (size_t k = 0; k < g.na; k++)
+			if (g.a[k].value != NULL && boot_name(g.a[k].name))
+				(void)vc_set(f, g.a[k].name, g.a[k].value, err,
+				    sizeof(err));
+		vc_free(&g);
+	}
+	vc_rc_files_free(v, n);
+	return (0);
+}
+
+/* Where the loader's files set name (system): the last file, its line
+ * and value in *line and *val; NULL none.  Rooted, in buf. */
+static const char *
+sys_where(const char *name, char *buf, size_t len, int *line, char **val)
+{
+	const struct vc_assign	*as;
+	struct vc_file		 g;
+	char			**v, err[256];
+	const char		*at = NULL;
+	size_t			 n;
+
+	*line = 0;
+	*val = NULL;
+	if (cf_loader_files(&v, &n) != 0)
+		return (NULL);
+	for (size_t i = 0; i < n; i++) {
+		if (vc_read(&g, VC_LOADER, v[i], err, sizeof(err)) == -1)
+			continue;
+		if ((as = vc_get(&g, name)) != NULL) {
+			(void)snprintf(buf, len, "%s", v[i]);
+			at = buf;
+			*line = as->line;
+			free(*val);
+			*val = strdup(as->value != NULL ? as->value : "");
+		}
+		vc_free(&g);
+	}
+	vc_rc_files_free(v, n);
+	return (at);
+}
+
+/*
  * Arcana's file read into tun (its dotted names, the last value of
  * each), *n of them, a's; with the kernel's value now and whether the
  * boot's differs when oper.  *any: one does.
@@ -242,8 +303,11 @@ boot_read(struct work *w, cbl_yarena *a, ytun **tun, size_t *n, bool oper,
 	*tun = NULL;
 	*n = 0;
 	*any = false;
-	if (vc_read(&f, VC_LOADER, rooted(path, sizeof(path), BOOT_CONF), err,
-	    sizeof(err)) == -1) {
+	if (cf_system()) {
+		if (sys_view(&f) != 0)
+			return (ENOMEM);
+	} else if (vc_read(&f, VC_LOADER, rooted(path, sizeof(path),
+	    BOOT_CONF), err, sizeof(err)) == -1) {
 		if (errno != ENOENT)
 			logmsg(LOG_WARNING, "%s: %s", path, err);
 		return (0);
@@ -482,6 +546,117 @@ fibs_check(cbl_req *req, const ytun *t, bool gone)
 	return (said(req, err));
 }
 
+/*
+ * A commit of the boot in the system's files: what goes out of every
+ * loader file that sets it, the rest where the last that sets it is,
+ * else loader.conf; a tunable of the admin's that Arcana did not write
+ * there (the ledger) a warning first, loader-conf-conflict.
+ */
+static int
+sys_edit(cbl_req *req, const struct arcana_sysctl_boot *old,
+    const struct arcana_sysctl_boot *new, bool undo)
+{
+	struct cf_ledger led;
+	struct vc_file	 g;
+	char		 path[MAXPATHLEN], warn[2048], err[512], **v;
+	char		*cur;
+	size_t		 n;
+	int		 line, error = 0, pass;
+
+	warn[0] = '\0';
+	if ((error = cf_ledger_read(&led)) != 0)
+		return (error);
+	/* Pass 0 checks, pass 1 writes. */
+	for (pass = 0; pass < 2 && error == 0; pass++) {
+		for (size_t i = 0; error == 0 && old != NULL &&
+		    i < old->tunable.n; i++) {
+			const ytun *t = &old->tunable.v[i];
+			const struct cf_led *e;
+
+			if (find(new, t->name) != NULL)
+				continue;
+			if (sys_where(t->name, path, sizeof(path), &line,
+			    &cur) == NULL) {
+				free(cur);
+				continue;
+			}
+			e = cf_ledger_get(&led, CF_LOADER, t->name);
+			if (pass == 0 && (e == NULL || !(e->after != NULL &&
+			    strcmp(e->after, cur) == 0)))
+				add(warn, sizeof(warn), "%s line %d sets %s=\"%s\": "
+				    "taken out of every loader file",
+				    cf_unrooted(path), line, t->name, cur);
+			free(cur);
+			if (pass == 0)
+				continue;
+			if (cf_loader_files(&v, &n) != 0)
+				continue;
+			for (size_t k = 0; error == 0 && k < n; k++) {
+				if (vc_read(&g, VC_LOADER, v[k], err,
+				    sizeof(err)) == -1)
+					continue;
+				if (vc_get(&g, t->name) != NULL &&
+				    (vc_unset(&g, t->name, err, sizeof(err)) ==
+				    -1 || vc_write(&g, v[k], 0644, err,
+				    sizeof(err)) == -1))
+					error = said(req, err);
+				vc_free(&g);
+			}
+			vc_rc_files_free(v, n);
+			cf_ledger_del(&led, CF_LOADER, t->name);
+		}
+		for (size_t i = 0; error == 0 && new != NULL &&
+		    i < new->tunable.n; i++) {
+			const ytun *t = &new->tunable.v[i], *was = find(old,
+			    t->name);
+			const struct cf_led *e;
+			const char *at;
+
+			if (was != NULL && strcmp(was->value, t->value) == 0)
+				continue;
+			at = sys_where(t->name, path, sizeof(path), &line, &cur);
+			e = cf_ledger_get(&led, CF_LOADER, t->name);
+			if (pass == 0) {
+				if (at != NULL && strcmp(cur, t->value) != 0 &&
+				    (e == NULL || e->after == NULL ||
+				    strcmp(e->after, cur) != 0))
+					add(warn, sizeof(warn), "%s line %d sets "
+					    "%s=\"%s\": written there as \"%s\"",
+					    cf_unrooted(path), line, t->name, cur,
+					    t->value);
+				free(cur);
+				continue;
+			}
+			if (at == NULL)
+				cf_rooted(path, sizeof(path), LOADER_CONF);
+			if (vc_read(&g, VC_LOADER, path, err, sizeof(err)) ==
+			    -1 || vc_set(&g, t->name, t->value, err,
+			    sizeof(err)) == -1 || vc_write(&g, path, 0644, err,
+			    sizeof(err)) == -1)
+				error = said(req, err);
+			vc_free(&g);
+			if (error == 0)
+				error = cf_ledger_put(&led, CF_LOADER, t->name,
+				    cf_unrooted(path), e != NULL ? e->before :
+				    cur, t->value, t->value);
+			free(cur);
+		}
+		if (pass == 0 && !undo && warn[0] != '\0' &&
+		    !cbl_req_yaccepts(req, "loader-conf-conflict")) {
+			char	text[2200];
+
+			(void)snprintf(text, sizeof(text), "%.1900s: accept "
+			    "loader-conf-conflict to change your line", warn);
+			error = refuse(req, "loader-conf-conflict", text);
+		}
+	}
+	if (error == 0 && (error = cf_ledger_write(&led, err,
+	    sizeof(err))) != 0)
+		error = said(req, err);
+	cf_ledger_free(&led);
+	return (error);
+}
+
 int
 arcana_sysctl_boot_edit(cbl_req *req, const struct arcana_sysctl *before,
     const struct arcana_sysctl *after)
@@ -523,6 +698,10 @@ arcana_sysctl_boot_edit(cbl_req *req, const struct arcana_sysctl *before,
 		    "module's, not loaded yet?): accept unknown-tunable to keep "
 		    "it for the next boot", unknown);
 		error = refuse(req, "unknown-tunable", err);
+		goto out;
+	}
+	if (cf_system()) {
+		error = sys_edit(req, old, new, undo);
 		goto out;
 	}
 	if (!undo && conflict[0] != '\0' && !cbl_req_yaccepts(req,

@@ -1066,27 +1066,53 @@ in
 names, so that
 .Xr rc 8
 reads it after your files.
-Your files are left as they are but for what you accept with the
-request: naming the file in
+Your files are left as they are but for naming the file in
 .Va rc_conf_files ,
 once
-.Pq Cm rc-conf-files ,
-and a variable Arcana writes that your files set too, commented out
-where it is in yours, the line kept with
-.Dq # taken by Arcana
-after it
-.Pq Cm rc-conf-conflict .
-A service's variables are moved under Arcana deliberately by
+.Pq Cm rc-conf-files .
+A variable Arcana writes that your files set too is a warning first
+.Pq Cm rc-conf-conflict ;
+accepted, a word list
+.Pf ( Va jail_list ,
+.Va cloned_interfaces ,
+.Va kld_list ,
+what
+.Xr sysrc 8 Ns 's
+.Ql +=
+adds to) keeps your words and adds Arcana's, in Arcana's file, your
+line as it is; a value no merge of words gives is refused again
+.Pq Cm rc-conf-merge
+until the value is given by arcana-agent's config-files
+.Ic resolve
+action or Arcana's is accepted.
+What Arcana changed of yours is kept in
+.Pa /var/db/arcana/config-ledger .
+.Pp
+arcana-agent's config-files
+.Ic switch
+action writes them to the system's files instead: each variable in the
+last of your files that sets it, else
+.Pa /etc/rc.conf ;
+a tunable in
+.Xr loader.conf 5 ;
+the kept firewall rules in
+.Pa /etc/ipfw.rules
+unless that is yours.
+Every file it changes is copied first into
+.Pa /var/db/arcana/config-switch/ ;
+the mode is kept in
+.Pa /usr/local/etc/arcana/config-files.conf .
+A service's variables are copied into Arcana's file deliberately by
 arcana-services' convert action
 .Pq Nm arcanactl Cm services convert ,
 which says what it takes, or with dry-run would, by file and line,
 and given back by its release action
 .Pq Nm arcanactl Cm services release :
-the service's variables taken out of Arcana's file and each line of
-yours marked
+the service's variables taken out of Arcana's file, what Arcana added
+to yours taken back by the ledger, and each line an older agent marked
 .Dq # taken by Arcana
-for one put back as it was, all or nothing; a variable with no such
-line is only dropped, and said so.
+put back as it was, all or nothing; a variable with no such line is
+only dropped, and said so.
 Every file is put back where the kernel refuses the change; a route the
 table changed meanwhile is tried once more first.
 .Pp

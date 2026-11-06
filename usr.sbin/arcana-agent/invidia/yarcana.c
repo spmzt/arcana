@@ -652,8 +652,55 @@ arcana_agent_agent_get(cbl_req *req, struct arcana_agent *data, cbl_yarena *a)
 			return (error);
 		o->tls = l;
 	}
+	if ((error = cf_state(a, &o->config_files)) != 0)
+		return (error);
 	data->agent = o;
 	return (0);
+}
+
+/*
+ * config-files' switch (cfgfiles.c): the files moved, one change at a
+ * time with the others; a dry run a read.
+ */
+int
+arcana_agent_agent_config_files_switch_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_agent_agent_config_files_switch_input *in,
+    struct arcana_agent_agent_config_files_switch_output *out,
+    cbl_yarena *a)
+{
+	struct work	*w;
+	bool		 dry = in->has_dry_run && in->dry_run;
+	int		 root, error;
+
+	(void)target;
+	if ((w = ywork_told(req, a, dry ? "config-files switch, a dry run" :
+	    "config-files switch", &root)) == NULL)
+		return (ENOMEM);
+	w->nice = dry;
+	if (!change_begin("config-files switch")) {
+		step_end(w, root, false, NULL);
+		return (said(req, "not done: arcana-agent is stopping"));
+	}
+	error = cf_switch(req, in, a, out);
+	change_end();
+	step_end(w, root, error == 0, NULL);
+	return (error);
+}
+
+int
+arcana_agent_agent_config_files_resolve_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct arcana_agent_agent_config_files_resolve_input *in,
+    struct arcana_agent_agent_config_files_resolve_output *out,
+    cbl_yarena *a)
+{
+
+	(void)req;
+	(void)target;
+	(void)a;
+	out->has_resolved = true;
+	return (cf_resolve(in, &out->resolved));
 }
 
 int

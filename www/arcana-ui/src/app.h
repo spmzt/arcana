@@ -525,6 +525,7 @@ enum modal {
 	MODAL_STORAGE,
 	MODAL_LOOKUP,
 	MODAL_NHOP,
+	MODAL_CFG,		/* config-files: the switch, the merge editor */
 };
 
 struct confirm {
@@ -1283,6 +1284,9 @@ bool		 ycommit_save(struct ycommit *, const char *, const char *,
 void		 ycommit_note(struct html *, const struct ycommit *);
 bool		 ycommit_action(struct ycommit *, const char *);
 void		 ycommit_tick(struct ycommit *, double);
+/* The commit again with tag accepted too (rc-conf-merge, once the
+ * merge editor has given the host its values: act's "-merge"). */
+void		 ycommit_accept(struct ycommit *, const char *);
 const char	*rc_why(const ucl_object_t *, const char *);
 /* actions.c: a name that goes into a request's path as it is. */
 bool		 url_word(const char *);
@@ -1406,6 +1410,13 @@ bool		 storage_modal(struct html *);
 void		 storage_modal_buttons(struct html *);
 bool		 storage_form(const char *, const ucl_object_t *);
 bool		 storage_action(const char *, const char *, const char *);
+/* cfgfiles.c: a host's configuration files, Arcana's or the system's. */
+void		 cfgfiles_view(struct html *, struct server *);
+bool		 cfg_modal(struct html *);
+void		 cfg_modal_buttons(struct html *);
+bool		 cfg_form(const char *, const ucl_object_t *);
+bool		 cfg_action(const char *, const char *, const char *);
+void		 cfg_merge_open(struct ycommit *);
 void		 view_kernel(struct html *, struct server *);
 /* certs.c: the certificates OpenSSL trusts, of a host or a jail. */
 void		 view_certs(struct html *, struct server *);

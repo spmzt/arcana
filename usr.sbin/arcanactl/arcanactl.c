@@ -1104,6 +1104,44 @@ yset(const struct cbl_ynode *n, void *p, const char *s, cbl_yarena *a)
 }
 
 /*
+ * One more entry of input list n, its member at p, from s: its leaves
+ * as leaf:value, by commas (a value after its first colon, no comma in
+ * it).
+ */
+static void
+yentry(const struct cbl_ynode *n, void *p, const char *s, cbl_yarena *a)
+{
+	struct ylist {
+		size_t		 n;
+		const void	*v;
+	}			*l = (struct ylist *)(void *)((char *)p + n->off);
+	const struct cbl_ynode	*c;
+	char			*copy, *w, *it, *colon;
+	void			*v, *e;
+
+	/* The values parsed point into the copy: a's, as long as they. */
+	if ((v = cbl_yarena_alloc(a, (l->n + 1) * n->size)) == NULL ||
+	    (copy = cbl_yarena_alloc(a, strlen(s) + 1)) == NULL)
+		xo_err(1, "action");
+	memcpy(copy, s, strlen(s) + 1);
+	if (l->n > 0)
+		memcpy(v, l->v, l->n * n->size);
+	e = (char *)v + l->n * n->size;
+	memset(e, 0, n->size);
+	for (it = copy; (w = strsep(&it, ",")) != NULL; ) {
+		if ((colon = strchr(w, ':')) == NULL)
+			xo_errx(1, "action: %s: an entry is leaf:value,...",
+			    n->name);
+		*colon = '\0';
+		if ((c = ychild(n, w)) == NULL || c->kind != CBL_YN_LEAF)
+			xo_errx(1, "action: %s has no leaf %s", n->name, w);
+		yset(c, e, colon + 1, a);
+	}
+	l->v = v;
+	l->n++;
+}
+
+/*
  * action path [key ...] name [leaf=value ...]: an action of a module the
  * agent serves (cblink's YANG family), on the node path names from its
  * top (jails/jail), a list entry by its keys, the input's leaves given
@@ -1172,7 +1210,12 @@ input:
 			xo_errx(1, "action: %s: an input is name=value",
 			    argv[i]);
 		*eq = '\0';
-		if ((c = ychild(in, argv[i])) == NULL || c->kind != CBL_YN_LEAF)
+		if ((c = ychild(in, argv[i])) != NULL && c->kind ==
+		    CBL_YN_LIST) {
+			yentry(c, pin, eq + 1, a);
+			continue;
+		}
+		if (c == NULL || c->kind != CBL_YN_LEAF)
 			xo_errx(1, "action: %s has no input %s", act->name,
 			    argv[i]);
 		yset(c, pin, eq + 1, a);

@@ -11,7 +11,9 @@
  * file of Arcana's own beside the system's), syslog.conf(5),
  * newsyslog.conf(5), periodic.conf(5), audit_control(5), audit_user(5),
  * krb5.conf(5), ipsec.conf for setkey(8), rctl.conf(5) and a
- * loader.conf.d file for the boot's tunables.  Read with what shows
+ * loader.conf.d file for the boot's tunables (loader.conf(5) itself,
+ * entry loader.conf, with the system's config files, cfgfiles.c; a
+ * read of the other's name finds none).  Read with what shows
  * each at work (the system operation), with the host's NTP peers,
  * Linux compatibility, securelevel, MAC modules, GEOM's tree, GELI's
  * providers, periodic's variables and service jails.
@@ -46,27 +48,38 @@ static const struct sysfile {
 	const char	*service;	/* told after a write, or NULL */
 	uint8_t		 action;	/* reload or restart */
 	const char	*shows;		/* a tool and its words, or NULL */
+	int		 inmode;	/* 0 always; 1 Arcana's files, 2 the
+					 * system's (config-files) */
 } files[] = {
 	{ "devfs.rules", "/etc/devfs.rules", 0644, "devfs",
-	    ARC_SERVICE_ACTION_RESTART, "devfs rule showsets" },
+	    ARC_SERVICE_ACTION_RESTART, "devfs rule showsets", 0 },
 	{ "devd", "/usr/local/etc/devd/arcana.conf", 0644, "devd",
-	    ARC_SERVICE_ACTION_RESTART, NULL },
+	    ARC_SERVICE_ACTION_RESTART, NULL, 0 },
 	{ "syslog.conf", "/etc/syslog.conf", 0644, "syslogd",
-	    ARC_SERVICE_ACTION_RELOAD, NULL },
-	{ "newsyslog.conf", "/etc/newsyslog.conf", 0644, NULL, 0, NULL },
-	{ "periodic.conf", "/etc/periodic.conf", 0644, NULL, 0, NULL },
+	    ARC_SERVICE_ACTION_RELOAD, NULL, 0 },
+	{ "newsyslog.conf", "/etc/newsyslog.conf", 0644, NULL, 0, NULL, 0 },
+	{ "periodic.conf", "/etc/periodic.conf", 0644, NULL, 0, NULL, 0 },
 	{ "audit_control", "/etc/security/audit_control", 0600, "auditd",
-	    ARC_SERVICE_ACTION_RESTART, NULL },
+	    ARC_SERVICE_ACTION_RESTART, NULL, 0 },
 	{ "audit_user", "/etc/security/audit_user", 0600, "auditd",
-	    ARC_SERVICE_ACTION_RESTART, NULL },
-	{ "krb5.conf", "/etc/krb5.conf", 0644, NULL, 0, NULL },
+	    ARC_SERVICE_ACTION_RESTART, NULL, 0 },
+	{ "krb5.conf", "/etc/krb5.conf", 0644, NULL, 0, NULL, 0 },
 	{ "ipsec.conf", "/etc/ipsec.conf", 0600, "ipsec",
-	    ARC_SERVICE_ACTION_RESTART, "setkey -DP" },
+	    ARC_SERVICE_ACTION_RESTART, "setkey -DP", 0 },
 	{ "rctl.conf", "/etc/rctl.conf", 0644, "rctl",
-	    ARC_SERVICE_ACTION_RESTART, "rctl" },
+	    ARC_SERVICE_ACTION_RESTART, "rctl", 0 },
 	{ "loader.conf.d", "/boot/loader.conf.d/arcana.conf", 0644, NULL, 0,
-	    NULL },
+	    NULL, 1 },
+	{ "loader.conf", "/boot/loader.conf", 0644, NULL, 0, NULL, 2 },
 };
+
+/* Whether the entry is the host's, by its config-files. */
+static bool
+in_mode(const struct sysfile *f)
+{
+
+	return (f->inmode == 0 || f->inmode == (cf_system() ? 2 : 1));
+}
 
 static const char *
 rooted(struct work *w, const char *path)
@@ -150,9 +163,22 @@ file_of(const char *name)
 	size_t	i;
 
 	for (i = 0; i < nitems(files); i++)
-		if (name != NULL && strcmp(files[i].name, name) == 0)
+		if (name != NULL && strcmp(files[i].name, name) == 0 &&
+		    in_mode(&files[i]))
 			return (&files[i]);
 	return (NULL);
+}
+
+/* A name of the table, the other config-files mode's too: a read of
+ * it is no error, it is only not there. */
+static bool
+known(const char *name)
+{
+
+	for (size_t i = 0; i < nitems(files); i++)
+		if (name != NULL && strcmp(files[i].name, name) == 0)
+			return (true);
+	return (false);
 }
 
 static ucl_object_t *
@@ -348,7 +374,7 @@ do_system(struct work *w, const char *const *names, size_t n,
 	rsp->has_ok = true;
 	rsp->ok = false;
 	for (i = 0; i < n; i++)
-		if (names[i] == NULL || (file_of(names[i]) == NULL &&
+		if (names[i] == NULL || (!known(names[i]) &&
 		    strcmp(names[i], "host") != 0)) {
 			rsp->error = "system reads its files by name, and host";
 			return;
@@ -361,7 +387,7 @@ do_system(struct work *w, const char *const *names, size_t n,
 		for (k = 0; k < n; k++)
 			if (strcmp(names[k], files[i].name) == 0)
 				break;
-		if (n == 0 || k < n)
+		if ((n == 0 || k < n) && in_mode(&files[i]))
 			ucl_object_insert_key(fo, file_json(w, &files[i]),
 			    files[i].name, 0, false);
 	}
@@ -802,7 +828,8 @@ sysfile_check(const struct arc_job_spec *sp)
 	if (file_of(sp->verb) == NULL)
 		return ("a sysfile job's verb names its file: devfs.rules, devd, "
 		    "syslog.conf, newsyslog.conf, periodic.conf, audit_control, "
-		    "audit_user, krb5.conf, ipsec.conf, rctl.conf, loader.conf.d; "
+		    "audit_user, krb5.conf, ipsec.conf, rctl.conf, loader.conf.d "
+		    "(loader.conf with the system's config files); "
 		    "or periodic");
 	if (!text_ok(sp->text))
 		return ("a file's text is lines of printable characters, 256 KB "

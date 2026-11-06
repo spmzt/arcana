@@ -67,16 +67,16 @@ feed_name_ok(const char *s)
 	return (true);
 }
 
-/* Where the feeds' files are: feeds/ beside the kept rules. */
+/* Where the feeds' files are: feeds/ beside Arcana's own kept rules
+ * (not /etc's, where config-files system moves them). */
 static const char *
 feeds_dir(struct work *w)
 {
-	const char	*s;
+	const char	*s, *r = cf_ipfw_home();
 
-	if ((s = strrchr(opts.ipfw_rules, '/')) == NULL)
+	if ((s = strrchr(r, '/')) == NULL)
 		return ("feeds");
-	return (wfmt(w, "%.*s/feeds", (int)(s - opts.ipfw_rules),
-	    opts.ipfw_rules));
+	return (wfmt(w, "%.*s/feeds", (int)(s - r), r));
 }
 
 /* An address or prefix, its host bits cleared. */

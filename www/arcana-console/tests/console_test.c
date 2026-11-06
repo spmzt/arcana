@@ -7841,7 +7841,8 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("reload", jstr(&r, "commands.0"));
 	ATF_CHECK_STREQ("true", jstr(&r, "service.enabled"));
 	resp_free(&r);
-	/* Yours sets it: taken by Arcana once accepted. */
+	/* Yours sets it: a warning, then a value to merge; Arcana's file
+	 * has it once both are accepted, yours as it is. */
 	http("POST", path, "{\"set\":{\"sshd_flags\":\"-6\"},\"unset\":"
 	    "[\"sshd_nothing\"]}", &r);
 	EXPECT(&r, 200);
@@ -7852,13 +7853,19 @@ ATF_TC_BODY(services, tc)
 	http("POST", path, "{\"set\":{\"sshd_flags\":\"-6\"},\"unset\":"
 	    "[\"sshd_nothing\"],\"accept\":[\"rc-conf-conflict\"]}", &r);
 	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("rc-conf-merge", jstr(&r, "error_tag"));
+	resp_free(&r);
+	http("POST", path, "{\"set\":{\"sshd_flags\":\"-6\"},\"unset\":"
+	    "[\"sshd_nothing\"],\"accept\":[\"rc-conf-conflict\","
+	    "\"rc-conf-merge\"]}", &r);
+	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK_STREQ("-6", jstr(&r, "variables.sshd_flags"));
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^sshd_flags=\"-6\"$' "
 	    "root/usr/local/etc/rc.conf.d/arcana && grep -q "
-	    "'^#sshd_flags=\"-4\"  # taken by Arcana$' root/etc/rc.conf") ==
-	    0);
+	    "'^sshd_flags=\"-4\"$' root/etc/rc.conf") == 0);
 	http("POST", path, "{\"set\":{\"ntpd_flags\":\"x\"}}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("false", jstr(&r, "ok"));

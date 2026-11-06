@@ -799,6 +799,7 @@ main(int argc, char *argv[])
 	}
 	/* And on SCTP where it listens on TCP, if the kernel has it. */
 	transport_init(ctx, loop, tls);
+	cf_load();
 	jobs_conf_load();
 	jobs_init();
 	/* The faults before the sampler, which may clear its own. */

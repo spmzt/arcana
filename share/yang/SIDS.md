@@ -150,7 +150,7 @@ on the wire.
 | 80 400 | 300 | `arcana-bird`, its second range: the read, ospf and check actions, a protocol's detail, the jails' configuration | `share/yang/arcana-bird@2026-10-15.sid` (153 used) |
 | 81 000 | 200 | `arcana-sdwan`, its second range: the forms (spec, host), the jails' edges, the breakout's routes, a rule's place, the IDS' and the proxies' settings, the apply action, the state's routes, bfd, ClamAV and the IDS' build, host, ruleset, statistics and captures | `share/yang/arcana-sdwan@2026-10-15.sid` (122 used) |
 | 82 000 | 100 | `arcana-host`, its second range: the read-certificates action, the plugins poudriere, smtpd and speederv2 | `share/yang/arcana-host@2026-10-15.sid` (17 used) |
-| 82 100 | 100 | `arcana-agent`, its second range: the transport's time, the TLS chain's certificates | `share/yang/arcana-agent@2026-10-15.sid` (7 used) |
+| 82 100 | 100 | `arcana-agent`, its second range: the transport's time, the TLS chain's certificates, config-files (82 107 on) | `share/yang/arcana-agent@2026-10-15.sid` (60 used) |
 | 83 000 | 100 | `arcana-host`, its third range: the agent's features and safe-wait, what hello said | `share/yang/arcana-host@2026-10-15.sid` (2 used) |
 | 83 100 | 100 | `arcana-agent`, its third range: update's program-size, build's compress and program-size, a fetch's refusal, console-update's commit | `share/yang/arcana-agent@2026-10-15.sid` (8 used) |
 | 83 200 | 100 | `arcana-jobs`, its second range: the steps notification, a request's trace told to its peer as it runs | `share/yang/arcana-jobs@2026-10-14.sid` (13 used) |

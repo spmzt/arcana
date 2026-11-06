@@ -5555,6 +5555,7 @@ static struct {
 	int		 val[MAX_NODES][LKS_N];	/* -1: not known */
 	ucl_object_t	*routes[MAX_NODES][LK_FIBS];
 	char		*loader[MAX_NODES];	/* a host's loader.conf.d */
+	bool		 lsys[MAX_NODES];	/* it is loader.conf (config-files) */
 	bool		 sys_loading[MAX_NODES];
 	int		 boot_k[MAX_NODES], boot_v[MAX_NODES];	/* asked, file not read */
 	/* The form: a network of an interface into another table. */
@@ -5696,12 +5697,16 @@ lk_sys_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			const ucl_object_t	*lf;
 			ucl_object_iter_t	 fit = NULL;
 
-			/* arcana-system's file of the name. */
+			/* arcana-system's file of the name: loader.conf
+			 * with the system's configuration files. */
 			while ((lf = ucl_object_iterate(jget(o, "file"), &fit,
 			    true)) != NULL)
-				if (jstr(lf, "name") != NULL && strcmp(jstr(lf,
-				    "name"), "loader.conf.d") == 0)
+				if (jstr(lf, "name") != NULL && (strcmp(jstr(lf,
+				    "name"), "loader.conf.d") == 0 ||
+				    strcmp(jstr(lf, "name"), "loader.conf") == 0))
 					break;
+			lkg.lsys[i] = lf != NULL && strcmp(jstr(lf, "name"),
+			    "loader.conf") == 0;
 			lkg.loader[i] = strdup(jstr(lf, "text") != NULL ?
 			    jstr(lf, "text") : "");
 		}
@@ -6125,7 +6130,8 @@ lk_boot_write(int i, int k, int v)
 		}
 		s = &app.servers[tn[i].srv];
 		snprintf(title, sizeof(title), "%s at the next boot", line);
-		job_send(s, job_json("sysfile", "loader.conf.d", NULL, 0, text,
+		job_send(s, job_json("sysfile", lkg.lsys[i] ? "loader.conf" :
+		    "loader.conf.d", NULL, 0, text,
 		    NULL), title, JOB_SYSTEM, s->name);
 		/* As written: the read after the job says it again. */
 		free(lkg.loader[i]);
@@ -6212,7 +6218,8 @@ leaks_action(const char *act, const char *arg, const char *value)
 				lkg.sys_loading[i] = true;
 				host_yread(&app.servers[tn[i].srv],
 				    "arcana-system:system/read", "{\"name\":"
-				    "[\"loader.conf.d\"]}", NULL, false, lk_sys_cb,
+				    "[\"loader.conf.d\",\"loader.conf\"]}", NULL,
+				    false, lk_sys_cb,
 				    strdup(tn[i].key));
 			}
 			return (true);

@@ -413,16 +413,17 @@ view_boot(struct html *h)
 	/* None set: a line, as sysctl.conf's are. */
 	if (ucl_array_size(jget(sy.data, "boot")) == 0) {
 		h_raw(h, "<section class=\"sy-boot\"><p class=\"sy-kept\"><b>Next "
-		    "boot</b> <span class=\"dim\">nothing set in loader.conf.d: a "
-		    "tunable the kernel will not change while it runs has <i>Set "
-		    "for next boot</i> in its row</span></p>");
+		    "boot</b> <span class=\"dim\">nothing set in the loader's "
+		    "files: a tunable the kernel will not change while it runs "
+		    "has <i>Set for next boot</i> in its row</span></p>");
 		ycommit_note(h, &sy.yc);
 		h_raw(h, "</section>");
 		return;
 	}
 	h_raw(h, "<section class=\"sy-boot\"><h3>Next boot <small class=\"dim\">"
 	    "<code>/boot/loader.conf.d/arcana.conf</code>, read by the loader "
-	    "after <code>/boot/loader.conf</code></small></h3>");
+	    "after <code>/boot/loader.conf</code>, or loader.conf(5) itself "
+	    "with the system's configuration files</small></h3>");
 	ycommit_note(h, &sy.yc);
 	h_raw(h, "<table class=\"net sysboot\">");
 	tbl_head(h, "sysboot", cols, 4, 1);
@@ -784,7 +785,7 @@ boot_save(struct server *s, const char *name, const char *value)
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
 	sy.yc.act = "sy-yc";
-	sy.yc.saved = "Saved in /boot/loader.conf.d/arcana.conf: the loader "
+	sy.yc.saved = "Saved in the host's loader file: the loader "
 	    "sets it at the next boot.";
 	sy.yc.undone = "Undone: the next boot's tunables are as they were.";
 	sy.yc.done = boot_saved;

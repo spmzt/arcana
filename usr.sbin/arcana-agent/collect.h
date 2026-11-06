@@ -93,6 +93,11 @@ struct rca_was {
 	bool		 there;
 };
 
+struct rca_seen {
+	char		*name;
+	char		*value;		/* NULL: none */
+};
+
 struct rca {
 	char		 path[1024];	/* MAXPATHLEN */
 	struct vc_file	*f;
@@ -101,8 +106,14 @@ struct rca {
 	struct rca_was	*was;
 	size_t		 nwas;
 	struct vc_file	*uf;		/* the user's, read by rca_get() */
-	char		**drop;		/* out of Arcana's, commented in theirs */
+	char		**drop;		/* taken out */
 	size_t		 ndrop;
+	/* The system's files (config-files system): f is Arcana's
+	 * variables as the ledger has them, written where the admin's are. */
+	bool		 sys;
+	struct vc_file	*base;		/* f as opened */
+	struct rca_seen	*seen;		/* what rca_get() answered first */
+	size_t		 nseen;
 	/* What rca_write() takes as accepted without a req (a job's), its
 	 * refusal then in err alone. */
 	const char	*const *accept;
@@ -133,6 +144,86 @@ int	rca_unset(struct rca *x, const char *name, char *err, size_t errlen);
 int	rca_put(struct rca *x, const struct vc_file *f, const char *path,
 	    char *err, size_t errlen);
 void	rca_close(struct rca *x);
+/* Where x's variables go, said: Arcana's file, or the admin's. */
+const char *rca_where(const struct rca *x);
+/*
+ * The release of a service's variables (prefix "<svc>_") by the ledger:
+ * what Arcana added to the admin's taken back (a word list's words, a
+ * value's before), the ledger's entries gone; each in *rel.  dry: said,
+ * nothing written.
+ */
+struct rca_rel {
+	char		*name;
+	char		*file;		/* NULL: nothing of theirs */
+	int		 line;
+	char		*value;		/* what it is now; NULL unset */
+	char		*why;		/* NULL: given back */
+};
+int	rca_release(struct rca *x, const char *prefix, bool dry,
+	    struct rca_rel **rel, size_t *nrel, char *err, size_t errlen);
+void	rca_rel_free(struct rca_rel *rel, size_t n);
+
+/*
+ * The files a commit writes, arcana-agent's config-files
+ * (invidia/cfgfiles.c, docs/notes/config-files.md): Arcana's own (the
+ * default) or the system's (cf_system()).  cf_load() at start.  The
+ * ledger: what Arcana changed of variables the admin's files set
+ * (kind, name, file, before, after, Arcana's own).  pending: the last
+ * rc-conf-merge refusal's rows; cf_resolution() a value resolve gave.
+ */
+#define	LOADER_CONF	"/boot/loader.conf"
+#define	LOADER_DIR	"/boot/loader.conf.d"
+#define	LOADER_LOCAL	"/boot/loader.conf.local"
+#define	LOADER_ARCANA	"/boot/loader.conf.d/arcana.conf"
+enum { CF_RC, CF_LOADER };
+
+struct cf_led {
+	int		 kind;
+	char		*var, *file, *before, *after, *arcana;
+};
+struct cf_ledger {
+	struct cf_led	*v;
+	size_t		 n;
+};
+struct cf_pend {
+	int		 kind;
+	const char	*var, *file;
+	int		 line;
+	const char	*yours, *proposed;
+};
+
+void	cf_load(void);
+const char *cf_ipfw_home(void);
+bool	cf_list_var(const char *name);
+const char *cf_rooted(char *buf, size_t len, const char *path);
+const char *cf_unrooted(const char *path);
+char	*cf_merge(const char *yours, const char *arcana, const char *removed);
+char	*cf_minus(const char *a, const char *b);
+bool	cf_same_words(const char *a, const char *b);
+const char *cf_ledger_path(char *buf, size_t len);
+int	cf_ledger_read(struct cf_ledger *l);
+const struct cf_led *cf_ledger_get(const struct cf_ledger *l, int kind,
+	    const char *var);
+int	cf_ledger_put(struct cf_ledger *l, int kind, const char *var,
+	    const char *file, const char *before, const char *after,
+	    const char *arcana);
+void	cf_ledger_del(struct cf_ledger *l, int kind, const char *var);
+int	cf_ledger_write(const struct cf_ledger *l, char *err, size_t errlen);
+void	cf_ledger_free(struct cf_ledger *l);
+void	cf_pending_set(const struct cf_pend *v, size_t n);
+char	*cf_resolution(int kind, const char *var);
+void	cf_resolved(int kind, const char *var);
+int	cf_loader_files(char ***paths, size_t *n);
+const char *cf_loader_target(const char *name, char *buf, size_t len);
+int	cf_switch(cbl_req *req,
+	    const struct arcana_agent_agent_config_files_switch_input *in,
+	    cbl_yarena *a,
+	    struct arcana_agent_agent_config_files_switch_output *out);
+int	cf_resolve(
+	    const struct arcana_agent_agent_config_files_resolve_input *in,
+	    uint32_t *n);
+int	cf_state(cbl_yarena *a,
+	    const struct arcana_agent_agent_config_files **op);
 
 /*
  * rc.conf's static routes, as rc.d/routing installs them, and

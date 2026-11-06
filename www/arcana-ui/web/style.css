@@ -4146,6 +4146,14 @@ table.fw-diff tr.d-del td { color: var(--red); }
 table.fw-diff tr.d-chg td:first-child { color: var(--amber); }
 table.fw-diff del { color: var(--red); text-decoration: none; opacity: .8; }
 table.fw-diff ins { color: var(--green); text-decoration: none; }
+/* A host's configuration files: the switch's rows, the merge editor. */
+table.cfg-rows del, form[data-form=cfg-merge] del { color: var(--red); text-decoration: none; }
+table.cfg-rows ins, form[data-form=cfg-merge] ins { color: var(--green); text-decoration: none; }
+table.cfg-rows td.diff { font-family: var(--mono, monospace); font-size: .8rem; }
+table.cfg-rows input.cfg-edit { width: 10rem; }
+fieldset.cfg-merge { margin: .6rem 0; }
+fieldset.cfg-merge pre.diff { margin: .2rem 0; white-space: pre-wrap; word-break: break-word; }
+fieldset.cfg-merge textarea { width: 100%; font-family: var(--mono, monospace); }
 form.fw-add select { width: auto; flex: 0 0 auto; }
 form.fw-add input[name=words], form.fw-add input[name=key] { flex: 1 1 14rem; min-width: 0; width: auto; }
 form.fw-add input[name=name], form.fw-add input[name=value] { flex: 0 1 12rem; width: auto; }

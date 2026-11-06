@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-agent",
     "module-revision": "2026-10-15",
-    "sid-file-version": 7,
+    "sid-file-version": 8,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -1064,6 +1064,271 @@
         "namespace": "data",
         "identifier": "/arcana-agent:agent/tls/certificate/intermediate/subject",
         "sid": "82106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files",
+        "sid": "82107"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/firewall-rules",
+        "sid": "82108"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/ledger",
+        "sid": "82109"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/ledger/after",
+        "sid": "82110"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/ledger/arcana",
+        "sid": "82111"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/ledger/before",
+        "sid": "82112"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/ledger/file",
+        "sid": "82113"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/ledger/kind",
+        "sid": "82114"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/ledger/variable",
+        "sid": "82115"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/loader-file",
+        "sid": "82116"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/mode",
+        "sid": "82117"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/pending",
+        "sid": "82118"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/pending/file",
+        "sid": "82119"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/pending/kind",
+        "sid": "82120"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/pending/line",
+        "sid": "82121"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/pending/proposed",
+        "sid": "82122"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/pending/value",
+        "sid": "82123"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/pending/variable",
+        "sid": "82124"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/pending/yours",
+        "sid": "82125"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/rc-file",
+        "sid": "82126"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/resolve",
+        "sid": "82127"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/resolve/input",
+        "sid": "82128"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/resolve/input/row",
+        "sid": "82129"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/resolve/input/row/kind",
+        "sid": "82130"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/resolve/input/row/value",
+        "sid": "82131"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/resolve/input/row/variable",
+        "sid": "82132"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/resolve/output",
+        "sid": "82133"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/resolve/output/resolved",
+        "sid": "82134"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch",
+        "sid": "82135"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/input",
+        "sid": "82136"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/input/dry-run",
+        "sid": "82137"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/input/merge",
+        "sid": "82138"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/input/merge/choice",
+        "sid": "82139"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/input/merge/kind",
+        "sid": "82140"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/input/merge/value",
+        "sid": "82141"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/input/merge/variable",
+        "sid": "82142"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/input/to",
+        "sid": "82143"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output",
+        "sid": "82144"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/backup",
+        "sid": "82145"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/done",
+        "sid": "82146"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/from",
+        "sid": "82147"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/moved",
+        "sid": "82148"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/note",
+        "sid": "82149"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/row",
+        "sid": "82150"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/row/arcana",
+        "sid": "82151"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/row/choice",
+        "sid": "82152"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/row/file",
+        "sid": "82153"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/row/kind",
+        "sid": "82154"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/row/list",
+        "sid": "82155"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/row/result",
+        "sid": "82156"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/row/variable",
+        "sid": "82157"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/row/yours",
+        "sid": "82158"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/switch/output/to",
+        "sid": "82159"
       },
       {
         "namespace": "data",

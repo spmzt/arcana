@@ -13,7 +13,8 @@
  * the timeout if the confirm does not come.  A warning the host stops
  * at (its error-app-tag: rc-conf-files, rc-conf-conflict) is said with
  * a button that accepts it and commits again, those accepted before
- * with it; a commit waiting can be
+ * with it; rc-conf-merge, a value of the admin's no merge of words
+ * gives, with the merge editor too (cfgfiles.c); a commit waiting can be
  * undone (cancel-commit), its seconds counted down.
  */
 
@@ -187,6 +188,11 @@ ycommit_note(struct html *h, const struct ycommit *yc)
 	h_raw(h, "<p class=\"note\">");
 	h_txt(h, yc->note);
 	if (yc->tag[0] != '\0' && !yc->busy) {
+		/* A value no merge of words gives: merged by hand, side by
+		 * side (cfgfiles.c), or Arcana's taken. */
+		if (strcmp(yc->tag, "rc-conf-merge") == 0)
+			h_fmt(h, " <button class=\"small primary\" data-act="
+			    "\"%s-merge\">Merge by hand…</button>", yc->act);
 		h_fmt(h, " <button class=\"small\" data-act=\"%s-accept\">"
 		    "Accept ", yc->act);
 		h_txt(h, yc->tag);
@@ -200,6 +206,22 @@ ycommit_note(struct html *h, const struct ycommit *yc)
 	h_raw(h, "</p>");
 }
 
+void
+ycommit_accept(struct ycommit *yc, const char *tag)
+{
+	char	t[64];
+
+	if (yc->busy)
+		return;
+	snprintf(t, sizeof(t), "%s", tag);
+	if (yc->accepted[0] != '\0')
+		(void)strlcat(yc->accepted, ",", sizeof(yc->accepted));
+	(void)strlcat(yc->accepted, t, sizeof(yc->accepted));
+	yc->busy = true;
+	yc->tag[0] = '\0';
+	commit(yc, yc->accepted);
+}
+
 bool
 ycommit_action(struct ycommit *yc, const char *act)
 {
@@ -211,16 +233,13 @@ ycommit_action(struct ycommit *yc, const char *act)
 	act += n + 1;
 	/* Those accepted before stay: a commit may stop at several. */
 	if (strcmp(act, "accept") == 0) {
-		if (yc->tag[0] != '\0' && !yc->busy) {
-			if (yc->accepted[0] != '\0')
-				(void)strlcat(yc->accepted, ",",
-				    sizeof(yc->accepted));
-			(void)strlcat(yc->accepted, yc->tag,
-			    sizeof(yc->accepted));
-			yc->busy = true;
-			yc->tag[0] = '\0';
-			commit(yc, yc->accepted);
-		}
+		if (yc->tag[0] != '\0' && !yc->busy)
+			ycommit_accept(yc, yc->tag);
+		return (true);
+	}
+	if (strcmp(act, "merge") == 0) {
+		if (strcmp(yc->tag, "rc-conf-merge") == 0 && !yc->busy)
+			cfg_merge_open(yc);
 		return (true);
 	}
 	if (strcmp(act, "cancel") == 0) {

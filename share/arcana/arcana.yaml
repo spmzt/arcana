@@ -451,7 +451,8 @@ definitions:
           it, devfs.rules, devd (/usr/local/etc/devd/arcana.conf),
           syslog.conf, newsyslog.conf, periodic.conf, audit_control,
           audit_user, krb5.conf, ipsec.conf (setkey's), rctl.conf or
-          loader.conf.d (/boot/loader.conf.d/arcana.conf).  Verb periodic
+          loader.conf.d (/boot/loader.conf.d/arcana.conf; loader.conf
+          itself where config-files is the system's).  Verb periodic
           sets periodic.conf's variables by names, name_enable=YES or
           NO; verb rc rc.conf's kern_securelevel_enable= and
           kern_securelevel= (-1 to 3), securelevel at boot.  Verb dma

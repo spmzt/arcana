@@ -3518,11 +3518,16 @@ service_actions_body()
 	    "$JGC" -c "$SOCK" service ntpd enable
 	atf_check -s exit:1 -e match:'ntpd_enable .*rc.conf line 1.*-a rc-conf-conflict' \
 	    "$JGC" -c "$SOCK" service -a rc-conf-files ntpd enable
+	# A value no merge of words gives: asked for, then Arcana's.
+	atf_check -s exit:1 -e match:'ntpd_enable .*yours "NO", Arcana.s "YES".*-a rc-conf-merge' \
+	    "$JGC" -c "$SOCK" service -a rc-conf-files -a rc-conf-conflict \
+	    ntpd enable
 	atf_check -o match:'Enabled: yes' "$JGC" -c "$SOCK" service \
-	    -a rc-conf-files -a rc-conf-conflict ntpd enable
+	    -a rc-conf-files -a rc-conf-conflict -a rc-conf-merge ntpd enable
 	atf_check -o match:'^ntpd_enable="YES"$' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o match:'^#ntpd_enable="NO"  # taken by Arcana$' \
+	# The admin's line as it was: Arcana's file, read last, wins.
+	atf_check -o match:'^ntpd_enable="NO"$' -o not-match:'taken by Arcana' \
 	    cat root/etc/rc.conf
 	atf_check -o match:'Enabled: no' "$JGC" -c "$SOCK" service ntpd disable
 	atf_check -o match:'^ntpd_enable="NO"$' \
@@ -3562,10 +3567,11 @@ service_config_body()
 	atf_check -o match:'Describe: The sshd daemon' cat cfg.out
 	atf_check -o match:'Commands: reload,configtest' cat cfg.out
 	atf_check -o match:'sshd_flags=-6 -D' "$JGC" -c "$SOCK" service \
-	    -a rc-conf-conflict sshd config 'sshd_flags=-6 -D'
+	    -a rc-conf-conflict -a rc-conf-merge sshd config 'sshd_flags=-6 -D'
 	atf_check -o match:'^sshd_flags="-6 -D"$' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o not-match:'sshd_flags' \
+	# Out of Arcana's file: the admin's own, never commented out, again.
+	atf_check -o match:'sshd_flags=-4' \
 	    "$JGC" -c "$SOCK" service sshd config -x sshd_flags
 	atf_check -o not-match:'sshd_flags' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
@@ -3957,16 +3963,16 @@ jobs_body()
 	    "$JGC" -c "$SOCK" job -w 5
 	# Enabled as a commit writes it: refused until its warnings are
 	# accepted, -a as a commit's; then Arcana's file has it, the
-	# user's line commented out.
+	# user's line as it was.
 	atf_check -s exit:1 -o match:'^ +6 failed .*accept rc-conf-files' \
 	    "$JGC" -c "$SOCK" job -w 6
 	atf_check -o inline:'ntpd_enable="NO"\n' cat root/etc/rc.conf
 	atf_check -o ignore "$JGC" -q -c "$SOCK" service -a rc-conf-files \
-	    -a rc-conf-conflict ntpd enable
+	    -a rc-conf-conflict -a rc-conf-merge ntpd enable
 	atf_check -o match:'^ +7 done ' "$JGC" -c "$SOCK" job -w 7
 	atf_check -o match:'^ntpd_enable="YES"$' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o match:'^#ntpd_enable="NO"  # taken by Arcana$' \
+	atf_check -o match:'^ntpd_enable="NO"$' \
 	    -o match:'^rc_conf_files=".*/usr/local/etc/rc.conf.d/arcana"$' \
 	    cat root/etc/rc.conf
 	atf_check -o not-match:'ntpd' cat sysrc.log
@@ -4058,9 +4064,9 @@ dry_run_body()
 	atf_check -o ignore "$JGC" -c "$SOCK" jobs
 	# Enabled as a commit writes it: what it would write, nothing
 	# written; unaccepted, it would fail as the job would.
-	atf_check -o match:'ntpd_enable="YES"; commented out in your files: ntpd_enable .*rc.conf.d/arcana added to rc_conf_files in /etc/rc.conf; not done: a dry run' \
+	atf_check -o match:'ntpd_enable="YES"; ntpd_enable="YES" in /usr/local/etc/rc.conf.d/arcana; /usr/local/etc/rc.conf.d/arcana added to rc_conf_files in /etc/rc.conf; not done: a dry run' \
 	    "$JGC" -n -c "$SOCK" service -a rc-conf-files -a rc-conf-conflict \
-	    ntpd enable
+	    -a rc-conf-merge ntpd enable
 	atf_check -o match:'Note: service ntpd enable: would fail: .*accept rc-conf-files' \
 	    "$JGC" -n -c "$SOCK" service ntpd enable
 	atf_check -s exit:1 test -e root/usr/local/etc/rc.conf.d/arcana
@@ -6735,11 +6741,11 @@ safe_mode_confirm_body()
 	atf_check cmp rc.conf.root root/etc/rc.conf
 	# And stays when confirmed.
 	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" \
-	    service -a rc-conf-conflict sshd config sshd_flags=-6
+	    service -a rc-conf-conflict -a rc-conf-merge sshd config \
+	    sshd_flags=-6
 	atf_check -o match:'^sshd_flags="-6"$' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o match:'^#sshd_flags="-4"  # taken by Arcana$' \
-	    cat root/etc/rc.conf
+	atf_check cmp rc.conf.root root/etc/rc.conf
 	# What cannot be taken back is not taken in safe mode.
 	atf_check -s exit:1 -e match:'cannot be undone' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" service sshd restart
@@ -6858,7 +6864,8 @@ safe_mode_restore_body()
 	    create tunnel 192.0.2.1 192.0.2.2
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" service sshd stop
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" service \
-	    -a rc-conf-conflict sshd config sshd_flags=-6 sshd_extra=yes
+	    -a rc-conf-conflict -a rc-conf-merge sshd config sshd_flags=-6 \
+	    sshd_extra=yes
 	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" interface lo0 \
 	    add 10.9.0.30/24
 	for i in $(seq 1 200); do
@@ -11411,7 +11418,7 @@ EOS
 	    > mig.json
 	atf_check "$JGC" -c "$SOCK" edit firewall @mig.json
 	atf_check -o match:'confirm within' "$JGC" -c "$SOCK" commit -c 2 \
-	    -a rc-conf-files -a rc-conf-conflict
+	    -a rc-conf-files -a rc-conf-conflict -a rc-conf-merge
 	atf_check -o match:'^firewall_script=' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
 	atf_check test -e fw/ipfw.sh
@@ -11425,16 +11432,16 @@ EOS
 	atf_check cmp rc.conf.before root/etc/rc.conf
 	atf_check cmp hb.before hb.sh
 	# Committed for good: the host boots Arcana's script, the admin's
-	# own left as it is, its rc.conf line commented out, accepted.
+	# own left as it is, its rc.conf line too: Arcana's file wins.
 	atf_check -s exit:1 -e match:'rc-conf-files' -o ignore \
 	    "$JGC" -c "$SOCK" ipfw rules -w mig.rules
 	atf_check -s exit:1 -e match:'firewall_script .*-a rc-conf-conflict' \
 	    -o ignore "$JGC" -c "$SOCK" ipfw rules -a rc-conf-files -w mig.rules
 	atf_check -o match:'in place' "$JGC" -c "$SOCK" ipfw rules \
-	    -a rc-conf-files -a rc-conf-conflict -w mig.rules
+	    -a rc-conf-files -a rc-conf-conflict -a rc-conf-merge -w mig.rules
 	atf_check -o match:"^firewall_script=\"$(pwd)/fw/ipfw.sh\"$" \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o match:'^#firewall_script=.*taken by Arcana' \
+	atf_check -o match:"^firewall_script=\"$(pwd)/hb.sh\"$" -o not-match:'taken by Arcana' \
 	    -o match:'^firewall_enable="YES"$' cat root/etc/rc.conf
 	atf_check cmp hb.before hb.sh
 	atf_check cmp mig.rules fw/ipfw.rules
@@ -13776,14 +13783,14 @@ datastores_body()
 	atf_check -s exit:1 -e match:'static_routes .*rc.conf line 2.*-a rc-conf-conflict' \
 	    "$JGC" -c "$SOCK" commit -a rc-conf-files
 	# Accepted: the route made by the helper, as the route job's (the
-	# stand-in's log), kept in Arcana's file, the user's line
-	# commented out there.
+	# stand-in's log), kept in Arcana's file merged with the user's
+	# list, their line as it was.
 	atf_check "$JGC" -c "$SOCK" commit -a rc-conf-files -a rc-conf-conflict
 	atf_check -o match:'^0 route-add 203.0.113.0/24 127.0.0.1 - 0 0 0 -$' \
 	    cat route.log
 	atf_check -o match:'203.0.113.0/24 127.0.0.1' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o match:'^#static_routes=' cat root/etc/rc.conf
+	atf_check -o match:'^static_routes=' -o not-match:'taken by Arcana' cat root/etc/rc.conf
 	atf_check -o match:'"203.0.113.0/24"' "$JGC" -c "$SOCK" get -d running routing
 	# Only the static routes are changed so far.
 	sed -e 's|"name":"ipv4-master"|"name":"v4"|' run.json > ribs.json
@@ -14230,7 +14237,7 @@ datastores_boot_cleanup()
 atf_test_case datastores_services cleanup
 datastores_services_head()
 {
-	atf_set "descr" "Services' rcvars and variables as running, committed; the user's lines commented out, put back; the convert action"
+	atf_set "descr" "Services' rcvars and variables as running, committed; the user's lines kept, a value merged by hand; convert and release"
 }
 datastores_services_body()
 {
@@ -14255,22 +14262,36 @@ datastores_services_body()
 	atf_check -o match:'"name":"ntpd"' -o match:'"path":"' \
 	    -o match:'"name":"sshd_flags","value":"-4"' "$JGC" -c "$SOCK" get services
 	# A commit: disabled, a variable changed, one new; rc_conf_files
-	# first, then the user's variables, then Arcana's file has them.
+	# first, then the user's variables, then the values no merge of
+	# words gives; then Arcana's file has them, the user's lines as
+	# they were (Arcana's, read last, wins).
+	cp root/etc/rc.conf rc.conf.orig
 	atf_check "$JGC" -c "$SOCK" edit services \
 	    '{"service":[{"name":"sshd","enabled":false,"variable":[{"name":"sshd_flags","value":"-6"},{"name":"sshd_program","value":"/usr/local/sbin/sshd"}]}]}'
 	atf_check -s exit:1 -e match:'-a rc-conf-files' "$JGC" -c "$SOCK" commit
 	atf_check -s exit:1 -e match:'sshd_enable .*rc.conf line 2.*-a rc-conf-conflict' \
 	    "$JGC" -c "$SOCK" commit -a rc-conf-files
-	atf_check "$JGC" -c "$SOCK" commit -a rc-conf-files -a rc-conf-conflict
-	atf_check -o match:'^sshd_enable="NO"$' -o match:'^sshd_flags="-6"$' \
+	atf_check -s exit:1 \
+	    -e match:'sshd_flags \(/etc/rc.conf line 3: yours "-4", Arcana.s "-6"\).*-a rc-conf-merge' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-files -a rc-conf-conflict
+	atf_check cmp rc.conf.orig root/etc/rc.conf
+	# The rows asked for, for the page's merge; one merged by hand.
+	atf_check -o match:'"pending":\[[^]]*"proposed":"-6"[^]]*"variable":"sshd_flags"' \
+	    -o match:'"variable":"sshd_enable"' "$JGC" -c "$SOCK" get agent
+	atf_check -o match:'"resolved":1' "$JGC" -c "$SOCK" action \
+	    agent/config-files resolve 'row=kind:rc,variable:sshd_flags,value:-4 -6'
+	atf_check "$JGC" -c "$SOCK" commit -a rc-conf-files -a rc-conf-conflict \
+	    -a rc-conf-merge
+	atf_check -o match:'^sshd_enable="NO"$' -o match:'^sshd_flags="-4 -6"$' \
 	    -o match:'^sshd_program="/usr/local/sbin/sshd"$' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	# The user's lines commented out where they are, never removed.
-	atf_check -o match:'^#sshd_enable="YES"  # taken by Arcana$' \
-	    -o match:'^#sshd_flags="-4"  # taken by Arcana$' \
-	    -o match:'^hostname="lab"$' -o match:'^ntpd_enable="NO"$' \
-	    -o not-match:'^sshd_' cat root/etc/rc.conf
-	atf_check -o match:'\{"enabled":false,"name":"sshd","variable":\[\{"name":"sshd_flags","value":"-6"\},\{"name":"sshd_program","value":"/usr/local/sbin/sshd"\}\]\}' \
+	atf_check -o match:'^sshd_enable="YES"$' -o match:'^sshd_flags="-4"$' \
+	    -o match:'^hostname="lab"$' -o not-match:'taken by Arcana' \
+	    cat root/etc/rc.conf
+	# What Arcana changed of theirs, kept for release.
+	atf_check -o match:'"ledger":\[.*"after":"-4 -6","arcana":"-6","before":"-4","file":"/etc/rc.conf","kind":"rc","variable":"sshd_flags"' \
+	    -o not-match:'"pending":\[\{' "$JGC" -c "$SOCK" get agent
+	atf_check -o match:'\{"enabled":false,"name":"sshd","variable":\[\{"name":"sshd_flags","value":"-4 -6"\},\{"name":"sshd_program","value":"/usr/local/sbin/sshd"\}\]\}' \
 	    "$JGC" -c "$SOCK" get -d running services
 	# A later service's failure puts every file back: the user's line
 	# as it was, Arcana's file without the change.
@@ -14279,7 +14300,7 @@ datastores_services_body()
 	atf_check "$JGC" -c "$SOCK" edit services \
 	    '{"service":[{"name":"ntpd","enabled":true},{"name":"zfs","variable":[{"name":"ntpd_flags","value":"x"}]}]}'
 	atf_check -s exit:1 -e match:"'ntpd_flags' is not a variable of zfs" \
-	    "$JGC" -c "$SOCK" commit -a rc-conf-conflict
+	    "$JGC" -c "$SOCK" commit -a rc-conf-conflict -a rc-conf-merge
 	atf_check cmp rc.conf.before root/etc/rc.conf
 	atf_check cmp arcana.before root/usr/local/etc/rc.conf.d/arcana
 	atf_check "$JGC" -c "$SOCK" discard
@@ -14294,16 +14315,16 @@ datastores_services_body()
 	atf_check -s exit:1 -e match:"'sshd_enable' is not a variable of sshd" \
 	    "$JGC" -c "$SOCK" commit
 	atf_check "$JGC" -c "$SOCK" discard
-	# One taken out: gone from Arcana's file; the rest as it was.
+	# One taken out: gone from Arcana's file; the rest as it was, the
+	# merged value not asked for again.
 	atf_check "$JGC" -c "$SOCK" edit services \
-	    '{"service":[{"name":"sshd","enabled":false,"variable":[{"name":"sshd_flags","value":"-6"}]}]}'
+	    '{"service":[{"name":"sshd","enabled":false,"variable":[{"name":"sshd_flags","value":"-4 -6"}]}]}'
 	atf_check "$JGC" -c "$SOCK" commit
-	atf_check -o match:'^sshd_enable="NO"$' -o match:'^sshd_flags="-6"$' \
+	atf_check -o match:'^sshd_enable="NO"$' -o match:'^sshd_flags="-4 -6"$' \
 	    -o not-match:'sshd_program' cat root/usr/local/etc/rc.conf.d/arcana
 	# The convert action: a service's variables of the user's files
-	# moved under Arcana, each said with its file and line; a dry run
+	# cloned into Arcana's, each said with its file and line; a dry run
 	# first, the files as they are; one not a literal left, said why.
-	cp root/etc/rc.conf rc.conf.before
 	atf_check -o match:'^ntpd +ntpd_enable +NO +/etc/rc.conf:4$' \
 	    -o match:'^ +ntpd_sync_on_start +/etc/rc.conf:5  left: its value is not a literal' \
 	    -o match:'^ +ntpd_flags +-g +/etc/rc.conf.d/ntpd:1$' \
@@ -14312,39 +14333,28 @@ datastores_services_body()
 	atf_check -o inline:'ntpd_flags="-g"\n' cat root/etc/rc.conf.d/ntpd
 	atf_check -s exit:1 -e match:'no such service' \
 	    "$JGC" -c "$SOCK" services convert -n nosuch
-	# Real: a change like a commit's, refused until accepted.
-	atf_check -s exit:1 -e match:'ntpd_enable .*rc.conf line 4.*-a rc-conf-conflict' \
-	    "$JGC" -c "$SOCK" services convert ntpd
-	atf_check cmp rc.conf.before root/etc/rc.conf
+	# Real: the same values, nothing of the user's to warn of; their
+	# files as they are.
 	atf_check -o match:'^ntpd +ntpd_enable +NO +/etc/rc.conf:4$' \
 	    -o match:'^ +ntpd_flags +-g +/etc/rc.conf.d/ntpd:1$' \
-	    "$JGC" -c "$SOCK" services convert -a rc-conf-conflict ntpd
+	    "$JGC" -c "$SOCK" services convert ntpd
 	atf_check -o match:'^ntpd_enable="NO"$' -o match:'^ntpd_flags="-g"$' \
-	    -o match:'^sshd_flags="-6"$' -o not-match:'ntpd_sync_on_start' \
+	    -o match:'^sshd_flags="-4 -6"$' -o not-match:'ntpd_sync_on_start' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o match:'^#ntpd_enable="NO"  # taken by Arcana$' \
-	    -o match:'^ntpd_sync_on_start="\$x"$' -o not-match:'^ntpd_enable' \
-	    cat root/etc/rc.conf
-	atf_check -o inline:'#ntpd_flags="-g"  # taken by Arcana\n' cat root/etc/rc.conf.d/ntpd
+	atf_check cmp rc.conf.before root/etc/rc.conf
+	atf_check -o inline:'ntpd_flags="-g"\n' cat root/etc/rc.conf.d/ntpd
 	atf_check -o match:'\{"enabled":false,"name":"ntpd","variable":\[\{"name":"ntpd_flags","value":"-g"\}\]\}' \
 	    "$JGC" -c "$SOCK" get -d running services
-	# Every script: nothing of the user's left but what cannot be taken.
-	atf_check -o match:'ntpd_sync_on_start' -o not-match:'sshd' \
-	    -o not-match:'ntpd_flags' "$JGC" -c "$SOCK" services convert -n
 	# As the action, its output RFC 7951's JSON.
-	atf_check -o match:'"service":\[\{"name":"ntpd","variable":\[\{"file":"/etc/rc.conf","left":"its value is not a literal[^"]*","line":5,"name":"ntpd_sync_on_start"\}\]\}\]' \
+	atf_check -o match:'"name":"ntpd_sync_on_start"' \
 	    "$JGC" -c "$SOCK" action services convert dry-run=true
-	# The release action, convert's inverse: a dry run first, the files
-	# as they are.
-	cp root/etc/rc.conf rc.conf.taken
+	# The release action, convert's inverse: Arcana's lines out, the
+	# user's as they are; a dry run first.
 	cp root/usr/local/etc/rc.conf.d/arcana arcana.taken
-	atf_check -o match:'^ntpd +ntpd_enable +NO +/etc/rc.conf:4$' \
-	    -o match:'^ +ntpd_flags +-g +/etc/rc.conf.d/ntpd:1$' \
-	    -o not-match:'dropped|differs|sshd' \
+	atf_check -o match:'^ntpd +ntpd_enable +NO +dropped: no line of yours to put back; /etc/rc.conf line 4 sets it' \
+	    -o not-match:'differs|sshd' \
 	    "$JGC" -c "$SOCK" services release -n ntpd
-	atf_check cmp rc.conf.taken root/etc/rc.conf
 	atf_check cmp arcana.taken root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o inline:'#ntpd_flags="-g"  # taken by Arcana\n' cat root/etc/rc.conf.d/ntpd
 	# Refused: a name no variable's stem, one named twice, none.
 	atf_check -s exit:1 -e match:"ftp-proxy: not a service's name" \
 	    "$JGC" -c "$SOCK" services release ftp-proxy
@@ -14353,37 +14363,25 @@ datastores_services_body()
 	atf_check -s exit:2 -e match:'usage' "$JGC" -c "$SOCK" services release
 	atf_check -s exit:1 -e not-empty "$JGC" -c "$SOCK" action services \
 	    release dry-run=true
-	atf_check cmp rc.conf.taken root/etc/rc.conf
-	# Real: the user's files as before convert, Arcana's file without
-	# it; sshd, the other service, still Arcana's.
-	atf_check -o match:'^ntpd +ntpd_enable +NO +/etc/rc.conf:4$' \
-	    -o match:'^ +ntpd_flags +-g +/etc/rc.conf.d/ntpd:1$' \
-	    "$JGC" -c "$SOCK" services release ntpd
+	atf_check -o ignore "$JGC" -c "$SOCK" services release ntpd
 	atf_check cmp rc.conf.before root/etc/rc.conf
-	atf_check -o inline:'ntpd_flags="-g"\n' cat root/etc/rc.conf.d/ntpd
-	atf_check -o match:'^sshd_enable="NO"$' -o match:'^sshd_flags="-6"$' \
-	    -o not-match:'ntpd_' cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o match:'^#sshd_enable="YES"  # taken by Arcana$' \
-	    -o match:'^#sshd_flags="-4"  # taken by Arcana$' cat root/etc/rc.conf
-	atf_check -o match:'\{"enabled":false,"name":"ntpd","variable":\[\{"name":"ntpd_flags","value":"-g"\}\]\}' \
-	    -o match:'\{"enabled":false,"name":"sshd","variable":\[\{"name":"sshd_flags","value":"-6"\}\]\}' \
-	    "$JGC" -c "$SOCK" get -d running services
+	atf_check -o not-match:'ntpd_' cat root/usr/local/etc/rc.conf.d/arcana
 	# Nothing left to give back.
-	cp root/etc/rc.conf rc.conf.given
 	atf_check -o match:'^ntpd +nothing to give back$' \
 	    "$JGC" -c "$SOCK" services release ntpd
-	atf_check cmp rc.conf.given root/etc/rc.conf
-	# Restored as the user's line had it, Arcana's value said; one with
-	# no line of the user's only dropped, its value the defaults'.
-	printf 'sshd_oomprotect="YES"\n' >> root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o match:'^sshd +sshd_enable +YES +/etc/rc.conf:2$' \
-	    -o match:'differs: "YES" now \(/etc/rc.conf line 2\), not Arcana.s "NO"' \
-	    -o match:'^ +sshd_flags +-4 +/etc/rc.conf:3$' \
-	    -o match:'^ +sshd_oomprotect +YES +dropped: no line of yours to put back; it falls back to the defaults' \
-	    "$JGC" -c "$SOCK" services release sshd
-	atf_check -o not-match:'taken by Arcana' -o match:'^sshd_enable="YES"$' \
-	    -o match:'^sshd_flags="-4"$' cat root/etc/rc.conf
+	# A line an older agent commented out ("taken by Arcana") is still
+	# put back by release.
+	printf '#ntpd_flags="-g"  # taken by Arcana\n' > root/etc/rc.conf.d/ntpd
+	printf 'ntpd_flags="-x"\n' >> root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^ntpd +ntpd_flags +-g +/etc/rc.conf.d/ntpd:1$' \
+	    "$JGC" -c "$SOCK" services release ntpd
+	atf_check -o inline:'ntpd_flags="-g"\n' cat root/etc/rc.conf.d/ntpd
+	# sshd: Arcana's lines out, its merge out of the ledger; the user's
+	# as they were before any of it (but rc_conf_files).
+	atf_check -o match:'sshd_flags' "$JGC" -c "$SOCK" services release sshd
+	atf_check cmp rc.conf.before root/etc/rc.conf
 	atf_check -o not-match:'sshd_|ntpd_' cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o not-match:'"ledger":\[\{' "$JGC" -c "$SOCK" get agent
 }
 datastores_services_cleanup()
 {
@@ -14428,22 +14426,21 @@ datastores_jails_body()
 	    -o match:'^# Lab jails$' cat etc/jail.conf
 	atf_check -o inline:'2\n' sh -c "diff before etc/jail.conf | grep -c '^[<>]'"
 	# Started at boot: jail_list and jail_enable in Arcana's rc.conf
-	# file, the user's lines commented out where accepted.
+	# file; jail_list a word list, the user's words kept in it (as
+	# sysrc jail_list+= adds), nothing to warn of, their line as it was.
 	atf_check -s exit:1 -e match:'-a rc-conf-files' \
 	    "$JGC" -c "$SOCK" enable web
-	atf_check -s exit:1 -e match:'jail_list .*rc.conf line 3.*-a rc-conf-conflict' \
-	    "$JGC" -c "$SOCK" enable -a rc-conf-files web
 	atf_check -o match:'^At boot: +started$' "$JGC" -c "$SOCK" \
-	    enable -a rc-conf-files -a rc-conf-conflict web
+	    enable -a rc-conf-files web
 	atf_check -o match:'^jail_list="db web"$' -o match:'^jail_enable="YES"$' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
-	atf_check -o match:'^#jail_list="db"  # taken by Arcana$' \
+	atf_check -o match:'^jail_list="db"$' -o not-match:'taken by Arcana' \
 	    -o match:'^hostname="lab"$' cat root/etc/rc.conf
 	# The last one taken out: jail_enable off, never an empty list,
 	# which starts every jail.
 	atf_check -o ignore "$JGC" -c "$SOCK" disable db
 	atf_check -o match:'^At boot: +not started$' "$JGC" -c "$SOCK" \
-	    disable web
+	    disable -a rc-conf-conflict -a rc-conf-merge web
 	atf_check -o match:'^jail_enable="NO"$' -o not-match:'jail_list' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
 	# A jail made: a file of its own in jail.conf.d; taken away with it.
@@ -14500,34 +14497,433 @@ datastores_kernel_body()
 	printf 'kld_list="if_bridge"\n' >> rc.conf
 	atf_check -o match:'"kept":\["if_bridge"\]' -o match:'"file":\[\{"address"' \
 	    "$JGC" -c "$SOCK" get kernel
-	# rc_conf_files first, then the user's variable; then Arcana's
-	# file has it, the user's commented out, and a module not loaded
-	# is said.
+	# rc_conf_files first; kld_list a word list that keeps the user's
+	# words, nothing to warn of; then Arcana's file has it, the user's
+	# line as it was, and a module not loaded is said.
 	atf_check "$JGC" -c "$SOCK" edit kernel '{"kept":["if_bridge","if_nosuch"]}'
 	atf_check -s exit:1 -e match:'-a rc-conf-files' "$JGC" -c "$SOCK" commit
-	atf_check -s exit:1 -e match:'kld_list .*rc.conf line 2.*-a rc-conf-conflict' \
-	    "$JGC" -c "$SOCK" commit -a rc-conf-files
 	atf_check -o match:'kld-list: if_nosuch is not loaded: kld_list loads it at the next boot' \
-	    "$JGC" -c "$SOCK" commit -a rc-conf-files -a rc-conf-conflict
+	    "$JGC" -c "$SOCK" commit -a rc-conf-files
 	atf_check -o match:'^kld_list="if_bridge if_nosuch"$' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
 	atf_check -o match:'^rc_conf_files=".*/usr/local/etc/rc.conf.d/arcana"$' \
-	    -o match:'^#kld_list="if_bridge"  # taken by Arcana$' \
-	    -o not-match:'^kld_list' cat root/etc/rc.conf
+	    -o match:'^kld_list="if_bridge"$' cat root/etc/rc.conf
 	atf_check -o inline:'{"arcana-kernel:kernel":{"kept":["if_bridge","if_nosuch"]}}\n' \
 	    "$JGC" -c "$SOCK" get -d running kernel
 	# A name is a name.
 	atf_check "$JGC" -c "$SOCK" edit kernel '{"kept":["/tmp/evil.ko"]}'
 	atf_check -s exit:1 -e match:'without a path' "$JGC" -c "$SOCK" commit
 	atf_check "$JGC" -c "$SOCK" discard
-	# None: the variable taken out.
+	# None: every word taken out, the user's one Arcana kept too: an
+	# empty list in Arcana's file, read after theirs.
 	atf_check "$JGC" -c "$SOCK" edit kernel '{}'
 	atf_check -o ignore "$JGC" -c "$SOCK" commit
-	atf_check -o not-match:'kld_list' cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^kld_list=""$' cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^kld_list="if_bridge"$' cat root/etc/rc.conf
 	atf_check -o inline:'{"arcana-kernel:kernel":{}}\n' \
 	    "$JGC" -c "$SOCK" get -d running kernel
 }
 datastores_kernel_cleanup()
+{
+	stop_daemon
+}
+
+# arcana-agent's config-files (docs/notes/config-files.md): the files a
+# commit writes, Arcana's own or the system's, the merge of a variable
+# the admin's files set too, the ledger and release, and the switch.
+# Every file a fake under ./root.
+config_files_root()
+{
+	mkdir -p root/etc/defaults root/usr/local/etc/arcana \
+	    root/usr/local/etc/rc.conf.d root/boot/loader.conf.d
+	cp /etc/defaults/rc.conf root/etc/defaults/
+}
+
+atf_test_case config_files_merge cleanup
+config_files_merge_head()
+{
+	atf_set "descr" "Arcana's files: a word list the user's file sets" \
+	    "merged additively in Arcana's file, theirs untouched; a value" \
+	    "refused with rc-conf-merge, written with the value resolve gave"
+}
+config_files_merge_body()
+{
+	config_files_root
+	printf 'rc_conf_files="/etc/rc.conf /etc/rc.conf.local /usr/local/etc/rc.conf.d/arcana"\njail_list="a b"\nsshd_flags="-4"\n' \
+	    > root/etc/rc.conf
+	cp root/etc/rc.conf rc.conf.0
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	printf '#!/bin/sh\n' > rc.d/jail
+	chmod +x rc.d/jail
+	atf_check -o match:'"mode":"arcana"' \
+	    -o match:'"rc-file":"/usr/local/etc/rc.conf.d/arcana"' \
+	    "$JGC" -c "$SOCK" get agent
+	# The user's example: jail_list "a b" theirs, "b c" Arcana's.
+	atf_check "$JGC" -c "$SOCK" edit services \
+	    '{"service":[{"name":"jail","variable":[{"name":"jail_list","value":"b c"}]}]}'
+	atf_check -s exit:1 \
+	    -e match:'jail_list \(/etc/rc.conf line 2: "a b"; Arcana.s "b c", merged "a b c"\).*-a rc-conf-conflict' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check "$JGC" -c "$SOCK" commit -a rc-conf-conflict
+	atf_check -o inline:'jail_list="a b c"\n' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check cmp rc.conf.0 root/etc/rc.conf
+	# Merged once: not asked again, the merge kept as theirs change.
+	atf_check "$JGC" -c "$SOCK" edit services \
+	    '{"service":[{"name":"jail","variable":[{"name":"jail_list","value":"b c d"}]}]}'
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o inline:'jail_list="a b c d"\n' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	# A value: refused for a merge by hand, then the value given.
+	atf_check "$JGC" -c "$SOCK" edit services \
+	    '{"service":[{"name":"sshd","variable":[{"name":"sshd_flags","value":"-6"}]}]}'
+	atf_check -s exit:1 -e match:'-a rc-conf-conflict' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check -s exit:1 -e match:'sshd_flags .*yours "-4", Arcana.s "-6".*-a rc-conf-merge' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-conflict
+	atf_check -o match:'"pending":\[\{"file":"/etc/rc.conf","kind":"rc","line":3,"proposed":"-6","variable":"sshd_flags","yours":"-4"\}\]' \
+	    "$JGC" -c "$SOCK" get agent
+	atf_check -o match:'"resolved":1' "$JGC" -c "$SOCK" action \
+	    agent/config-files resolve 'row=kind:rc,variable:sshd_flags,value:-4 -6'
+	atf_check "$JGC" -c "$SOCK" commit -a rc-conf-conflict -a rc-conf-merge
+	atf_check -o match:'^sshd_flags="-4 -6"$' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check cmp rc.conf.0 root/etc/rc.conf
+	atf_check -o not-match:'"pending":\[\{' "$JGC" -c "$SOCK" get agent
+	# Release: Arcana's lines out, theirs as they were.
+	atf_check -o ignore "$JGC" -c "$SOCK" services release jail sshd
+	atf_check -o inline:'' cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check cmp rc.conf.0 root/etc/rc.conf
+}
+config_files_merge_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case config_files_system cleanup
+config_files_system_head()
+{
+	atf_set "descr" "the system's files: a commit writes each variable" \
+	    "where the user's files set it, else rc.conf, rc_conf_files" \
+	    "untouched; a failure puts every file back; release takes out" \
+	    "only what Arcana added"
+}
+config_files_system_body()
+{
+	config_files_root
+	printf 'config_files="system"\n' \
+	    > root/usr/local/etc/arcana/config-files.conf
+	printf 'hostname="lab"\nsshd_enable="YES"\njail_list="a b"\n' \
+	    > root/etc/rc.conf
+	printf 'sshd_flags="-4"\n' > root/etc/rc.conf.local
+	cp root/etc/rc.conf rc.conf.0
+	cp root/etc/rc.conf.local local.0
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	printf '#!/bin/sh\n' > rc.d/jail
+	chmod +x rc.d/jail
+	atf_check -o match:'"mode":"system"' -o match:'"rc-file":"/etc/rc.conf"' \
+	    -o match:'"loader-file":"/boot/loader.conf"' \
+	    "$JGC" -c "$SOCK" get agent
+	# A word list merged where theirs is; one no file sets in rc.conf;
+	# no rc-conf-files, rc_conf_files never named.
+	atf_check "$JGC" -c "$SOCK" edit services \
+	    '{"service":[{"name":"jail","variable":[{"name":"jail_list","value":"b c"}]},{"name":"sshd","variable":[{"name":"sshd_flags","value":"-4"},{"name":"sshd_program","value":"/usr/local/sbin/sshd"}]}]}'
+	atf_check -s exit:1 \
+	    -e match:'jail_list \(/etc/rc.conf line 3: "a b"; Arcana.s "b c", merged "a b c"\).*-a rc-conf-conflict' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check "$JGC" -c "$SOCK" commit -a rc-conf-conflict
+	atf_check -o inline:'hostname="lab"\nsshd_enable="YES"\njail_list="a b c"\nsshd_program="/usr/local/sbin/sshd"\n' \
+	    cat root/etc/rc.conf
+	atf_check cmp local.0 root/etc/rc.conf.local
+	atf_check test ! -e root/usr/local/etc/rc.conf.d/arcana
+	# A value set in rc.conf.local: written there, once merged.
+	atf_check "$JGC" -c "$SOCK" edit services \
+	    '{"service":[{"name":"sshd","variable":[{"name":"sshd_flags","value":"-6"},{"name":"sshd_program","value":"/usr/local/sbin/sshd"}]}]}'
+	atf_check -s exit:1 -e match:'sshd_flags \(/etc/rc.conf.local line 1: yours "-4"' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-conflict
+	atf_check "$JGC" -c "$SOCK" commit -a rc-conf-conflict -a rc-conf-merge
+	atf_check -o inline:'sshd_flags="-6"\n' cat root/etc/rc.conf.local
+	atf_check -o not-match:'sshd_flags|rc_conf_files|taken by Arcana' \
+	    cat root/etc/rc.conf
+	# A later service's failure puts every file back.
+	cp root/etc/rc.conf rc.conf.1
+	cp root/etc/rc.conf.local local.1
+	cp root/var/db/arcana/config-ledger ledger.1
+	atf_check "$JGC" -c "$SOCK" edit services \
+	    '{"service":[{"name":"jail","variable":[{"name":"jail_list","value":"b c e"}]},{"name":"zfs","variable":[{"name":"ntpd_flags","value":"x"}]}]}'
+	atf_check -s exit:1 -e match:"'ntpd_flags' is not a variable of zfs" \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-conflict
+	atf_check cmp rc.conf.1 root/etc/rc.conf
+	atf_check cmp local.1 root/etc/rc.conf.local
+	atf_check cmp ledger.1 root/var/db/arcana/config-ledger
+	atf_check "$JGC" -c "$SOCK" discard
+	# Release: Arcana's words out of the list, the value back, the
+	# variable Arcana added out; their files as they were.
+	atf_check -o match:'^jail +jail_list +a b +/etc/rc.conf:3$' \
+	    "$JGC" -c "$SOCK" services release jail
+	atf_check -o match:'sshd_flags +-4 +/etc/rc.conf.local:1' \
+	    -o match:'sshd_program .*taken out' \
+	    "$JGC" -c "$SOCK" services release sshd
+	atf_check cmp rc.conf.0 root/etc/rc.conf
+	atf_check cmp local.0 root/etc/rc.conf.local
+	atf_check -o match:'^sshd +nothing to give back$' \
+	    "$JGC" -c "$SOCK" services release sshd
+}
+config_files_system_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case config_files_switch cleanup
+config_files_switch_head()
+{
+	atf_set "descr" "the switch from Arcana's files to the system's: a" \
+	    "dry run writes nothing; a value both set refused without a" \
+	    "choice; a list merged additively; a line taken by Arcana" \
+	    "replaced in place; a tunable moved; a failure puts every file" \
+	    "back; back to Arcana's, a clone, the user's files as they are"
+}
+config_files_switch_body()
+{
+	config_files_root
+	printf 'rc_conf_files="/etc/rc.conf /etc/rc.conf.local /usr/local/etc/rc.conf.d/arcana"\njail_list="a b"\n#sshd_flags="-4"  # taken by Arcana\nhostname="lab"\nntpd_enable="NO"\n' \
+	    > root/etc/rc.conf
+	printf 'jail_list="b c"\nsshd_flags="-6"\nntpd_enable="YES"\nkld_list="if_bridge"\n' \
+	    > root/usr/local/etc/rc.conf.d/arcana
+	printf 'hw.foo="1"\n' > root/boot/loader.conf
+	printf 'net.fibs="4"\nhw.foo="2"\n' > root/boot/loader.conf.d/arcana.conf
+	for f in etc/rc.conf usr/local/etc/rc.conf.d/arcana boot/loader.conf \
+	    boot/loader.conf.d/arcana.conf; do
+		cp root/$f "$(echo $f | tr / _).0"
+	done
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	# A dry run: the rows, nothing written.
+	atf_check -o save:dry.json "$JGC" -c "$SOCK" action agent/config-files \
+	    switch to=system dry-run=true
+	atf_check \
+	    -o match:'\{"arcana":"b c","choice":"additive","file":"/etc/rc.conf","kind":"rc","list":true,"result":"a b c","variable":"jail_list","yours":"a b"\}' \
+	    -o match:'\{"arcana":"-6","file":"/etc/rc.conf","kind":"rc","list":false,"variable":"sshd_flags","yours":"-4"\}' \
+	    -o match:'\{"arcana":"if_bridge","choice":"arcana","file":"/etc/rc.conf","kind":"rc","list":true,"result":"if_bridge","variable":"kld_list"\}' \
+	    -o match:'\{"arcana":"4","choice":"arcana","file":"/boot/loader.conf","kind":"loader","list":false,"result":"4","variable":"net.fibs"\}' \
+	    -o match:'"variable":"hw.foo","yours":"1"' \
+	    -o match:'choose for each' -o match:'"done":false' cat dry.json
+	for f in etc/rc.conf usr/local/etc/rc.conf.d/arcana boot/loader.conf \
+	    boot/loader.conf.d/arcana.conf; do
+		atf_check cmp "$(echo $f | tr / _).0" root/$f
+	done
+	atf_check test ! -e root/var/db/arcana/config-switch
+	# For real, a value both set and no choice: refused, said which.
+	atf_check -s exit:1 -e match:'sshd_flags, ntpd_enable, hw.foo: choose' \
+	    "$JGC" -c "$SOCK" action agent/config-files switch to=system
+	atf_check -s exit:1 -e match:'ntpd_enable: additive is for a word list' \
+	    "$JGC" -c "$SOCK" action agent/config-files switch to=system \
+	    merge=kind:rc,variable:ntpd_enable,choice:additive
+	for f in etc/rc.conf usr/local/etc/rc.conf.d/arcana boot/loader.conf \
+	    boot/loader.conf.d/arcana.conf; do
+		atf_check cmp "$(echo $f | tr / _).0" root/$f
+	done
+	# A failure midway (loader.conf's directory not writable): every
+	# file put back, the mode as it was.
+	chmod 555 root/boot
+	atf_check -s exit:1 -e not-empty "$JGC" -c "$SOCK" action \
+	    agent/config-files switch to=system \
+	    merge=kind:rc,variable:sshd_flags,choice:yours \
+	    merge=kind:rc,variable:ntpd_enable,choice:arcana \
+	    merge=kind:loader,variable:hw.foo,choice:edit,value:3
+	chmod 755 root/boot
+	for f in etc/rc.conf usr/local/etc/rc.conf.d/arcana boot/loader.conf \
+	    boot/loader.conf.d/arcana.conf; do
+		atf_check cmp "$(echo $f | tr / _).0" root/$f
+	done
+	atf_check test ! -e root/usr/local/etc/arcana/config-files.conf
+	atf_check -o match:'"mode":"arcana"' "$JGC" -c "$SOCK" get agent
+	# Done: the list merged, the line taken by Arcana replaced where
+	# it is, rc_conf_files back to the defaults', Arcana's files gone,
+	# every file before copied.
+	atf_check -o save:sw.json "$JGC" -c "$SOCK" action agent/config-files \
+	    switch to=system merge=kind:rc,variable:sshd_flags,choice:yours \
+	    merge=kind:rc,variable:ntpd_enable,choice:arcana \
+	    merge=kind:loader,variable:hw.foo,choice:edit,value:3
+	atf_check -o match:'"done":true' -o match:'"backup":"/var/db/arcana/config-switch/' \
+	    -o match:'nothing is loaded now' cat sw.json
+	atf_check -o inline:'jail_list="a b c"\nsshd_flags="-4"\nhostname="lab"\nntpd_enable="YES"\nkld_list="if_bridge"\n' \
+	    cat root/etc/rc.conf
+	atf_check -o inline:'hw.foo="3"\nnet.fibs="4"\n' cat root/boot/loader.conf
+	atf_check test ! -e root/usr/local/etc/rc.conf.d/arcana
+	atf_check test ! -e root/boot/loader.conf.d/arcana.conf
+	b=$(sed -e 's/.*"backup":"\([^"]*\)".*/\1/' sw.json)
+	atf_check cmp etc_rc.conf.0 "root$b/etc/rc.conf"
+	atf_check cmp usr_local_etc_rc.conf.d_arcana.0 \
+	    "root$b/usr/local/etc/rc.conf.d/arcana"
+	atf_check -o match:'^config_files="system"$' \
+	    cat root/usr/local/etc/arcana/config-files.conf
+	atf_check -o match:'"mode":"system"' \
+	    -o match:'"after":"a b c","arcana":"b c","before":"a b","file":"/etc/rc.conf","kind":"rc","variable":"jail_list"' \
+	    "$JGC" -c "$SOCK" get agent
+	# Back to Arcana's: a clone of theirs into Arcana's files, read last;
+	# their files as they are but rc_conf_files naming Arcana's.
+	cp root/etc/rc.conf rc.conf.sys
+	cp root/boot/loader.conf loader.conf.sys
+	atf_check -o save:back.json "$JGC" -c "$SOCK" action \
+	    agent/config-files switch to=arcana
+	atf_check -o match:'"done":true' -o match:'"choice":"clone"' \
+	    -o match:'a clone of yours' cat back.json
+	atf_check -o inline:'jail_list="a b c"\nsshd_flags="-4"\nhostname="lab"\nntpd_enable="YES"\nkld_list="if_bridge"\n' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o inline:'hw.foo="3"\nnet.fibs="4"\n' \
+	    cat root/boot/loader.conf.d/arcana.conf
+	atf_check -o save:rc.now grep -v '^rc_conf_files=' root/etc/rc.conf
+	atf_check cmp rc.conf.sys rc.now
+	atf_check -o match:'^rc_conf_files="/etc/rc.conf /etc/rc.conf.local /usr/local/etc/rc.conf.d/arcana"$' \
+	    cat root/etc/rc.conf
+	atf_check cmp loader.conf.sys root/boot/loader.conf
+	atf_check -o match:'"mode":"arcana"' -o not-match:'"ledger":\[\{' \
+	    "$JGC" -c "$SOCK" get agent
+	atf_check -o match:'"to":"arcana"' -o match:'already' \
+	    "$JGC" -c "$SOCK" action agent/config-files switch to=arcana
+	# The mode is read again at the agent's start.
+	stop_daemon
+	printf 'config_files="system"\n' \
+	    > root/usr/local/etc/arcana/config-files.conf
+	start_daemon
+	atf_check -o match:'"mode":"system"' "$JGC" -c "$SOCK" get agent
+}
+config_files_switch_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case config_files_boot cleanup
+config_files_boot_head()
+{
+	atf_set "descr" "the system's files: a tunable in loader.conf, or" \
+	    "where a loader file sets it, a value of the admin's changed" \
+	    "only with loader-conf-conflict accepted; taken out of each"
+}
+config_files_boot_body()
+{
+	local run want n
+
+	run=$(sysctl -n kern.racct.enable)
+	want=$((1 - run))
+	n=$(sysctl -n net.fibs)
+	config_files_root
+	printf 'config_files="system"\n' \
+	    > root/usr/local/etc/arcana/config-files.conf
+	printf 'hostname="lab"\n' > root/etc/rc.conf
+	printf 'if_wg_load="YES"\nkern.racct.enable="%d"\n' "$run" \
+	    > root/boot/loader.conf
+	printf 'net.fibs="%d"\n' "$n" > root/boot/loader.conf.local
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	# Running: every loader file's tunables, the last of each.
+	atf_check -o match:"\"name\":\"kern.racct.enable\",\"value\":\"$run\"" \
+	    -o match:"\"name\":\"net.fibs\",\"value\":\"$n\"" \
+	    "$JGC" -c "$SOCK" get -d running boot
+	# The admin's value: a warning first, then written where it is.
+	atf_check "$JGC" -c "$SOCK" edit boot \
+	    "{\"tunable\":[{\"name\":\"net.fibs\",\"value\":\"$n\"},{\"name\":\"kern.racct.enable\",\"value\":\"$want\"}]}"
+	atf_check -s exit:1 \
+	    -e match:"/boot/loader.conf line 2 sets kern.racct.enable=\"$run\".*-a loader-conf-conflict" \
+	    "$JGC" -c "$SOCK" commit
+	atf_check "$JGC" -c "$SOCK" commit -a loader-conf-conflict
+	atf_check -o inline:"if_wg_load=\"YES\"\nkern.racct.enable=\"$want\"\n" \
+	    cat root/boot/loader.conf
+	atf_check -o inline:"net.fibs=\"$n\"\n" cat root/boot/loader.conf.local
+	atf_check test ! -e root/boot/loader.conf.d/arcana.conf
+	# Arcana's own now: changed back without a warning; taken out of
+	# every file that sets it.
+	atf_check "$JGC" -c "$SOCK" edit boot \
+	    "{\"tunable\":[{\"name\":\"net.fibs\",\"value\":\"$n\"},{\"name\":\"kern.racct.enable\",\"value\":\"$run\"}]}"
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o match:"^kern.racct.enable=\"$run\"$" cat root/boot/loader.conf
+	atf_check "$JGC" -c "$SOCK" edit boot \
+	    "{\"tunable\":[{\"name\":\"net.fibs\",\"value\":\"$n\"}]}"
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o inline:'if_wg_load="YES"\n' cat root/boot/loader.conf
+	# The system file job's entry is loader.conf itself.
+	printf 'if_wg_load="NO"\n' > lf
+	atf_check -s not-exit:0 -o ignore -e ignore \
+	    "$JGC" -c "$SOCK" sysfile loader.conf.d lf
+	atf_check test ! -e root/boot/loader.conf.d/arcana.conf
+	atf_check -o ignore -e ignore "$JGC" -c "$SOCK" sysfile loader.conf lf
+	atf_check cmp lf root/boot/loader.conf
+}
+config_files_boot_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case config_files_firewall cleanup
+config_files_firewall_head()
+{
+	atf_set "descr" "the switch moves Arcana's kept firewall rules and" \
+	    "boot script to /etc/ipfw.rules and /etc/ipfw.sh, never over the" \
+	    "admin's own, which stays byte for byte; back with it"
+}
+config_files_firewall_body()
+{
+	config_files_root
+	mkdir fw
+	printf 'add 00100 allow ip from any to any\n' > fw/ipfw.rules
+	printf '#!/bin/sh\n# Written by arcana-agent: rc.d/ipfw runs it at boot\nipfw -q -f flush\nipfw -q %s/fw/ipfw.rules\n' \
+	    "$(pwd)" > fw/ipfw.sh
+	cp fw/ipfw.rules rules.0
+	printf 'rc_conf_files="/etc/rc.conf /etc/rc.conf.local /usr/local/etc/rc.conf.d/arcana"\nfirewall_enable="YES"\n' \
+	    > root/etc/rc.conf
+	printf 'firewall_script="%s/fw/ipfw.sh"\n' "$(pwd)" \
+	    > root/usr/local/etc/rc.conf.d/arcana
+	cp root/etc/rc.conf rc.conf.0
+	cp root/usr/local/etc/rc.conf.d/arcana arcana.0
+	# The admin's own rules where the system's go: nothing moved.
+	printf 'add 00050 deny ip from 192.0.2.0/24 to any\n' > root/etc/ipfw.rules
+	cp root/etc/ipfw.rules admin.0
+	DAEMON_ARGS="-J $(pwd)/fw/ipfw.rules --root $(pwd)/root"
+	start_daemon
+	atf_check -o save:sw.json "$JGC" -c "$SOCK" action agent/config-files \
+	    switch to=system
+	atf_check -o match:'/etc/ipfw.rules is the admin.s own' \
+	    -o not-match:'"moved"' cat sw.json
+	atf_check cmp admin.0 root/etc/ipfw.rules
+	atf_check test ! -e root/etc/ipfw.sh
+	atf_check cmp rules.0 fw/ipfw.rules
+	atf_check -o match:"^firewall_script=\"$(pwd)/fw/ipfw.sh\"$" \
+	    cat root/etc/rc.conf
+	atf_check -o match:"\"firewall-rules\":\"$(pwd)/fw/ipfw.rules\"" \
+	    "$JGC" -c "$SOCK" get agent
+	# Back, then again without the admin's file: moved, firewall_script
+	# following the script.
+	atf_check -o ignore "$JGC" -c "$SOCK" action agent/config-files \
+	    switch to=arcana
+	rm root/etc/ipfw.rules
+	cp rc.conf.0 root/etc/rc.conf
+	cp arcana.0 root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o save:sw2.json "$JGC" -c "$SOCK" action agent/config-files \
+	    switch to=system
+	atf_check -o match:"\"moved\":\\[\"$(pwd)/fw/ipfw.rules -> /etc/ipfw.rules\",\"$(pwd)/fw/ipfw.sh -> /etc/ipfw.sh\"\\]" \
+	    cat sw2.json
+	atf_check cmp rules.0 root/etc/ipfw.rules
+	atf_check -o match:'^# Written by arcana-agent' \
+	    -o match:' -q /etc/ipfw.rules$' cat root/etc/ipfw.sh
+	atf_check test ! -e fw/ipfw.rules
+	atf_check test ! -e fw/ipfw.sh
+	atf_check -o match:'^firewall_script="/etc/ipfw.sh"$' cat root/etc/rc.conf
+	atf_check -o match:'^config_files_ipfw_rules="/etc/ipfw.rules"$' \
+	    cat root/usr/local/etc/arcana/config-files.conf
+	atf_check -o match:'"firewall-rules":"/etc/ipfw.rules"' \
+	    "$JGC" -c "$SOCK" get agent
+	# Back to Arcana's: Arcana's files moved back, its script named.
+	atf_check -o match:'"moved"' "$JGC" -c "$SOCK" action \
+	    agent/config-files switch to=arcana
+	atf_check cmp rules.0 fw/ipfw.rules
+	atf_check test ! -e root/etc/ipfw.rules
+	atf_check -o match:"^firewall_script=\"$(pwd)/fw/ipfw.sh\"$" \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+}
+config_files_firewall_cleanup()
 {
 	stop_daemon
 }
@@ -14700,6 +15096,11 @@ atf_init_test_cases()
 	atf_add_test_case datastores_services
 	atf_add_test_case datastores_jails
 	atf_add_test_case datastores_kernel
+	atf_add_test_case config_files_merge
+	atf_add_test_case config_files_system
+	atf_add_test_case config_files_switch
+	atf_add_test_case config_files_firewall
+	atf_add_test_case config_files_boot
 	atf_add_test_case datastores_instances
 	atf_add_test_case datastores_interfaces
 	atf_add_test_case datastores

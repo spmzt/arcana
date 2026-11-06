@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.248.1"
+#define	ARCANA_AGENT_VERSION	"0.249.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -1487,6 +1487,9 @@ const char	*pkg_repo_check(struct work *, const char *, const char *);
 int		 jobs_lanes(void);
 const char	*jobs_set_lanes(int);
 void		 jobs_conf_load(void);
+/* invidia/cfgfiles.c: the files a commit writes, Arcana's own (false)
+ * or the system's (arcana-agent's config-files). */
+bool		 cf_system(void);
 int		 do_pkg_install(struct work *, const struct arc_job_spec *,
 		    const char **);
 

@@ -549,6 +549,8 @@ view_system(struct html *h, struct server *s)
 	    "</button> <span class=\"dim\">shutdown(8) -r, a minute after it "
 	    "is asked; never undone, so never in safe mode.</span></p>"
 	    "</section>");
+	/* Which files a commit writes: Arcana's own or the system's. */
+	cfgfiles_view(h, s);
 	if ((o = data(h, s)) == NULL)
 		return;
 	h_raw(h, "<section class=\"sysview\">");
@@ -875,6 +877,16 @@ safe_word(const char *v, const char *more)
 		if (!isalnum((unsigned char)v[i]) && strchr(more, v[i]) == NULL)
 			return (false);
 	return (true);
+}
+
+/* The boot's file the host lists: loader.conf.d's arcana.conf, or
+ * loader.conf itself with the system's configuration files. */
+static const char *
+loader_file(void)
+{
+
+	return (jget(jget(sv.r.o, "files"), "loader.conf") != NULL ?
+	    "loader.conf" : "loader.conf.d");
 }
 
 /* The current text of a file, for what is added to it. */
@@ -1310,13 +1322,13 @@ sysview_action(const char *act, const char *arg, const char *value)
 		char	*t;
 
 		/* Once: a line there already is not written again. */
-		if (strstr(cur_text("loader.conf.d"), "kern.racct.enable=1") !=
+		if (strstr(cur_text(loader_file()), "kern.racct.enable=1") !=
 		    NULL) {
 			toast(false, "It is set for the next boot already");
 			return (true);
 		}
-		t = appended(cur_text("loader.conf.d"), "kern.racct.enable=1");
-		send_file(s, "loader.conf.d", t);
+		t = appended(cur_text(loader_file()), "kern.racct.enable=1");
+		send_file(s, loader_file(), t);
 		free(t);
 		return (true);
 	}

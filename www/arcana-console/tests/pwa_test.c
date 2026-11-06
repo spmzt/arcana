@@ -1419,8 +1419,11 @@ part_hosts(void)
 	 * A service's configuration, a confirmed commit: sshd_flags is
 	 * yours (rc.conf; Arcana's file named in rc_conf_files already, by
 	 * the jail's boot), so the drawer offers to accept the conflict;
-	 * then Arcana's file has it, yours commented out.  A variable
-	 * taken out goes from there.
+	 * then, a value no merge of words gives, the merge editor: yours
+	 * and Arcana's side by side, the result edited, given to the host
+	 * (config-files resolve) and committed again.  Arcana's file has
+	 * the result, yours stays as it is.  A variable taken out goes from
+	 * Arcana's file, yours read again.
 	 */
 	run("document.querySelector('.svc[data-arg=sshd]').click()");
 	wait_js("document.querySelector('form[data-form=svc-config] "
@@ -1433,18 +1436,33 @@ part_hosts(void)
 	    "'Accept rc-conf-conflict')", 20);
 	shot("6b-service-accept");
 	click_when(".drawer button[data-act=svc-yc-accept]", 5);
+	wait_js("document.querySelector('.drawer button[data-act=svc-yc-merge]')"
+	    " && document.querySelector('.drawer p.note').textContent.includes("
+	    "'rc-conf-merge')", 20);
+	click_when(".drawer button[data-act=svc-yc-merge]", 5);
+	wait_js("document.querySelector('form[data-form=cfg-merge] "
+	    "textarea[name=\"r:rc:sshd_flags\"]') && document.querySelector("
+	    "'form[data-form=cfg-merge] pre.diff.y del')?.textContent === '-4'"
+	    " && document.querySelector('form[data-form=cfg-merge] pre.diff.a "
+	    "ins')?.textContent === '-6'", 20);
+	run("const f = document.querySelector('form[data-form=cfg-merge]'); "
+	    "f.querySelector('textarea[name=\"r:rc:sshd_flags\"]').value = "
+	    "'-4 -6';");
+	shot("6c-service-merge");
+	run("document.querySelector('form[data-form=cfg-merge]')"
+	    ".requestSubmit()");
 	wait_js("document.querySelector('.drawer p.note') && document."
 	    "querySelector('.drawer p.note').textContent.includes('Saved') && "
 	    "document.querySelector('form[data-form=svc-config] "
-	    "input[name=\"v:sshd_flags\"]').value === '-6'", 20);
-	ATF_CHECK(system("grep -q '^sshd_flags=\"-6\"$' "
+	    "input[name=\"v:sshd_flags\"]').value === '-4 -6'", 20);
+	ATF_CHECK(system("grep -q '^sshd_flags=\"-4 -6\"$' "
 	    "root/usr/local/etc/rc.conf.d/arcana && grep -q "
-	    "'^#sshd_flags=\"-4\"  # taken by Arcana$' root/etc/rc.conf") == 0);
+	    "'^sshd_flags=\"-4\"$' root/etc/rc.conf") == 0);
 	run("document.querySelector('.drawer button[data-act=svc-unset]"
 	    "[data-arg=sshd_flags]').click()");
 	wait_js("document.querySelector('.drawer p.note').textContent.includes("
-	    "'Saved') && !document.querySelector('form[data-form=svc-config] "
-	    "input[name=\"v:sshd_flags\"]')", 20);
+	    "'Saved') && document.querySelector('form[data-form=svc-config] "
+	    "input[name=\"v:sshd_flags\"]')?.value === '-4'", 20);
 	ATF_CHECK(system("! grep -q sshd_flags root/usr/local/etc/rc.conf.d/"
 	    "arcana") == 0);
 	run("document.querySelector('.drawer button[data-act=close-drawer]')"
@@ -8475,6 +8493,84 @@ ATF_TC_CLEANUP(pwa_hosts, tc)
 }
 
 /*
+ * A host's configuration files on its System tab: Arcana's own, then
+ * switched to the system's.  The dry run's rows drawn, a word list's
+ * Additive by default, a value both set waiting for a choice; the rows
+ * filtered; Yours chosen and the switch sent; the host's rc.conf has
+ * both, Arcana's file gone.
+ */
+ATF_TC_WITH_CLEANUP(pwa_cfgfiles);
+ATF_TC_HEAD(pwa_cfgfiles, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The configuration files switched on the System tab: the dry run's rows, a choice each, the switch sent");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_cfgfiles, tc)
+{
+	char	conf[4096];
+	FILE	*fp;
+	size_t	n;
+
+	prologue(tc, 1);
+	(void)mkdir("root/usr/local/etc/rc.conf.d", 0755);
+	put("root/etc/rc.conf", "rc_conf_files=\"/etc/rc.conf "
+	    "/etc/rc.conf.local /usr/local/etc/rc.conf.d/arcana\"\n"
+	    "hostname=\"lab\"\nsshd_enable=\"YES\"\nsshd_flags=\"-4\"\n"
+	    "jail_list=\"a b\"\n");
+	put("root/usr/local/etc/rc.conf.d/arcana", "jail_list=\"b c\"\n"
+	    "sshd_flags=\"-6\"\n");
+	run("document.querySelector('button.tab[data-arg=system]').click()");
+	wait_js("document.querySelector('.cfgfiles button[data-act=cfg-switch]')"
+	    " && document.querySelector('.cfgfiles').textContent.includes("
+	    "\"Arcana's own files\")", 30);
+	run("document.querySelector('.cfgfiles button[data-act=cfg-switch]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=cfg-switch] "
+	    "tr[data-var=jail_list]') && document.querySelector('form"
+	    "[data-form=cfg-switch] tr[data-var=sshd_flags] select')", 30);
+	shot("8c1-cfgfiles-switch");
+	/* The list's Additive by default, the value's to choose. */
+	ATF_CHECK(js_true("document.querySelector('select[name=\"c:rc:"
+	    "jail_list\"]').value === 'additive'"));
+	ATF_CHECK(js_true("document.querySelector('select[name=\"c:rc:"
+	    "sshd_flags\"]').value === ''"));
+	ATF_CHECK(js_true("![...document.querySelector('select[name=\"c:rc:"
+	    "sshd_flags\"]').options].some(o => o.value === 'additive')"));
+	ATF_CHECK(js_true("document.querySelector('tr[data-var=jail_list] "
+	    "ins')?.textContent === 'c'"));
+	/* Filtered, and back. */
+	run("const i = document.querySelector('input[data-input=cfg-filter]');"
+	    " i.value = 'sshd'; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("document.querySelectorAll('table.cfg-rows tbody tr').length "
+	    "=== 1", 10);
+	run("const i = document.querySelector('input[data-input=cfg-filter]');"
+	    " i.value = ''; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("document.querySelectorAll('table.cfg-rows tbody tr').length "
+	    "=== 2", 10);
+	run("document.querySelector('select[name=\"c:rc:sshd_flags\"]').value "
+	    "= 'yours'; document.querySelector('form[data-form=cfg-switch]')"
+	    ".requestSubmit();");
+	wait_js("document.querySelector('.cfgfiles') && document.querySelector("
+	    "'.cfgfiles').textContent.includes(\"The system's\")", 30);
+	shot("8c2-cfgfiles-system");
+	ATF_REQUIRE((fp = fopen("root/etc/rc.conf", "r")) != NULL);
+	n = fread(conf, 1, sizeof(conf) - 1, fp);
+	conf[n] = '\0';
+	fclose(fp);
+	ATF_CHECK_STREQ_MSG("hostname=\"lab\"\nsshd_enable=\"YES\"\n"
+	    "sshd_flags=\"-4\"\njail_list=\"a b c\"\n", conf, "%s", conf);
+	ATF_CHECK(access("root/usr/local/etc/rc.conf.d/arcana", F_OK) == -1);
+}
+ATF_TC_CLEANUP(pwa_cfgfiles, tc)
+{
+
+	browser_stop();
+}
+
+/*
  * A host's access rules on its Security tab: read from its agent, a
  * group added and the console's operators allowed in the page, saved
  * as a confirmed commit confirmed at once, and the host has them.
@@ -11029,6 +11125,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_pad);
 	ATF_TP_ADD_TC(tp, pwa_cplug);
 	ATF_TP_ADD_TC(tp, pwa_routes);
+	ATF_TP_ADD_TC(tp, pwa_cfgfiles);
 	ATF_TP_ADD_TC(tp, pwa_nacm);
 	ATF_TP_ADD_TC(tp, pwa_ra);
 	ATF_TP_ADD_TC(tp, pwa_feeds);

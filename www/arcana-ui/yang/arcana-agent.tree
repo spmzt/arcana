@@ -59,6 +59,59 @@ module: arcana-agent
      |        +---w certificate?   string
      |        +---w ca?            string
      |        +---w peer?          string
+     +--ro config-files
+     |  +--ro mode?             enumeration
+     |  +--ro rc-file?          string
+     |  +--ro loader-file?      string
+     |  +--ro firewall-rules?   string
+     |  +--ro pending* [kind variable]
+     |  |  +--ro kind        enumeration
+     |  |  +--ro variable    string
+     |  |  +--ro file?       string
+     |  |  +--ro line?       uint32
+     |  |  +--ro yours?      string
+     |  |  +--ro proposed?   string
+     |  |  +--ro value?      string
+     |  +--ro ledger* [kind variable]
+     |  |  +--ro kind        enumeration
+     |  |  +--ro variable    string
+     |  |  +--ro file?       string
+     |  |  +--ro before?     string
+     |  |  +--ro after?      string
+     |  |  +--ro arcana?     string
+     |  +---x switch
+     |  |  +---w input
+     |  |  |  +---w to         enumeration
+     |  |  |  +---w dry-run?   boolean
+     |  |  |  +---w merge* [kind variable]
+     |  |  |     +---w kind        enumeration
+     |  |  |     +---w variable    string
+     |  |  |     +---w choice?     enumeration
+     |  |  |     +---w value?      string
+     |  |  +--ro output
+     |  |     +--ro from?     string
+     |  |     +--ro to?       string
+     |  |     +--ro done?     boolean
+     |  |     +--ro row* [kind variable]
+     |  |     |  +--ro kind        string
+     |  |     |  +--ro variable    string
+     |  |     |  +--ro file?       string
+     |  |     |  +--ro yours?      string
+     |  |     |  +--ro arcana?     string
+     |  |     |  +--ro list?       boolean
+     |  |     |  +--ro choice?     string
+     |  |     |  +--ro result?     string
+     |  |     +--ro moved*    string
+     |  |     +--ro backup?   string
+     |  |     +--ro note*     string
+     |  +---x resolve
+     |     +---w input
+     |     |  +---w row* [kind variable]
+     |     |     +---w kind        enumeration
+     |     |     +---w variable    string
+     |     |     +---w value       string
+     |     +--ro output
+     |        +--ro resolved?   uint32
      +---x update
      |  +---w input
      |  |  +---w binary          binary
