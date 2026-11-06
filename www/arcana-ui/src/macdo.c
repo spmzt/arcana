@@ -29,7 +29,7 @@ static void	md_saved(struct ycommit *, int);
 
 static struct {
 	char		 sid[9];
-	ucl_object_t	*data;		/* /api's sysctl: values, kept */
+	ucl_object_t	*data;		/* arcana-sysctl: value (read), kept */
 	bool		 loading;
 	char		 error[300];
 	struct ycommit	 yc;
@@ -44,7 +44,7 @@ md_value(const char *name)
 	const ucl_object_t	*o;
 	ucl_object_iter_t	 it = NULL;
 
-	while ((o = ucl_object_iterate(jget(md.data, "values"), &it, true)) !=
+	while ((o = ucl_object_iterate(jget(md.data, "value"), &it, true)) !=
 	    NULL)
 		if (jstr(o, "name") != NULL && strcmp(jstr(o, "name"), name) ==
 		    0)
@@ -67,10 +67,27 @@ md_kept(const char *name)
 	return (NULL);
 }
 
+/* What sysctl.conf keeps: arcana-sysctl's kept, in running. */
+static void
+kept_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	char	*sid = arg;
+
+	(void)err;
+	if (strcmp(sid, md.sid) == 0 && status == 200 && md.data != NULL) {
+		ucl_object_delete_key(md.data, "kept");
+		if (jget(o, "kept") != NULL)
+			ucl_object_insert_key(md.data, ucl_object_ref(jget(o,
+			    "kept")), "kept", 0, false);
+	}
+	free(sid);
+}
+
 static void
 md_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	char	*sid = arg;
+	char	 url[300];
 
 	if (strcmp(sid, md.sid) != 0) {
 		free(sid);
@@ -78,16 +95,17 @@ md_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	free(sid);
 	md.loading = false;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
-		snprintf(md.error, sizeof(md.error), "%s", status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
-		    err : "no answer");
+	if (status != 200 || o == NULL) {
+		snprintf(md.error, sizeof(md.error), "%s", err != NULL ? err :
+		    "no answer");
 		return;
 	}
 	md.error[0] = '\0';
 	if (md.data != NULL)
 		ucl_object_unref(md.data);
-	md.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	md.data = ucl_object_copy(o);
+	rc_get(rc_ds(url, sizeof(url), "running", md.sid,
+	    "arcana-sysctl:sysctl"), NULL, kept_cb, strdup(md.sid));
 }
 
 static void
@@ -104,8 +122,9 @@ md_load(struct server *s)
 	}
 	snprintf(md.sid, sizeof(md.sid), "%s", s->id);
 	md.loading = true;
-	host_read(s, "sysctl?filter=security.mac.do.", "read mac_do's rules",
-	    false, md_cb, strdup(s->id));
+	host_yread(s, "arcana-sysctl:sysctl/read", "{\"prefix\":"
+	    "\"security.mac.do.\"}", "read mac_do's rules", false, md_cb,
+	    strdup(s->id));
 }
 
 static void

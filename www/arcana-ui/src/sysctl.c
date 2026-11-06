@@ -79,10 +79,45 @@ name_ok(const char *s)
 	    "YZ0123456789_.-%")] == '\0');
 }
 
+static void	extras_read(const struct server *);
+
+/*
+ * arcana-sysctl's read's values as the table's rows: name, value,
+ * type, rw, tun, descr.
+ */
+ucl_object_t *
+sysctl_rows(const ucl_object_t *values)
+{
+	const ucl_object_t	*v;
+	ucl_object_t		*rows, *r;
+	ucl_object_iter_t	 it = NULL;
+	static const char *const map[][2] = { { "name", "name" },
+	    { "value", "value" }, { "type", "type" },
+	    { "description", "descr" } };
+
+	rows = ucl_object_typed_new(UCL_ARRAY);
+	while ((v = ucl_object_iterate(values, &it, true)) != NULL) {
+		r = ucl_object_typed_new(UCL_OBJECT);
+		for (size_t i = 0; i < nitems(map); i++)
+			if (jstr(v, map[i][0]) != NULL)
+				ucl_object_insert_key(r, ucl_object_fromstring(
+				    jstr(v, map[i][0])), map[i][1], 0, false);
+		if (jget(v, "writable") != NULL)
+			ucl_object_insert_key(r, ucl_object_frombool(jbool(v,
+			    "writable")), "rw", 0, false);
+		if (jbool(v, "tunable"))
+			ucl_object_insert_key(r, ucl_object_frombool(true),
+			    "tun", 0, false);
+		ucl_array_append(rows, r);
+	}
+	return (rows);
+}
+
 static void
 sysctl_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	char	*key;
+	struct server	*s;
+	char		*key;
 
 	key = arg;
 	if (strncmp(key, sy.sid, strlen(sy.sid)) != 0 || strcmp(key +
@@ -92,68 +127,90 @@ sysctl_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	free(key);
 	sy.loading = false;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
-		snprintf(sy.error, sizeof(sy.error), "%s", status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
-		    err : "no answer");
+	if (status != 200 || o == NULL) {
+		snprintf(sy.error, sizeof(sy.error), "%s", err != NULL ? err :
+		    "no answer");
 		return;
 	}
 	sy.error[0] = '\0';
 	if (sy.data != NULL)
 		ucl_object_unref(sy.data);
-	sy.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
-	if (sy.jail[0] == '\0' && jget(sy.data, "boot") == NULL)
-		ucl_object_insert_key(sy.data, ucl_object_frombool(true),
-		    "noboot", 0, false);
+	sy.data = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(sy.data, sysctl_rows(jget(o, "value")),
+	    "values", 0, false);
 	snprintf(sy.asked, sizeof(sy.asked), "%s", sy.prefix);
-	sy.total = jint(o, "total", 0);
-	sy.truncated = jbool(o, "truncated");
+	sy.total = jint(o, "total", (int64_t)ucl_array_size(jget(sy.data,
+	    "values")));
+	sy.truncated = jstr(o, "next") != NULL;
 	sy.fetched = arc_now();
+	if ((s = cur_server()) != NULL && strcmp(s->id, sy.sid) == 0)
+		extras_read(s);
 }
 
-/*
- * What the next boot sets, from an answer's data into to: "boot", or
- * "noboot" where the agent has none (one before 0.247.0).
- */
+/* An extra of the part shown (key: "kept", "boot"), as it comes. */
 static void
-boot_from(ucl_object_t *to, const ucl_object_t *data)
+extra_put(const char *key, ucl_object_t *v)
 {
+	ucl_object_t	*to;
 
-	ucl_object_delete_key(to, "boot");
-	ucl_object_delete_key(to, "noboot");
-	if (jget(data, "boot") != NULL)
-		ucl_object_insert_key(to, ucl_object_ref((ucl_object_t *)
-		    (uintptr_t)jget(data, "boot")), "boot", 0, false);
-	else
-		ucl_object_insert_key(to, ucl_object_frombool(true), "noboot",
-		    0, false);
+	if ((to = sy.next != NULL ? sy.next : sy.data) == NULL) {
+		ucl_object_unref(v);
+		return;
+	}
+	ucl_object_delete_key(to, key);
+	ucl_object_insert_key(to, v, key, 0, true);
 }
 
-/* What sysctl.conf keeps, beside the values that come in parts. */
+/* What sysctl.conf keeps: arcana-sysctl's kept, in running. */
 static void
 kept_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	char	*key;
+	char	*sid = arg;
 
 	(void)err;
-	key = arg;
-	if (strncmp(key, sy.sid, strlen(sy.sid)) == 0 && status == 200 &&
-	    sy.data != NULL && !sy.nostream && jget(o, "data.kept") != NULL) {
-		ucl_object_t	*to = sy.next != NULL ? sy.next : sy.data;
+	if (strcmp(sid, sy.sid) == 0 && status == 200)
+		extra_put("kept", jget(o, "kept") != NULL ? ucl_object_ref(
+		    jget(o, "kept")) : ucl_object_typed_new(UCL_ARRAY));
+	free(sid);
+}
 
-		ucl_object_delete_key(to, "kept");
-		ucl_object_insert_key(to, ucl_object_ref(jget(o,
-		    "data.kept")), "kept", 0, false);
-		boot_from(to, jget(o, "data"));
-	}
-	free(key);
+/*
+ * What the next boot sets: arcana-sysctl's boot, its tunables; "noboot"
+ * where the host's agent has none (one before 0.247.0).
+ */
+static void
+boot_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	char	*sid = arg;
+
+	(void)err;
+	if (strcmp(sid, sy.sid) == 0 && status == 200)
+		extra_put("boot", jget(o, "tunable") != NULL ? ucl_object_ref(
+		    jget(o, "tunable")) : ucl_object_typed_new(UCL_ARRAY));
+	else if (strcmp(sid, sy.sid) == 0 && status == 404)
+		extra_put("noboot", ucl_object_frombool(true));
+	free(sid);
+}
+
+/* The host's own extras of the values: none of a jail's. */
+static void
+extras_read(const struct server *s)
+{
+	char	url[300];
+
+	if (sy.jail[0] != '\0')
+		return;
+	rc_get(rc_ds(url, sizeof(url), "running", s->id,
+	    "arcana-sysctl:sysctl"), NULL, kept_cb, strdup(s->id));
+	host_yread(s, "arcana-sysctl:boot", NULL, NULL, false, boot_cb,
+	    strdup(s->id));
 }
 
 /* Read the part of the tree shown; again asks though it is here. */
 void
 refresh_sysctl(struct server *s, bool again)
 {
-	char	url[200], msg[400], *key;
+	char	in[700], msg[400], *key, *q, *j;
 
 	if (!app.online || (sy.loading && !sy.streaming))
 		return;
@@ -180,9 +237,15 @@ refresh_sysctl(struct server *s, bool again)
 	if (asprintf(&key, "%s %s", s->id, sy.prefix) == -1)
 		abort();
 	if (sy.nostream) {
-		snprintf(url, sizeof(url), "sysctl?jail=%s%s%s", sy.jail,
-		    sy.prefix[0] != '\0' ? "&filter=" : "", sy.prefix);
-		host_read(s, url, "read the sysctls", true, sysctl_cb, key);
+		q = json_quote(sy.prefix);
+		j = json_quote(sy.jail);
+		snprintf(in, sizeof(in), "{\"prefix\":%s%s%s}", q,
+		    sy.jail[0] != '\0' ? ",\"jail\":" : "", sy.jail[0] != '\0' ?
+		    j : "");
+		free(q);
+		free(j);
+		host_yread(s, "arcana-sysctl:sysctl/read", in,
+		    "read the sysctls", true, sysctl_cb, key);
 		return;
 	}
 	/*
@@ -218,9 +281,8 @@ refresh_sysctl(struct server *s, bool again)
 	    "\"sysctl\",\"filter\":\"%s\",\"jail\":\"%s\"}", ++sy.stream, s->id,
 	    sy.prefix, sy.jail);
 	arc_stream_send(msg);
-	snprintf(url, sizeof(url), "/api/servers/%s/sysctl?filter=kern.ostype"
-	    "&jail=%s", s->id, sy.jail);
-	api("GET", url, NULL, kept_cb, key);
+	free(key);
+	extras_read(s);
 }
 
 /* A part of the values, their end, or the socket's. */

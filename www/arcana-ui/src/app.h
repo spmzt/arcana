@@ -129,6 +129,8 @@ int64_t		 jint(const ucl_object_t *, const char *, int64_t);
 double		 jnum(const ucl_object_t *, const char *, double);
 bool		 jbool(const ucl_object_t *, const char *);
 char		*json_quote(const char *);
+ucl_object_t	*jmap(const ucl_object_t *, const char *const *);
+ucl_object_t	*jmap_each(const ucl_object_t *, const char *const *);
 /* yaml.c: YAML written and read. */
 char		*yaml_emit(const ucl_object_t *);
 ucl_object_t	*yaml_parse(const char *, char *, size_t);
@@ -171,6 +173,8 @@ char		*rc_c(char *, size_t, const char *, ...)
 		    __attribute__((__format__(__printf__, 3, 4)));
 char		*rc_h(char *, size_t, const char *, const char *, ...)
 		    __attribute__((__format__(__printf__, 4, 5)));
+char		*rc_ds(char *, size_t, const char *, const char *,
+		    const char *);
 const char	*rc_key(const char *);
 int		 rc_get(const char *, const char *, api_cb *, void *);
 int		 rc_edit(const char *, const char *, const char *, api_cb *,
@@ -1057,6 +1061,7 @@ bool		 usage_action(const char *, const char *, const char *);
 bool		 usage_form(const char *, const ucl_object_t *);
 void		 fmt_size(char *, size_t, double);
 void		 refresh_sysctl(struct server *, bool);
+ucl_object_t	*sysctl_rows(const ucl_object_t *);
 void		 sysctl_set_jail(struct server *, const char *);
 void		 sysctl_stream(const ucl_object_t *);
 void		 network_stream(const ucl_object_t *);
@@ -1155,6 +1160,8 @@ struct res {
 	unsigned	 gen;		/* a reply not the latest is dropped */
 };
 void		 res_load(struct res *, const char *, const char *);
+void		 res_yread(struct res *, const char *, const char *,
+		    const char *, ucl_object_t *(*)(const ucl_object_t *));
 void		 res_drop(struct res *);
 bool		 res_shown(struct html *, struct res *, const char *,
 		    void (*)(const char *), const char *);

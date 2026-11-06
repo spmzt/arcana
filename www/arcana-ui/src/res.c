@@ -19,6 +19,7 @@
 struct res_ask {
 	struct res	*r;
 	unsigned	 gen;
+	ucl_object_t	*(*conv)(const ucl_object_t *);
 };
 
 static void
@@ -27,11 +28,20 @@ res_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	struct res_ask	*a = arg;
 	struct res	*r = a->r;
 	unsigned	 gen = a->gen;
+	ucl_object_t	*(*conv)(const ucl_object_t *) = a->conv;
 
 	free(a);
 	if (gen != r->gen)
 		return;
 	r->loading = false;
+	if (conv != NULL && status == 200) {
+		r->error[0] = '\0';
+		if (r->o != NULL)
+			ucl_object_unref(r->o);
+		r->o = conv(o);
+		render();
+		return;
+	}
 	if (status != 200 || !jbool(o, "ok")) {
 		snprintf(r->error, sizeof(r->error), "%s", jstr(o, "error") !=
 		    NULL ? jstr(o, "error") : err != NULL ? err :
@@ -79,6 +89,37 @@ res_load(struct res *r, const char *sid, const char *url)
 	a->gen = ++r->gen;
 	r->loading = true;
 	api("GET", url, NULL, res_cb, a);
+}
+
+/*
+ * The same through the fleet mount (actions.c's host_yread): path below
+ * the host's entry, read with input when not NULL; conv makes of the
+ * node or the output what the page draws.
+ */
+void
+res_yread(struct res *r, const char *sid, const char *path,
+    const char *input, ucl_object_t *(*conv)(const ucl_object_t *))
+{
+	struct res_ask	*a;
+	struct server	*s;
+	int		 i;
+
+	for (i = 0, s = NULL; i < app.nservers && s == NULL; i++)
+		if (sid != NULL && strcmp(app.servers[i].id, sid) == 0)
+			s = &app.servers[i];
+	if (s == NULL)
+		return;
+	if (strcmp(sid, r->sid) != 0) {
+		snprintf(r->sid, sizeof(r->sid), "%s", sid);
+		res_drop(r);
+	}
+	if ((a = calloc(1, sizeof(*a))) == NULL)
+		abort();
+	a->r = r;
+	a->gen = ++r->gen;
+	a->conv = conv;
+	r->loading = true;
+	host_yread(s, path, input, NULL, false, res_cb, a);
 }
 
 /*

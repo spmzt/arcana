@@ -104,6 +104,39 @@ jbool(const ucl_object_t *o, const char *path)
 	    ucl_object_type(v) == UCL_BOOLEAN && ucl_object_toboolean(v));
 }
 
+/*
+ * A YANG node's members as a screen names them: map is pairs of a
+ * path in o ("state.run-state") and the name it gets, NULL ended; the
+ * members it does not name are left out.
+ */
+ucl_object_t *
+jmap(const ucl_object_t *o, const char *const *map)
+{
+	const ucl_object_t	*v;
+	ucl_object_t		*r;
+
+	r = ucl_object_typed_new(UCL_OBJECT);
+	for (; map[0] != NULL; map += 2)
+		if ((v = jget(o, map[0])) != NULL)
+			ucl_object_insert_key(r, ucl_object_copy(v), map[1], 0,
+			    true);
+	return (r);
+}
+
+/* The same of each entry of a list, as an array. */
+ucl_object_t *
+jmap_each(const ucl_object_t *list, const char *const *map)
+{
+	const ucl_object_t	*e;
+	ucl_object_t		*r;
+	ucl_object_iter_t	 it = NULL;
+
+	r = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(list, &it, true)) != NULL)
+		ucl_array_append(r, jmap(e, map));
+	return (r);
+}
+
 /* s as a JSON string literal, quotes included; free() it. */
 char *
 json_quote(const char *s)

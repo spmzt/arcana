@@ -4,8 +4,8 @@
  */
 
 /*
- * A host's own configuration, of the system read (GET
- * /api/servers/<id>/system): the System tab (NTP, Linux compatibility,
+ * A host's own configuration, of the system read (arcana-system's
+ * read, through the fleet mount): the System tab (NTP, Linux compatibility,
  * service jails, periodic, devd, resource limits), the Security tab
  * (auditd, Kerberos, MAC, securelevel), and what the Storage tab (GEOM,
  * GELI, devfs), the Logs tab (syslog), the Sysctl tab (hardening) and
@@ -157,13 +157,91 @@ sysview_shown(const char *which)
 	return (false);
 }
 
+/* o with its members' - as _, all the way down. */
+static ucl_object_t *
+undash(const ucl_object_t *o)
+{
+	const ucl_object_t	*v;
+	ucl_object_t		*r;
+	ucl_object_iter_t	 it = NULL;
+	char			 key[128], *p;
+
+	if (ucl_object_type(o) != UCL_OBJECT)
+		return (ucl_object_copy(o));
+	r = ucl_object_typed_new(UCL_OBJECT);
+	while ((v = ucl_object_iterate(o, &it, true)) != NULL) {
+		snprintf(key, sizeof(key), "%s", ucl_object_key(v));
+		for (p = key; (p = strchr(p, '-')) != NULL; p++)
+			*p = '_';
+		ucl_object_insert_key(r, undash(v), key, 0, true);
+	}
+	return (r);
+}
+
+/* A list as one object by its entries' names: each its member val, or
+ * (NULL) the entry less its name. */
+static ucl_object_t *
+by_name(const ucl_object_t *list, const char *val)
+{
+	const ucl_object_t	*e;
+	ucl_object_t		*r, *v;
+	ucl_object_iter_t	 it = NULL;
+
+	r = ucl_object_typed_new(UCL_OBJECT);
+	while ((e = ucl_object_iterate(list, &it, true)) != NULL) {
+		if (jstr(e, "name") == NULL)
+			continue;
+		if (val != NULL)
+			v = jget(e, val) != NULL ? ucl_object_copy(jget(e, val)) :
+			    ucl_object_typed_new(UCL_NULL);
+		else {
+			v = undash(e);
+			ucl_object_delete_key(v, "name");
+		}
+		ucl_object_insert_key(r, v, jstr(e, "name"), 0, true);
+	}
+	return (r);
+}
+
+static void
+put(ucl_object_t *o, const char *key, ucl_object_t *v)
+{
+
+	ucl_object_replace_key(o, v, key, 0, true);
+}
+
+/* arcana-system's read as the tabs draw it: files and the host's by
+ * name, the host's own members at the top. */
+static ucl_object_t *
+sv_conv(const ucl_object_t *o)
+{
+	static const char *const pmap[] = { "name", "name", "default-value",
+	    "default", "value", "value", NULL };
+	const ucl_object_t	*h = jget(o, "host");
+	ucl_object_t		*r, *l;
+
+	r = h != NULL ? undash(h) : ucl_object_typed_new(UCL_OBJECT);
+	put(r, "files", by_name(jget(o, "file"), NULL));
+	l = ucl_object_typed_new(UCL_OBJECT);
+	if (jget(h, "linux.enabled") != NULL)
+		put(l, "enabled", ucl_object_copy(jget(h, "linux.enabled")));
+	put(l, "modules", by_name(jget(h, "linux.module"), "loaded"));
+	put(r, "linux", l);
+	ucl_object_delete_key(r, "mac_module");
+	put(r, "mac", by_name(jget(h, "mac-module"), "loaded"));
+	ucl_object_delete_key(r, "geom_class");
+	put(r, "geom_classes", by_name(jget(h, "geom-class"), "status"));
+	put(r, "periodic", jmap_each(jget(h, "periodic"), pmap));
+	put(r, "svcj", by_name(jget(h, "svcj"), "value"));
+	put(r, "hardening", by_name(jget(h, "hardening"), "value"));
+	return (r);
+}
+
 static void
 sv_load(const char *sid)
 {
-	char	url[96];
 
-	snprintf(url, sizeof(url), "/api/servers/%s/system", sid);
-	res_load(&sv.r, sid, url);
+	res_yread(&sv.r, sid, "arcana-system:system/read", "{}", sv_conv);
 }
 
 void

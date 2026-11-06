@@ -8,7 +8,8 @@
  * What runs on a host, as top(1) shows it: every process with what it
  * uses of the CPUs, the memory and the disks, in the order of any of
  * them, read again every few seconds.  A process picked is sent a
- * signal or given another nice value.
+ * signal or given another nice value.  arcana-processes, through the
+ * fleet mount.
  */
 
 #include <stdio.h>
@@ -54,6 +55,53 @@ static struct {
 	bool		 detail_loading;
 } pr;
 
+/* arcana-processes' names as the tables have them. */
+static const char *const proc_map[] = { "pid", "pid", "state.ppid", "ppid",
+    "state.user", "user", "state.jid", "jid", "state.jail", "jail",
+    "state.run-state", "state", "state.wait", "wait", "state.nice", "nice",
+    "state.priority", "pri", "state.threads", "threads",
+    "state.memory-usage", "rss", "state.size", "size", "state.cpu-time",
+    "time", "state.wcpu", "wcpu", "state.cpu", "cpu", "state.blocks-in",
+    "in", "state.blocks-out", "out", "state.io", "io", "state.kernel",
+    "kernel", "state.name", "comm", NULL };
+static const char *const jail_map[] = { "jid", "jid", "name", "name",
+    "procs", "procs", "threads", "threads", "rss", "rss", "cpu", "cpu",
+    "wcpu", "wcpu", NULL };
+static const char *const file_map[] = { "fd", "fd", "use", "use", "type",
+    "type", "path", "path", "proto", "proto", "local", "local", "remote",
+    "remote", "mode", "mode", NULL };
+static const char *const thread_map[] = { "tid", "tid", "name", "name",
+    "run-state", "state", "wait", "wait", "priority", "pri", "wcpu", "wcpu",
+    "cpu-time", "time", "last-cpu", "cpu", NULL };
+
+/* A process as the table has it: its args joined, started in seconds. */
+static ucl_object_t *
+proc_row(const ucl_object_t *p)
+{
+	const ucl_object_t	*a;
+	ucl_object_t		*r;
+	ucl_object_iter_t	 it = NULL;
+	char			*s = NULL, *t;
+
+	r = jmap(p, proc_map);
+	if (jget(p, "state.start-time") != NULL)
+		ucl_object_insert_key(r, ucl_object_fromint(jint(p,
+		    "state.start-time", 0) / 1000000000), "start", 0, false);
+	while ((a = ucl_object_iterate(jget(p, "state.args"), &it, true)) !=
+	    NULL) {
+		if (asprintf(&t, "%s%s%s", s != NULL ? s : "", s != NULL ? " " :
+		    "", ucl_object_tostring_forced(a)) == -1)
+			abort();
+		free(s);
+		s = t;
+	}
+	if (s != NULL)
+		ucl_object_insert_key(r, ucl_object_fromstring(s), "args", 0,
+		    false);
+	free(s);
+	return (r);
+}
+
 static void
 detail_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -64,10 +112,15 @@ detail_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (pr.detail != NULL)
 		ucl_object_unref(pr.detail);
 	pr.detail = NULL;
-	if (status == 200 && jbool(o, "ok") && jget(o, "data") != NULL) {
-		pr.detail = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o,
-		    "data"));
-		pr.detail_of = jint(pr.detail, "pid", 0);
+	if (status == 200 && o != NULL) {
+		pr.detail = ucl_object_typed_new(UCL_OBJECT);
+		pr.detail_of = (long long)(intptr_t)arg;
+		ucl_object_insert_key(pr.detail, ucl_object_fromint(
+		    pr.detail_of), "pid", 0, false);
+		ucl_object_insert_key(pr.detail, jmap_each(jget(o, "file"),
+		    file_map), "files", 0, false);
+		ucl_object_insert_key(pr.detail, jmap_each(jget(o, "thread"),
+		    thread_map), "threads", 0, false);
 	}
 }
 
@@ -75,14 +128,15 @@ detail_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 detail_read(struct server *s, long long pid)
 {
-	char	url[128];
+	char	path[128];
 
 	if (pr.detail_loading || (pr.detail != NULL && pr.detail_of == pid))
 		return;
 	pr.detail_loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/processes?pid=%lld", s->id,
+	snprintf(path, sizeof(path), "arcana-processes:processes/process=%lld/"
+	    "read", pid);
+	host_yread(s, path, "{}", NULL, false, detail_cb, (void *)(intptr_t)
 	    pid);
-	api("GET", url, NULL, detail_cb, NULL);
 }
 
 /* 1536 as "1.50 KiB". */
@@ -116,7 +170,10 @@ fmt_cputime(char *buf, size_t len, double s)
 static void
 procs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	char	*sid;
+	const ucl_object_t	*e;
+	ucl_object_t		*procs, *jails;
+	ucl_object_iter_t	 it;
+	char			*sid;
 
 	sid = arg;
 	if (strcmp(sid, pr.sid) != 0) {
@@ -125,16 +182,40 @@ procs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	free(sid);
 	pr.loading = false;
-	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
-		snprintf(pr.error, sizeof(pr.error), "%s", status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
-		    err : "no answer");
+	if (status != 200 || o == NULL) {
+		snprintf(pr.error, sizeof(pr.error), "%s", err != NULL ? err :
+		    "no answer");
+		return;
+	}
+	/* A jail's: those whose jail it is, of one running. */
+	jails = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(o, "jail"), &it, true)) != NULL)
+		if (pr.jail[0] == '\0' || (jstr(e, "name") != NULL &&
+		    strcmp(jstr(e, "name"), pr.jail) == 0))
+			ucl_array_append(jails, jmap(e, jail_map));
+	if (pr.jail[0] != '\0' && ucl_array_size(jails) == 0) {
+		ucl_object_unref(jails);
+		snprintf(pr.error, sizeof(pr.error), "jail %s is not running",
+		    pr.jail);
 		return;
 	}
 	pr.error[0] = '\0';
 	if (pr.data != NULL)
 		ucl_object_unref(pr.data);
-	pr.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	pr.data = ucl_object_typed_new(UCL_OBJECT);
+	procs = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(o, "process"), &it, true)) != NULL)
+		if (pr.jail[0] == '\0' || (jstr(e, "state.jail") != NULL &&
+		    strcmp(jstr(e, "state.jail"), pr.jail) == 0))
+			ucl_array_append(procs, proc_row(e));
+	ucl_object_insert_key(pr.data, procs, "processes", 0, false);
+	ucl_object_insert_key(pr.data, jails, "jails", 0, false);
+	ucl_object_insert_key(pr.data, ucl_object_fromint(jint(o, "ncpu", 1)),
+	    "ncpu", 0, false);
+	ucl_object_insert_key(pr.data, ucl_object_fromdouble(jnum(o,
+	    "elapsed", 0)), "elapsed", 0, false);
 	pr.fetched = arc_now();
 }
 
@@ -142,7 +223,6 @@ procs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 void
 refresh_procs(struct server *s, bool again)
 {
-	char	path[300];
 
 	/* One for this host on its way is waited for, not another's. */
 	if (!app.online || (pr.loading && strcmp(pr.sid, s->id) == 0))
@@ -159,10 +239,8 @@ refresh_procs(struct server *s, bool again)
 	snprintf(pr.sid, sizeof(pr.sid), "%s", s->id);
 	pr.loading = true;
 	pr.asked = arc_now();
-	snprintf(path, sizeof(path), "processes%s%s", pr.jail[0] != '\0' ?
-	    "?jail=" : "", pr.jail);
-	host_read(s, path, "read the processes", true, procs_cb,
-	    strdup(s->id));
+	host_yread(s, "arcana-processes:processes", NULL, "read the processes",
+	    true, procs_cb, strdup(s->id));
 }
 
 /* The host says processes came or went: read at the next tick. */

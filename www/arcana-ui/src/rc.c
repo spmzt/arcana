@@ -123,6 +123,17 @@ rc_h(char *buf, size_t len, const char *sid, const char *fmt, ...)
 	return (buf);
 }
 
+/* The same in datastore ds of RFC 8527 ("running", "operational"). */
+char *
+rc_ds(char *buf, size_t len, const char *ds, const char *sid,
+    const char *path)
+{
+
+	snprintf(buf, len, "/restconf/ds/ietf-datastores:%s/arcana-fleet:"
+	    "fleet/host=%s/%s", ds, rc_key(sid), path);
+	return (buf);
+}
+
 /*
  * A key as a path has it (RFC 8040 section 3.5.3), percent-encoded but
  * the unreserved; one of four buffers, for one path's several keys.
