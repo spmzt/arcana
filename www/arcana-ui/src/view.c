@@ -532,6 +532,11 @@ hostbar(struct html *h, struct server *s)
 			h_raw(h, "<span class=\"warn\" title=\"arcana-agent is "
 			    "not running as root: changes will fail\">"
 			    "unprivileged</span>");
+		if (jbool(host, "reboot_required"))
+			h_raw(h, "<span class=\"warn\" title=\"A tunable set for "
+			    "the next boot differs from the kernel's value now "
+			    "(System, sysctl: Next boot): it takes hold when the "
+			    "host reboots\">reboot needed</span>");
 		if (jstr(host, "version") != NULL) {
 			h_raw(h, agent_outdated(s) ? "<span class=\"warn\" "
 			    "title=\"Not the arcana-agent this console has: "

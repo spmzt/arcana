@@ -760,6 +760,38 @@ ytrans_sysctl(cbl_conn *conn, const char *prefix, const char *jail,
 	*data = ucl_object_typed_new(UCL_OBJECT);
 	put(*data, "values", rows);
 	put(*data, "kept", kept);
+	/* What the loader sets at the next boot, against the kernel's now;
+	 * left out where the agent has no boot (one before 0.247.0). */
+	if ((jail == NULL || jail[0] == '\0') && (n = top_of("arcana-sysctl",
+	    "boot", &m)) != NULL && (a = cbl_yarena_new()) != NULL) {
+		char	berr[256];
+
+		memset(&s, 0, sizeof(s));
+		if (yget_into(conn, n, CBL_YDS_OPERATIONAL, &s, a, berr,
+		    sizeof(berr)) == 0) {
+			ucl_object_t *boot = ucl_object_typed_new(UCL_ARRAY);
+
+			for (size_t i = 0; s.boot != NULL &&
+			    i < s.boot->tunable.n; i++) {
+				const struct arcana_sysctl_boot_tunable *t =
+				    &s.boot->tunable.v[i];
+				ucl_object_t *k = ucl_object_typed_new(
+				    UCL_OBJECT);
+
+				put(k, "name", ucl_object_fromstring(t->name));
+				put(k, "value", ucl_object_fromstring(t->value));
+				if (t->running != NULL)
+					put(k, "running", ucl_object_fromstring(
+					    t->running));
+				if (t->has_pending)
+					put(k, "pending", ucl_object_frombool(
+					    t->pending));
+				ucl_array_append(boot, k);
+			}
+			put(*data, "boot", boot);
+		}
+		cbl_yarena_free(a);
+	}
 	return (0);
 }
 

@@ -520,6 +520,8 @@ tick(void *arg)
 			bird_tick(now);
 		if (app.online) {
 			transport_tick(now);
+			sysctl_tick(now);
+			macdo_tick(now);
 			nacm_tick(now);
 			ra_tick(now);
 			service_commit_tick(now);
@@ -679,6 +681,7 @@ submit(const char *form, const ucl_object_t *f)
 	    builder_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || nacm_form(form, f) || ra_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
+	    macdo_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
 		return;
 	submit_form(form, f);
@@ -1134,6 +1137,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    routing_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || nacm_action(act, arg, value) ||
+	    macdo_action(act, arg, value) ||
 	    ra_action(act, arg, value) ||
 	    apidoc_action(act, arg, value) ||
 	    procs_action(act, arg, value) || logs_action(act, arg, value) ||

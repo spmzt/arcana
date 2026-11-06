@@ -12,7 +12,8 @@
  * token of the page's own, and confirmed at once; undone by the host at
  * the timeout if the confirm does not come.  A warning the host stops
  * at (its error-app-tag: rc-conf-files, rc-conf-conflict) is said with
- * a button that accepts it and commits again; a commit waiting can be
+ * a button that accepts it and commits again, those accepted before
+ * with it; a commit waiting can be
  * undone (cancel-commit), its seconds counted down.
  */
 
@@ -138,7 +139,7 @@ commit(struct ycommit *yc, const char *accept)
 		    r[i]);
 	yc->until = arc_now() + YC_TIMEOUT * 1000.0;
 	rpc_url(url, sizeof(url), yc, "commit");
-	if (h_word(accept, NULL) != NULL)
+	if (accept != NULL && accept[0] != '\0')
 		snprintf(url + strlen(url), sizeof(url) - strlen(url),
 		    "?arcana-accept=%s", accept);
 	snprintf(body, sizeof(body), "{\"ietf-netconf:input\":{\"confirmed\":"
@@ -171,7 +172,7 @@ ycommit_save(struct ycommit *yc, const char *sid, const char *method,
 		return (false);
 	snprintf(yc->sid, sizeof(yc->sid), "%s", sid);
 	yc->busy = true;
-	yc->note[0] = yc->tag[0] = '\0';
+	yc->note[0] = yc->tag[0] = yc->accepted[0] = '\0';
 	api(method, url, body, edit_cb, yc);
 	render();
 	return (true);
@@ -203,17 +204,22 @@ bool
 ycommit_action(struct ycommit *yc, const char *act)
 {
 	size_t	n = strlen(yc->act);
-	char	url[200], body[160], tag[64];
+	char	url[200], body[160];
 
 	if (strncmp(act, yc->act, n) != 0 || act[n] != '-')
 		return (false);
 	act += n + 1;
+	/* Those accepted before stay: a commit may stop at several. */
 	if (strcmp(act, "accept") == 0) {
 		if (yc->tag[0] != '\0' && !yc->busy) {
-			snprintf(tag, sizeof(tag), "%s", yc->tag);
+			if (yc->accepted[0] != '\0')
+				(void)strlcat(yc->accepted, ",",
+				    sizeof(yc->accepted));
+			(void)strlcat(yc->accepted, yc->tag,
+			    sizeof(yc->accepted));
 			yc->busy = true;
 			yc->tag[0] = '\0';
-			commit(yc, tag);
+			commit(yc, yc->accepted);
 		}
 		return (true);
 	}

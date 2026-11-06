@@ -103,6 +103,9 @@ yh_hello(cbl_conn *conn, ucl_object_t **data, char *err, size_t errlen)
 	put(o, "time", ucl_object_fromint(epoch_of(h->time)));
 	put(o, "securelevel", ucl_object_fromint(h->securelevel));
 	put(o, "privileged", ucl_object_frombool(h->privileged));
+	if (h->has_reboot_required)
+		put(o, "reboot_required", ucl_object_frombool(
+		    h->reboot_required));
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	for (size_t i = 0; i < h->plugin.n; i++)
 		if ((id = cbl_yschema_ident(&ymodel_schema, h->plugin.v[i])) !=

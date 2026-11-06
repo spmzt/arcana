@@ -1008,6 +1008,7 @@ void		 network_stream(const ucl_object_t *);
 void		 view_sysctl(struct html *, struct server *);
 bool		 sysctl_form(const char *, const ucl_object_t *);
 bool		 sysctl_action(const char *, const char *, const char *);
+void		 sysctl_tick(double);
 void		 view_safe(struct html *, struct server *);
 void		 view_mute(struct html *, struct server *);
 void		 view_tlscert(struct html *, struct server *);
@@ -1132,6 +1133,11 @@ void		 view_nacm(struct html *, struct server *);
 bool		 nacm_action(const char *, const char *, const char *);
 bool		 nacm_form(const char *, const ucl_object_t *);
 void		 nacm_tick(double);
+/* macdo.c: a host's mac_do(4) rules, on its Security tab. */
+void		 view_macdo(struct html *, struct server *);
+bool		 macdo_action(const char *, const char *, const char *);
+bool		 macdo_form(const char *, const ucl_object_t *);
+void		 macdo_tick(double);
 /*
  * ycommit.c: a change of a host's configuration saved by a confirmed
  * commit, as the router advertisements, the services and a jail's boot
@@ -1155,6 +1161,7 @@ struct ycommit {
 	bool		 busy;		/* a save on its way */
 	char		 note[512];	/* how the last save went */
 	char		 tag[64];	/* a warning to accept, its app-tag */
+	char		 accepted[192];	/* those accepted so far, by commas */
 	char		 token[40];	/* a commit waiting: its persist */
 	double		 until;		/* and when the host undoes it (ms) */
 	double		 last;		/* the countdown drawn last */

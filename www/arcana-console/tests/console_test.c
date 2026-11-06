@@ -9696,6 +9696,15 @@ ATF_TC_BODY(agent_update_bridge, tc)
 	ATF_CHECK_MSG(jstr(&r, "host.features.0") == NULL, "%s", r.body);
 	printf("old agent %s, its features none\n", jstr(&r,
 	    "host.version"));
+	/* No boot tunables: the page says the agent needs updating. */
+	ATF_CHECK_MSG(jstr(&r, "host.reboot_required") == NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(became, sizeof(became), "/api/servers/%s/sysctl?filter="
+	    "kern.ostype", id);
+	http("GET", became, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "data.kept") != NULL && jstr(&r, "data.boot") ==
+	    NULL, "%s", r.body);
 	resp_free(&r);
 
 	/* Over the unix socket: as it is, taken unsigned. */
@@ -9849,6 +9858,110 @@ ATF_TC_BODY(restconf_revisions, tc)
 	rc_get(path, &r);
 	ATF_CHECK_MSG(strstr(r.body, "\"arcana-steer\"") != NULL, "%d %s",
 	    r.status, r.body);
+	resp_free(&r);
+}
+
+/*
+ * A tunable for the next boot (arcana-sysctl's boot) put in the
+ * candidate and committed confirmed: one the kernel does not know stops
+ * at unknown-tunable, accepted with it; the host's loader.conf.d file
+ * has both, the kernel's value as it was; the operational state, /api's
+ * sysctl and the hello say a reboot is needed; taken out, it is not.
+ */
+CONSOLE_TC(restconf_boot, "Loader tunables for the next boot through "
+    "RESTCONF, warnings accepted; /api's sysctl and the hello say a "
+    "reboot is needed")
+ATF_TC_BODY(restconf_boot, tc)
+{
+	struct resp	 r;
+	char		 data[256], cand[256], path[512], body[512], *text;
+	const char	*id;
+	int		 run;
+	size_t		 len = sizeof(run);
+	uint8_t		 b;
+
+	len = sizeof(b);
+	ATF_REQUIRE(sysctlbyname("kern.racct.enable", &b, &len, NULL, 0) == 0);
+	run = b;
+	rc_lab(tc, data, cand, sizeof(cand));
+	id = strrchr(data, '=') + 1;
+	ATF_REQUIRE(mkdir("root/boot", 0755) == 0);
+	snprintf(path, sizeof(path), "%s/arcana-sysctl:boot", cand);
+	snprintf(body, sizeof(body), "{\"arcana-sysctl:boot\":{\"tunable\":["
+	    "{\"name\":\"kern.racct.enable\",\"value\":\"%d\"},{\"name\":"
+	    "\"arcana.nosuch.knob\",\"value\":\"7\"}]}}", 1 - run);
+	http("PUT", path, body, &r);
+	ATF_CHECK_MSG(r.status == 204 || r.status == 201, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	/* Stops at the name the kernel does not know; accepted, goes on. */
+	snprintf(path, sizeof(path), "%s/ietf-netconf:commit", data);
+	http("POST", path, "{\"ietf-netconf:input\":{\"confirmed\":[null],"
+	    "\"confirm-timeout\":60,\"persist\":\"boot1\"}}", &r);
+	ATF_CHECK_MSG(r.status >= 400 && strstr(r.body,
+	    "\"error-app-tag\":\"unknown-tunable\"") != NULL, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	ATF_CHECK(access("root/boot/loader.conf.d/arcana.conf", F_OK) == -1);
+	snprintf(path, sizeof(path), "%s/ietf-netconf:commit?arcana-accept="
+	    "unknown-tunable,loader-conf-conflict", data);
+	http("POST", path, "{\"ietf-netconf:input\":{\"confirmed\":[null],"
+	    "\"confirm-timeout\":60,\"persist\":\"boot1\"}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-netconf:commit", data);
+	http("POST", path, "{\"ietf-netconf:input\":{\"persist-id\":"
+	    "\"boot1\"}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	text = slurp_file("root/boot/loader.conf.d/arcana.conf");
+	snprintf(body, sizeof(body), "kern.racct.enable=\"%d\"\n"
+	    "arcana.nosuch.knob=\"7\"\n", 1 - run);
+	ATF_CHECK_STREQ(body, text);
+	free(text);
+	len = sizeof(b);
+	ATF_REQUIRE(sysctlbyname("kern.racct.enable", &b, &len, NULL, 0) == 0);
+	ATF_CHECK_EQ(run, b);
+	/* Pending: the kernel's value now beside it. */
+	snprintf(path, sizeof(path), "%s/arcana-sysctl:boot", data);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(body, sizeof(body), "\"name\":\"kern.racct.enable\","
+	    "\"pending\":true,\"running\":\"%d\",\"value\":\"%d\"", run,
+	    1 - run);
+	ATF_CHECK_MSG(strstr(r.body, body) != NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/sysctl?filter="
+	    "kern.ostype", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("kern.racct.enable", jstr(&r, "data.boot.0.name"));
+	ATF_CHECK_STREQ("true", jstr(&r, "data.boot.0.pending"));
+	ATF_CHECK_STREQ("arcana.nosuch.knob", jstr(&r, "data.boot.1.name"));
+	ATF_CHECK(jstr(&r, "data.boot.1.pending") == NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/jails", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "host.reboot_required"));
+	resp_free(&r);
+	/* Taken out: the file empty of them, no reboot needed. */
+	snprintf(path, sizeof(path), "%s/arcana-sysctl:boot", cand);
+	http("PUT", path, "{\"arcana-sysctl:boot\":{\"tunable\":[]}}", &r);
+	ATF_CHECK_MSG(r.status == 204 || r.status == 201, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-netconf:commit", data);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	text = slurp_file("root/boot/loader.conf.d/arcana.conf");
+	ATF_CHECK_STREQ("", text);
+	free(text);
+	snprintf(path, sizeof(path), "/api/servers/%s/jails", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "host.reboot_required"));
 	resp_free(&r);
 }
 
@@ -19304,6 +19417,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf);
 	ATF_TP_ADD_TC(tp, restconf_write);
 	ATF_TP_ADD_TC(tp, restconf_ra);
+	ATF_TP_ADD_TC(tp, restconf_boot);
 	ATF_TP_ADD_TC(tp, restconf_mount);
 	ATF_TP_ADD_TC(tp, restconf_cbor);
 	ATF_TP_ADD_TC(tp, restconf_edit);

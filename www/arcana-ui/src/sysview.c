@@ -558,6 +558,7 @@ view_hostsec(struct html *h, struct server *s)
 		h_raw(h, "</td></tr>");
 	}
 	h_raw(h, "</tbody></table>");
+	view_macdo(h, s);
 	sl = jget(o, "securelevel");
 	now = (int)jint(sl, "now", -1);
 	h_fmt(h, "<h3 class=\"secsub\">securelevel</h3><p>Now <b>%d</b>. "

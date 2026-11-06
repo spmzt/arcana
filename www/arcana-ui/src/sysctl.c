@@ -7,6 +7,8 @@
 /*
  * A host's kernel state, sysctl(8): a part of the tree at a time, with
  * what each value is said to be, one set and kept for the next boot;
+ * the tunables the loader sets at the next boot (arcana-sysctl's boot,
+ * the host's /boot/loader.conf.d/arcana.conf), committed confirmed;
  * and how the host is reached: the agent's listeners, who is connected
  * to it now, and the console's own way to it changed from TCP to SCTP
  * and back.
@@ -43,7 +45,9 @@ static struct {
 	int		 stream;	/* the id of what is coming in parts */
 	bool		 streaming;
 	bool		 nostream;	/* no socket for it: asked for whole */
-} sy = { .prefix = "kern." };
+	char		 bedit[204];	/* the tunable being set for the boot */
+	struct ycommit	 yc;		/* the boot's tunables saved */
+} sy = { .prefix = "kern.", .yc = { .act = "sy-yc" } };
 
 static struct {
 	char		 sid[9];
@@ -98,10 +102,31 @@ sysctl_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (sy.data != NULL)
 		ucl_object_unref(sy.data);
 	sy.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	if (sy.jail[0] == '\0' && jget(sy.data, "boot") == NULL)
+		ucl_object_insert_key(sy.data, ucl_object_frombool(true),
+		    "noboot", 0, false);
 	snprintf(sy.asked, sizeof(sy.asked), "%s", sy.prefix);
 	sy.total = jint(o, "total", 0);
 	sy.truncated = jbool(o, "truncated");
 	sy.fetched = arc_now();
+}
+
+/*
+ * What the next boot sets, from an answer's data into to: "boot", or
+ * "noboot" where the agent has none (one before 0.247.0).
+ */
+static void
+boot_from(ucl_object_t *to, const ucl_object_t *data)
+{
+
+	ucl_object_delete_key(to, "boot");
+	ucl_object_delete_key(to, "noboot");
+	if (jget(data, "boot") != NULL)
+		ucl_object_insert_key(to, ucl_object_ref((ucl_object_t *)
+		    (uintptr_t)jget(data, "boot")), "boot", 0, false);
+	else
+		ucl_object_insert_key(to, ucl_object_frombool(true), "noboot",
+		    0, false);
 }
 
 /* What sysctl.conf keeps, beside the values that come in parts. */
@@ -119,6 +144,7 @@ kept_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		ucl_object_delete_key(to, "kept");
 		ucl_object_insert_key(to, ucl_object_ref(jget(o,
 		    "data.kept")), "kept", 0, false);
+		boot_from(to, jget(o, "data"));
 	}
 	free(key);
 }
@@ -144,7 +170,7 @@ refresh_sysctl(struct server *s, bool again)
 			ucl_object_unref(sy.next);
 		sy.next = NULL;
 		sy.error[0] = '\0';
-		sy.edit[0] = '\0';
+		sy.edit[0] = sy.bedit[0] = '\0';
 		sy.fetched = 0;
 	} else if (!again && strcmp(sy.asked, sy.prefix) == 0 && (sy.data !=
 	    NULL || sy.error[0] != '\0'))
@@ -266,6 +292,122 @@ kept_value(const char *name)
 	return (NULL);
 }
 
+/* The tunable set for the next boot of name, or NULL. */
+static const ucl_object_t *
+boot_entry(const char *name)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(sy.data, "boot"), &it, true)) !=
+	    NULL)
+		if (jstr(o, "name") != NULL && strcmp(jstr(o, "name"), name) ==
+		    0)
+			return (o);
+	return (NULL);
+}
+
+/* A tunable's value set in its row, for the next boot. */
+static void
+boot_form(struct html *h, const char *value)
+{
+
+	h_raw(h, "<form data-form=\"sy-bset\" class=\"sy-set\"><input name="
+	    "\"value\" spellcheck=\"false\" autocomplete=\"off\"");
+	h_attr(h, "value", value);
+	h_raw(h, "><button class=\"small\" title=\"Written to /boot/loader.conf."
+	    "d/arcana.conf: the loader sets it when the host starts next\">Set "
+	    "for next boot</button><button type=\"button\" class=\"ghost small\" "
+	    "data-act=\"sy-boot\" data-arg=\"\">Cancel</button></form>");
+}
+
+/*
+ * What the loader sets at the next boot, Arcana's loader.conf.d file:
+ * each tunable's value then and the kernel's now, a reboot needed where
+ * they differ.
+ */
+static void
+view_boot(struct html *h)
+{
+	static const struct tcol	cols[] = {
+		{ "Tunable", "name", false }, { "At next boot", "value", false },
+		{ "Now", "running", false }, { "", NULL, false },
+	};
+	const ucl_object_t		**rows, *o;
+	const char			 *name;
+	int				  r;
+
+	if (sy.jail[0] != '\0')
+		return;
+	if (jbool(sy.data, "noboot")) {
+		h_raw(h, "<div class=\"notice\">The agent on this host keeps no "
+		    "tunables for the next boot: update it (arcana-agent 0.247.0 "
+		    "and later) to set one here.</div>");
+		return;
+	}
+	if (jget(sy.data, "boot") == NULL)
+		return;
+	/* None set: a line, as sysctl.conf's are. */
+	if (ucl_array_size(jget(sy.data, "boot")) == 0) {
+		h_raw(h, "<section class=\"sy-boot\"><p class=\"sy-kept\"><b>Next "
+		    "boot</b> <span class=\"dim\">nothing set in loader.conf.d: a "
+		    "tunable the kernel will not change while it runs has <i>Set "
+		    "for next boot</i> in its row</span></p>");
+		ycommit_note(h, &sy.yc);
+		h_raw(h, "</section>");
+		return;
+	}
+	h_raw(h, "<section class=\"sy-boot\"><h3>Next boot <small class=\"dim\">"
+	    "<code>/boot/loader.conf.d/arcana.conf</code>, read by the loader "
+	    "after <code>/boot/loader.conf</code></small></h3>");
+	ycommit_note(h, &sy.yc);
+	h_raw(h, "<table class=\"net sysboot\">");
+	tbl_head(h, "sysboot", cols, 4, 1);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("sysboot", jget(sy.data, "boot"), cols, 4, app.filter);
+	for (r = 0; (o = rows[r]) != NULL; r++) {
+		name = jstr(o, "name") != NULL ? jstr(o, "name") : "";
+		if (strcmp(sy.bedit, name) == 0) {
+			h_raw(h, "<tr class=\"editing\"><td><b>");
+			h_txt(h, name);
+			h_raw(h, "</b></td><td colspan=\"4\">");
+			boot_form(h, jstr(o, "value"));
+			h_raw(h, "</td></tr>");
+			continue;
+		}
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, name);
+		h_raw(h, "</b></td><td class=\"val\">");
+		h_txt(h, jstr(o, "value"));
+		h_raw(h, "</td><td class=\"val dim\">");
+		h_txt(h, jstr(o, "running") != NULL ? jstr(o, "running") : "-");
+		h_raw(h, "</td><td>");
+		if (jbool(o, "pending"))
+			h_raw(h, "<span class=\"chip warn\" title=\"The kernel "
+			    "has another value now: it takes this one when the "
+			    "host reboots\">reboot needed</span>");
+		else if (jstr(o, "running") == NULL)
+			h_raw(h, "<span class=\"chip dim\" title=\"The kernel has "
+			    "no such sysctl now: a module's, read when it "
+			    "loads\">not in the kernel</span>");
+		h_raw(h, "</td><td class=\"acts\"><button class=\"ghost small\" "
+		    "data-act=\"sy-boot\"");
+		h_attr(h, "data-arg", name);
+		h_raw(h, ">Change</button>");
+		/* net.fibs: the FIBs the kernel has stay. */
+		if (strcmp(name, "net.fibs") != 0) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "sy-bdel\"");
+			h_attr(h, "data-arg", name);
+			h_raw(h, ">Remove</button>");
+		}
+		h_raw(h, "</td></tr>");
+	}
+	free(rows);
+	h_raw(h, "</tbody></table></section>");
+}
+
 void
 view_sysctl(struct html *h, struct server *s)
 {
@@ -274,14 +416,16 @@ view_sysctl(struct html *h, struct server *s)
 		{ "Type", "type", false }, { "", NULL, false },
 		{ "What it is", "descr", false },
 	};
-	const ucl_object_t		**rows, *o;
+	const ucl_object_t		**rows, *o, *b;
 	ucl_object_iter_t		  it;
 	const char			 *name, *kv;
 	size_t				  i;
-	bool				  mine;
+	bool				  mine, bootable, later;
 	int				  r, n;
 
 	mine = sy.data != NULL && strcmp(sy.sid, s->id) == 0;
+	/* What the loader alone sets is set for the next boot. */
+	bootable = sy.jail[0] == '\0' && jget(sy.data, "boot") != NULL;
 	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
 	for (i = 0; i < nitems(trees); i++) {
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"sy-tree\"",
@@ -391,6 +535,7 @@ view_sysctl(struct html *h, struct server *s)
 		}
 		h_raw(h, "</p>");
 	}
+	view_boot(h);
 	if (sy.truncated)
 		h_fmt(h, "<div class=\"notice\">The first %d of %lld values: "
 		    "pick a part of the tree, or name where to begin.</div>",
@@ -405,6 +550,22 @@ view_sysctl(struct html *h, struct server *s)
 	for (r = 0; (o = rows[r]) != NULL && r < SYSCTL_ROWS; r++) {
 		name = jstr(o, "name") != NULL ? jstr(o, "name") : "";
 		kv = kept_value(name);
+		b = bootable ? boot_entry(name) : NULL;
+		later = bootable && jbool(o, "tun") && !jbool(o, "rw");
+		if (later && strcmp(sy.bedit, name) == 0) {
+			/* Being set for the next boot, in its row. */
+			h_raw(h, "<tr class=\"editing\"><td><b>");
+			h_txt(h, name);
+			h_raw(h, "</b></td><td colspan=\"5\">");
+			boot_form(h, b != NULL ? jstr(b, "value") : jstr(o,
+			    "value"));
+			h_raw(h, "<small class=\"dim\">The kernel does not change "
+			    "it while it runs: the loader sets it at the next "
+			    "boot. ");
+			h_txt(h, jstr(o, "descr"));
+			h_raw(h, "</small></td></tr>");
+			continue;
+		}
 		if (strcmp(sy.edit, name) == 0) {
 			/* Being set: its value in a field, in its row. */
 			h_raw(h, "<tr class=\"editing\"><td><b>");
@@ -430,6 +591,12 @@ view_sysctl(struct html *h, struct server *s)
 			    "\"Press to set it\"");
 			h_attr(h, "data-arg", name);
 			h_raw(h, "><td><b>");
+		} else if (later) {
+			h_raw(h, "<tr class=\"pick\" data-act=\"sy-boot\" title="
+			    "\"Not changed while the kernel runs: press to set "
+			    "it for the next boot\"");
+			h_attr(h, "data-arg", name);
+			h_raw(h, "><td><b>");
 		} else
 			h_raw(h, "<tr class=\"ro\" title=\"The kernel does not "
 			    "let it be set\"><td><b>");
@@ -449,6 +616,14 @@ view_sysctl(struct html *h, struct server *s)
 			h_raw(h, "<span class=\"chip dim\" title=\"Can be set "
 			    "before the kernel starts, in loader.conf\">"
 			    "tunable</span>");
+		if (b != NULL) {
+			h_fmt(h, "<span class=\"chip%s\" title=\"The loader "
+			    "sets it at the next boot, to ", jbool(b, "pending") ?
+			    " warn" : "");
+			h_txt(h, jstr(b, "value"));
+			h_raw(h, jbool(b, "pending") ? "\">reboot needed</span>" :
+			    "\">next boot</span>");
+		}
 		h_raw(h, "</td><td class=\"dim\">");
 		h_txt(h, jstr(o, "descr"));
 		h_raw(h, "</td><td class=\"acts\">");
@@ -457,6 +632,11 @@ view_sysctl(struct html *h, struct server *s)
 			    "sy-edit\"");
 			h_attr(h, "data-arg", name);
 			h_raw(h, ">Set</button>");
+		} else if (later) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "sy-boot\"");
+			h_attr(h, "data-arg", name);
+			h_raw(h, ">Set for next boot</button>");
 		}
 		h_raw(h, "</td></tr>");
 	}
@@ -478,6 +658,87 @@ static void	safe_cb(int, const ucl_object_t *, const char *, void *);
 static void	mute_cb(int, const ucl_object_t *, const char *, void *);
 static void	transport_cb(int, const ucl_object_t *, const char *, void *);
 
+static void
+boot_saved(struct ycommit *yc, int how)
+{
+	struct server	*s;
+
+	if (how == YC_SAVED || how == YC_UNDONE) {
+		sy.bedit[0] = '\0';
+		if ((s = cur_server()) != NULL && strcmp(s->id, yc->sid) == 0) {
+			refresh_sysctl(s, true);
+			refresh_servers();
+		}
+	}
+}
+
+/*
+ * The host's boot tunables with name set to value (NULL: taken out), put
+ * whole in its candidate and committed confirmed (ycommit.c).
+ */
+static void
+boot_save(struct server *s, const char *name, const char *value)
+{
+	const ucl_object_t	*o;
+	ucl_object_t		*top, *boot, *list, *t;
+	ucl_object_iter_t	 it;
+	char			 url[200], *json;
+	bool			 found = false;
+
+	if (sy.yc.busy)
+		return;
+	list = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(sy.data, "boot"), &it, true)) !=
+	    NULL) {
+		if (jstr(o, "name") == NULL)
+			continue;
+		if (strcmp(jstr(o, "name"), name) == 0) {
+			found = true;
+			if (value == NULL)
+				continue;
+		}
+		t = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(t, ucl_object_fromstring(jstr(o, "name")),
+		    "name", 0, false);
+		ucl_object_insert_key(t, ucl_object_fromstring(strcmp(jstr(o,
+		    "name"), name) == 0 ? value : jstr(o, "value")), "value", 0,
+		    false);
+		ucl_array_append(list, t);
+	}
+	if (!found && value != NULL) {
+		t = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(t, ucl_object_fromstring(name), "name", 0,
+		    false);
+		ucl_object_insert_key(t, ucl_object_fromstring(value), "value",
+		    0, false);
+		ucl_array_append(list, t);
+	}
+	boot = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(boot, list, "tunable", 0, false);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, boot, "arcana-sysctl:boot", 0, false);
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	sy.yc.act = "sy-yc";
+	sy.yc.saved = "Saved in /boot/loader.conf.d/arcana.conf: the loader "
+	    "sets it at the next boot.";
+	sy.yc.undone = "Undone: the next boot's tunables are as they were.";
+	sy.yc.done = boot_saved;
+	snprintf(url, sizeof(url), "/restconf/ds/ietf-datastores:candidate/"
+	    "arcana-fleet:fleet/host=%s/arcana-sysctl:boot", s->id);
+	(void)ycommit_save(&sy.yc, s->id, "PUT", url, json);
+	free(json);
+}
+
+/* The boot's tunables' save counted down. */
+void
+sysctl_tick(double now)
+{
+
+	ycommit_tick(&sy.yc, now);
+}
+
 bool
 sysctl_form(const char *form, const ucl_object_t *f)
 {
@@ -487,10 +748,22 @@ sysctl_form(const char *form, const ucl_object_t *f)
 
 	if (strcmp(form, "sy-set") != 0 && strcmp(form, "sy-from") != 0 &&
 	    strcmp(form, "tr-safe") != 0 && strcmp(form, "tr-move") != 0 &&
-	    strcmp(form, "tr-also") != 0 && strcmp(form, "tr-mute") != 0)
+	    strcmp(form, "tr-also") != 0 && strcmp(form, "tr-mute") != 0 &&
+	    strcmp(form, "sy-bset") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
+	if (strcmp(form, "sy-bset") == 0) {
+		v = jstr(f, "value") != NULL ? jstr(f, "value") : "";
+		if (!name_ok(sy.bedit) || strlen(v) > 1024 || strpbrk(v,
+		    "\"\n") != NULL) {
+			toast(true, "loader.conf holds a value of one line, "
+			    "without a \"");
+			return (true);
+		}
+		boot_save(s, sy.bedit, v);
+		return (true);
+	}
 	if (strcmp(form, "tr-also") == 0) {
 		char	url[96], *q, *body;
 
@@ -1269,7 +1542,15 @@ sysctl_action(const char *act, const char *arg, const char *value)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
-	if (strcmp(act, "sy-tree") == 0) {
+	if (ycommit_action(&sy.yc, act))
+		return (true);
+	if (strcmp(act, "sy-boot") == 0) {
+		if (arg[0] == '\0' || name_ok(arg))
+			snprintf(sy.bedit, sizeof(sy.bedit), "%s", arg);
+	} else if (strcmp(act, "sy-bdel") == 0) {
+		if (name_ok(arg))
+			boot_save(s, arg, NULL);
+	} else if (strcmp(act, "sy-tree") == 0) {
 		snprintf(sy.prefix, sizeof(sy.prefix), "%s", arg);
 		sy.edit[0] = '\0';
 		refresh_sysctl(s, true);

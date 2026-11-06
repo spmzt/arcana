@@ -4057,6 +4057,27 @@ part_system(void)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the MAC module is not loaded");
 	dock_closed();
+	/* mac_do's rules, where the kernel has it: one added, kept in
+	 * sysctl.conf and set by sysctl(8), a stand-in here. */
+	wait_js("document.getElementById('macdo') && !document.querySelector("
+	    "'#macdo ~ .loader')", 20);
+	if (js_true("!!document.querySelector('form[data-form=md-add]')")) {
+		run("const f = document.querySelector('form[data-form=md-add]'); "
+		    "f.querySelector('[name=type]').value = 'uid'; "
+		    "f.querySelector('[name=id]').value = '4321'; "
+		    "f.querySelector('[name=to]').value = 'uid=0'; "
+		    "f.requestSubmit();");
+		for (i = 0; i < 300 && system("grep -q "
+		    "'^security.mac.do.rules=.*uid=4321>uid=0$' sysctl.conf && "
+		    "grep -q 'sysctl security.mac.do.rules=.*uid=4321>uid=0' "
+		    "kld.log") != 0; i++)
+			usleep(100000);
+		ATF_CHECK_MSG(i < 300, "mac_do's rule is not kept and set");
+		wait_js("[...document.querySelectorAll('p.note')].some(p => "
+		    "p.textContent.includes('Saved: the kernel has the rules'))",
+		    20);
+	} else
+		printf("no mac_do in this kernel: its rules not tried\n");
 	shot("7q-security");
 	/* devfs rules, of the Storage tab. */
 	run("document.querySelector('button.tab[data-arg=storage]').click()");
@@ -4618,6 +4639,33 @@ part_storage(void)
 		wait_js("document.querySelector('table.sysctl th').style.width "
 		    "=== ''", 5);
 	}
+	/*
+	 * A tunable the kernel does not change while it runs: set for the
+	 * next boot in its row, in the host's loader.conf.d file, listed
+	 * under Next boot with a reboot needed.
+	 */
+	(void)mkdir("root/boot", 0755);
+	wait_js("document.querySelector('.sy-boot')", 20);
+	run("const i = document.querySelector('#filter'); i.value = "
+	    "'kern.maxusers'; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	click_when("table.sysctl button[data-act=sy-boot][data-arg="
+	    "'kern.maxusers']", 10);
+	wait_js("document.querySelector('form[data-form=sy-bset] input')", 5);
+	run("const f = document.querySelector('form[data-form=sy-bset]'); "
+	    "const i = f.querySelector('input'); window.mu = String(Number("
+	    "i.value) + 1); i.value = window.mu; f.requestSubmit();");
+	for (i = 0; i < 300 && system("grep -q '^kern.maxusers=\"[0-9]*\"$' "
+	    "root/boot/loader.conf.d/arcana.conf 2>/dev/null") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "kern.maxusers is not set for the next boot");
+	wait_js("[...document.querySelectorAll('table.sysboot tbody tr')]."
+	    "some(t => t.textContent.includes('kern.maxusers') && "
+	    "t.textContent.includes(window.mu) && t.querySelector("
+	    "'.chip.warn'))", 20);
+	shot("7n-sysctl-boot");
+	run("const i = document.querySelector('#filter'); i.value = ''; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
 	/*
 	 * The whole tree comes in parts, over the console's socket, and
 	 * the table fills as they arrive: more of it than one reply was
