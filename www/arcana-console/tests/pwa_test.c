@@ -2052,14 +2052,18 @@ part_nettab_kinds(void)
 	 */
 	run("window.fetchH = window.fetch; window.hist = () => { const now = "
 	    "Date.now() / 1000, s = []; for (let t = now - 600; t <= now; t "
-	    "+= 5) s.push([t, 1, 0.1, 1e9, 0, 4000, 4000, 0, 0, 500, 3000, "
-	    "700, 1000]); return { ok: true, data: { step: 5, keep: 720, "
-	    "ncpu: 1, mem_total: 2e9, swap_total: 0, bytes: 1, nets: ['em0', "
-	    "'em1'], disks: [], jails: [], samples: s } }; }; window.fetch = "
-	    "(u, o) => String(u).includes('/history') ? Promise.resolve(new "
-	    "Response(JSON.stringify(window.hist()), { status: 200, headers: "
-	    "{ 'Content-Type': 'application/json' } })) : window.fetchH(u, "
-	    "o);");
+	    "+= 5) s.push({ time: new Date(t * 1000).toISOString(), cpu: '1', "
+	    "load: '0.1', memory: '1000000000', swap: '0', received: '4000', "
+	    "sent: '4000', read: '0', written: '0', interface: [{ name: "
+	    "'em0', received: '500', sent: '3000' }, { name: 'em1', received: "
+	    "'700', sent: '1000' }] }); return { 'arcana-history:output': { "
+	    "sampling: { step: 5, keep: 720 }, ncpu: 1, 'memory-total': "
+	    "'2000000000', 'swap-total': '0', bytes: '1', interface: ['em0', "
+	    "'em1'], sample: s } }; }; window.fetch = (u, o) => String(u)."
+	    "includes(':history/read') ? Promise.resolve(new Response("
+	    "JSON.stringify(window.hist()), { status: 200, headers: { "
+	    "'Content-Type': 'application/yang-data+json' } })) : "
+	    "window.fetchH(u, o);");
 	run("document.querySelector('nav.sub button[data-act=net-kind]"
 	    "[data-arg=nhgroups]').click()");
 	wait_js("document.querySelectorAll('.stage table.nhgroups .nhg-hop')"
@@ -2376,9 +2380,9 @@ part_nettab_ifaces(void)
 	    "fetch; window.fetch = function (u, o) { const s = String(u); "
 	    "const wait = k => new Promise(r => { const t = setInterval(() => "
 	    "{ if (!window.hold[k]) { clearInterval(t); r(); } }, 50); }); "
-	    "if (o && o.method === 'POST' && s.endsWith('/jobs') && "
+	    "if (o && o.method === 'POST' && s.endsWith(':submit') && "
 	    "window.hold.jobs) return wait('jobs').then(() => of3.call(this, "
-	    "u, o)); if (/\\/jobs\\/[0-9]+$/.test(s) && window.hold.poll) "
+	    "u, o)); if (/job=[0-9]+\\/read$/.test(s) && window.hold.poll) "
 	    "return wait('poll').then(() => of3.call(this, u, o)); return "
 	    "of3.call(this, u, o); };");
 	run("document.querySelector('tr[data-if=lo0] button[data-act=if-edit]')"
@@ -2390,7 +2394,7 @@ part_nettab_ifaces(void)
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("document.querySelector('.dock.open .pending-graph') && "
 	    "document.querySelector('.pending-graph').textContent.includes("
-	    "'POST /api/servers/') && document.querySelector('.pending-graph')"
+	    "'POST /restconf/data/') && document.querySelector('.pending-graph')"
 	    ".textContent.includes('waiting for the answer') && document."
 	    "querySelector('.pending-graph .node.k-lib.st-incomplete')", 10);
 	shot("5a-task-sent");
@@ -2436,8 +2440,8 @@ part_nettab_ifaces(void)
 	 */
 	run("const of4 = window.fetch; window.fetch = function (u, o) { "
 	    "const s = String(u); if (o && o.method === 'POST' && s.endsWith("
-	    "'/jobs') && window.nojob) { window.nojob = false; return Promise."
-	    "resolve(new Response('{\"ok\":true,\"jobs\":[{\"id\":0}]}', "
+	    "':submit') && window.nojob) { window.nojob = false; return Promise."
+	    "resolve(new Response('{\"arcana-jobs:output\":{\"id\":[\"0\"]}}', "
 	    "{ status: 200, headers: { 'Content-Type': 'application/json' } "
 	    "})); } return of4.call(this, u, o); }; window.nojob = true;");
 	run("document.querySelector('tr[data-if=lo0] button[data-act=if-edit]')"
@@ -7665,7 +7669,8 @@ part_netsect_paths(void)
 	    "'inet6', 'fe80::2%em5', 64)])] }; const nets = { lab: ['em0', "
 	    "'em1'], lab2: ['em6', 'em5'] }, rate = { lab: [0, 1000, 0, "
 	    "1000], lab2: [0, 0, 2000, 0] }; const who = u => Object.keys("
-	    "ids).find(k => String(u).includes('/servers/' + ids[k] + '/')); "
+	    "ids).find(k => String(u).includes('/servers/' + ids[k] + '/') || "
+	    "String(u).includes('host=' + ids[k] + '/')); "
 	    "const R = o => Promise.resolve(new Response(JSON.stringify(o), { "
 	    "status: 200, headers: { 'Content-Type': 'application/json' } })); "
 	    "window.fetch = (u, o) => { const k = who(u); if (!k) return "
@@ -7679,11 +7684,14 @@ part_netsect_paths(void)
 	    "'nh-weight': 1, 'nh-gw': 'fe80::2%em1', 'nh-interface': 'em1' }, "
 	    "{ 'nh-index': 2, 'nh-weight': 1, 'nh-gw': 'fe80::1%em0', "
 	    "'nh-interface': 'em0' }] }] }] } } } } }); if (String(u).includes("
-	    "'/history')) { const now = Date.now() / 1000, s = []; for (let t "
-	    "= now - 600; t <= now; t += 5) s.push([t, 1, 0.1, 1e9, 0, 0, 0, "
-	    "0, 0].concat(rate[k])); return R({ ok: true, data: { step: 5, "
-	    "keep: 720, ncpu: 1, mem_total: 2e9, swap_total: 0, bytes: 1, "
-	    "nets: nets[k], disks: [], jails: [], samples: s } }); } return "
+	    "':history/read')) { const now = Date.now() / 1000, s = []; for "
+	    "(let t = now - 600; t <= now; t += 5) s.push({ time: new Date(t * "
+	    "1000).toISOString(), cpu: '1', load: '0.1', memory: '1000000000', "
+	    "interface: nets[k].map((n, i) => ({ name: n, received: "
+	    "String(rate[k][2 * i]), sent: String(rate[k][2 * i + 1]) })) }); "
+	    "return R({ 'arcana-history:output': { sampling: { step: 5, keep: "
+	    "720 }, ncpu: 1, 'memory-total': '2000000000', 'swap-total': '0', "
+	    "bytes: '1', interface: nets[k], sample: s } }); } return "
 	    "window.fetchL(u, o); };");
 	run("document.querySelector('.netsect button.tab[data-arg=groups]')"
 	    ".click()");

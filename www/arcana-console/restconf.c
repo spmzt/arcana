@@ -2468,13 +2468,17 @@ restconf_prepare(struct rcreq *r, int method, const char *ctype,
 	}
 }
 
-/* Whether r confirms a commit: its connection one of its own, a proof
- * that a new one reaches the host after the change. */
+/* Whether r confirms a commit, or a safe job's change (arcana-jobs'
+ * confirm): its connection one of its own, a proof that a new one
+ * reaches the host after the change. */
 bool
 restconf_confirms(const struct rcreq *r)
 {
 	const ucl_object_t	*in;
 
+	if (r->act != NULL && strcmp(r->act->name, "confirm") == 0 &&
+	    strcmp(r->act->module->name, "arcana-jobs") == 0)
+		return (true);
 	if (r->rpc == NULL || strcmp(r->rpc->name, "commit") != 0)
 		return (false);
 	in = ucl_object_lookup(r->body, "ietf-netconf:input");

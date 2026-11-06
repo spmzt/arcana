@@ -10477,6 +10477,57 @@ ws_answer(int ws, int id, int *steps)
 }
 
 /*
+ * A safe job submitted through the fleet mount and confirmed there
+ * (PLAN-SDN-YANG 4.8.1): arcana-jobs' confirm over a connection the
+ * console dials for it, the job kept, as /api's read of it keeps it.
+ */
+CONSOLE_TC(restconf_job_confirm, "A safe job through the fleet mount, "
+    "confirmed by arcana-jobs' confirm")
+ATF_TC_BODY(restconf_job_confirm, tc)
+{
+	struct resp	 r;
+	char		 data[256], cand[256], path[512];
+	int		 i;
+
+	rc_lab(tc, data, cand, sizeof(cand));
+	snprintf(path, sizeof(path), "%s/arcana-jobs:submit", data);
+	http("POST", path, "{\"arcana-jobs:input\":{\"change\":[{\"route\":"
+	    "{\"destination\":\"10.9.0.0/16\",\"gateway\":\"10.0.0.1\"},"
+	    "\"safe\":true,\"safe-wait\":30}]}}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE_MSG(strstr(r.body, "\"id\":[\"1\"]") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/arcana-jobs:jobs/job=1/read", data);
+	for (i = 0; i < 100; i++) {
+		http("POST", path, "{}", &r);
+		if (strstr(r.body, "\"state\":\"unconfirmed\"") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(i < 100, "never unconfirmed");
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/arcana-jobs:jobs/job=1/confirm",
+	    data);
+	http("POST", path, "{}", &r);
+	ATF_CHECK_MSG(r.status == 200 || r.status == 204, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/arcana-jobs:jobs/job=1/read", data);
+	for (i = 0; i < 100; i++) {
+		http("POST", path, "{}", &r);
+		if (strstr(r.body, "\"state\":\"done\"") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(i < 100 && strstr(r.body, "\"ok\":true") != NULL,
+	    "not kept: %s", r.body);
+	resp_free(&r);
+}
+
+/*
  * A page's read through the fleet mount over the console's socket
  * (PLAN-SDN-YANG 4.8.1): a GET and an action that reads answered as
  * RESTCONF answers, the host's steps told as it takes them; a change
@@ -20857,6 +20908,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf_actions);
 	ATF_TP_ADD_TC(tp, restconf_actions_old);
 	ATF_TP_ADD_TC(tp, stream_restconf);
+	ATF_TP_ADD_TC(tp, restconf_job_confirm);
 	ATF_TP_ADD_TC(tp, sapnet);
 	ATF_TP_ADD_TC(tp, sapnet_attach);
 	ATF_TP_ADD_TC(tp, enrol);

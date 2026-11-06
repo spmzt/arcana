@@ -543,6 +543,10 @@ ops_load(void)
 	ucl_object_unref(arr);
 }
 
+static ucl_object_t	*steps_trace(const ucl_object_t *);
+static char		*job_path(char *, size_t, const char *, long long,
+			    const char *);
+
 static void
 trace_fetch_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -555,8 +559,8 @@ trace_fetch_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	free(c);
 	if (op == NULL || op->trace != NULL)
 		return;
-	if (status == 200 && jget(o, "job.trace") != NULL)
-		op->trace = ucl_object_copy(jget(o, "job.trace"));
+	if (status == 200 && jget(o, "step") != NULL)
+		op->trace = steps_trace(jget(o, "step"));
 	else
 		snprintf(op->stage, sizeof(op->stage), "%s", status == 404 ?
 		    "gone from its host" : "its host did not answer");
@@ -570,16 +574,15 @@ void
 op_trace_fetch(struct op *op)
 {
 	struct ctx	*c;
-	char		 url[128];
+	char		 url[300];
 
 	if (op == NULL || op->trace != NULL || op->watched <= 0 ||
 	    op->sid[0] == '\0' || op->state == OP_RUNNING)
 		return;
 	c = ctx_new();
 	c->op = op->id;
-	snprintf(url, sizeof(url), "/api/servers/%s/jobs/%lld", op->sid,
-	    op->watched);
-	api("GET", url, NULL, trace_fetch_cb, c);
+	job_path(url, sizeof(url), op->sid, op->watched, "read");
+	rc_read(url, NULL, NULL, trace_fetch_cb, c);
 }
 
 void
@@ -771,6 +774,118 @@ job_finished(struct op *op, bool ok, const char *err)
 	    "failed");
 }
 
+/*
+ * A program's output as the trace shows it: binary's base64 decoded,
+ * a byte not to be shown as vis(3)'s \ooo.
+ */
+static ucl_object_t *
+step_output(const char *b64)
+{
+	static const char	 al[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+	    "opqrstuvwxyz0123456789+/";
+	struct html		 h;
+	const char		*p;
+	unsigned int		 acc = 0;
+	int			 bits = 0;
+	unsigned char		 c;
+	ucl_object_t		*o;
+
+	memset(&h, 0, sizeof(h));
+	h_raw(&h, "");
+	for (; b64 != NULL && *b64 != '\0' && *b64 != '='; b64++) {
+		if ((p = strchr(al, *b64)) == NULL)
+			continue;
+		acc = acc << 6 | (unsigned int)(p - al);
+		if ((bits += 6) < 8)
+			continue;
+		bits -= 8;
+		c = (unsigned char)(acc >> bits);
+		if ((c < 0x20 && c != '\n' && c != '\t') || c == 0x7f)
+			h_fmt(&h, "\\%03o", c);
+		else if (c == '\\')
+			h_raw(&h, "\\\\");
+		else
+			h_fmt(&h, "%c", c);
+	}
+	o = ucl_object_fromstring(h.s != NULL ? h.s : "");
+	free(h.s);
+	return (o);
+}
+
+/* arcana-jobs' steps as the trace has them. */
+static ucl_object_t *
+steps_trace(const ucl_object_t *steps)
+{
+	static const char *const map[] = { "id", "id", "parent", "parent",
+	    "kind", "kind", "label", "label", "detail", "detail", "status",
+	    "status", "duration", "duration_us", "argv", "argv", "exit",
+	    "exit", NULL };
+	const ucl_object_t	*e;
+	ucl_object_t		*t, *r;
+	ucl_object_iter_t	 it = NULL;
+
+	/* Under the console's three, as a live read's (live.c): the
+	 * request, the session checked, the call through the mount. */
+	t = ucl_object_typed_new(UCL_ARRAY);
+	for (int i = 0; i < 3; i++) {
+		r = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(r, ucl_object_fromint(i), "id", 0, false);
+		ucl_object_insert_key(r, ucl_object_fromint(i - 1 > 0 ? 0 :
+		    i - 1), "parent", 0, false);
+		ucl_object_insert_key(r, ucl_object_fromstring(i == 0 ? "api" :
+		    i == 1 ? "auth" : "lib"), "kind", 0, false);
+		ucl_object_insert_key(r, ucl_object_fromstring(i == 0 ?
+		    "through the fleet mount" : i == 1 ? "session check" :
+		    "RESTCONF arcana-jobs:jobs"), "label", 0, false);
+		ucl_object_insert_key(r, ucl_object_fromstring("ok"), "status",
+		    0, false);
+		ucl_array_append(t, r);
+	}
+	while ((e = ucl_object_iterate(steps, &it, true)) != NULL) {
+		r = jmap(e, map);
+		ucl_object_replace_key(r, ucl_object_fromint(jint(e, "id", 0) +
+		    3), "id", 0, false);
+		ucl_object_replace_key(r, ucl_object_fromint(jint(e, "parent",
+		    -1) < 0 ? 2 : jint(e, "parent", 0) + 3), "parent", 0, false);
+		if (jget(e, "output") != NULL)
+			ucl_object_insert_key(r, step_output(jstr(e, "output")),
+			    "output", 0, false);
+		if (jget(e, "error-output") != NULL)
+			ucl_object_insert_key(r, step_output(jstr(e,
+			    "error-output")), "error_output", 0, false);
+		ucl_array_append(t, r);
+	}
+	return (t);
+}
+
+/* A job as the lists have it. */
+static const char *const job_map[] = { "id", "id", "kind", "kind", "title",
+    "title", "state", "state", "ok", "ok", "error", "error", "confirm-by",
+    "confirm_by", "peer", "peer", "user", "user", "created", "created",
+    "started", "started", "finished", "finished", NULL };
+
+/* Where job id of host sid is, or its action act. */
+static char *
+job_path(char *buf, size_t len, const char *sid, long long id,
+    const char *act)
+{
+
+	return (rc_h(buf, len, sid, "arcana-jobs:jobs/job=%lld%s%s", id,
+	    act != NULL ? "/" : "", act != NULL ? act : ""));
+}
+
+/* A confirm's answer: the next read says where the job is. */
+static void
+job_confirm_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+
+	(void)status;
+	(void)o;
+	(void)err;
+	(void)arg;
+}
+
 static void
 job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -778,6 +893,7 @@ job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	struct op		*op;
 	const ucl_object_t	*t;
 	const char		*st;
+	char			 url[300];
 	bool			 ok;
 
 	c = arg;
@@ -787,11 +903,12 @@ job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	op->polling = false;
 	op->next_poll = arc_now() + JOB_POLL_MS;
-	if (status != 200 || jget(o, "job") == NULL) {
-		/* The console or the host is away; the job is not. */
-		if (status == 200 && !jbool(o, "ok")) {
-			op_done(op, false, o, jstr(o, "error"));
-			job_finished(op, false, jstr(o, "error"));
+	if (status != 200 || o == NULL) {
+		/* Gone from its host; else the console or the host is away,
+		 * the job is not. */
+		if (status == 404) {
+			op_done(op, false, NULL, err);
+			job_finished(op, false, err);
 			return;
 		}
 		op->waiting = true;
@@ -799,26 +916,30 @@ job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	}
 	op->waiting = false;
-	if (jstr(o, "job.state") != NULL)
-		snprintf(op->stage, sizeof(op->stage), "%s", jstr(o,
-		    "job.state"));
-	/* A safe change the host waits to hear about: shown with the time
-	 * it has; this read is what confirms it, through the console. */
-	op->confirm_by = jstr(o, "job.state") != NULL && strcmp(jstr(o,
-	    "job.state"), "unconfirmed") == 0 ? jint(o, "job.confirm_by", 0) :
-	    0;
-	if ((t = jget(o, "job.trace")) != NULL) {
+	if (jstr(o, "state") != NULL)
+		snprintf(op->stage, sizeof(op->stage), "%s", jstr(o, "state"));
+	/*
+	 * A safe change the host waits to hear about: shown with the time
+	 * it has, and confirmed (the console dials the host anew for it,
+	 * the proof that it is still reached).
+	 */
+	op->confirm_by = jstr(o, "state") != NULL && strcmp(jstr(o, "state"),
+	    "unconfirmed") == 0 ? jint(o, "confirm-by", 0) : 0;
+	if (op->confirm_by != 0) {
+		job_path(url, sizeof(url), op->sid, op->job, "confirm");
+		rc_read(url, NULL, NULL, job_confirm_cb, NULL);
+	}
+	if ((t = jget(o, "step")) != NULL) {
 		if (op->trace != NULL)
 			ucl_object_unref(op->trace);
-		op->trace = ucl_object_ref((ucl_object_t *)(uintptr_t)t);
+		op->trace = steps_trace(t);
 	}
-	st = jstr(o, "job.state");
+	st = jstr(o, "state");
 	if (st == NULL || (strcmp(st, "done") != 0 &&
 	    strcmp(st, "cancelled") != 0))
 		return;
-	ok = strcmp(st, "done") == 0 && jbool(o, "job.ok");
-	err = strcmp(st, "cancelled") == 0 ? "cancelled" :
-	    jstr(o, "job.error");
+	ok = strcmp(st, "done") == 0 && jbool(o, "ok");
+	err = strcmp(st, "cancelled") == 0 ? "cancelled" : jstr(o, "error");
 	op->state = ok ? OP_OK : OP_FAILED;
 	op->finished = arc_now();
 	if (!ok)
@@ -857,7 +978,7 @@ jobs_poll(void)
 {
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[128];
+	char		 url[300];
 	double		 now;
 	int		 i;
 
@@ -871,9 +992,8 @@ jobs_poll(void)
 		op->polling = true;
 		c = ctx_new();
 		c->op = op->id;
-		snprintf(url, sizeof(url), "/api/servers/%s/jobs/%lld", op->sid,
-		    op->job);
-		api("GET", url, NULL, job_poll_cb, c);
+		job_path(url, sizeof(url), op->sid, op->job, "read");
+		rc_read(url, NULL, NULL, job_poll_cb, c);
 	}
 }
 
@@ -894,23 +1014,68 @@ job_submit_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	for (i = 0; i < sub->nops; i++) {
 		if ((op = op_find(sub->ops[i])) == NULL)
 			continue;
-		snprintf(path, sizeof(path), "jobs.%d.id", i);
-		if (status == 200 && jbool(o, "ok") && jint(o, path, 0) > 0) {
+		snprintf(path, sizeof(path), "id.%d", i);
+		if (status == 200 && jint(o, path, 0) > 0) {
 			op->job = op->watched = jint(o, path, 0);
 			op->next_poll = arc_now();
 			snprintf(op->stage, sizeof(op->stage), "accepted");
 			continue;
 		}
 		if (status == 200)
-			err = jstr(o, "error") != NULL ? jstr(o, "error") :
-			    jbool(o, "ok") ? "the console gave it no job number" :
-			    NULL;
-		op_done(op, false, o, err);
+			err = "the host gave it no job number";
+		op_done(op, false, NULL, err);
 		op->job = -1;
 		job_finished(op, false, err);
 	}
 	free(sub);
 	jobs_poll();
+}
+
+/*
+ * A job as the page makes it ({"kind": k, its fields, "safe"}) as
+ * arcana-jobs' change: its fields in its kind's container, their _ as
+ * -, safe beside it and, when the host's timer is not its agent's,
+ * safe-wait.
+ */
+static void
+job_change(struct html *b, const char *json, const struct server *s)
+{
+	const ucl_object_t	*v;
+	ucl_object_t		*o, *f;
+	ucl_object_iter_t	 it = NULL;
+	char			 key[64], *p, *t;
+	bool			 safe = false;
+
+	if ((o = json_parse(json)) == NULL || jstr(o, "kind") == NULL) {
+		h_raw(b, "{}");
+		if (o != NULL)
+			ucl_object_unref(o);
+		return;
+	}
+	f = ucl_object_typed_new(UCL_OBJECT);
+	while ((v = ucl_object_iterate(o, &it, true)) != NULL) {
+		if (strcmp(ucl_object_key(v), "kind") == 0)
+			continue;
+		if (strcmp(ucl_object_key(v), "safe") == 0) {
+			safe = ucl_object_toboolean(v);
+			continue;
+		}
+		snprintf(key, sizeof(key), "%s", ucl_object_key(v));
+		for (p = key; (p = strchr(p, '_')) != NULL; p++)
+			*p = '-';
+		ucl_object_insert_key(f, ucl_object_copy(v), key, 0, true);
+	}
+	t = (char *)ucl_object_emit(f, UCL_EMIT_JSON_COMPACT);
+	h_fmt(b, "{\"%s\":%s", jstr(o, "kind"), t != NULL ? t : "{}");
+	free(t);
+	if (safe) {
+		h_raw(b, ",\"safe\":true");
+		if (s->safe_wait > 0)
+			h_fmt(b, ",\"safe-wait\":%d", s->safe_wait);
+	}
+	h_raw(b, "}");
+	ucl_object_unref(f);
+	ucl_object_unref(o);
 }
 
 /* Send the batch (n jobs, with an op each) to the server. */
@@ -919,22 +1084,22 @@ jobs_submit(struct server *s, struct queued *q, int n)
 {
 	struct submit	*sub;
 	struct op	*op;
-	char		*body, *p, url[128];
-	size_t		 len;
+	struct html	 b;
+	char		*body, url[300];
 	int		 i, req;
 
 	if ((sub = calloc(1, sizeof(*sub))) == NULL)
 		abort();
-	len = 16;
-	for (i = 0; i < n; i++)
-		len += strlen(q[i].json) + 1;
-	if ((body = malloc(len)) == NULL)
-		abort();
-	p = body + sprintf(body, "{\"jobs\":[");
-	/* Ops are newest first: make them in reverse, the first job last. */
-	for (i = 0; i < n; i++)
-		p += sprintf(p, "%s%s", i > 0 ? "," : "", q[i].json);
-	sprintf(p, "]}");
+	/* arcana-jobs' submit: a change each, in order. */
+	memset(&b, 0, sizeof(b));
+	h_raw(&b, "{\"change\":[");
+	for (i = 0; i < n; i++) {
+		if (i > 0)
+			h_raw(&b, ",");
+		job_change(&b, q[i].json, s);
+	}
+	h_raw(&b, "]}");
+	body = h_take(&b);
 	for (i = 0; i < n; i++) {
 		op = op_new(q[i].title, s->name);
 		snprintf(op->sid, sizeof(op->sid), "%s", s->id);
@@ -951,7 +1116,7 @@ jobs_submit(struct server *s, struct queued *q, int n)
 			app.trace_step = -1;
 		}
 	}
-	snprintf(url, sizeof(url), "/api/servers/%s/jobs", s->id);
+	rc_h(url, sizeof(url), s->id, "arcana-jobs:submit");
 	/* One request for them all: each says it. */
 	for (i = 0; i < sub->nops; i++)
 		if ((op = op_find(sub->ops[i])) != NULL) {
@@ -959,7 +1124,7 @@ jobs_submit(struct server *s, struct queued *q, int n)
 			snprintf(op->url, sizeof(op->url), "%s", url);
 			op->await = false;
 		}
-	req = api("POST", url, body, job_submit_cb, sub);
+	req = rc_action(url, body, NULL, job_submit_cb, sub);
 	for (i = 0; i < sub->nops; i++)
 		op_wait(sub->ops[i], req);
 	free(body);
@@ -2142,6 +2307,14 @@ stats_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	free(c);
 }
 
+static const char *const jobs_map[] = { "lanes", "lanes", "stopping",
+    "stopping", NULL };
+static void	lanes_saved(struct ycommit *, int);
+static struct ycommit lanes_yc = { .act = "lanes-yc", .saved = "Saved: the "
+    "host runs so many at once.", .undone = "Undone: the lanes are as "
+    "they were.", .done = lanes_saved };
+static int lanes_n;
+
 static void
 jobs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -2151,53 +2324,52 @@ jobs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	c = arg;
 	if ((s = server_by_id(c->sid)) != NULL) {
 		s->jobs_loading = false;
-		if (status == 200 && jget(o, "jobs") != NULL) {
+		if (status == 200 && o != NULL) {
+			/* arcana-jobs' list as the tab draws it. */
 			if (s->jobs != NULL)
 				ucl_object_unref(s->jobs);
-			s->jobs = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+			s->jobs = jmap(o, jobs_map);
+			ucl_object_insert_key(s->jobs, jmap_each(jget(o, "job"),
+			    job_map), "jobs", 0, false);
 		}
 	}
 	free(c);
 }
 
+/* The lanes saved, or not: said, and the record read again. */
 static void
-lanes_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+lanes_saved(struct ycommit *yc, int how)
 {
-	struct ctx	*c;
 	struct server	*s;
 
-	c = arg;
-	if (status != 200 || !jbool(o, "ok"))
-		toast(true, "%s: lanes not set: %s", c->name, status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
-		    err : "failed");
-	else
-		toast(false, "%s: pkg in jails, %lld at once", c->name,
-		    (long long)jint(o, "lanes", 0));
-	if ((s = server_by_id(c->sid)) != NULL) {
-		s->jobs_loading = false;
-		refresh_jobs(s);
-	}
-	free(c);
+	if ((s = server_by_id(yc->sid)) == NULL)
+		return;
+	if (how == YC_SAVED)
+		toast(false, "%s: pkg in jails, %d at once", s->name, lanes_n);
+	else if (how == YC_REFUSED)
+		toast(true, "%s: lanes not set: %s", s->name, yc->note);
+	s->jobs_loading = false;
+	refresh_jobs(s);
 }
 
-/* How many jobs of pkg in jails the host runs at once: 1 to 32. */
+/* How many jobs of pkg in jails the host runs at once: 1 to 32;
+ * arcana-jobs' lanes, committed. */
 void
 set_job_lanes(struct server *s, int lanes)
 {
-	struct ctx	*c;
-	char		 url[128], body[32];
+	char	url[300], body[64];
 
 	if (lanes < 1 || lanes > 32) {
 		toast(true, "%s: lanes is 1 to 32", s->name);
 		return;
 	}
-	c = ctx_new();
-	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
-	snprintf(c->name, sizeof(c->name), "%s", s->name);
-	snprintf(url, sizeof(url), "/api/servers/%s/jobs/config", s->id);
-	snprintf(body, sizeof(body), "{\"lanes\":%d}", lanes);
-	api("POST", url, body, lanes_cb, c);
+	lanes_n = lanes;
+	rc_ds(url, sizeof(url), "candidate", s->id, "arcana-jobs:jobs");
+	snprintf(body, sizeof(body), "{\"arcana-jobs:jobs\":{\"lanes\":%d}}",
+	    lanes);
+	if (!ycommit_save(&lanes_yc, s->id, "PATCH", url, body))
+		toast(true, "%s: a change of the lanes is on its way already",
+		    s->name);
 }
 
 /* The host's own record of jobs, whoever queued them; quiet. */
@@ -2205,15 +2377,13 @@ void
 refresh_jobs(struct server *s)
 {
 	struct ctx	*c;
-	char		 url[128];
 
 	if (!app.online || s->jobs_loading)
 		return;
 	s->jobs_loading = true;
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
-	snprintf(url, sizeof(url), "/api/servers/%s/jobs", s->id);
-	api("GET", url, NULL, jobs_cb, c);
+	host_yread(s, "arcana-jobs:jobs", NULL, NULL, false, jobs_cb, c);
 }
 
 /* Show a job of the host in the activity dock, and follow it. */
@@ -3654,13 +3824,12 @@ job_cancel_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	c = arg;
 	/* Taken back, the next reading of the job ends its entry. */
-	if (status != 200 || !jbool(o, "ok"))
-		toast(true, "%s: not cancelled: %s", c->name, status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
+	if (status != 200 && status != 204)
+		toast(true, "%s: not cancelled: %s", c->name, err != NULL ?
 		    err : "failed");
 	else if (c->sid[0] != '\0')
-		toast(false, "%s: %s", c->name, jstr(o, "job.state") != NULL ?
-		    jstr(o, "job.state") : "cancelled");
+		toast(false, "%s: %s", c->name, jstr(o, "state") != NULL ?
+		    jstr(o, "state") : "cancelled");
 	/* Asked from the Jobs tab: its record read again. */
 	if (c->sid[0] != '\0' && (s = server_by_id(c->sid)) != NULL) {
 		s->jobs_loading = false;
@@ -3678,14 +3847,14 @@ void
 cancel_job(struct server *s, long long id, const char *title)
 {
 	struct ctx	*c;
-	char		 url[128];
+	char		 url[300];
 
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	snprintf(c->name, sizeof(c->name), "%s", title != NULL && title[0] !=
 	    '\0' ? title : "the job");
-	snprintf(url, sizeof(url), "/api/servers/%s/jobs/%lld", s->id, id);
-	api("DELETE", url, NULL, job_cancel_cb, c);
+	rc_action(job_path(url, sizeof(url), s->id, id, "cancel"), NULL, NULL,
+	    job_cancel_cb, c);
 }
 
 /* Every job still queued on the server taken back, one by one. */
@@ -3724,16 +3893,15 @@ void
 op_cancel(struct op *op)
 {
 	struct ctx	*c;
-	char		 url[128];
+	char		 url[300];
 
 	if (op->state != OP_RUNNING)
 		return;
 	if (op->job > 0) {
 		c = ctx_new();
 		snprintf(c->name, sizeof(c->name), "%s", op->title);
-		snprintf(url, sizeof(url), "/api/servers/%s/jobs/%lld", op->sid,
-		    op->job);
-		api("DELETE", url, NULL, job_cancel_cb, c);
+		rc_action(job_path(url, sizeof(url), op->sid, op->job,
+		    "cancel"), NULL, NULL, job_cancel_cb, c);
 		return;
 	}
 	if (op->live)

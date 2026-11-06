@@ -79,8 +79,25 @@ schema_op(const ucl_object_t *trace)
 
 	it = NULL;
 	while ((s = ucl_object_iterate(trace, &it, true)) != NULL) {
-		if ((l = jstr(s, "label")) == NULL || (p = strstr(l,
-		    "libcblink YANG ")) == NULL)
+		/* Through the fleet mount: an operation of its module. */
+		if ((l = jstr(s, "label")) != NULL && strncmp(l, "RESTCONF ",
+		    9) == 0) {
+			const ucl_object_t	*e;
+			ucl_object_iter_t	 eit = NULL;
+			size_t			 n = strcspn(l + 9, ":/ ");
+
+			while ((e = ucl_object_iterate(jget(app.yang, "ops"),
+			    &eit, true)) != NULL)
+				if (jstr(e, "module") != NULL && strlen(jstr(e,
+				    "module")) == n && strncmp(jstr(e, "module"),
+				    l + 9, n) == 0) {
+					snprintf(name, sizeof(name), "%s",
+					    ucl_object_key(e));
+					return (name);
+				}
+			continue;
+		}
+		if (l == NULL || (p = strstr(l, "libcblink YANG ")) == NULL)
 			continue;
 		p += 15;
 		for (i = 0; p[i] != '\0' && p[i] != ' ' && i <
