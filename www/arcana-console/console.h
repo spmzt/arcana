@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.386.0"
+#define	ARCW_VERSION		"0.387.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -413,6 +413,9 @@ char		*hosts_sdwan_set(const char *, const char *, const char *,
 		    const char *, const char *, int *);
 char		*hosts_restconf(const char *, const char *, const char *,
 		    const char *, int, const char *, ucl_object_t *, int *);
+char		*hosts_restconf_live(const char *, const char *, const char *,
+		    const char *, const char *, ucl_object_t *,
+		    void (*)(const char *, void *), void *, int *);
 int		 api_sdwan_state(struct http_request *);
 int		 api_security(struct http_request *);
 char		*hosts_listen(const char *, const char *, const char *,

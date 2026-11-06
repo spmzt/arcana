@@ -131,6 +131,7 @@ bool		 jbool(const ucl_object_t *, const char *);
 char		*json_quote(const char *);
 ucl_object_t	*jmap(const ucl_object_t *, const char *const *);
 ucl_object_t	*jmap_each(const ucl_object_t *, const char *const *);
+ucl_object_t	*jflat(const ucl_object_t *, const char *const *);
 /* yaml.c: YAML written and read. */
 char		*yaml_emit(const ucl_object_t *);
 ucl_object_t	*yaml_parse(const char *, char *, size_t);
@@ -185,6 +186,8 @@ int		 rc_verb(const char *, const char *, const char *, api_cb *,
 		    void *);
 int		 rc_read(const char *, const char *, const char *, api_cb *,
 		    void *);
+void		 rc_live(const char *, const char *, const char *, int,
+		    api_cb *, void *);
 const char	*rc_error(const ucl_object_t *, char *, size_t);
 const char	*rc_tag(const ucl_object_t *);
 int64_t		 rc_time(const char *);
@@ -669,6 +672,8 @@ void		 host_read(const struct server *, const char *, const char *,
 		    bool, api_cb *, void *);
 void		 live_read(const char *, const char *, const char *, int,
 		    api_cb *, void *);
+void		 live_yread(const char *, const char *, const char *,
+		    const char *, int, api_cb *, void *);
 void		 host_yread(const struct server *, const char *, const char *,
 		    const char *, bool, api_cb *, void *);
 void		 live_stream(const ucl_object_t *);

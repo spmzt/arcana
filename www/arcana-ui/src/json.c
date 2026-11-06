@@ -137,6 +137,142 @@ jmap_each(const ucl_object_t *list, const char *const *map)
 	return (r);
 }
 
+/*
+ * A read's YANG JSON with the names a screen reads it by: each member's
+ * - as _, but where names (NULL ended) says otherwise of a node's name:
+ *	node=key	its key is key
+ *	node{k}		a list as an object keyed by its entries' k, each
+ *			value its entry's one other node, or its others
+ *	node[a,b]	a list as an array of arrays of a's and b's values
+ *	node^		a container's members are its parent's
+ * as "node{k}=key".
+ */
+static const char *
+jflat_rule(const char *const *names, const char *node, char *key, size_t
+    klen, char *list, size_t llen, char *how)
+{
+	const char	*r, *p;
+	size_t		 n;
+
+	*how = '\0';
+	list[0] = '\0';
+	snprintf(key, klen, "%s", node);
+	for (p = key; (p = strchr(p, '-')) != NULL; p++)
+		key[p - key] = '_';
+	for (; names != NULL && *names != NULL; names++) {
+		r = *names;
+		n = strcspn(r, "{[^=");
+		if (strlen(node) != n || strncmp(node, r, n) != 0)
+			continue;
+		r += n;
+		if (*r == '{' || *r == '[') {
+			*how = *r;
+			n = strcspn(r + 1, "}]");
+			snprintf(list, llen, "%.*s", (int)n, r + 1);
+			r += n + 2;
+		}
+		if (*r == '^')
+			*how = *r++;
+		if (*r == '=')
+			snprintf(key, klen, "%s", r + 1);
+		return (*names);
+	}
+	return (NULL);
+}
+
+static ucl_object_t *jflat_v(const ucl_object_t *, const char *const *);
+
+/* The members of o into r, flattened. */
+static void
+jflat_into(ucl_object_t *r, const ucl_object_t *o, const char *const *names)
+{
+	const ucl_object_t	*v, *e, *m;
+	ucl_object_t		*x, *t;
+	ucl_object_iter_t	 it = NULL, eit, mit;
+	const char		*node, *c;
+	char			 key[128], list[128], how, *w, *ws;
+	size_t			 others;
+
+	while ((v = ucl_object_iterate(o, &it, true)) != NULL) {
+		node = ucl_object_key(v);
+		if ((c = strchr(node, ':')) != NULL)
+			node = c + 1;
+		jflat_rule(names, node, key, sizeof(key), list, sizeof(list),
+		    &how);
+		if (how == '^' && ucl_object_type(v) == UCL_OBJECT) {
+			jflat_into(r, v, names);
+			continue;
+		}
+		if (how == '{') {
+			x = ucl_object_typed_new(UCL_OBJECT);
+			eit = NULL;
+			while ((e = ucl_object_iterate(v, &eit, true)) != NULL) {
+				if ((m = ucl_object_lookup(e, list)) == NULL)
+					continue;
+				t = ucl_object_typed_new(UCL_OBJECT);
+				jflat_into(t, e, names);
+				ucl_object_delete_key(t, list);
+				others = t->len;
+				mit = NULL;
+				if (others == 1 && (m = ucl_object_iterate(t, &mit,
+				    true)) != NULL) {
+					ucl_object_insert_key(x, ucl_object_copy(m),
+					    ucl_object_tostring_forced(ucl_object_lookup(
+					    e, list)), 0, true);
+					ucl_object_unref(t);
+				} else
+					ucl_object_insert_key(x, t,
+					    ucl_object_tostring_forced(ucl_object_lookup(
+					    e, list)), 0, true);
+			}
+		} else if (how == '[') {
+			x = ucl_object_typed_new(UCL_ARRAY);
+			eit = NULL;
+			while ((e = ucl_object_iterate(v, &eit, true)) != NULL) {
+				t = ucl_object_typed_new(UCL_ARRAY);
+				if ((ws = strdup(list)) == NULL)
+					abort();
+				for (c = ws; (w = strsep(&ws, ",")) != NULL;)
+					ucl_array_append(t, ucl_object_lookup(e,
+					    w) != NULL ? ucl_object_copy(
+					    ucl_object_lookup(e, w)) :
+					    ucl_object_typed_new(UCL_NULL));
+				free((void *)(uintptr_t)c);
+				ucl_array_append(x, t);
+			}
+		} else
+			x = jflat_v(v, names);
+		ucl_object_replace_key(r, x, key, 0, true);
+	}
+}
+
+static ucl_object_t *
+jflat_v(const ucl_object_t *v, const char *const *names)
+{
+	const ucl_object_t	*e;
+	ucl_object_t		*x;
+	ucl_object_iter_t	 it = NULL;
+
+	if (ucl_object_type(v) == UCL_OBJECT) {
+		x = ucl_object_typed_new(UCL_OBJECT);
+		jflat_into(x, v, names);
+		return (x);
+	}
+	if (ucl_object_type(v) != UCL_ARRAY)
+		return (ucl_object_copy(v));
+	x = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(v, &it, true)) != NULL)
+		ucl_array_append(x, jflat_v(e, names));
+	return (x);
+}
+
+ucl_object_t *
+jflat(const ucl_object_t *o, const char *const *names)
+{
+
+	return (jflat_v(o, names));
+}
+
 /* s as a JSON string literal, quotes included; free() it. */
 char *
 json_quote(const char *s)

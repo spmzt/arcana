@@ -6505,6 +6505,72 @@ hosts_restconf(const char *sid, const char *uri, const char *peer,
 }
 
 /*
+ * A page's read through the fleet mount over its socket (stream.c),
+ * each step told to on_step as the host takes it: path below the host's
+ * entry with its query, a GET, or with body (an action's input, as a
+ * POST has it) an action that reads (restconf_act_role()'s viewer's);
+ * any other refused.  The reply's JSON, malloc'd; its status.
+ */
+char *
+hosts_restconf_live(const char *sid, const char *uri, const char *peer,
+    const char *name, const char *path, ucl_object_t *body,
+    void (*on_step)(const char *, void *), void *arg, int *status)
+{
+	struct call	*c;
+	const char	*why = NULL;
+	char		*p, *q, *json;
+	int		 st;
+
+	c = xcalloc(1, sizeof(*c));
+	c->op = OP_RESTCONF;
+	c->reads = true;
+	snprintf(c->sid, sizeof(c->sid), "%s", sid);
+	if (asprintf(&p, "/restconf/data/arcana-fleet:fleet/host=%s/%s", sid,
+	    path) == -1)
+		abort();
+	if ((q = strchr(p, '?')) != NULL)
+		*q++ = '\0';
+	c->rc = restconf_parse(p, q, &why);
+	free(p);
+	st = c->rc == NULL ? (why == restconf_no_node ? 404 : 400) : body !=
+	    NULL && restconf_act_role(c->rc) != RC_ACT_READ ? 403 : 0;
+	if (st == 403)
+		why = "only a read goes over the socket";
+	if (st == 0)
+		st = restconf_prepare(c->rc, body != NULL ? HTTP_METHOD_POST :
+		    HTTP_METHOD_GET, body != NULL ? "application/yang-data+json" :
+		    NULL, body, &why);
+	else if (body != NULL)
+		ucl_object_unref(body);
+	if (st != 0) {
+		if (c->rc != NULL)
+			restconf_free(c->rc);
+		free(c);
+		*status = st;
+		return (restconf_errors(st, why));
+	}
+	snprintf(c->route, sizeof(c->route), "socket: restconf");
+	c->uri = xstrdup(uri);
+	c->peer = peer != NULL && peer[0] != '\0' ? xstrdup(peer) : NULL;
+	c->sname = xstrdup(name != NULL ? name : uri);
+	c->on_step = on_step;
+	c->step_arg = arg;
+	c->t0 = now_us();
+	(void)call_run(&c->task);
+	if (c->rc_json != NULL) {
+		json = c->rc_json;
+		c->rc_json = NULL;
+		*status = c->rc_status;
+	} else {
+		json = restconf_errors(502, "the host was not reached");
+		*status = 502;
+	}
+	call_release(c);
+	free(c);
+	return (json);
+}
+
+/*
  * POST /api/servers/<id>/security: the Security section's instances of
  * a kind, {"what": "proxy" or "ids", "instances": [the page's forms]},
  * made by security.c into what the agent takes and applied; [] stops

@@ -1550,6 +1550,7 @@ struct hrc {
 	api_cb	*cb;
 	void	*arg;
 	char	 sid[9];
+	int	 op;		/* the task it made, read live */
 };
 
 /* A module the host's agent lacks (its own schema's 404), said so. */
@@ -1577,19 +1578,26 @@ hrc_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		err = why;
 	}
 	h.cb(status, o, err, h.arg);
+	/* Its task, over the socket: ended here. */
+	if (h.op != 0)
+		op_done(op_find(h.op), status >= 200 && status < 300, NULL,
+		    err);
 }
 
 /*
  * A read of host s's through the fleet mount: path below its entry
  * ("arcana-kernel:kernel", a query after ?), or, with input, the read
  * action there.  The callback gets the node or the action's output.  One
- * the user asked for is a task called title; the others a plain read.
+ * the user asked for is a task called title (NULL: the one just made),
+ * read over the console's socket, its steps drawn as the host takes
+ * them; the others a plain read.
  */
 void
 host_yread(const struct server *s, const char *path, const char *input,
     const char *title, bool user, api_cb *cb, void *arg)
 {
 	struct hrc	*h;
+	struct op	*op;
 	char		 url[512], q[400];
 	size_t		 n;
 
@@ -1601,8 +1609,15 @@ host_yread(const struct server *s, const char *path, const char *input,
 	n = strcspn(path, "?");
 	snprintf(q, sizeof(q), "%s", path[n] == '?' ? path + n + 1 : "");
 	rc_h(url, sizeof(url), s->id, "%.*s", (int)n, path);
-	if (user && !app.quiet)
-		(void)op_new(title, s->name);
+	if (user && !app.quiet) {
+		op = title != NULL ? op_new(title, s->name) : app.nops > 0 &&
+		    app.ops[0].await ? &app.ops[0] : NULL;
+		if (op != NULL) {
+			h->op = title != NULL ? op->id : 0;
+			rc_live(s->id, path, input, op->id, hrc_cb, h);
+			return;
+		}
+	}
 	if (input != NULL)
 		rc_read(url, input, q[0] != '\0' ? q : NULL, hrc_cb, h);
 	else
@@ -1713,6 +1728,10 @@ jail_action(const char *jail, const char *action)
 	job_send(s, json, title, JOB_JAIL, jail);
 }
 
+static const char *const svc_map[] = { "name", "name", "path", "path",
+    "rcvar", "rcvar", "enabled", "enabled", "running", "running", "pid",
+    "pid", "status", "status", NULL };
+
 static void
 services_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -1730,10 +1749,13 @@ services_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (status == 200) {
 		if (s->services != NULL)
 			ucl_object_unref(s->services);
-		s->services = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+		/* arcana-services' list as the tab draws it. */
+		s->services = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(s->services, jmap_each(jget(o, "service"),
+		    svc_map), "services", 0, false);
 		s->services_fetched = arc_now();
 		s->services_error[0] = '\0';
-		op_done(op, jbool(o, "ok"), o, jstr(o, "error"));
+		op_done(op, true, NULL, NULL);
 	} else {
 		snprintf(s->services_error, sizeof(s->services_error), "%s",
 		    err != NULL ? err : "no answer from the console");
@@ -1750,7 +1772,6 @@ refresh_services(struct server *s, bool user)
 {
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[128];
 
 	if (!app.online || s->services_loading)
 		return;
@@ -1758,15 +1779,13 @@ refresh_services(struct server *s, bool user)
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	c->user = user = user && !app.quiet;
-	snprintf(url, sizeof(url), "/api/servers/%s/services", s->id);
 	if (user) {
 		op = op_new("list services", s->name);
 		c->op = op->id;
 		app.trace_op = op->id;
-		live_read(s->id, "services", url, c->op, services_cb, c);
-		return;
 	}
-	op_wait(c->op, api("GET", url, NULL, services_cb, c));
+	host_yread(s, "arcana-services:services", NULL, NULL, user,
+	    services_cb, c);
 }
 
 /* Replace the service of the same name in the server's list. */
@@ -1821,6 +1840,28 @@ service_action(const char *name, const char *action)
 	job_send(s, json, title, JOB_SERVICE, name);
 }
 
+/* A service's variables, as running has them: into the drawer's. */
+static void
+svc_vars_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	const ucl_object_t	*v;
+	ucl_object_t		*vars;
+	ucl_object_iter_t	 it = NULL;
+	char			*name = arg;
+
+	(void)err;
+	if (status == 200 && app.svc_config != NULL && strcmp(app.service,
+	    name) == 0 && (vars = (ucl_object_t *)(uintptr_t)jget(
+	    app.svc_config, "variables")) != NULL)
+		while ((v = ucl_object_iterate(jget(o, "variable"), &it,
+		    true)) != NULL)
+			if (jstr(v, "name") != NULL)
+				ucl_object_insert_key(vars, ucl_object_fromstring(
+				    jstr(v, "value") != NULL ? jstr(v, "value") :
+				    ""), jstr(v, "name"), 0, true);
+	free(name);
+}
+
 static void
 service_config_cb(int status, const ucl_object_t *o, const char *err,
     void *arg)
@@ -1828,24 +1869,43 @@ service_config_cb(int status, const ucl_object_t *o, const char *err,
 	struct ctx	*c;
 	struct server	*s;
 	struct op	*op;
+	ucl_object_t	*sv;
+	char		 url[512], path[300];
 	bool		 ok;
 
 	c = arg;
 	op = c->op != 0 ? op_find(c->op) : NULL;
 	app.svc_loading = false;
-	ok = status == 200 && jbool(o, "ok");
-	if (status == 200 && !ok)
-		err = jstr(o, "error");
-	op_done(op, ok, o, err);
-	if (status == 200 && strcmp(app.service, c->jail) == 0) {
+	ok = status == 200 && o != NULL;
+	op_done(op, ok, NULL, err);
+	if (ok && strcmp(app.service, c->jail) == 0) {
+		/* Its read's output as the drawer draws it; its variables
+		 * as running has them, read next. */
 		if (app.svc_config != NULL)
 			ucl_object_unref(app.svc_config);
-		app.svc_config = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+		app.svc_config = ucl_object_typed_new(UCL_OBJECT);
+		sv = jmap(o, svc_map);
+		ucl_object_insert_key(sv, ucl_object_fromstring(c->jail),
+		    "name", 0, true);
+		ucl_object_insert_key(app.svc_config, sv, "service", 0, false);
+		if (jstr(o, "description") != NULL)
+			ucl_object_insert_key(app.svc_config,
+			    ucl_object_fromstring(jstr(o, "description")),
+			    "description", 0, false);
+		ucl_object_insert_key(app.svc_config, jget(o, "command") !=
+		    NULL ? ucl_object_copy(jget(o, "command")) :
+		    ucl_object_typed_new(UCL_ARRAY), "commands", 0, false);
+		ucl_object_insert_key(app.svc_config, ucl_object_typed_new(
+		    UCL_OBJECT), "variables", 0, false);
+		snprintf(path, sizeof(path), "arcana-services:services/"
+		    "service=%s", rc_key(c->jail));
+		rc_get(rc_ds(url, sizeof(url), "running", c->sid, path), NULL,
+		    svc_vars_cb, strdup(c->jail));
+		if ((s = server_by_id(c->sid)) != NULL)
+			merge_service(s, sv);
 	}
 	snprintf(app.svc_error, sizeof(app.svc_error), "%s", ok ? "" :
 	    err != NULL ? err : "failed");
-	if ((s = server_by_id(c->sid)) != NULL)
-		merge_service(s, jget(o, "service"));
 	free(c);
 }
 
@@ -1875,9 +1935,9 @@ service_config(const char *name)
 		free(c);
 		return;
 	}
-	snprintf(url, sizeof(url), "/api/servers/%s/services/%s/config",
-	    s->id, name);
-	api("GET", url, NULL, service_config_cb, c);
+	snprintf(url, sizeof(url), "arcana-services:services/service=%s/read",
+	    rc_key(name));
+	host_yread(s, url, "{}", NULL, false, service_config_cb, c);
 }
 
 /*
@@ -2373,7 +2433,7 @@ refresh_packages(struct server *s, bool refresh)
 		c->op = op->id;
 		app.trace_op = op->id;
 	}
-	host_yread(s, url, in, NULL, false, packages_cb, c);
+	host_yread(s, url, in, NULL, c->op != 0, packages_cb, c);
 }
 
 /* pkg upgrade of the named packages (JSON array text), or of all. */

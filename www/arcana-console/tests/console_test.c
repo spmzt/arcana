@@ -10457,6 +10457,84 @@ ATF_TC_BODY(restconf_actions, tc)
 	    NULL);
 }
 
+/* The socket's answer to request id: its steps counted, the rest. */
+static char *
+ws_answer(int ws, int id, int *steps)
+{
+	char	want[32], step[40], *m;
+
+	snprintf(want, sizeof(want), "{\"id\":%d,\"", id);
+	snprintf(step, sizeof(step), "{\"id\":%d,\"step\":", id);
+	*steps = 0;
+	while ((m = ws_recv(ws)) != NULL) {
+		if (strncmp(m, step, strlen(step)) == 0)
+			(*steps)++;
+		else if (strncmp(m, want, strlen(want)) == 0)
+			return (m);
+		free(m);
+	}
+	return (NULL);
+}
+
+/*
+ * A page's read through the fleet mount over the console's socket
+ * (PLAN-SDN-YANG 4.8.1): a GET and an action that reads answered as
+ * RESTCONF answers, the host's steps told as it takes them; a change
+ * refused, as a path no module has.
+ */
+CONSOLE_TC(stream_restconf, "Reads through the fleet mount over the "
+    "console's socket, with their steps; a change refused")
+ATF_TC_BODY(stream_restconf, tc)
+{
+	char		 data[256], cand[256], ask[400], *m;
+	const char	*id;
+	int		 ws, steps;
+
+	rc_lab(tc, data, cand, sizeof(cand));
+	id = strrchr(data, '=') + 1;
+	ws = ws_open("/api/stream");
+	snprintf(ask, sizeof(ask), "{\"id\":1,\"server\":\"%s\",\"what\":"
+	    "\"restconf\",\"path\":\"arcana-services:services\"}", id);
+	ws_send(ws, ask);
+	m = ws_answer(ws, 1, &steps);
+	ATF_REQUIRE(m != NULL);
+	ATF_CHECK_MSG(strstr(m, "\"status\":200") != NULL && strstr(m,
+	    "\"arcana-services:services\"") != NULL && strstr(m,
+	    "\"name\":\"sshd\"") != NULL, "%s", m);
+	/* service(8) asked of each: steps of the host's. */
+	ATF_CHECK_MSG(steps > 0, "no steps: %s", m);
+	free(m);
+	snprintf(ask, sizeof(ask), "{\"id\":2,\"server\":\"%s\",\"what\":"
+	    "\"restconf\",\"path\":\"arcana-sysctl:sysctl/read\",\"body\":"
+	    "{\"arcana-sysctl:input\":{\"prefix\":\"kern.ostype\"}}}", id);
+	ws_send(ws, ask);
+	m = ws_answer(ws, 2, &steps);
+	ATF_REQUIRE(m != NULL);
+	ATF_CHECK_MSG(strstr(m, "\"status\":200") != NULL && strstr(m,
+	    "\"arcana-sysctl:output\"") != NULL && strstr(m,
+	    "\"kern.ostype\"") != NULL, "%s", m);
+	free(m);
+	/* A change: not over the socket. */
+	snprintf(ask, sizeof(ask), "{\"id\":3,\"server\":\"%s\",\"what\":"
+	    "\"restconf\",\"path\":\"arcana-jails:jails/jail=web/start\","
+	    "\"body\":{}}", id);
+	ws_send(ws, ask);
+	m = ws_answer(ws, 3, &steps);
+	ATF_REQUIRE(m != NULL);
+	ATF_CHECK_MSG(strstr(m, "\"status\":403") != NULL && strstr(m,
+	    "only a read") != NULL, "%s", m);
+	free(m);
+	snprintf(ask, sizeof(ask), "{\"id\":4,\"server\":\"%s\",\"what\":"
+	    "\"restconf\",\"path\":\"arcana-nothing:nothing\"}", id);
+	ws_send(ws, ask);
+	m = ws_answer(ws, 4, &steps);
+	ATF_REQUIRE(m != NULL);
+	ATF_CHECK_MSG(strstr(m, "\"status\":404") != NULL ||
+	    strstr(m, "\"status\":400") != NULL, "%s", m);
+	free(m);
+	close(ws);
+}
+
 /*
  * An agent of a release before (ARCANA_OLD_AGENT) lacks actions the
  * console's tables have: a clean 404, its module there all the same.
@@ -20778,6 +20856,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf_revisions);
 	ATF_TP_ADD_TC(tp, restconf_actions);
 	ATF_TP_ADD_TC(tp, restconf_actions_old);
+	ATF_TP_ADD_TC(tp, stream_restconf);
 	ATF_TP_ADD_TC(tp, sapnet);
 	ATF_TP_ADD_TC(tp, sapnet_attach);
 	ATF_TP_ADD_TC(tp, enrol);

@@ -103,20 +103,62 @@ ml_graph(struct html *h, const ucl_object_t *series)
 	    (long long)qmax, (long long)dmax);
 }
 
+/*
+ * arcana-smtpd's read as the section draws it: by its names; the form
+ * (spec) the JSON it holds, a table its text, or a secret one's names.
+ */
+static ucl_object_t *
+ml_conv(const ucl_object_t *o)
+{
+	static const char *const names[] = { "status{process}",
+	    "stat{name}=stats", "envelope=queue", "conf-table=conf_tables",
+	    "entry-key=key", "sample[time,queued,ok,tempfail,permfail,"
+	    "sessions]=series", "filter=filters", "smtpctl^", "config^",
+	    "entry=entries", NULL };
+	const ucl_object_t	*e, *v;
+	ucl_object_t		*r, *tabs, *spec;
+	ucl_object_iter_t	 it = NULL;
+
+	r = jflat(o, names);
+	ucl_object_delete_key(r, "table");
+	tabs = ucl_object_typed_new(UCL_OBJECT);
+	while ((e = ucl_object_iterate(jget(o, "table"), &it, true)) != NULL)
+		if (jstr(e, "name") != NULL) {
+			v = jget(e, "text") != NULL ? jget(e, "text") :
+			    jget(e, "user");
+			ucl_object_insert_key(tabs, v != NULL ? ucl_object_copy(v) :
+			    ucl_object_typed_new(UCL_ARRAY), jstr(e, "name"), 0,
+			    true);
+		}
+	ucl_object_replace_key(r, tabs, "tables", 0, false);
+	if (jstr(o, "spec") != NULL && (spec = json_parse(jstr(o, "spec"))) !=
+	    NULL)
+		ucl_object_replace_key(r, spec, "spec", 0, false);
+	if (jget(r, "filters") == NULL)
+		ucl_object_insert_key(r, ucl_object_typed_new(UCL_ARRAY),
+		    "filters", 0, false);
+	if (jget(r, "series") == NULL)
+		ucl_object_insert_key(r, ucl_object_typed_new(UCL_ARRAY),
+		    "series", 0, false);
+	return (r);
+}
+
 static void
 ml_load(const char *sid)
 {
 	struct server	*s;
-	char		 url[128], q[64];
+	char		 in[320], *q;
 
 	/* Another host: its own choice. */
 	if (strcmp(sid, ml.r.sid) != 0)
 		ml.picked = false;
-	q[0] = '\0';
-	if ((s = cur_server()) != NULL && ml_where(s)[0] != '\0')
-		snprintf(q, sizeof(q), "?jail=%s", ml_where(s));
-	snprintf(url, sizeof(url), "/api/servers/%s/smtpd%s", sid, q);
-	res_load(&ml.r, sid, url);
+	snprintf(in, sizeof(in), "{}");
+	if ((s = cur_server()) != NULL && ml_where(s)[0] != '\0') {
+		q = json_quote(ml_where(s));
+		snprintf(in, sizeof(in), "{\"jail\":%s}", q);
+		free(q);
+	}
+	res_yread(&ml.r, sid, "arcana-smtpd:smtpd/read", in, ml_conv);
 }
 
 /* A job's extra: the jail it is done in, when OpenSMTPD is a jail's. */

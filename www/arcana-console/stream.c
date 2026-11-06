@@ -44,7 +44,15 @@
  * trace), then {"id": 9, "status": 200, "reply": {...}}, what GET
  * /api/servers/<id>/services answers.  read is the path after
  * /api/servers/<id>/ of any read of a host's (hosts.c's hreads), its
- * query string with it: "net/routes?fib=1", "storage/pools".
+ * query string with it: "net/routes?fib=1", "storage/pools".  And the
+ * same through the fleet mount (PLAN-SDN-YANG 4.8.1),
+ *
+ *	{"id": 9, "server": "<id>", "what": "restconf",
+ *	 "path": "arcana-kernel:kernel", "body": {...}}
+ *
+ * path below the host's entry with its query, a GET, or with body (an
+ * action's input as POSTed) an action that reads; its reply the
+ * RESTCONF answer's.
  */
 
 #include <sys/param.h>
@@ -81,6 +89,8 @@ struct stream {
 	uint8_t			 kind;		/* ARC_NET_KIND_*, or 255 for sysctl */
 	char			 read[256];	/* a read's: its path and query */
 	char			*name;		/* a read's: the server's name */
+	bool			 rc;		/* a RESTCONF read's */
+	ucl_object_t		*body;		/* and its action's input */
 	uint8_t			 family;
 	uint32_t		 fib;
 	char			 jail[256];
@@ -301,8 +311,13 @@ read_run(struct task *t)
 	int		 status;
 
 	s = (struct stream *)t;
-	json = hosts_read_live(s->sid, s->uri, s->peer, s->name, s->read,
-	    read_step, s, &status);
+	if (s->rc) {
+		json = hosts_restconf_live(s->sid, s->uri, s->peer, s->name,
+		    s->read, s->body, read_step, s, &status);
+		s->body = NULL;
+	} else
+		json = hosts_read_live(s->sid, s->uri, s->peer, s->name,
+		    s->read, read_step, s, &status);
 	if (atomic_load(&s->stop))
 		;
 	else if (json == NULL)
@@ -480,6 +495,8 @@ stream_free(struct stream *s)
 	free(s->uri);
 	free(s->peer);
 	free(s->name);
+	if (s->body != NULL)
+		ucl_object_unref(s->body);
 	free(s);
 }
 
@@ -592,11 +609,18 @@ stream_message(struct conn *c, u_int8_t op, void *data, size_t len)
 		ucl_object_unref(o);
 		return;
 	}
-	if (sid != NULL && what != NULL && strcmp(what, "read") == 0) {
-		const char	*rd = ucl_str(o, "read");
+	if (sid != NULL && what != NULL && (strcmp(what, "read") == 0 ||
+	    strcmp(what, "restconf") == 0)) {
+		bool		 rc = what[1] == 'e' && what[2] == 's';
+		const char	*rd = ucl_str(o, rc ? "path" : "read");
+		const ucl_object_t *body = ucl_object_lookup(o, "body");
 
-		if (rd == NULL || strlen(rd) >= sizeof(s->read) ||
-		    !hosts_read_known(rd))
+		if (rc && (rd == NULL || strlen(rd) >= sizeof(s->read) ||
+		    (body != NULL && ucl_object_type(body) != UCL_OBJECT)))
+			refuse(c, id, "path is below the host's entry in the "
+			    "fleet mount, body an action's input as POSTed");
+		else if (!rc && (rd == NULL || strlen(rd) >= sizeof(s->read) ||
+		    !hosts_read_known(rd)))
 			refuse(c, id, "read is the path of a read of a host's, "
 			    "after /api/servers/<id>/");
 		else if ((sv = server_find(sid)) == NULL || !stream_host_ok(c,
@@ -614,6 +638,8 @@ stream_message(struct conn *c, u_int8_t op, void *data, size_t len)
 			atomic_init(&s->stop, false);
 			strlcpy(s->sid, sv->id, sizeof(s->sid));
 			strlcpy(s->read, rd, sizeof(s->read));
+			s->rc = rc;
+			s->body = body != NULL ? ucl_object_copy(body) : NULL;
 			s->uri = xstrdup(sv->uri);
 			s->peer = sv->peer_name != NULL ?
 			    xstrdup(sv->peer_name) : NULL;

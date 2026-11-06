@@ -371,6 +371,36 @@ rc_action(const char *path, const char *input, const char *query,
 	return (invoke(RK_ACTION, path, input, query, cb, arg));
 }
 
+/*
+ * A read of host sid's through the fleet mount over the console's
+ * socket (live.c), task opid drawing the host's steps as it takes them:
+ * path below its entry with its query, a GET, or with input an action
+ * that reads.  The callback gets what rc_get() and rc_read() give.
+ */
+void
+rc_live(const char *sid, const char *path, const char *input, int opid,
+    api_cb *cb, void *arg)
+{
+	struct rcreq	*r;
+	const char	*last;
+	char		 url[1024], mod[64], *body = NULL;
+
+	r = req_new(input != NULL ? RK_ACTION : RK_GET, cb, arg);
+	rc_h(url, sizeof(url), sid, "%s", path);
+	if (input == NULL) {
+		snprintf(r->path, sizeof(r->path), "%.*s", (int)strcspn(url,
+		    "?"), url);
+		last = strrchr(r->path, '/');
+		r->entry = last != NULL && strchr(last, '=') != NULL;
+	} else {
+		module_of(url, mod, sizeof(mod));
+		if (asprintf(&body, "{\"%s:input\":%s}", mod, input) == -1)
+			abort();
+	}
+	live_yread(sid, path, body, url, opid, done_cb, r);
+	free(body);
+}
+
 /* The same of an action that only reads: a read's task, not a change's. */
 int
 rc_read(const char *path, const char *input, const char *query,

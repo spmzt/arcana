@@ -6,7 +6,8 @@
 
 /*
  * Reads over the console's socket: what a GET would read, done by the
- * console as {"what": "read"} (stream.c), so that each step of the
+ * console as {"what": "read"}, or through the fleet mount as {"what":
+ * "restconf"} (stream.c), so that each step of the
  * host's trace reaches the page while the host takes it.  The task of
  * the read draws its steps as they come, a program's box the moment it
  * runs, and says it is live, not pending; the answer goes to the same
@@ -29,6 +30,7 @@ struct liveread {
 	api_cb	*cb;
 	void	*arg;
 	char	 url[400];	/* the GET it would be */
+	char	*body;		/* or the POST of an action that reads */
 	char	 fn[48];	/* its operation's call, as the trace says it */
 	int	 node, tab;	/* where the page was: its tab's (export.c) */
 };
@@ -60,9 +62,69 @@ live_fallback(struct liveread *l)
 		op->live = false;
 		op->await = true;
 	}
-	req = api("GET", c.url, NULL, c.cb, c.arg);
+	if (c.body != NULL)
+		api_reads();
+	req = api(c.body != NULL ? "POST" : "GET", c.url, c.body, c.cb,
+	    c.arg);
+	free(c.body);
 	if (op != NULL)
 		op->req = req;
+}
+
+/*
+ * The same of a read through the fleet mount: path below host sid's
+ * entry with its query, a GET, or with body (an action's input as
+ * POSTed) an action that reads; url the request it would be without
+ * the socket.
+ */
+void
+live_yread(const char *sid, const char *path, const char *body,
+    const char *url, int opid, api_cb *cb, void *arg)
+{
+	struct liveread	*l;
+	struct op	*op;
+	struct html	 m;
+	char		*q, *msg;
+	int		 i;
+
+	op = opid != 0 ? op_find(opid) : NULL;
+	for (i = 0, l = NULL; i < LIVE_MAX && l == NULL; i++)
+		if (live[i].id == 0)
+			l = &live[i];
+	if (l == NULL || !app.online) {
+		if (body != NULL)
+			api_reads();
+		i = api(body != NULL ? "POST" : "GET", url, body, cb, arg);
+		if (op != NULL)
+			op->req = i;
+		return;
+	}
+	l->id = live_next++;
+	l->op = opid;
+	l->cb = cb;
+	l->arg = arg;
+	snprintf(l->url, sizeof(l->url), "%s", url);
+	l->body = body != NULL ? strdup(body) : NULL;
+	export_where(&l->node, &l->tab);
+	snprintf(l->fn, sizeof(l->fn), "RESTCONF %.*s", (int)strcspn(path,
+	    "/?"), path);
+	if (op != NULL) {
+		op->live = true;
+		op->await = false;
+		snprintf(op->method, sizeof(op->method), body != NULL ? "POST" :
+		    "GET");
+		snprintf(op->url, sizeof(op->url), "%s", url);
+		snprintf(op->stage, sizeof(op->stage), "asked the host");
+	}
+	q = json_quote(path);
+	memset(&m, 0, sizeof(m));
+	h_fmt(&m, "{\"id\":%d,\"server\":\"%s\",\"what\":\"restconf\","
+	    "\"path\":%s%s%s}", l->id, sid, q, body != NULL ? ",\"body\":" :
+	    "", body != NULL ? body : "");
+	free(q);
+	msg = h_take(&m);
+	arc_stream_send(msg);
+	free(msg);
 }
 
 /*
@@ -94,6 +156,7 @@ live_read(const char *sid, const char *read, const char *url, int opid,
 	l->op = opid;
 	l->cb = cb;
 	l->arg = arg;
+	l->body = NULL;
 	snprintf(l->url, sizeof(l->url), "%s", url);
 	export_where(&l->node, &l->tab);
 	/* The console's call, by which the schema panel finds it. */
@@ -137,6 +200,7 @@ live_cancel(int opid)
 			continue;
 		c = live[i];
 		memset(&live[i], 0, sizeof(live[i]));
+		free(c.body);
 		snprintf(msg, sizeof(msg), "{\"id\":%d,\"stop\":true}", c.id);
 		arc_stream_send(msg);
 		c.cb(0, NULL, "cancelled", c.arg);
@@ -441,6 +505,7 @@ live_stream(const ucl_object_t *o)
 	struct liveread	*l;
 	struct op	*op;
 	const char	*err;
+	char		 why[600];
 	int		 i, status;
 
 	if (jbool(o, "closed")) {
@@ -481,7 +546,8 @@ live_stream(const ucl_object_t *o)
 	status = (int)jint(o, "status", 0);
 	err = NULL;
 	if (status >= 400 && (err = jstr(jget(o, "reply"),
-	    "error.message")) == NULL)
+	    "error.message")) == NULL && (err = rc_error(jget(o, "reply"),
+	    why, sizeof(why))) == NULL)
 		err = jstr(jget(o, "reply"), "error");
 	if (op != NULL)
 		op->live = false;
@@ -489,6 +555,7 @@ live_stream(const ucl_object_t *o)
 		struct liveread	c = *l;
 
 		memset(l, 0, sizeof(*l));
+		free(c.body);
 		if (status == 200)
 			export_note(c.url, c.node, c.tab, jget(o, "reply"));
 		c.cb(status, jget(o, "reply"), err, c.arg);
