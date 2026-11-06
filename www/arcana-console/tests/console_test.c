@@ -3385,6 +3385,54 @@ ATF_TC_BODY(csrf, tc)
 	ATF_CHECK(strcasestr(r.head, "content-security-policy: default-src "
 	    "'self'") != NULL);
 	resp_free(&r);
+	/*
+	 * Its WebAssembly: 'wasm-unsafe-eval' for a browser that knows it,
+	 * 'unsafe-eval' for one before (or one not known).
+	 */
+	{
+		static const struct {
+			const char	*ua;
+			bool		 wasm;
+		} uas[] = {
+			{ "Mozilla/5.0 (X11; FreeBSD amd64) AppleWebKit/537.36 "
+			  "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+			  true },
+			{ "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+			  "(KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36",
+			  false },
+			{ "Mozilla/5.0 (X11; FreeBSD amd64; rv:128.0) "
+			  "Gecko/20100101 Firefox/128.0", true },
+			{ "Mozilla/5.0 (X11; Linux x86_64; rv:91.0) "
+			  "Gecko/20100101 Firefox/91.0", false },
+			{ "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+			  "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 "
+			  "Safari/605.1.15", true },
+			{ "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+			  "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 "
+			  "Safari/605.1.15", false },
+			{ "Mozilla/5.0 (iPhone; CPU iPhone OS 15_7 like Mac OS X) "
+			  "AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0 "
+			  "Mobile/15E148 Safari/604.1", false },
+			{ "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) "
+			  "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 "
+			  "Mobile/15E148 Safari/604.1", true },
+			{ "SomeTV/1.0", false },
+		};
+		char	extra[400];
+		size_t	k;
+
+		for (k = 0; k < nitems(uas); k++) {
+			snprintf(extra, sizeof(extra), "User-Agent: %s\r\n",
+			    uas[k].ua);
+			http_with("GET", "/", extra, NULL, &r);
+			EXPECT(&r, 200);
+			ATF_CHECK_MSG(strcasestr(r.head, uas[k].wasm ?
+			    "script-src 'self' 'wasm-unsafe-eval';" :
+			    "script-src 'self' 'unsafe-eval';") != NULL,
+			    "%s: %s", uas[k].ua, r.head);
+			resp_free(&r);
+		}
+	}
 	send_xjg = true;
 	origin_hdr = "https://evil.example";
 	http("POST", "/api/servers", "{\"name\":\"y\",\"uri\":\"unix:/y.sock\"}",

@@ -1291,20 +1291,15 @@ done(struct lws *wsi, const char *why)
  * says; no window of another site shares the page's; nothing of the
  * address is sent on; and of the browser's features only those the page
  * uses: passkeys, fullscreen and the clipboard.  The page's WebAssembly
- * runs under 'unsafe-eval', not 'wasm-unsafe-eval', which browsers
- * before Chrome 97, Firefox 102 and Safari 16 do not know and drop,
- * refusing the wasm then.
+ * runs under 'wasm-unsafe-eval'; browsers before Chrome 97, Firefox 102
+ * and Safari 16 do not know it and drop it, refusing the wasm then, so
+ * those (and a browser not known by its User-Agent) are given
+ * 'unsafe-eval' instead (csp_add()).
  */
 static const struct {
 	const unsigned char	*name;
 	const unsigned char	*value;
 } sec_headers[] = {
-	{ (const unsigned char *)"content-security-policy:",
-	  (const unsigned char *)"default-src 'self'; script-src 'self' "
-	  "'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src "
-	  "'self' data:; font-src 'self'; connect-src 'self'; manifest-src "
-	  "'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; "
-	  "object-src 'none'; frame-ancestors 'none'" },
 	{ (const unsigned char *)"x-frame-options:",
 	  (const unsigned char *)"DENY" },
 	{ (const unsigned char *)"cross-origin-resource-policy:",
@@ -1331,15 +1326,79 @@ web_hsts(int seconds)
 	hsts_max_age = seconds;
 }
 
-/* sec_headers, and over TLS the browser's keeping to it for the days
- * the settings say (none for 0), at *pp. */
+/* The policy, its script-src's eval word left to csp_add(). */
+#define	CSP_HEAD	"default-src 'self'; script-src 'self' "
+#define	CSP_TAIL	"; style-src 'self' 'unsafe-inline'; img-src 'self' " \
+	"data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; " \
+	"worker-src 'self'; base-uri 'none'; form-action 'none'; object-src " \
+	"'none'; frame-ancestors 'none'"
+
+/* The major version after key in ua ("Chrome/" "120.0..."): -1 none. */
+static int
+ua_major(const char *ua, const char *key)
+{
+	const char	*p;
+
+	if ((p = strstr(ua, key)) == NULL)
+		return (-1);
+	p += strlen(key);
+	return (isdigit((unsigned char)*p) ? atoi(p) : -1);
+}
+
+/*
+ * Whether the browser of ua knows 'wasm-unsafe-eval': Chromium's 97 on
+ * (Edge, Opera and the rest say Chrome/ too), Firefox 102 on, and
+ * WebKit's 16 on (Safari's Version/, any browser on iOS by its OS
+ * version, all being WebKit there).  One not known by these is not.
+ */
+static bool
+ua_wasm_eval(const char *ua)
+{
+	const char	*p;
+	int		 v;
+
+	if ((p = strstr(ua, "iPhone OS ")) != NULL ||
+	    (p = strstr(ua, "CPU OS ")) != NULL)
+		return (atoi(strchr(p, 'S') + 2) >= 16);
+	if ((v = ua_major(ua, "Chrome/")) >= 0 ||
+	    (v = ua_major(ua, "Chromium/")) >= 0)
+		return (v >= 97);
+	if ((v = ua_major(ua, "Firefox/")) >= 0)
+		return (v >= 102);
+	if (strstr(ua, "Safari/") != NULL &&
+	    (v = ua_major(ua, "Version/")) >= 0)
+		return (v >= 16);
+	return (false);
+}
+
+/* The policy for the browser that asks, at *pp. */
+static int
+csp_add(struct lws *wsi, unsigned char **pp, unsigned char *end)
+{
+	char	ua[512];
+	const char *v;
+
+	ua[0] = '\0';
+	if (lws_hdr_total_length(wsi, WSI_TOKEN_HTTP_USER_AGENT) > 0)
+		(void)lws_hdr_copy(wsi, ua, sizeof(ua),
+		    WSI_TOKEN_HTTP_USER_AGENT);
+	v = ua_wasm_eval(ua) ? CSP_HEAD "'wasm-unsafe-eval'" CSP_TAIL :
+	    CSP_HEAD "'unsafe-eval'" CSP_TAIL;
+	return (lws_add_http_header_by_name(wsi, (const unsigned char *)
+	    "content-security-policy:", (const unsigned char *)v,
+	    (int)strlen(v), pp, end));
+}
+
+/* The policy, sec_headers, and over TLS the browser's keeping to it
+ * for the days the settings say (none for 0), at *pp. */
 static int
 sec_add(struct lws *wsi, unsigned char **pp, unsigned char *end)
 {
 	size_t	i;
 	int	rc;
 
-	for (rc = 0, i = 0; rc == 0 && i < nitems(sec_headers); i++)
+	rc = csp_add(wsi, pp, end);
+	for (i = 0; rc == 0 && i < nitems(sec_headers); i++)
 		rc = lws_add_http_header_by_name(wsi, sec_headers[i].name,
 		    sec_headers[i].value,
 		    (int)strlen((const char *)sec_headers[i].value), pp, end);
