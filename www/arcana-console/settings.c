@@ -1024,6 +1024,8 @@ settings_yang(void)
 		if (settings[i].kind != K_SECRET && settings[i].base != NULL)
 			yput(e, "web-conf", ucl_object_fromstring(
 			    settings[i].base));
+		yput(e, "label", ucl_object_fromstring(settings[i].label));
+		yput(e, "help", ucl_object_fromstring(settings[i].help));
 		ucl_array_append(src, e);
 	}
 	yput(o, "source", src);

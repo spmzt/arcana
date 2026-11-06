@@ -2375,23 +2375,37 @@ addToLibrary({
 	},
 
 	arc_http__deps: ["$arcAborts", "$arcStr", "$UTF8ToString"],
-	arc_http: function (id, methodp, urlp, bodyp) {
+	arc_http: function (id, methodp, urlp, bodyp, hdrsp) {
 		var method = UTF8ToString(methodp), body = null, opts;
 		var ctl = new AbortController(), url = UTF8ToString(urlp);
+		var rc = url.indexOf("/restconf/") === 0;
 
 		if (bodyp !== 0)
 			body = UTF8ToString(bodyp);
-		/* A YANG Patch (RFC 8072) is its own media type. */
+		/* A YANG Patch (RFC 8072) is its own media type; RESTCONF's
+		 * data RFC 8040's. */
 		opts = {
 			method: method,
 			credentials: "same-origin",
 			cache: "no-store",
 			headers: { "Content-Type": body !== null &&
 			    body.indexOf('{"ietf-yang-patch:yang-patch"') === 0 ?
-			    "application/yang-patch+json" : "application/json",
+			    "application/yang-patch+json" : rc ?
+			    "application/yang-data+json" : "application/json",
 			    "X-Arcana": "1" },
 			signal: ctl.signal
 		};
+		if (rc)
+			opts.headers.Accept = "application/yang-data+json";
+		/* The caller's own: "Name: value" a line (If-Match). */
+		if (hdrsp !== 0)
+			UTF8ToString(hdrsp).split("\n").forEach(function (l) {
+				var i = l.indexOf(":");
+
+				if (i > 0)
+					opts.headers[l.slice(0, i)] =
+					    l.slice(i + 1).trim();
+			});
 		if (body !== null)
 			opts.body = body;
 		arcAborts[id] = ctl;
@@ -2428,12 +2442,13 @@ addToLibrary({
 					}
 					delete arcAborts[id];
 					Module._arc_on_http(id, r.status,
-					    arcStr(t));
+					    arcStr(t), r.headers.get("ETag") ?
+					    arcStr(r.headers.get("ETag")) : 0);
 				}));
 			}).catch(function (err) {
 				delete arcAborts[id];
 				Module._arc_on_http(id, 0, arcStr(ctl.gaveUp ?
-				    "cancelled" : String(err)));
+				    "cancelled" : String(err)), 0);
 			});
 		})(0);
 	},

@@ -40,7 +40,8 @@ void		 arc_patch(const char *, const char *);
 void		 arc_set_class(const char *, const char *, int);
 void		 arc_focus(const char *);
 void		 arc_events_init(void);
-void		 arc_http(int, const char *, const char *, const char *);
+void		 arc_http(int, const char *, const char *, const char *,
+		    const char *);
 void		 arc_http_abort(int);
 void		 arc_reload(void);
 void		 arc_push_sync(void);
@@ -94,7 +95,7 @@ void		 arc_plug_event(const char *, const char *);
 
 /* Called from bridge.js. */
 void		 arc_on_action(char *, char *, char *);
-void		 arc_on_http(int, int, char *);
+void		 arc_on_http(int, int, char *, char *);
 void		 arc_on_webauthn(int, int, char *);
 void		 arc_on_net(int);
 void		 arc_on_visible(int);
@@ -146,6 +147,34 @@ typedef void	 api_cb(int, const ucl_object_t *, const char *, void *);
 
 int		 api(const char *, const char *, const char *, api_cb *,
 		    void *);
+int		 api_hdr(const char *, const char *, const char *,
+		    const char *, api_cb *, void *);
+const char	*api_etag(void);
+
+/*
+ * rc.c: the console's RESTCONF (RFC 8040), JSON.  rc_c() and rc_h()
+ * write the path of the console's own node and of a host's (the fleet
+ * mount), rc_key() a list key as a path has it.  rc_get() hands its
+ * callback the node read, unwrapped (a list entry's entry); rc_edit()
+ * PUT, PATCH, POST or DELETE with If-Match of the tag last read there;
+ * rc_action() an action's or rpc's input wrapped and its output
+ * unwrapped (NULL on 204), accept the warnings accepted (arcana-accept).
+ * rc_error(): an ietf-restconf:errors' words (message, app-tag, path).
+ */
+#define	RC_C		"/restconf/data/arcana-console:"
+char		*rc_c(char *, size_t, const char *, ...)
+		    __attribute__((__format__(__printf__, 3, 4)));
+char		*rc_h(char *, size_t, const char *, const char *, ...)
+		    __attribute__((__format__(__printf__, 4, 5)));
+const char	*rc_key(const char *);
+int		 rc_get(const char *, const char *, api_cb *, void *);
+int		 rc_edit(const char *, const char *, const char *, api_cb *,
+		    void *);
+int		 rc_action(const char *, const char *, const char *, api_cb *,
+		    void *);
+const char	*rc_error(const ucl_object_t *, char *, size_t);
+const char	*rc_tag(const ucl_object_t *);
+int64_t		 rc_time(const char *);
 void		 webauthn(bool, const char *, void (*)(bool, const char *,
 		    void *), void *);
 

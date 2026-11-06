@@ -3260,7 +3260,7 @@ enrol_token_cb(int status, const ucl_object_t *o, const char *err,
 void
 enrol_host(const char *name, const char *host)
 {
-	char	*qn, *qh, *body;
+	char	*qn, *qh, *body, url[200];
 
 	app.modal_busy = true;
 	app.modal_error[0] = '\0';
@@ -3269,7 +3269,8 @@ enrol_host(const char *name, const char *host)
 	qh = json_quote(host);
 	if (asprintf(&body, "{\"name\":%s,\"host\":%s}", qn, qh) == -1)
 		abort();
-	api("POST", "/api/enrol/tokens", body, enrol_token_cb, NULL);
+	rc_action(rc_c(url, sizeof(url), "enrolment/create-token"), body, NULL,
+	    enrol_token_cb, NULL);
 	free(qn);
 	free(qh);
 	free(body);
@@ -3726,24 +3727,117 @@ agent_build(struct server *s, const char *host_keys, bool console)
 }
 
 static void
+kput(ucl_object_t *o, const char *key, ucl_object_t *v)
+{
+
+	ucl_object_insert_key(o, v, key, 0, true);
+}
+
+static ucl_object_t *
+fixed_setting(const char *key, const char *label, const char *v)
+{
+	ucl_object_t	*e;
+
+	e = ucl_object_typed_new(UCL_OBJECT);
+	kput(e, "key", ucl_object_fromstring(key));
+	kput(e, "label", ucl_object_fromstring(label));
+	kput(e, "value", ucl_object_fromstring(v != NULL ? v : ""));
+	kput(e, "editable", ucl_object_frombool(false));
+	return (e);
+}
+
+/*
+ * arcana-console:settings as the forms read them: each setting of
+ * source's, in its order, {key, label, help, type, value, set, base,
+ * overridden, editable} (key and value as the console's file has
+ * them: _ for -, a text), then those web.conf alone sets.
+ */
+static ucl_object_t *
+settings_model(const ucl_object_t *rc)
+{
+	const ucl_object_t	*e, *v;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*o, *a, *s;
+	const char		*name;
+	char			 key[64], set[80], path[400];
+	char			*p;
+
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(rc, "source"), &it, true)) !=
+	    NULL) {
+		if ((name = jstr(e, "name")) == NULL)
+			continue;
+		snprintf(key, sizeof(key), "%s", name);
+		for (p = key; *p != '\0'; p++)
+			if (*p == '-')
+				*p = '_';
+		snprintf(set, sizeof(set), "%s-set", name);
+		s = ucl_object_typed_new(UCL_OBJECT);
+		kput(s, "key", ucl_object_fromstring(key));
+		kput(s, "label", ucl_object_fromstring(jstr(e, "label") != NULL ?
+		    jstr(e, "label") : key));
+		kput(s, "help", ucl_object_fromstring(jstr(e, "help") != NULL ?
+		    jstr(e, "help") : ""));
+		v = ucl_object_lookup(rc, name);
+		if (ucl_object_lookup(rc, set) != NULL) {
+			kput(s, "type", ucl_object_fromstring("secret"));
+			kput(s, "value", ucl_object_fromstring(""));
+			kput(s, "set", ucl_object_frombool(jbool(rc, set)));
+		} else {
+			kput(s, "type", ucl_object_fromstring(
+			    ucl_object_type(v) == UCL_BOOLEAN ? "bool" : "text"));
+			kput(s, "value", ucl_object_fromstring(v != NULL ?
+			    ucl_object_tostring_forced(v) : ""));
+			/* A number's leaf takes a number back. */
+			if (ucl_object_type(v) == UCL_INT)
+				kput(s, "number", ucl_object_frombool(true));
+		}
+		kput(s, "base", ucl_object_fromstring(jstr(e, "web-conf") !=
+		    NULL ? jstr(e, "web-conf") : ""));
+		kput(s, "overridden", ucl_object_frombool(jbool(e,
+		    "overridden")));
+		kput(s, "editable", ucl_object_frombool(true));
+		ucl_array_append(a, s);
+	}
+	ucl_array_append(a, fixed_setting("rp_id", "Relying party", jstr(rc,
+	    "fixed.relying-party")));
+	ucl_array_append(a, fixed_setting("origin", "Origin", jstr(rc,
+	    "fixed.origin")));
+	ucl_array_append(a, fixed_setting("datadir", "Data directory",
+	    jstr(rc, "fixed.data-directory")));
+	ucl_array_append(a, fixed_setting("cookie_secure", "Session cookie "
+	    "over HTTPS only", jbool(rc, "fixed.cookie-secure") ? "true" :
+	    "false"));
+	ucl_array_append(a, fixed_setting("tls", "Certificates for the agents",
+	    jstr(rc, "fixed.agent-certificates")));
+	o = ucl_object_typed_new(UCL_OBJECT);
+	kput(o, "settings", a);
+	snprintf(path, sizeof(path), "%s/settings.json", jstr(rc,
+	    "fixed.data-directory") != NULL ? jstr(rc,
+	    "fixed.data-directory") : "");
+	kput(o, "file", ucl_object_fromstring(path));
+	return (o);
+}
+
+static void
 settings_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	bool	saved;
 
 	saved = arg != NULL;
 	app.modal_busy = false;
-	if (status != 200 || jget(o, "settings") == NULL) {
+	if (status != 200 || jget(o, "source") == NULL) {
 		/* Refused to a session an API token opened: the page says
 		 * so already, as soon as it knows the session is one. */
-		if (status != 401 && !(status == 403 && jstr(o, "error.code") !=
-		    NULL && strcmp(jstr(o, "error.code"), "token") == 0))
+		if (status != 401 && !(status == 403 && app.by_token))
 			snprintf(app.modal_error, sizeof(app.modal_error), "%s",
 			    err != NULL ? err : "cannot load the settings");
 		return;
 	}
 	if (app.settings != NULL)
 		ucl_object_unref(app.settings);
-	app.settings = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	app.settings = settings_model(o);
 	app.modal_error[0] = '\0';
 	load_push();
 	if (saved) {
@@ -3761,20 +3855,21 @@ mail_test_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	(void)arg;
 	app.modal_busy = false;
-	if (status == 200 && jbool(o, "ok"))
+	if (status == 200)
 		toast(false, "A test mail went to %s", jstr(o, "to") != NULL ?
 		    jstr(o, "to") : "them");
 	else
-		toast(true, "No mail sent: %s", jstr(o, "error.message") != NULL ?
-		    jstr(o, "error.message") : err != NULL ? err : "failed");
+		toast(true, "No mail sent: %s", err != NULL ? err : "failed");
 }
 
 void
 mail_test(void)
 {
+	char	url[200];
 
 	app.modal_busy = true;
-	api("POST", "/api/settings/mail-test", "{}", mail_test_cb, NULL);
+	rc_action(rc_c(url, sizeof(url), "settings/mail-test"), NULL, NULL,
+	    mail_test_cb, NULL);
 }
 
 static void
@@ -3784,7 +3879,7 @@ telegram_test_cb(int status, const ucl_object_t *o, const char *err,
 
 	(void)arg;
 	app.modal_busy = false;
-	if (status == 200 && jbool(o, "ok"))
+	if (status == 200)
 		toast(false, "A test message went to %s", jstr(o, "to") != NULL ?
 		    jstr(o, "to") : "the chats");
 	else
@@ -3794,10 +3889,11 @@ telegram_test_cb(int status, const ucl_object_t *o, const char *err,
 void
 telegram_test(void)
 {
+	char	url[200];
 
 	app.modal_busy = true;
-	api("POST", "/api/settings/telegram-test", "{}", telegram_test_cb,
-	    NULL);
+	rc_action(rc_c(url, sizeof(url), "settings/telegram-test"), NULL, NULL,
+	    telegram_test_cb, NULL);
 }
 
 /* Which form a setting is in: the console's, mail's or Telegram's. */
@@ -3817,15 +3913,36 @@ load_settings(void)
 
 	/* Not to a session an API token opened: refused, and the page
 	 * says so already. */
+	char	url[200];
+
 	if (app.by_token)
 		return;
-	api("GET", "/api/settings", NULL, settings_cb, NULL);
+	rc_get(rc_c(url, sizeof(url), "settings"), NULL, settings_cb, NULL);
+}
+
+/* The settings merged: read again, said saved. */
+static void
+settings_put_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+	char	url[200];
+
+	(void)arg;
+	if (status < 200 || status > 299) {
+		app.modal_busy = false;
+		snprintf(app.modal_error, sizeof(app.modal_error), "%s", err !=
+		    NULL ? err : "not kept");
+		return;
+	}
+	rc_get(rc_c(url, sizeof(url), "settings"), NULL, settings_cb,
+	    &app.settings);
 }
 
 /*
- * Send every setting of the form; the console keeps what differs.  The
- * mail's are a form of their own, on the Notifications tab: each form
- * sends its own.
+ * Merge every setting of the form (PATCH); the console keeps what
+ * differs.  The mail's are a form of their own, on the Notifications
+ * tab: each form sends its own.  A secret left empty, or a leaf empty
+ * that was, is left out: as it is.
  */
 void
 save_settings(const ucl_object_t *f, int group)
@@ -3833,12 +3950,12 @@ save_settings(const ucl_object_t *f, int group)
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
 	struct html		 b;
-	const char		*key;
-	char			*q;
+	const char		*key, *type, *v;
+	char			*q, name[64], *p, url[200];
 	bool			 first;
 
 	memset(&b, 0, sizeof(b));
-	h_raw(&b, "{\"set\":{");
+	h_raw(&b, "{\"arcana-console:settings\":{");
 	first = true;
 	it = NULL;
 	while ((e = ucl_object_iterate(jget(app.settings, "settings"), &it,
@@ -3846,16 +3963,24 @@ save_settings(const ucl_object_t *f, int group)
 		if (!jbool(e, "editable") || (key = jstr(e, "key")) == NULL ||
 		    setting_group(key) != group)
 			continue;
-		q = json_quote(key);
-		h_raw(&b, first ? "" : ",");
-		h_raw(&b, q);
-		free(q);
-		h_raw(&b, ":");
-		if (jstr(e, "type") != NULL && strcmp(jstr(e, "type"),
-		    "bool") == 0)
+		type = jstr(e, "type") != NULL ? jstr(e, "type") : "text";
+		v = jstr(f, key) != NULL ? jstr(f, key) : "";
+		if (strcmp(type, "bool") != 0 && v[0] == '\0' &&
+		    (strcmp(type, "secret") == 0 || jstr(e, "value") == NULL ||
+		    jstr(e, "value")[0] == '\0'))
+			continue;
+		snprintf(name, sizeof(name), "%s", key);
+		for (p = name; *p != '\0'; p++)
+			if (*p == '_')
+				*p = '-';
+		h_fmt(&b, "%s\"%s\":", first ? "" : ",", name);
+		if (strcmp(type, "bool") == 0)
 			h_raw(&b, jbool(f, key) ? "true" : "false");
+		else if (jbool(e, "number") && v[0] != '\0' && strspn(v,
+		    "0123456789") == strlen(v))
+			h_raw(&b, v);
 		else {
-			q = json_quote(jstr(f, key) != NULL ? jstr(f, key) : "");
+			q = json_quote(v);
 			h_raw(&b, q);
 			free(q);
 		}
@@ -3864,7 +3989,8 @@ save_settings(const ucl_object_t *f, int group)
 	h_raw(&b, "}}");
 	app.modal_busy = true;
 	app.modal_error[0] = '\0';
-	api("POST", "/api/settings", b.s, settings_cb, &app.settings);
+	rc_edit("PATCH", rc_c(url, sizeof(url), "settings"), b.s,
+	    settings_put_cb, NULL);
 	free(b.s);
 }
 
@@ -4005,25 +4131,47 @@ push_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	app.push = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
 }
 
-/* The read-only API tokens, for the settings to show. */
+/*
+ * The API tokens, for the settings to show: arcana-console's, each
+ * {id, name, kind, created, last} with its times in seconds.
+ */
 static void
 tokens_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	ucl_object_t		*m, *a, *t;
 
 	(void)err;
 	(void)arg;
 	if (status != 200)
 		return;
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(jget(o, "token"), &it, true)) != NULL) {
+		t = ucl_object_typed_new(UCL_OBJECT);
+		kput(t, "id", ucl_object_fromstring(jstr(e, "id")));
+		kput(t, "name", ucl_object_fromstring(jstr(e, "name")));
+		kput(t, "kind", ucl_object_fromstring(jstr(e, "kind") != NULL ?
+		    jstr(e, "kind") : "read"));
+		kput(t, "created", ucl_object_fromint(rc_time(jstr(e,
+		    "created"))));
+		kput(t, "last", ucl_object_fromint(rc_time(jstr(e,
+		    "last-used"))));
+		ucl_array_append(a, t);
+	}
+	m = ucl_object_typed_new(UCL_OBJECT);
+	kput(m, "tokens", a);
 	if (app.tokens != NULL)
 		ucl_object_unref(app.tokens);
-	app.tokens = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	app.tokens = m;
 }
 
 void
 load_tokens(void)
 {
+	char	url[200];
 
-	api("GET", "/api/tokens", NULL, tokens_cb, NULL);
+	rc_get(rc_c(url, sizeof(url), "tokens"), NULL, tokens_cb, NULL);
 }
 
 /* A new one made: its value is in this reply only, shown once. */
@@ -4033,8 +4181,7 @@ token_made_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	(void)arg;
 	if (status != 200 || jstr(o, "token") == NULL) {
-		toast(true, "The token was not made: %s", jstr(o, "error.message")
-		    != NULL ? jstr(o, "error.message") : err != NULL ? err :
+		toast(true, "The token was not made: %s", err != NULL ? err :
 		    "no answer");
 		return;
 	}
@@ -4047,7 +4194,7 @@ token_made_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 void
 token_new(void)
 {
-	char	*q, *body;
+	char	*q, *body, url[200];
 
 	if (app.token_name[0] == '\0') {
 		toast(true, "A token is made with a name: what will use it");
@@ -4058,7 +4205,8 @@ token_new(void)
 	    app.token_write ? "write" : "read") == -1)
 		abort();
 	free(q);
-	api("POST", "/api/tokens", body, token_made_cb, NULL);
+	rc_action(rc_c(url, sizeof(url), "tokens/create"), body, NULL,
+	    token_made_cb, NULL);
 	free(body);
 }
 
@@ -4067,22 +4215,21 @@ token_gone_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	(void)arg;
-	if (status != 200)
-		toast(true, "The token was not deleted: %s", jstr(o,
-		    "error.message") != NULL ? jstr(o, "error.message") : err !=
-		    NULL ? err : "no answer");
+	if (status < 200 || status > 299)
+		toast(true, "The token was not deleted: %s", err != NULL ? err :
+		    "no answer");
 	load_tokens();
 }
 
 void
 token_del(const char *id)
 {
-	char	url[64];
+	char	url[200];
 
 	if (strlen(id) != 16 || id[strspn(id, "0123456789abcdef")] != '\0')
 		return;
-	snprintf(url, sizeof(url), "/api/tokens/%s", id);
-	api("DELETE", url, NULL, token_gone_cb, NULL);
+	rc_edit("DELETE", rc_c(url, sizeof(url), "tokens/token=%s", id), NULL,
+	    token_gone_cb, NULL);
 }
 
 /* The devices that are told of tasks, for the settings to show. */

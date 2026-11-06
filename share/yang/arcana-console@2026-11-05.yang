@@ -361,6 +361,16 @@ module arcana-console {
         description
           "What web.conf says, but of a secret.";
       }
+      leaf label {
+        type string;
+        description
+          "Its name in the page's form.";
+      }
+      leaf help {
+        type string;
+        description
+          "What the page's form says of it.";
+      }
     }
     container fixed {
       config false;
@@ -580,6 +590,13 @@ module arcana-console {
         config false;
         description
           "Whether it has a password of the console's (never read).";
+      }
+      leaf from-directory {
+        type boolean;
+        config false;
+        description
+          "Made at their directory (LDAP) sign-in, its roles those of
+           their groups, brought up to date at each.";
       }
       action invite {
         description

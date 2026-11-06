@@ -1736,6 +1736,9 @@ users_yang(void)
 		put(e, "invitations", ucl_object_fromint(n));
 		put(e, "has-password", ucl_object_frombool(pw_of(name) !=
 		    NULL));
+		if (ucl_str(u, "source") != NULL && strcmp(ucl_str(u,
+		    "source"), "ldap") == 0)
+			put(e, "from-directory", ucl_object_frombool(true));
 		ucl_array_append(a, e);
 	}
 	o = ucl_object_typed_new(UCL_OBJECT);

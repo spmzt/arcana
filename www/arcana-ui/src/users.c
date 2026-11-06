@@ -15,6 +15,7 @@
  */
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,32 +72,140 @@ aaatab_of(const char *arg)
 	return (AAA_USERS);
 }
 
+/* The three as read, arcana-console's users, roles and groups. */
+static ucl_object_t	*rd[3];
+static int		 rd_left;
+static const char *const rd_part[3] = { "users", "roles", "groups" };
+
+static void
+put(ucl_object_t *o, const char *key, ucl_object_t *v)
+{
+
+	ucl_object_insert_key(o, v, key, 0, true);
+}
+
+static ucl_object_t *
+strs(const ucl_object_t *a)
+{
+
+	return (a != NULL ? ucl_object_copy(a) : ucl_object_typed_new(
+	    UCL_ARRAY));
+}
+
+/*
+ * The three as the pages read them: {"users": [{name, tenant, roles,
+ * groups, console, keys, invites, password, source}], "roles": [{name,
+ * console, hosts: {id: role}, ldap_group, users, groups}], "groups":
+ * [{name, roles, description, members}]}.
+ */
+static ucl_object_t *
+model(void)
+{
+	const ucl_object_t	*e, *h;
+	ucl_object_iter_t	 it, hit;
+	ucl_object_t		*o, *a, *m, *hs;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(rd[0], "user"), &it, true)) !=
+	    NULL) {
+		m = ucl_object_typed_new(UCL_OBJECT);
+		put(m, "name", ucl_object_fromstring(jstr(e, "name")));
+		if (jstr(e, "tenant") != NULL)
+			put(m, "tenant", ucl_object_fromstring(jstr(e,
+			    "tenant")));
+		put(m, "roles", strs(jget(e, "role")));
+		put(m, "groups", strs(jget(e, "group")));
+		put(m, "console", ucl_object_fromstring(jstr(e,
+		    "console-role") != NULL ? jstr(e, "console-role") :
+		    "none"));
+		put(m, "keys", ucl_object_fromint(jint(e, "keys", 0)));
+		put(m, "invites", ucl_object_fromint(jint(e, "invitations",
+		    0)));
+		put(m, "password", ucl_object_frombool(jbool(e,
+		    "has-password")));
+		if (jbool(e, "from-directory"))
+			put(m, "source", ucl_object_fromstring("ldap"));
+		ucl_array_append(a, m);
+	}
+	put(o, "users", a);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(rd[1], "role"), &it, true)) !=
+	    NULL) {
+		m = ucl_object_typed_new(UCL_OBJECT);
+		put(m, "name", ucl_object_fromstring(jstr(e, "name")));
+		put(m, "console", ucl_object_fromstring(jstr(e, "console") !=
+		    NULL ? jstr(e, "console") : "member"));
+		hs = ucl_object_typed_new(UCL_OBJECT);
+		hit = NULL;
+		while ((h = ucl_object_iterate(jget(e, "host"), &hit, true)) !=
+		    NULL)
+			if (jstr(h, "id") != NULL && jstr(h, "role") != NULL)
+				put(hs, jstr(h, "id"), ucl_object_fromstring(
+				    jstr(h, "role")));
+		put(m, "hosts", hs);
+		if (jstr(e, "ldap-group") != NULL)
+			put(m, "ldap_group", ucl_object_fromstring(jstr(e,
+			    "ldap-group")));
+		put(m, "users", ucl_object_fromint(jint(e, "users", 0)));
+		put(m, "groups", ucl_object_fromint(jint(e, "groups", 0)));
+		ucl_array_append(a, m);
+	}
+	put(o, "roles", a);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(rd[2], "group"), &it, true)) !=
+	    NULL) {
+		m = ucl_object_typed_new(UCL_OBJECT);
+		put(m, "name", ucl_object_fromstring(jstr(e, "name")));
+		put(m, "roles", strs(jget(e, "role")));
+		if (jstr(e, "description") != NULL)
+			put(m, "description", ucl_object_fromstring(jstr(e,
+			    "description")));
+		put(m, "members", strs(jget(e, "member")));
+		ucl_array_append(a, m);
+	}
+	put(o, "groups", a);
+	return (o);
+}
+
 static void
 users_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
+	int	i = (int)(uintptr_t)arg;
 
-	(void)arg;
-	us.loading = false;
-	if (status != 200) {
-		if (err != NULL)
-			snprintf(app.modal_error, sizeof(app.modal_error), "%s",
-			    err);
+	if (status == 200) {
+		if (rd[i] != NULL)
+			ucl_object_unref(rd[i]);
+		rd[i] = ucl_object_copy(o);
+	} else if (err != NULL)
+		snprintf(app.modal_error, sizeof(app.modal_error), "%s", err);
+	if (--rd_left > 0)
 		return;
-	}
+	us.loading = false;
+	if (rd[0] == NULL || rd[1] == NULL || rd[2] == NULL)
+		return;
 	if (us.all != NULL)
 		ucl_object_unref(us.all);
-	us.all = ucl_object_copy(o);
+	us.all = model();
 	render();
 }
 
 void
 users_load(void)
 {
+	char	url[200];
+	int	i;
 
 	if (us.loading)
 		return;
 	us.loading = true;
-	api("GET", "/api/users", NULL, users_cb, NULL);
+	rd_left = 3;
+	for (i = 0; i < 3; i++)
+		rc_get(rc_c(url, sizeof(url), "%s", rd_part[i]), NULL, users_cb,
+		    (void *)(uintptr_t)i);
 }
 
 static void
@@ -105,16 +214,16 @@ saved_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	(void)arg;
 	app.modal_busy = false;
-	if (status != 200) {
+	if (status < 200 || status > 299) {
 		snprintf(app.modal_error, sizeof(app.modal_error), "%s", err !=
-		    NULL ? err : jstr(o, "error.message") != NULL ? jstr(o,
-		    "error.message") : "not kept");
+		    NULL ? err : "not kept");
 		render();
 		return;
 	}
 	app.modal = MODAL_NONE;
 	app.modal_error[0] = '\0';
-	users_cb(status, o, err, NULL);
+	us.loading = false;
+	users_load();
 }
 
 /* A host's answer to the roles synchronized; the last says how it went. */
@@ -124,12 +233,11 @@ synced_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	const char	*r;
 
 	(void)arg;
-	r = jstr(o, "data.result");
+	r = jstr(o, "result.data.result");
 	if (status != 200 || r == NULL) {
 		us.sync_n[3]++;
-		snprintf(us.sync_err, sizeof(us.sync_err), "%s", jstr(o,
-		    "error") != NULL ? jstr(o, "error") : err != NULL ? err :
-		    "no answer");
+		snprintf(us.sync_err, sizeof(us.sync_err), "%s", err != NULL ?
+		    err : "no answer");
 	} else
 		us.sync_n[strcmp(r, "changed") == 0 ? 0 : strcmp(r,
 		    "unchanged") == 0 ? 1 : 2]++;
@@ -146,15 +254,14 @@ static void
 invited_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
-	(void)arg;
 	if (status != 200) {
-		toast(true, "No invitation: %s", err != NULL ? err : jstr(o,
-		    "error.message") != NULL ? jstr(o, "error.message") : "no "
+		free(arg);
+		toast(true, "No invitation: %s", err != NULL ? err : "no "
 		    "answer");
 		return;
 	}
-	snprintf(us.invite_user, sizeof(us.invite_user), "%s", jstr(o, "user")
-	    != NULL ? jstr(o, "user") : "");
+	snprintf(us.invite_user, sizeof(us.invite_user), "%s", (char *)arg);
+	free(arg);
 	snprintf(us.invite, sizeof(us.invite), "%s", jstr(o, "token") != NULL ?
 	    jstr(o, "token") : "");
 	users_load();
@@ -673,13 +780,119 @@ user_modal(struct html *h)
 	return (true);
 }
 
+/* The list's entry at url put whole (RESTCONF's PUT), e consumed. */
+static void
+entry_put(const char *url, const char *list, ucl_object_t *e, api_cb *cb,
+    void *arg)
+{
+	ucl_object_t	*top, *a;
+	unsigned char	*json;
+	char		 key[64];
+
+	a = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(a, e);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	snprintf(key, sizeof(key), "arcana-console:%s", list);
+	put(top, key, a);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	rc_edit("PUT", url, (const char *)json, cb, arg);
+	free(json);
+}
+
+/* A role's host entry. */
+static ucl_object_t *
+host_role(const char *id, const char *role)
+{
+	ucl_object_t	*h;
+
+	h = ucl_object_typed_new(UCL_OBJECT);
+	put(h, "id", ucl_object_fromstring(id));
+	put(h, "role", ucl_object_fromstring(role));
+	return (h);
+}
+
+/* The users as group's form leaves them (its m_ members), put after
+ * the group is: NULL, none changed. */
+static char	*members_put;
+
+static void
+members_next(const char *group, const ucl_object_t *f)
+{
+	const ucl_object_t	*u, *g;
+	ucl_object_iter_t	 it, git;
+	ucl_object_t		*top, *all, *a, *e, *gs;
+	char			 key[96];
+	bool			 has, want, any;
+
+	free(members_put);
+	members_put = NULL;
+	any = false;
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while (us.all != NULL && (u = ucl_object_iterate(jget(us.all, "users"),
+	    &it, true)) != NULL) {
+		if (jstr(u, "name") == NULL)
+			continue;
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "name", ucl_object_fromstring(jstr(u, "name")));
+		if (jstr(u, "tenant") != NULL)
+			put(e, "tenant", ucl_object_fromstring(jstr(u,
+			    "tenant")));
+		put(e, "role", strs(jget(u, "roles")));
+		gs = ucl_object_typed_new(UCL_ARRAY);
+		has = false;
+		git = NULL;
+		while ((g = ucl_object_iterate(jget(u, "groups"), &git, true)) !=
+		    NULL) {
+			if (strcmp(ucl_object_tostring_forced(g), group) == 0)
+				has = true;
+			else
+				ucl_array_append(gs, ucl_object_copy(g));
+		}
+		snprintf(key, sizeof(key), "m_%s", jstr(u, "name"));
+		want = jbool(f, key);
+		if (want)
+			ucl_array_append(gs, ucl_object_fromstring(group));
+		any |= want != has;
+		put(e, "group", gs);
+		ucl_array_append(a, e);
+	}
+	if (!any) {
+		ucl_object_unref(a);
+		return;
+	}
+	all = ucl_object_typed_new(UCL_OBJECT);
+	put(all, "user", a);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	put(top, "arcana-console:users", all);
+	members_put = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+}
+
+/* The group kept: then its members, the users' own groups. */
+static void
+group_saved_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	char	*body, url[200];
+
+	body = members_put;
+	members_put = NULL;
+	if (status < 200 || status > 299 || body == NULL) {
+		free(body);
+		saved_cb(status, o, err, arg);
+		return;
+	}
+	rc_edit("PUT", rc_c(url, sizeof(url), "users"), body, saved_cb, arg);
+	free(body);
+}
+
 bool
 user_form(const char *form, const ucl_object_t *f)
 {
 	ucl_object_t		*b, *hosts, *roles, *groups;
 	const ucl_object_t	*v;
 	ucl_object_iter_t	 it;
-	unsigned char		*json;
 	char			 url[200];
 	const char		*name;
 
@@ -704,9 +917,11 @@ user_form(const char *form, const ucl_object_t *f)
 		return (true);
 	}
 	b = ucl_object_typed_new(UCL_OBJECT);
+	put(b, "name", ucl_object_fromstring(name));
 	if (strcmp(form, "user") == 0) {
-		ucl_object_insert_key(b, ucl_object_fromstring(jstr(f, "tenant")
-		    != NULL ? jstr(f, "tenant") : ""), "tenant", 0, false);
+		if (jstr(f, "tenant") != NULL && jstr(f, "tenant")[0] != '\0')
+			put(b, "tenant", ucl_object_fromstring(jstr(f,
+			    "tenant")));
 		roles = ucl_object_typed_new(UCL_ARRAY);
 		it = NULL;
 		while ((v = ucl_object_iterate(f, &it, true)) != NULL)
@@ -729,55 +944,49 @@ user_form(const char *form, const ucl_object_t *f)
 			    "has a role, or is in a group, one at least");
 			return (true);
 		}
-		ucl_object_insert_key(b, roles, "roles", 0, false);
-		ucl_object_insert_key(b, groups, "groups", 0, false);
-		snprintf(url, sizeof(url), "/api/users/%s", name);
+		put(b, "role", roles);
+		put(b, "group", groups);
+		rc_c(url, sizeof(url), "users/user=%s", rc_key(name));
+		entry_put(url, "user", b, saved_cb, NULL);
 	} else if (strcmp(form, "ugroup") == 0) {
 		roles = ucl_object_typed_new(UCL_ARRAY);
-		groups = ucl_object_typed_new(UCL_ARRAY);
 		it = NULL;
-		while ((v = ucl_object_iterate(f, &it, true)) != NULL) {
-			if (!jbool(f, ucl_object_key(v)))
-				continue;
-			if (strncmp(ucl_object_key(v), "r_", 2) == 0)
+		while ((v = ucl_object_iterate(f, &it, true)) != NULL)
+			if (strncmp(ucl_object_key(v), "r_", 2) == 0 &&
+			    jbool(f, ucl_object_key(v)))
 				ucl_array_append(roles, ucl_object_fromstring(
 				    ucl_object_key(v) + 2));
-			else if (strncmp(ucl_object_key(v), "m_", 2) == 0)
-				ucl_array_append(groups, ucl_object_fromstring(
-				    ucl_object_key(v) + 2));
-		}
-		ucl_object_insert_key(b, roles, "roles", 0, false);
-		ucl_object_insert_key(b, groups, "members", 0, false);
-		ucl_object_insert_key(b, ucl_object_fromstring(jstr(f,
-		    "description") != NULL ? jstr(f, "description") : ""),
-		    "description", 0, false);
-		snprintf(url, sizeof(url), "/api/groups/%s", name);
+		put(b, "role", roles);
+		if (jstr(f, "description") != NULL && jstr(f,
+		    "description")[0] != '\0')
+			put(b, "description", ucl_object_fromstring(jstr(f,
+			    "description")));
+		/* Its members are the users' own: changed after it. */
+		members_next(name, f);
+		rc_c(url, sizeof(url), "groups/group=%s", rc_key(name));
+		entry_put(url, "group", b, group_saved_cb, NULL);
 	} else {
-		ucl_object_insert_key(b, ucl_object_fromstring(jstr(f, "console")
-		    != NULL ? jstr(f, "console") : "member"), "console", 0, false);
-		hosts = ucl_object_typed_new(UCL_OBJECT);
+		put(b, "console", ucl_object_fromstring(jstr(f, "console") !=
+		    NULL ? jstr(f, "console") : "member"));
+		hosts = ucl_object_typed_new(UCL_ARRAY);
 		if (jstr(f, "all") != NULL && jstr(f, "all")[0] != '\0')
-			ucl_object_insert_key(hosts, ucl_object_fromstring(jstr(f,
-			    "all")), "*", 0, false);
+			ucl_array_append(hosts, host_role("*", jstr(f, "all")));
 		it = NULL;
 		while ((v = ucl_object_iterate(f, &it, true)) != NULL)
 			if (strncmp(ucl_object_key(v), "h_", 2) == 0 &&
 			    ucl_object_type(v) == UCL_STRING &&
 			    ucl_object_tostring(v)[0] != '\0')
-				ucl_object_insert_key(hosts, ucl_object_fromstring(
-				    ucl_object_tostring(v)), ucl_object_key(v) + 2, 0,
-				    false);
-		ucl_object_insert_key(b, hosts, "hosts", 0, false);
-		ucl_object_insert_key(b, ucl_object_fromstring(jstr(f,
-		    "ldap_group") != NULL ? jstr(f, "ldap_group") : ""),
-		    "ldap_group", 0, false);
-		snprintf(url, sizeof(url), "/api/roles/%s", name);
+				ucl_array_append(hosts, host_role(
+				    ucl_object_key(v) + 2, ucl_object_tostring(v)));
+		put(b, "host", hosts);
+		if (jstr(f, "ldap_group") != NULL && jstr(f,
+		    "ldap_group")[0] != '\0')
+			put(b, "ldap-group", ucl_object_fromstring(jstr(f,
+			    "ldap_group")));
+		rc_c(url, sizeof(url), "roles/role=%s", rc_key(name));
+		entry_put(url, "role", b, saved_cb, NULL);
 	}
-	json = ucl_object_emit(b, UCL_EMIT_JSON_COMPACT);
-	ucl_object_unref(b);
 	app.modal_busy = true;
-	api("PUT", url, (const char *)json, saved_cb, NULL);
-	free(json);
 	return (true);
 }
 
@@ -873,10 +1082,10 @@ user_action(const char *act, const char *arg)
 		memset(us.sync_n, 0, sizeof(us.sync_n));
 		us.sync_err[0] = '\0';
 		for (i = 0; i < app.nservers; i++) {
-			snprintf(url, sizeof(url), "/api/servers/%s/nacm-sync",
-			    app.servers[i].id);
+			rc_c(url, sizeof(url), "hosts/host=%s/nacm-sync",
+			    rc_key(app.servers[i].id));
 			us.sync_left++;
-			api("POST", url, "{}", synced_cb, NULL);
+			rc_action(url, NULL, NULL, synced_cb, NULL);
 		}
 		if (us.sync_left == 0)
 			toast(false, "No host to synchronize the roles to");
@@ -896,8 +1105,8 @@ user_action(const char *act, const char *arg)
 	if (strcmp(act, "user-invite") == 0) {
 		if (arg == NULL)
 			return (true);
-		snprintf(url, sizeof(url), "/api/users/%s/invite", arg);
-		api("POST", url, "{}", invited_cb, NULL);
+		rc_c(url, sizeof(url), "users/user=%s/invite", rc_key(arg));
+		rc_action(url, NULL, NULL, invited_cb, strdup(arg));
 		return (true);
 	}
 	if (strcmp(act, "user-invite-done") == 0) {
@@ -917,8 +1126,8 @@ user_action(const char *act, const char *arg)
 	if (strcmp(act, "do-group-del") == 0) {
 		if (arg == NULL)
 			return (true);
-		snprintf(url, sizeof(url), "/api/groups/%s", arg);
-		api("DELETE", url, NULL, saved_cb, NULL);
+		rc_c(url, sizeof(url), "groups/group=%s", rc_key(arg));
+		rc_edit("DELETE", url, NULL, saved_cb, NULL);
 		return (true);
 	}
 	if (strcmp(act, "user-del") == 0 || strcmp(act, "role-del") == 0) {
@@ -938,9 +1147,11 @@ user_action(const char *act, const char *arg)
 	if (strcmp(act, "do-user-del") == 0 || strcmp(act, "do-role-del") == 0) {
 		if (arg == NULL)
 			return (true);
-		snprintf(url, sizeof(url), "/api/%s/%s", strcmp(act,
-		    "do-user-del") == 0 ? "users" : "roles", arg);
-		api("DELETE", url, NULL, saved_cb, NULL);
+		if (strcmp(act, "do-user-del") == 0)
+			rc_c(url, sizeof(url), "users/user=%s", rc_key(arg));
+		else
+			rc_c(url, sizeof(url), "roles/role=%s", rc_key(arg));
+		rc_edit("DELETE", url, NULL, saved_cb, NULL);
 		return (true);
 	}
 	return (false);

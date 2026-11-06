@@ -6060,6 +6060,13 @@ ATF_TC_BODY(ldap, tc)
 	    "\"roles\":[\"noc\"]") != NULL && strstr(r.body, "\"bob\"") == NULL,
 	    "%s", r.body);
 	resp_free(&r);
+	/* RESTCONF says it as from-directory, the page's chip. */
+	http("GET", "/restconf/data/arcana-console:users/user=alice", NULL,
+	    &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r,
+	    "arcana-console:user.0.from-directory"));
+	resp_free(&r);
 	cookie[0] = '\0';
 	/* A directory whose certificate is not trusted: refused. */
 	snprintf(cookie, sizeof(cookie), "%s", keycookie);
@@ -17958,6 +17965,12 @@ ATF_TC_BODY(cyang_settings, tc)
 	ATF_CHECK_STREQ("30", jstr(&r, "arcana-console:settings.session-idle"));
 	ATF_CHECK_STREQ("false", jstr(&r,
 	    "arcana-console:settings.telegram-token-set"));
+	/* Each one's label and help, the page's form's, as /api's. */
+	ATF_CHECK_STREQ("rp-name", jstr(&r,
+	    "arcana-console:settings.source.0.name"));
+	ATF_CHECK_STREQ("Name shown by security keys", jstr(&r,
+	    "arcana-console:settings.source.0.label"));
+	ATF_CHECK(jstr(&r, "arcana-console:settings.source.0.help") != NULL);
 	ATF_REQUIRE(resp_header(&r, "etag", e1, sizeof(e1)) != NULL);
 	resp_free(&r);
 	http("GET", CC "settings/rp-name", NULL, &r);

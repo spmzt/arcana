@@ -66,6 +66,15 @@ int
 api(const char *method, const char *url, const char *body, api_cb *cb,
     void *arg)
 {
+
+	return (api_hdr(method, url, body, NULL, cb, arg));
+}
+
+/* The same with headers of the caller's own, "Name: value" a line. */
+int
+api_hdr(const char *method, const char *url, const char *body,
+    const char *hdrs, api_cb *cb, void *arg)
+{
 	struct inflight	*p;
 	int		 id;
 
@@ -108,32 +117,46 @@ api(const char *method, const char *url, const char *body, api_cb *cb,
 		/* The page's own poll: a task too, shown apart from what
 		 * was asked for, so that every exchange can be seen. */
 		p->op = op_quiet_begin(method, url);
-	arc_http(id, method, url, body);
+	arc_http(id, method, url, body, hdrs);
 	return (id);
 }
 
+/* The entity-tag of the answer being handled, NULL: none. */
+static const char	*cur_etag;
+
+const char *
+api_etag(void)
+{
+
+	return (cur_etag);
+}
+
 EMSCRIPTEN_KEEPALIVE void
-arc_on_http(int id, int status, char *text)
+arc_on_http(int id, int status, char *text, char *etag)
 {
 	struct inflight	 p, *pp;
 	ucl_object_t	*o;
 	const char	*err;
-	char		 why[320];
+	char		 why[320], rcwhy[600];
 
 	if ((pp = lookup(id)) == NULL) {
 		free(text);
+		free(etag);
 		return;
 	}
 	p = *pp;
 	memset(pp, 0, sizeof(*pp));
-	o = status != 0 ? json_parse(text) : NULL;
-	/* The console's reason: error.message, or an error as a text. */
+	o = status != 0 && text[0] != '\0' ? json_parse(text) : NULL;
+	/* The console's reason: error.message, RESTCONF's (rc.c), or an
+	 * error as a text. */
 	err = NULL;
 	if (status == 0)
 		err = text;
-	else if (status >= 400 && (err = jstr(o, "error.message")) == NULL)
+	else if (status >= 400 && (err = jstr(o, "error.message")) == NULL &&
+	    (err = rc_error(o, rcwhy, sizeof(rcwhy))) == NULL)
 		err = jstr(o, "error");
-	if (status >= 200 && status < 300 && o == NULL)
+	/* None: a change's 204, RESTCONF's. */
+	if (status >= 200 && status < 300 && o == NULL && status != 204)
 		err = "the console sent something that is not JSON";
 	/* Every answer means the console is up; a 401 means log in. */
 	if (status != 0)
@@ -161,12 +184,15 @@ arc_on_http(int id, int status, char *text)
 		export_note(p.url, p.node, p.tab, o);
 	if (p.op != 0 && !p.awaited)
 		op_quiet_end(p.op, status);
+	cur_etag = etag;
 	p.cb(status, o, err, p.arg);
+	cur_etag = NULL;
 	if (p.awaited)
 		op_answered(p.op, id, status, o, err);
 	if (o != NULL)
 		ucl_object_unref(o);
 	free(text);
+	free(etag);
 	render();
 }
 
