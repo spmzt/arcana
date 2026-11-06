@@ -981,24 +981,30 @@ struct mread {
 	ucl_object_t	*conf;		/* running's probes */
 };
 
-/* A monitor's settings as its edge's configuration has them. */
-static const ucl_object_t *
-monitor_conf(const ucl_object_t *p, const char *jail, const char *id)
+/*
+ * A monitor's settings (or, not monitor, an SD-WAN target's) as its
+ * edge's configuration, arcana-probe's probes p, has them.
+ */
+const ucl_object_t *
+probe_conf(const ucl_object_t *p, const char *jail, const char *id,
+    bool monitor)
 {
 	const ucl_object_t	*l = NULL, *e;
 	ucl_object_iter_t	 it = NULL;
+	const char		*list = monitor ? "monitor" : "target";
+	const char		*key = monitor ? "name" : "id";
 
 	if (jail == NULL)
-		l = jget(p, "monitor");
+		l = jget(p, list);
 	else
 		while ((e = ucl_object_iterate(jget(p, "jail"), &it, true)) !=
 		    NULL)
 			if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"),
 			    jail) == 0)
-				l = jget(e, "monitor");
+				l = jget(e, list);
 	it = NULL;
 	while (id != NULL && (e = ucl_object_iterate(l, &it, true)) != NULL)
-		if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"), id) == 0)
+		if (jstr(e, key) != NULL && strcmp(jstr(e, key), id) == 0)
 			return (e);
 	return (NULL);
 }
@@ -1020,9 +1026,10 @@ put_dec(ucl_object_t *o, const char *key, const ucl_object_t *from,
 	put(o, key, ucl_object_fromdouble(jnum(from, path, 0)));
 }
 
-/* A monitored target as the tabs draw it, c its configuration. */
-static ucl_object_t *
-target_of(const ucl_object_t *t, const ucl_object_t *c)
+/* A probed target as the tabs draw it, c its configuration (a
+ * monitor's with its interface). */
+ucl_object_t *
+probe_target(const ucl_object_t *t, const ucl_object_t *c, bool monitor)
 {
 	static const char *const ints[] = { "fib", "interval", "size", "eval",
 	    "dscp", "sent", "received", "misses", NULL };
@@ -1075,7 +1082,7 @@ target_of(const ucl_object_t *t, const ucl_object_t *c)
 	}
 	put(o, "samples", arr);
 	put_num(o, "kept", t, "kept");
-	if (c != NULL)
+	if (c != NULL && monitor)
 		cp(o, "interface", c, "interface");
 	/* The settings its edge's configuration has, the prober's own
 	 * where it says none. */
@@ -1120,8 +1127,8 @@ probes_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	top = ucl_object_typed_new(UCL_OBJECT);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	while ((t = ucl_object_iterate(jget(o, "target"), &it, true)) != NULL)
-		ucl_array_append(arr, target_of(t, monitor_conf(m->conf, jstr(t,
-		    "jail"), jstr(t, "id"))));
+		ucl_array_append(arr, probe_target(t, probe_conf(m->conf,
+		    jstr(t, "jail"), jstr(t, "id"), true), true));
 	put(top, "monitors", arr);
 	put(top, "time", ucl_object_fromint(jstr(o, "time") != NULL ?
 	    rc_time(jstr(o, "time")) : (int64_t)(arc_now() / 1000)));

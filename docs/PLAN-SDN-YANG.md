@@ -2487,7 +2487,22 @@ whose first part is served.
   path-check, the log's ipfw lines arcana-log's read.  Check: pwa_test
   pwa_firewall_files (a first Keep the host refuses leaves the file as
   it was; a Keep made from a file changed meanwhile refused, the change
-  in the file kept).  A tab's export names a read by its nodes
+  in the file kept).  The Security page (console 0.393.0; sdread.c):
+  the host's SD-WAN state as the console's ysdwan.c made it, now the
+  page's (arcana-sdwan's sdwan, its state and the Security section's
+  forms its sec- instances keep; arcana-probe's targets by its read
+  with running's settings; arcana-steer's why of each choice); a save
+  the forms checked as security.c checked them, made sec- instances of
+  arcana-sdwan's proxy or IDS list beside SD-WAN's own, the whole sdwan
+  put into the candidate and committed confirmed, then confirmed, the
+  candidate discarded where the commit is refused, or, the same as
+  running has, the part set again by sdwan/apply; the rules, sources,
+  an instance's commands and profiling arcana-suricata's read-rules,
+  read-sources, command and read-profiling (suricata_conv(), yflat's
+  names).  Decided: the URL filter's stop no longer asks the agent's
+  version first (pre-1.0, no agent before 0.248.0 is kept); the IDS
+  pcap upload and pcap-log download stay /api's (D-10's binary
+  resources).  A tab's export names a read by its nodes
   without their modules ("services").  Added to the console's RESTCONF
   side: the socket's `{"what": "restconf"}`, a GET or an action that reads below a host's
   entry with its steps (hosts_restconf_live(); console_test
@@ -2496,9 +2511,8 @@ whose first part is served.
   restconf_job_confirm).  Decided: the Log tab's events stay on /api
   with the socket's events, the same shape, until the stream is
   RESTCONF's (4.8.2).  Open: a dataset's key (its name has a /, which
-  no path below the mount carries, as 4.4.1 found), the Security page (secpage.c, surules.c,
-  idsstats.c), an edge's SD-WAN state and the interfaces its forms read
-  (sdwan.c), builder.c, the events read (logs.c, 4.8.2); then `/api`
+  no path below the mount carries, as 4.4.1 found), an edge's SD-WAN
+  state and the interfaces its forms read (sdwan.c), builder.c, the events read (logs.c, 4.8.2); then `/api`
   keeps D-10's resources alone.
 - 4.8.2 P: SSE subscriptions replace the page's polling; check:
   timings in the browser test.

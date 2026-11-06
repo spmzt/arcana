@@ -38,43 +38,41 @@ static const struct tcol cols[] = {
 	{ "Action", "action", false }, { "State", NULL, false },
 };
 
-/* A query's value, escaped as a URL has it. */
+/* A text member of a read's input, where it is said. */
 static void
-put_param(char *url, size_t len, const char *key, const char *v)
+put_param(struct html *in, const char *key, const char *v)
 {
-	size_t	off;
+	char	*q;
 
 	if (v == NULL || v[0] == '\0')
 		return;
-	off = strlen(url);
-	off += (size_t)snprintf(url + off, len - off, "%c%s=", strchr(url,
-	    '?') != NULL ? '&' : '?', key);
-	for (; *v != '\0' && off + 4 < len; v++)
-		off += (size_t)snprintf(url + off, len - off,
-		    (*v >= 'a' && *v <= 'z') || (*v >= 'A' && *v <= 'Z') ||
-		    (*v >= '0' && *v <= '9') || *v == '-' || *v == '_' ||
-		    *v == '.' ? "%c" : "%%%02X", (unsigned char)*v);
+	q = json_quote(v);
+	h_fmt(in, ",\"%s\":%s", key, q);
+	free(q);
 }
 
-/* The page of rules asked again, of host sid. */
+/* The page of rules asked again, of host sid: arcana-suricata's
+ * read-rules through the fleet mount. */
 void
 surules_load(const char *sid)
 {
-	char	url[512], num[24];
+	struct html	in;
 
 	if (sid == NULL || sid[0] == '\0')
 		return;
 	if (strcmp(sid, sr.r.sid) != 0)
 		sr.offset = 0;
-	snprintf(url, sizeof(url), "/api/servers/%s/suricata/rules", sid);
-	put_param(url, sizeof(url), "q", sr.q);
-	put_param(url, sizeof(url), "only", sr.only);
-	put_param(url, sizeof(url), "classtype", sr.classtype);
-	snprintf(num, sizeof(num), "%ld", sr.offset);
-	put_param(url, sizeof(url), "offset", sr.offset > 0 ? num : NULL);
-	snprintf(num, sizeof(num), "%d", SR_PAGE);
-	put_param(url, sizeof(url), "limit", num);
-	res_load(&sr.r, sid, url);
+	memset(&in, 0, sizeof(in));
+	h_fmt(&in, "{\"limit\":%d", SR_PAGE);
+	put_param(&in, "q", sr.q);
+	put_param(&in, "only", sr.only);
+	put_param(&in, "classtype", sr.classtype);
+	if (sr.offset > 0)
+		h_fmt(&in, ",\"offset\":%ld", sr.offset);
+	h_raw(&in, "}");
+	res_yread(&sr.r, sid, "arcana-suricata:suricata/read-rules", in.s,
+	    suricata_conv);
+	free(in.s);
 }
 
 static void
@@ -422,13 +420,11 @@ static struct {
 void
 susources_load(const char *sid)
 {
-	char	url[96];
 
 	if (sid == NULL || sid[0] == '\0')
 		return;
-	snprintf(url, sizeof(url), "/api/servers/%s/suricata/rules?sources=1",
-	    sid);
-	res_load(&so.r, sid, url);
+	res_yread(&so.r, sid, "arcana-suricata:suricata/read-sources", "{}",
+	    suricata_conv);
 }
 
 static void

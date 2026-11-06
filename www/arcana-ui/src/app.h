@@ -134,6 +134,7 @@ ucl_object_t	*jmap(const ucl_object_t *, const char *const *);
 ucl_object_t	*jmap_each(const ucl_object_t *, const char *const *);
 ucl_object_t	*jflat(const ucl_object_t *, const char *const *);
 ucl_object_t	*jnumber(const char *);
+ucl_object_t	*suricata_conv(const ucl_object_t *);
 /* yaml.c: YAML written and read. */
 char		*yaml_emit(const ucl_object_t *);
 ucl_object_t	*yaml_parse(const char *, char *, size_t);
@@ -1186,8 +1187,17 @@ struct netq {
 void		 net_yread(const char *, const struct netq *, bool, api_cb *,
 		    void *);
 void		 monitors_yread(const char *, api_cb *, void *);
+const ucl_object_t *probe_conf(const ucl_object_t *, const char *,
+		    const char *, bool);
+ucl_object_t	*probe_target(const ucl_object_t *, const ucl_object_t *,
+		    bool);
 ucl_object_t	*net_plain(const ucl_object_t *, const char *const *);
 ucl_object_t	*net_fw(const ucl_object_t *);
+/* sdread.c: an edge's SD-WAN state, and the Security section's forms
+ * made the host's, through the fleet mount. */
+void		 sdwan_yread(const char *, long long, api_cb *, void *);
+void		 security_ysave(const struct server *, bool,
+		    const ucl_object_t *, api_cb *, void *);
 
 /* res.c: a page's read of one host's resource, and a job's JSON. */
 struct res {

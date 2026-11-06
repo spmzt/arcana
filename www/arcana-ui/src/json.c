@@ -301,6 +301,41 @@ jflat(const ucl_object_t *o, const char *const *names)
 	return (jflat_v(o, names));
 }
 
+/*
+ * arcana-suricata's read-rules, read-sources and read-profiling outputs
+ * as the pages have them: yflat's names, the counts numbers, each
+ * profiling's rules (rule_perf.log's dump, Suricata's own JSON) parsed
+ * with its time.
+ */
+ucl_object_t *
+suricata_conv(const ucl_object_t *o)
+{
+	static const char *const names[] = { "page-rule=rules",
+	    "group=groups", "class=classes", "source=sources",
+	    "section=sections", "row=rows", NULL };
+	static const char *const nums[] = { "size", "cnt", "min", "max",
+	    "avg", "tot", "pct", "proto", NULL };
+	static const char *const dirs[] = { "running", "replay" };
+	const ucl_object_t	*r;
+	ucl_object_t		*f, *out, *doc;
+
+	f = jflat(o, names);
+	out = net_plain(f, nums);
+	ucl_object_unref(f);
+	for (size_t i = 0; i < nitems(dirs); i++) {
+		r = jget(jget(out, dirs[i]), "rules");
+		if (r == NULL || (doc = json_parse(jstr(r, "document"))) ==
+		    NULL)
+			continue;
+		if (jget(r, "at") != NULL)
+			ucl_object_insert_key(doc, ucl_object_copy(jget(r, "at")),
+			    "at", 0, false);
+		ucl_object_replace_key((ucl_object_t *)(uintptr_t)jget(out,
+		    dirs[i]), doc, "rules", 0, true);
+	}
+	return (out);
+}
+
 /* s as a JSON string literal, quotes included; free() it. */
 char *
 json_quote(const char *s)

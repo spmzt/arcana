@@ -113,16 +113,57 @@ eng_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	render();
 }
 
+/* The host of the Security page, NULL where none is. */
+static const struct server *
+ids_host(void)
+{
+	const char	*sid = sec_host_id();
+
+	for (int i = 0; sid != NULL && i < app.nservers; i++)
+		if (strcmp(app.servers[i].id, sid) == 0)
+			return (&app.servers[i]);
+	return (NULL);
+}
+
+/* arcana-suricata's command: its answer, Suricata's own JSON, as the
+ * read had it. */
+static void
+eng_ycb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	ucl_object_t	*r, *d;
+
+	if (status != 200) {
+		eng_cb(status, o, err, arg);
+		return;
+	}
+	if ((d = json_parse(jstr(o, "answer"))) == NULL) {
+		eng_cb(500, NULL, "Suricata's answer is no JSON", arg);
+		return;
+	}
+	r = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(r, ucl_object_frombool(true), "ok", 0, false);
+	ucl_object_insert_key(r, d, "data", 0, false);
+	eng_cb(200, r, NULL, arg);
+	ucl_object_unref(r);
+}
+
 static void
 eng_ask(const char *cmd, const char *ifn, unsigned slot)
 {
-	char	url[256];
+	const struct server	*s;
+	char			 in[300], *qn, *qi;
 
-	snprintf(url, sizeof(url), "/api/servers/%s/suricata/rules?instance="
-	    "%s&command=%s%s%s", sec_host_id(), open_name, cmd, ifn != NULL ?
-	    "&iface=" : "", ifn != NULL ? ifn : "");
-	api("GET", url, NULL, eng_cb, (void *)(uintptr_t)(((uintptr_t)(
-	    eng.gen & 0xffff) << 16) | slot));
+	if ((s = ids_host()) == NULL)
+		return;
+	qn = json_quote(open_name);
+	qi = json_quote(ifn != NULL ? ifn : "");
+	snprintf(in, sizeof(in), "{\"instance\":%s,\"command\":\"%s\"%s%s}",
+	    qn, cmd, ifn != NULL ? ",\"iface\":" : "", ifn != NULL ? qi : "");
+	free(qn);
+	free(qi);
+	host_yread(s, "arcana-suricata:suricata/command", in, NULL, false,
+	    eng_ycb, (void *)(uintptr_t)(((uintptr_t)(eng.gen & 0xffff) <<
+	    16) | slot));
 }
 
 static void
@@ -207,6 +248,23 @@ prof_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		    ucl_object_typed_new(UCL_ARRAY);
 	}
 	render();
+}
+
+/* arcana-suricata's read-profiling as the read had it. */
+static void
+prof_ycb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	ucl_object_t	*r;
+
+	if (status != 200) {
+		prof_cb(status, o, err, arg);
+		return;
+	}
+	r = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(r, ucl_object_frombool(true), "ok", 0, false);
+	ucl_object_insert_key(r, suricata_conv(o), "data", 0, false);
+	prof_cb(200, r, NULL, arg);
+	ucl_object_unref(r);
 }
 
 bool
@@ -612,7 +670,8 @@ idsstats_action(const char *act, const char *arg, const char *value)
 {
 	const ucl_object_t	*l, *e;
 	ucl_object_iter_t	 it;
-	char			 url[256];
+	const struct server	*s;
+	char			 url[256], *q;
 	size_t			 i;
 	unsigned		 k;
 
@@ -633,10 +692,14 @@ idsstats_action(const char *act, const char *arg, const char *value)
 	}
 	if (strcmp(act, "ist-prof") == 0) {
 		prof_clear();
+		if ((s = ids_host()) == NULL)
+			return (true);
 		prof.loading = true;
-		snprintf(url, sizeof(url), "/api/servers/%s/suricata/rules?"
-		    "instance=%s&profiling=1", sec_host_id(), open_name);
-		api("GET", url, NULL, prof_cb, (void *)(uintptr_t)prof.gen);
+		q = json_quote(open_name);
+		snprintf(url, sizeof(url), "{\"instance\":%s}", q);
+		free(q);
+		host_yread(s, "arcana-suricata:suricata/read-profiling", url,
+		    NULL, false, prof_ycb, (void *)(uintptr_t)prof.gen);
 		render();
 		return (true);
 	}

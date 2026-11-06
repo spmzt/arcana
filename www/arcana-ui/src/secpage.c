@@ -10,8 +10,10 @@
  * scanning what a URL filter fetches.  Signatures: ClamAV's databases as
  * freshclam keeps them.  IDS/IPS: Suricata, watching interfaces or
  * taking what an ipfw divert rule hands it.  A host at a time: its
- * sdwan read tells what runs and the forms it was given; a save sends
- * the kind's whole list (POST /api/servers/<id>/security).
+ * SD-WAN state tells what runs and the forms it was given; a save makes
+ * the kind's whole list the host's.  Both through the fleet mount
+ * (sdread.c): arcana-sdwan's state and instances, arcana-probe's and
+ * arcana-steer's.
  */
 
 #include <stdbool.h>
@@ -88,7 +90,6 @@ static void
 sec_load_after(bool after_save)
 {
 	struct sec_read	*r;
-	char		 url[96];
 
 	if (sec.sid[0] == '\0')
 		return;
@@ -97,9 +98,8 @@ sec_load_after(bool after_save)
 	snprintf(r->sid, sizeof(r->sid), "%s", sec.sid);
 	r->gen = ++sec.gen;
 	r->after_save = after_save;
-	snprintf(url, sizeof(url), "/api/servers/%s/sdwan", sec.sid);
 	sec.loading = true;
-	api("GET", url, NULL, sec_cb, r);
+	sdwan_yread(sec.sid, 0, sec_cb, r);
 }
 
 static void
@@ -1345,8 +1345,7 @@ save_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 save(bool ids, ucl_object_t *list)
 {
-	ucl_object_t	*body;
-	char		 url[96], *json;
+	const struct server	*s = NULL;
 
 	/* One change at a time, each on the host's list as it was read
 	 * after the last: what is made meanwhile would undo that one. */
@@ -1356,16 +1355,16 @@ save(bool ids, ucl_object_t *list)
 		    "moment");
 		return;
 	}
-	body = ucl_object_typed_new(UCL_OBJECT);
-	ucl_object_insert_key(body, ucl_object_fromstring(ids ? "ids" :
-	    "proxy"), "what", 0, false);
-	ucl_object_insert_key(body, list, "instances", 0, false);
-	json = (char *)ucl_object_emit(body, UCL_EMIT_JSON_COMPACT);
-	ucl_object_unref(body);
-	snprintf(url, sizeof(url), "/api/servers/%s/security", sec.sid);
+	for (int i = 0; i < app.nservers && s == NULL; i++)
+		if (strcmp(app.servers[i].id, sec.sid) == 0)
+			s = &app.servers[i];
+	if (s == NULL) {
+		ucl_object_unref(list);
+		return;
+	}
 	sec.busy = true;
-	api("POST", url, json, save_cb, NULL);
-	free(json);
+	security_ysave(s, ids, list, save_cb, NULL);
+	ucl_object_unref(list);
 }
 
 /* A copy of the kind's forms, but the one named skip. */
