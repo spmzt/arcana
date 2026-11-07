@@ -684,8 +684,13 @@ crash_event_body()
 		grep -q '"process":"arccrash"' ev.out && break
 		sleep 0.2
 	done
+	# The jail it ran in as the kernel's message says: 0 on a host; in
+	# a jail its global jid, which the jail cannot learn from inside.
+	jid=0
+	[ "$(sysctl -n security.jail.jailed)" = 1 ] && jid='[0-9][0-9]*'
+
 	atf_check -o match:'"kind":"crash"' \
-	    -o match:'"process":"arccrash","jid":0,"jail":"","uid":0,"signal":11,"core":false' \
+	    -o match:"\"process\":\"arccrash\",\"jid\":$jid,\"jail\":\"\",\"uid\":0,\"signal\":11,\"core\":false" \
 	    cat ev.out
 }
 crash_event_cleanup()
