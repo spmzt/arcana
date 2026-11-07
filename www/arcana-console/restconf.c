@@ -686,6 +686,11 @@ api_restconf_data(struct http_request *req)
 	if (req->method == HTTP_METHOD_POST && req->hdlr_extra == NULL) {
 		const char	*e = strrchr(req->path, '/');
 
+		/* Under the fleet itself: every host's (rcstream.c). */
+		if (strcmp(req->path, "/restconf/data/arcana-fleet:fleet/"
+		    "ietf-subscribed-notifications:establish-subscription") ==
+		    0)
+			return (restconf_establish(req, NULL));
 		if (restconf_host(req->path, sid, sizeof(sid)) && e != NULL &&
 		    strcmp(e, "/ietf-subscribed-notifications:"
 		    "establish-subscription") == 0)

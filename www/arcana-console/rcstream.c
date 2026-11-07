@@ -39,7 +39,13 @@
  * entry, a stream or the operational datastore, periodic or on-change,
  * filtered by XPath, answers with its id and the URI whose GET is its
  * stream, /restconf/subscriptions/<id>; the same client takes it within
- * a minute, once.
+ * a minute, once.  POSTed under arcana-fleet:fleet itself, it is every
+ * host's this user may read (its XPath each host's, below its mount),
+ * on one reply as the fleet's stream is: each record in its host's
+ * entry, a host lost said and subscribed again.
+ *
+ * Records left out, the client being slow, are said in a lost event:
+ * a page then reads again what it shows.
  */
 
 #include <sys/param.h>
@@ -80,6 +86,7 @@ struct rcsub {
 	char		 sid[9];
 	char		 who[128];	/* who made it, alone may take it */
 	time_t		 made;
+	bool		 fleet;		/* every host's: sid "" */
 	bool		 datastore;	/* else the NETCONF stream */
 	bool		 onchange;
 	uint32_t	 period, damp;	/* centiseconds */
@@ -648,8 +655,9 @@ rcs_tick(void *arg, uint64_t now)
 		pthread_mutex_unlock(&rs->lock);
 		if (rs->req != NULL) {
 			if (lost)
-				put(rs->req, ": some records were left out, the "
-				    "client being slow\n\n");
+				put(rs->req, "event: lost\ndata: {\"message\":"
+				    "\"some records were left out, the client "
+				    "being slow\"}\n\n");
 			if (b->offset > 0) {
 				http_stream_put(rs->req, b->data, b->offset);
 				rs->said = t;
@@ -777,16 +785,15 @@ api_restconf_stream(struct http_request *req)
 	return (rcs_start(req, &s, 1, false, NULL, last_event(req)));
 }
 
-/* GET /restconf/streams/fleet/json: every host's this user may read. */
-int
-api_restconf_fleet_stream(struct http_request *req)
+/* The fleet's stream of every host's this user may read, of sb's input
+ * (NULL: the NETCONF stream). */
+static int
+fleet_start(struct http_request *req, struct rcsub *sb)
 {
 	const struct server	*s, **sv;
 	size_t			 n = 0;
 	int			 rv;
 
-	if (!guard(req, false))
-		return (WEB_OK);
 	for (int i = 0; server_at(i) != NULL; i++)
 		n++;
 	sv = xcalloc(n + 1, sizeof(*sv));
@@ -795,9 +802,20 @@ api_restconf_fleet_stream(struct http_request *req)
 		if (host_role_ok(req, s->id, false, false))
 			sv[n++] = s;
 	rv = n == 0 ? restconf_error(req, 404, "no host to hear") :
-	    rcs_start(req, sv, n, true, NULL, last_event(req));
+	    rcs_start(req, sv, n, true, sb, sb == NULL ? last_event(req) :
+	    NULL);
 	free(sv);
 	return (rv);
+}
+
+/* GET /restconf/streams/fleet/json: every host's this user may read. */
+int
+api_restconf_fleet_stream(struct http_request *req)
+{
+
+	if (!guard(req, false))
+		return (WEB_OK);
+	return (fleet_start(req, NULL));
 }
 
 /* A string member of o, a copy; NULL when there is none. */
@@ -845,13 +863,13 @@ num_of(const ucl_object_t *o, const char *key, int64_t lo, int64_t hi,
 /*
  * POST .../host=<id>/ietf-subscribed-notifications:establish-subscription
  * (RFC 8650 section 3.2): the input kept for its stream, its id and URI
- * answered.
+ * answered.  sid NULL: POSTed under arcana-fleet:fleet, every host's.
  */
 int
 restconf_establish(struct http_request *req, const char *sid)
 {
 	const ucl_object_t	*in, *p;
-	const struct server	*s;
+	const struct server	*s = NULL;
 	struct rcsub		 sb, *slot;
 	ucl_object_t		*body, *top, *out;
 	const char		*v;
@@ -861,9 +879,9 @@ restconf_establish(struct http_request *req, const char *sid)
 
 	if (!guard(req, false))
 		return (WEB_OK);
-	if ((s = server_find(sid)) == NULL)
+	if (sid != NULL && (s = server_find(sid)) == NULL)
 		return (restconf_error(req, 404, "no such host"));
-	if (!host_allowed(req, sid, false, false))
+	if (sid != NULL && !host_allowed(req, sid, false, false))
 		return (WEB_OK);
 	if ((body = read_json(req)) == NULL || (in = ucl_object_lookup(body,
 	    "ietf-subscribed-notifications:input")) == NULL ||
@@ -874,7 +892,9 @@ restconf_establish(struct http_request *req, const char *sid)
 		    "subscribed-notifications:input\": {...}}"));
 	}
 	memset(&sb, 0, sizeof(sb));
-	strlcpy(sb.sid, s->id, sizeof(sb.sid));
+	sb.fleet = sid == NULL;
+	if (sid != NULL)
+		strlcpy(sb.sid, s->id, sizeof(sb.sid));
 	snprintf(sb.who, sizeof(sb.who), "%s", session_who(req) != NULL ?
 	    session_who(req) : "");
 	sb.stop = str_of(in, "stop-time", &bad);
@@ -965,6 +985,10 @@ api_restconf_subscription(struct http_request *req)
 		if (subs[i].id != id || strcmp(subs[i].who, who) != 0 ||
 		    time(NULL) - subs[i].made > SUB_WAIT_S)
 			continue;
+		if (subs[i].fleet) {
+			subs[i].id = 0;
+			return (fleet_start(req, &subs[i]));
+		}
 		if ((s = server_find(subs[i].sid)) == NULL)
 			break;
 		if (!host_allowed(req, subs[i].sid, false, false))

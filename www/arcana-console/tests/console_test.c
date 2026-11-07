@@ -2596,6 +2596,49 @@ ATF_TC_BODY(restconf, tc)
 		EXPECT(&r, 404);
 		resp_free(&r);
 	}
+	/* Under the fleet itself: every host's, each push in its host's
+	 * entry. */
+	http("POST", "/restconf/data/arcana-fleet:fleet/ietf-subscribed-"
+	    "notifications:establish-subscription", "{\"ietf-subscribed-"
+	    "notifications:input\":{\"ietf-yang-push:datastore\":\"ietf-"
+	    "datastores:operational\",\"ietf-yang-push:datastore-xpath-"
+	    "filter\":\"/ietf-interfaces:interfaces/interface[name='lo0']/"
+	    "oper-status\",\"ietf-yang-push:periodic\":{\"period\":50}}}", &r);
+	EXPECT(&r, 200);
+	{
+		struct timeval	 tv = { 10, 0 };
+		char		 rq[512], buf[16384], sub[64], want[128];
+		const char	*uri;
+		size_t		 len = 0;
+		ssize_t		 n;
+		int		 s, i;
+
+		uri = jstr(&r, "ietf-subscribed-notifications:output."
+		    "ietf-restconf-subscribed-notifications:uri");
+		ATF_REQUIRE_MSG(uri != NULL && strstr(uri, "/restconf/"
+		    "subscriptions/") != NULL, "%s", r.body);
+		snprintf(sub, sizeof(sub), "%s", strstr(uri, "/restconf/"));
+		resp_free(&r);
+		s = console_socket();
+		ATF_REQUIRE(setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv,
+		    sizeof(tv)) == 0);
+		snprintf(rq, sizeof(rq), "GET %s HTTP/1.1\r\nHost: "
+		    "localhost:8443\r\nCookie: %s\r\n\r\n", sub, cookie);
+		ATF_REQUIRE(write(s, rq, strlen(rq)) == (ssize_t)strlen(rq));
+		buf[0] = '\0';
+		for (i = 0; i < 50 && strstr(buf, "push-update") == NULL;
+		    i++) {
+			if ((n = read(s, buf + len, sizeof(buf) - 1 - len)) <= 0)
+				break;
+			len += (size_t)n;
+			buf[len] = '\0';
+		}
+		snprintf(want, sizeof(want), "\"arcana-fleet:fleet\":{\"host\":"
+		    "[{\"id\":\"%s\",\"ietf-yang-push:push-update\":", id);
+		ATF_CHECK_MSG(strstr(buf, want) != NULL && strstr(buf,
+		    "\"oper-status\":\"up\"") != NULL, "%s", buf);
+		close(s);
+	}
 	http("POST", path, "{\"ietf-subscribed-notifications:input\":{"
 	    "\"stream\":\"OTHER\"}}", &r);
 	EXPECT(&r, 400);

@@ -112,7 +112,8 @@ enum { RC_ACT_NONE, RC_ACT_READ, RC_ACT_CHANGE, RC_ACT_ADMIN };
 int		 restconf_act_role(const struct rcreq *r);
 ucl_object_t	*restconf_act_input(const struct rcreq *r,
 		    const struct ysids *s, const void *cbor, size_t len);
-/* establish-subscription POSTed under host sid's entry (rcstream.c). */
+/* establish-subscription POSTed under host sid's entry, or under the fleet
+ * (sid NULL): every host's (rcstream.c). */
 int		 restconf_establish(struct http_request *req, const char *sid);
 
 #endif	/* !_ARCANA_RESTCONF_H_ */
