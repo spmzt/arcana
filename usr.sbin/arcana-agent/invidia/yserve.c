@@ -860,7 +860,9 @@ ietf_interfaces_interfaces_interface_dot1q_bridge_port_rstp_bridge_rstp_port_pro
  * implement, with the features they have on, and those imported only
  * (ARC_YIMPORT_LIST, the build's); one schema of it; the operational
  * datastore's, the only one served.  Its content-id changes
- * with what the set has (FNV-1a of its words).
+ * with what the set has (FNV-1a of its words) and with how its nodes
+ * are numbered: a console keeps a host's .sid files by it, so a module
+ * numbered again without a new revision must change it too.
  */
 int
 ietf_yang_library_yang_library_get(cbl_req *req, struct ietf_yang_library *data,
@@ -944,6 +946,20 @@ ietf_yang_library_yang_library_get(cbl_req *req, struct ietf_yang_library *data,
 		FNV(w);
 		FNV(at);
 	}
+	/* How every node and identity is numbered, its SID by its name. */
+#define	FNV64(v)	do {						\
+	for (int b_ = 0; b_ < 64; b_ += 8)				\
+		h = (h ^ (uint8_t)((v) >> b_)) * UINT64_C(0x100000001b3); \
+} while (0)
+	for (i = 0; i < ymodel_schema.nnode; i++) {
+		FNV64(ymodel_schema.node[i]->sid);
+		FNV(ymodel_schema.node[i]->name);
+	}
+	for (j = 0; j < ymodel_schema.nident; j++) {
+		FNV64(ymodel_schema.ident[j].sid);
+		FNV(ymodel_schema.ident[j].name);
+	}
+#undef	FNV64
 #undef	FNV
 	ms->name = "arcana-agent";
 	ms->module.n = ymodel_schema.nmod;
