@@ -8604,18 +8604,25 @@ ATF_TC_HEAD(pwa_cfgfiles, tc)
 }
 ATF_TC_BODY(pwa_cfgfiles, tc)
 {
-	char	conf[4096];
+	char	conf[4096], many[1024], rc[2048], want[2048];
 	FILE	*fp;
 	size_t	n;
+	int	off = 0;
 
 	prologue(tc, 1);
-	(void)mkdir("root/usr/local/etc/rc.conf.d", 0755);
-	put("root/etc/rc.conf", "rc_conf_files=\"/etc/rc.conf "
+	/* A long list of yours: the box must fit it without a sideways
+	 * scroll. */
+	for (int i = 1; i <= 40; i++)
+		off += snprintf(many + off, sizeof(many) - (size_t)off,
+		    "webjail%02d ", i);
+	snprintf(rc, sizeof(rc), "rc_conf_files=\"/etc/rc.conf "
 	    "/etc/rc.conf.local /usr/local/etc/rc.conf.d/arcana\"\n"
 	    "hostname=\"lab\"\nsshd_enable=\"YES\"\nsshd_flags=\"-4\"\n"
-	    "jail_list=\"a b\"\n");
+	    "jail_list=\"%sa b\"\n", many);
+	(void)mkdir("root/usr/local/etc/rc.conf.d", 0755);
+	put("root/etc/rc.conf", rc);
 	put("root/usr/local/etc/rc.conf.d/arcana", "jail_list=\"b c\"\n"
-	    "sshd_flags=\"-6\"\n");
+	    "sshd_flags=\"-6\"\nntpd_enable=\"YES\"\n");
 	run("document.querySelector('button.tab[data-arg=system]').click()");
 	wait_js("document.querySelector('.cfgfiles button[data-act=cfg-switch]')"
 	    " && document.querySelector('.cfgfiles').textContent.includes("
@@ -8626,6 +8633,58 @@ ATF_TC_BODY(pwa_cfgfiles, tc)
 	    "tr[data-var=jail_list]') && document.querySelector('form"
 	    "[data-form=cfg-switch] tr[data-var=sshd_flags] select')", 30);
 	shot("8c1-cfgfiles-switch");
+	/* As wide as the screen allows, nothing beyond it. */
+#define	CFG_FITS "(() => { const m = document.querySelector('.modal'); " \
+	    "const t = document.querySelector('table.cfg-rows'); return " \
+	    "m.scrollWidth <= m.clientWidth + 1 && t.getBoundingClientRect()" \
+	    ".right <= m.getBoundingClientRect().right + 1; })()"
+	ATF_CHECK_MSG(js_true(CFG_FITS), "the switch's box scrolls sideways");
+	phone(true);
+	if (!js_true(CFG_FITS)) {
+		char	why[512];
+
+		/* What sticks out, to say so. */
+		js_str(why, sizeof(why), "(() => { const m = document."
+		    "querySelector('.modal'), r = m.getBoundingClientRect()."
+		    "right; return m.clientWidth + '/' + m.scrollWidth + ' ' + "
+		    "[...m.querySelectorAll('*')].filter(e => e."
+		    "getBoundingClientRect().right > r + 1).slice(0, 4).map(e "
+		    "=> e.tagName + '.' + e.className + ':' + Math.round(e."
+		    "getBoundingClientRect().width)).join(' '); })()");
+		ATF_CHECK_MSG(false, "the switch's box scrolls sideways on a "
+		    "phone: %s", why);
+	}
+	/* Rows as cards: no header row, each value under its name. */
+#define	CFG_CARDS "document.querySelector('table.cfg-rows').classList" \
+	    ".contains('cards') && getComputedStyle(document.querySelector(" \
+	    "'table.cfg-rows tbody td:nth-child(2)'), '::before').content" \
+	    ".includes('File')"
+	if (!js_true(CFG_CARDS)) {
+		char	why[256];
+
+		js_str(why, sizeof(why), "innerWidth + ' ' + document."
+		    "querySelector('table.cfg-rows').className + ' ' + "
+		    "getComputedStyle(document.querySelector('table.cfg-rows "
+		    "tbody td:nth-child(2)'), '::before').content");
+		ATF_CHECK_MSG(false, "the switch's rows are no cards on a "
+		    "phone: %s", why);
+	}
+	/* A sheet the phone's width, edge to edge. */
+	ATF_CHECK_MSG(js_true("(() => { const r = document.querySelector("
+	    "'.modal').getBoundingClientRect(); return Math.abs(r.left) < 1 "
+	    "&& Math.abs(r.right - innerWidth) < 1; })()"), "the switch's box "
+	    "is not the phone's width");
+	/* The page under it no wider than the phone, or the box is off. */
+	{
+		char	w[128];
+
+		js_str(w, sizeof(w), "innerWidth + ' ' + document."
+		    "documentElement.scrollWidth");
+		ATF_CHECK_MSG(js_true("document.documentElement.scrollWidth <= "
+		    "innerWidth"), "the page is wider than the phone: %s", w);
+	}
+	shot("8c1b-cfgfiles-switch-phone");
+	phone(false);
 	/* The list's Additive by default, the value's to choose. */
 	ATF_CHECK(js_true("document.querySelector('select[name=\"c:rc:"
 	    "jail_list\"]').value === 'additive'"));
@@ -8645,10 +8704,18 @@ ATF_TC_BODY(pwa_cfgfiles, tc)
 	    " i.value = ''; i.dispatchEvent(new Event('input', { bubbles: "
 	    "true }));");
 	wait_js("document.querySelectorAll('table.cfg-rows tbody tr').length "
-	    "=== 2", 10);
+	    "=== 3", 10);
+	/* Arcana's alone: Arcana's by default, Edit or Remove besides, no
+	 * Yours. */
+	ATF_CHECK(js_true("(() => { const o = [...document.querySelector("
+	    "'select[name=\"c:rc:ntpd_enable\"]').options].map(o => o.value);"
+	    " return document.querySelector('select[name=\"c:rc:ntpd_enable"
+	    "\"]').value === 'arcana' && o.includes('edit') && o.includes("
+	    "'remove') && !o.includes('yours'); })()"));
 	run("document.querySelector('select[name=\"c:rc:sshd_flags\"]').value "
-	    "= 'yours'; document.querySelector('form[data-form=cfg-switch]')"
-	    ".requestSubmit();");
+	    "= 'yours'; document.querySelector('select[name=\"c:rc:ntpd_enable"
+	    "\"]').value = 'remove'; document.querySelector('form[data-form="
+	    "cfg-switch]').requestSubmit();");
 	wait_js("document.querySelector('.cfgfiles') && document.querySelector("
 	    "'.cfgfiles').textContent.includes(\"The system's\")", 30);
 	shot("8c2-cfgfiles-system");
@@ -8656,8 +8723,9 @@ ATF_TC_BODY(pwa_cfgfiles, tc)
 	n = fread(conf, 1, sizeof(conf) - 1, fp);
 	conf[n] = '\0';
 	fclose(fp);
-	ATF_CHECK_STREQ_MSG("hostname=\"lab\"\nsshd_enable=\"YES\"\n"
-	    "sshd_flags=\"-4\"\njail_list=\"a b c\"\n", conf, "%s", conf);
+	snprintf(want, sizeof(want), "hostname=\"lab\"\nsshd_enable="
+	    "\"YES\"\nsshd_flags=\"-4\"\njail_list=\"%sa b c\"\n", many);
+	ATF_CHECK_STREQ_MSG(want, conf, "%s", conf);
 	ATF_CHECK(access("root/usr/local/etc/rc.conf.d/arcana", F_OK) == -1);
 }
 ATF_TC_CLEANUP(pwa_cfgfiles, tc)

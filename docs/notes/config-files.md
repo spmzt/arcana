@@ -81,12 +81,16 @@ with the admin's value from an active line or a `# taken by Arcana`
 one, Arcana's, whether it is a word list, the file it ends in, a
 choice and the result:
 
-- the admin's files set nothing: Arcana's value, in `/etc/rc.conf`
-  (`/boot/loader.conf` for a tunable);
+- the admin's files set nothing: Arcana's value by default, in
+  `/etc/rc.conf` (`/boot/loader.conf` for a tunable), or `edit` or
+  `remove`;
 - both set it: `additive` (a word list's alone; its default),
-  `arcana` (what boots now), `yours`, or `edit` with a value. A value
-  that differs has no default: a real run without a choice for it is
-  refused with `config-merge`, naming them;
+  `arcana` (what boots now), `yours`, `edit` with a value, or `remove`.
+  A value that differs has no default: a real run without a choice for
+  it is refused with `config-merge`, naming them;
+- `remove`, either way: written nowhere, unset in every file of the
+  admin's of its kind that sets it (a taken line too), not in the
+  ledger (nothing to give back); the switch's backup keeps the files;
 - a line taken by Arcana is put back where it is, then the result
   written there: no taken comment is left anywhere.
 

@@ -3434,7 +3434,10 @@ form .three {
  * BIRD: its neighbours around it, the boxes they open in, and the
  * parts of its configuration.
  */
-.modal:has(form.wide) { width: min(860px, calc(100vw - 2rem)); }
+/* Wider than a phone's: there a box is a sheet the screen's width. */
+@media (min-width: 621px) {
+	.modal:has(form.wide) { width: min(860px, calc(100vw - 2rem)); }
+}
 textarea {
 	width: 100%;
 	padding: .6rem .7rem;
@@ -4150,7 +4153,34 @@ table.fw-diff ins { color: var(--green); text-decoration: none; }
 table.cfg-rows del, form[data-form=cfg-merge] del { color: var(--red); text-decoration: none; }
 table.cfg-rows ins, form[data-form=cfg-merge] ins { color: var(--green); text-decoration: none; }
 table.cfg-rows td.diff { font-family: var(--mono, monospace); font-size: .8rem; }
-table.cfg-rows input.cfg-edit { width: 10rem; }
+/*
+ * The switch's rows fit the box: as wide as the screen allows, the
+ * columns sharing it (fixed layout), values wrapping between words and
+ * a long word broken anywhere; never a sideways scroll.  On a phone
+ * each row is a card, every value under its column's name.
+ */
+@media (min-width: 621px) {
+	.modal:has(form[data-form=cfg-switch]),
+	.modal:has(form[data-form=cfg-merge]) { width: min(1120px, calc(100vw - 2rem)); }
+}
+/* A grid's column is never narrower than its widest child unless told. */
+form[data-form=cfg-switch], form[data-form=cfg-merge] { grid-template-columns: minmax(0, 1fr); }
+table.net.cfg-rows { table-layout: fixed; }
+table.net.cfg-rows th:nth-child(1) { width: 18%; }
+table.net.cfg-rows th:nth-child(2) { width: 16%; }
+table.net.cfg-rows th:nth-child(3),
+table.net.cfg-rows th:nth-child(4) { width: 23%; }
+table.net.cfg-rows th:nth-child(5) { width: 20%; }
+table.net.cfg-rows td {
+	white-space: normal;
+	overflow-wrap: anywhere;
+	vertical-align: top;
+}
+table.net.cfg-rows td.choice select,
+table.net.cfg-rows input.cfg-edit { width: 100%; max-width: 100%; box-sizing: border-box; }
+table.net.cfg-rows td.choice select { margin-bottom: .3rem; }
+table.net.cfg-rows td > span { min-width: 0; }
+table.net.cfg-rows td.choice > span { display: block; flex: 1; }
 fieldset.cfg-merge { margin: .6rem 0; }
 fieldset.cfg-merge pre.diff { margin: .2rem 0; white-space: pre-wrap; word-break: break-word; }
 fieldset.cfg-merge textarea { width: 100%; font-family: var(--mono, monospace); }
@@ -4189,7 +4219,7 @@ section.fwtable h4 .chip, section.fwtable h4 button { margin-left: .6rem; }
  * foot of its card, and the head a row of buttons to sort by.
  */
 @media (max-width: 620px) {
-	.stage table.net.cards { display: block; overflow: visible; max-width: 100%; border: 0; }
+	.stage table.net.cards, .modal table.net.cards { display: block; overflow: visible; max-width: 100%; border: 0; }
 	table.net.cards thead { display: block; margin-bottom: .5rem; }
 	table.net.cards thead tr { display: flex; flex-wrap: wrap; gap: .3rem; }
 	table.net.cards thead th { display: inline-block; width: auto !important; min-width: 0 !important; max-width: none !important; padding: .2rem .5rem; border: 1px solid var(--line); border-radius: 999px; font-size: .7rem; position: static; background: none; }
@@ -4197,7 +4227,8 @@ section.fwtable h4 .chip, section.fwtable h4 button { margin-left: .6rem; }
 	table.net.cards thead th::after { position: static; background: none; width: auto; }
 	table.net.cards tbody { display: block; }
 	table.net.cards tbody tr { display: block; margin: 0 0 .5rem; padding: .45rem .7rem; border: 1px solid var(--line); border-radius: 8px; background: rgba(var(--surface-rgb), .6); }
-	.stage table.net.cards tbody td, .stage table.net.cards tbody td:first-child {
+	.stage table.net.cards tbody td, .stage table.net.cards tbody td:first-child,
+	.modal table.net.cards tbody td, .modal table.net.cards tbody td:first-child {
 		display: flex; justify-content: space-between; align-items: baseline; gap: .8rem;
 		padding: .14rem 0; border: 0; text-align: right; white-space: normal; word-break: break-word;
 		position: static; max-width: none; overflow: visible; background: none;

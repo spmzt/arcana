@@ -1071,6 +1071,12 @@ module arcana-agent {
                   description
                     "The value given.";
                 }
+                enum remove {
+                  description
+                    "Neither: the variable unset in every file of the
+                     admin's that sets it, Arcana's line not carried
+                     over.";
+                }
               }
               description
                 "What is written.";

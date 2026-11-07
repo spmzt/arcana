@@ -12,7 +12,8 @@
  * loader.conf(5) themselves).  The System tab's row says which, its
  * Switch a dry run first, every variable both set in a table that
  * sorts and filters (tbl.c), a choice each: Additive (sysrc(8)'s +=,
- * a word list's), Arcana's, Yours or an edited value; then the switch
+ * a word list's), Arcana's, Yours, an edited value or Remove (unset
+ * in every file); then the switch
  * as a task.  And the merge editor: a commit refused with rc-conf-merge
  * (ycommit.c) shows each value side by side, the words of each marked,
  * the result edited; resolve takes it and the commit goes again.
@@ -246,7 +247,8 @@ static void
 choice_select(struct html *h, const ucl_object_t *r)
 {
 	static const char *const ch[] = { "additive", "Additive",
-	    "arcana", "Arcana's", "yours", "Yours", "edit", "Edit" };
+	    "arcana", "Arcana's", "yours", "Yours", "edit", "Edit",
+	    "remove", "Remove" };
 	const char	*kind = jstr(r, "kind"), *var = jstr(r, "variable");
 	const char	*c = jstr(r, "choice");
 	bool		 list = jbool(r, "list");
@@ -256,11 +258,6 @@ choice_select(struct html *h, const ucl_object_t *r)
 		h_raw(h, "<span class=\"dim\">cloned</span>");
 		return;
 	}
-	if (jstr(r, "yours") == NULL) {
-		h_raw(h, "<span class=\"dim\">Arcana's: yours sets none"
-		    "</span>");
-		return;
-	}
 	snprintf(name, sizeof(name), "c:%s:%s", kind, var);
 	h_raw(h, "<select");
 	h_attr(h, "name", name);
@@ -268,7 +265,9 @@ choice_select(struct html *h, const ucl_object_t *r)
 	if (c == NULL)
 		h_raw(h, "<option value=\"\" selected>Choose…</option>");
 	for (size_t i = 0; i < nitems(ch); i += 2) {
-		if (i == 0 && !list)
+		/* Additive for a word list, Yours where yours sets it. */
+		if ((i == 0 && !list) || (i == 4 && jstr(r, "yours") ==
+		    NULL))
 			continue;
 		h_fmt(h, "<option value=\"%s\"%s>%s</option>", ch[i], c !=
 		    NULL && strcmp(c, ch[i]) == 0 ? " selected" : "",
@@ -301,7 +300,9 @@ switch_modal(struct html *h)
 		    "adds Arcana's, as <code>sysrc var+=</code> does (a word "
 		    "list's alone), <b>Arcana's</b> is what boots now, "
 		    "<b>Yours</b> your line's, <b>Edit</b> a value of your "
-		    "own. A line Arcana commented out (\"taken by Arcana\") "
+		    "own, <b>Remove</b> neither: unset in every file of yours "
+		    "that sets it. A line Arcana commented out (\"taken by "
+		    "Arcana\") "
 		    "is put back where it is. Then Arcana's files are gone, "
 		    "rc_conf_files as it was.</p>");
 	else
@@ -337,13 +338,14 @@ switch_modal(struct html *h)
 			h_raw(h, " <small class=\"dim\">list</small>");
 		h_raw(h, "</td><td>");
 		h_txt(h, jstr(r, "file"));
-		h_raw(h, "</td><td class=\"diff\">");
+		/* One element each, so that a card's cell wraps it whole. */
+		h_raw(h, "</td><td class=\"diff\"><span>");
 		words_marked(h, jstr(r, "yours"), jstr(r, "arcana"), "del");
-		h_raw(h, "</td><td class=\"diff\">");
+		h_raw(h, "</span></td><td class=\"diff\"><span>");
 		words_marked(h, jstr(r, "arcana"), jstr(r, "yours"), "ins");
-		h_raw(h, "</td><td>");
+		h_raw(h, "</span></td><td class=\"choice\"><span>");
 		choice_select(h, r);
-		h_raw(h, "</td></tr>");
+		h_raw(h, "</span></td></tr>");
 	}
 	free(rows);
 	h_raw(h, "</tbody></table>");
@@ -569,7 +571,8 @@ cfg_form(const char *form, const ucl_object_t *f)
 		free(q);
 		h_fmt(&b, ",\"choice\":\"%s\"", strcmp(c, "additive") == 0 ?
 		    "additive" : strcmp(c, "yours") == 0 ? "yours" :
-		    strcmp(c, "edit") == 0 ? "edit" : "arcana");
+		    strcmp(c, "edit") == 0 ? "edit" : strcmp(c, "remove") ==
+		    0 ? "remove" : "arcana");
 		if (strcmp(c, "edit") == 0) {
 			q = json_quote(v != NULL ? v : "");
 			h_raw(&b, ",\"value\":");

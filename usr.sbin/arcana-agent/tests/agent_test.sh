@@ -14743,14 +14743,19 @@ config_files_switch_body()
 	# Done: the list merged, the line taken by Arcana replaced where
 	# it is, rc_conf_files back to the defaults', Arcana's files gone,
 	# every file before copied.
+	# Removed: ntpd_enable, which both set, out of theirs too; kld_list,
+	# Arcana's alone, written nowhere.
 	atf_check -o save:sw.json "$JGC" -c "$SOCK" action agent/config-files \
 	    switch to=system merge=kind:rc,variable:sshd_flags,choice:yours \
-	    merge=kind:rc,variable:ntpd_enable,choice:arcana \
+	    merge=kind:rc,variable:ntpd_enable,choice:remove \
+	    merge=kind:rc,variable:kld_list,choice:remove \
 	    merge=kind:loader,variable:hw.foo,choice:edit,value:3
 	atf_check -o match:'"done":true' -o match:'"backup":"/var/db/arcana/config-switch/' \
 	    -o match:'nothing is loaded now' cat sw.json
-	atf_check -o inline:'jail_list="a b c"\nsshd_flags="-4"\nhostname="lab"\nntpd_enable="YES"\nkld_list="if_bridge"\n' \
+	atf_check -o inline:'jail_list="a b c"\nsshd_flags="-4"\nhostname="lab"\n' \
 	    cat root/etc/rc.conf
+	atf_check -o match:'"choice":"remove","file":"/etc/rc.conf","kind":"rc","list":false,"variable":"ntpd_enable"' \
+	    cat sw.json
 	atf_check -o inline:'hw.foo="3"\nnet.fibs="4"\n' cat root/boot/loader.conf
 	atf_check test ! -e root/usr/local/etc/rc.conf.d/arcana
 	atf_check test ! -e root/boot/loader.conf.d/arcana.conf
@@ -14771,7 +14776,7 @@ config_files_switch_body()
 	    agent/config-files switch to=arcana
 	atf_check -o match:'"done":true' -o match:'"choice":"clone"' \
 	    -o match:'a clone of yours' cat back.json
-	atf_check -o inline:'jail_list="a b c"\nsshd_flags="-4"\nhostname="lab"\nntpd_enable="YES"\nkld_list="if_bridge"\n' \
+	atf_check -o inline:'jail_list="a b c"\nsshd_flags="-4"\nhostname="lab"\n' \
 	    cat root/usr/local/etc/rc.conf.d/arcana
 	atf_check -o inline:'hw.foo="3"\nnet.fibs="4"\n' \
 	    cat root/boot/loader.conf.d/arcana.conf

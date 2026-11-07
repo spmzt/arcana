@@ -1026,8 +1026,8 @@ choose(struct row *r, const yswin *in, char *err, size_t errlen)
 		case ARCANA_AGENT_AGENT_CONFIG_FILES_SWITCH_INPUT_MERGE_CHOICE_ADDITIVE:
 			if (!r->list) {
 				(void)snprintf(err, errlen, "%s: additive is for a "
-				    "word list; this is a value: arcana, yours or "
-				    "edit", r->var);
+				    "word list; this is a value: arcana, yours, "
+				    "edit or remove", r->var);
 				return (EINVAL);
 			}
 			r->choice = "additive";
@@ -1051,6 +1051,10 @@ choose(struct row *r, const yswin *in, char *err, size_t errlen)
 			}
 			r->choice = "edit";
 			break;
+		case ARCANA_AGENT_AGENT_CONFIG_FILES_SWITCH_INPUT_MERGE_CHOICE_REMOVE:
+			/* Written nowhere, unset wherever it is. */
+			r->choice = "remove";
+			return (0);
 		}
 	} else if (r->yours == NULL || strcmp(r->yours, r->arcana) == 0)
 		r->choice = "arcana";
@@ -1440,8 +1444,8 @@ to_system(cbl_req *req, const yswin *in, bool dry, cbl_yarena *a,
 	}
 	if (need[0] != '\0') {
 		(void)snprintf(err, sizeof(err), "your files and Arcana's set "
-		    "different values of %s: choose for each (arcana, yours or "
-		    "edit; additive for a word list)", need);
+		    "different values of %s: choose for each (arcana, yours, "
+		    "edit or remove; additive for a word list)", need);
 		if (dry) {
 			note(a, nt, "%s", err);
 			err[0] = '\0';
@@ -1490,6 +1494,19 @@ to_system(cbl_req *req, const yswin *in, bool dry, cbl_yarena *a,
 		}
 		if (error != 0)
 			break;
+		if (strcmp(r[i].choice, "remove") == 0) {
+			/* Out of every file of theirs; nothing to give back. */
+			for (size_t j = lo; j < hi && error == 0; j++) {
+				if (vc_get(&uf[j], r[i].var) == NULL)
+					continue;
+				if (vc_unset(&uf[j], r[i].var, err,
+				    sizeof(err)) == -1)
+					error = errno != 0 ? errno : EIO;
+				else
+					changed[j] = true;
+			}
+			continue;
+		}
 		if (r[i].at >= 0)
 			at = (size_t)r[i].at;
 		else if (r[i].kind == CF_RC)
