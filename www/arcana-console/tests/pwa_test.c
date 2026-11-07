@@ -7694,8 +7694,27 @@ part_netsect_paths(void)
 	    "=== 'gw' && document.querySelector('table.ifaces tr[data-if="
 	    "epair1b]')", 20);
 	run("window.fetch = window.fetch0;");
+	run("window.labIds = null; fetch('/api/servers', {headers: {'X-Arcana': '1'}}).then(r => r.json())"
+	    ".then(j => { const ids = {}; j.servers.forEach(v => ids[v.name] = "
+	    "v.id); window.labIds = ids; });");
+	wait_js("window.labIds && window.labIds.lab2", 10);
+	/*
+	 * gw stopped again, as each agent would tell the fleet's stream
+	 * (the page reads no jails on a timer while the stream is up): its
+	 * node gone from the map, its addresses no gateway's below.
+	 */
+	wait_js("window.arcanaStreams && window.arcanaStreams[1] && "
+	    "window.arcanaStreams[1].readyState === 1", 10);
+	run("Object.values(window.labIds).forEach((id, i) => window."
+	    "arcanaStreams[1].onmessage({ data: JSON.stringify({ "
+	    "'ietf-restconf:notification': { eventTime: new Date()."
+	    "toISOString(), 'arcana-fleet:fleet': { host: [{ id: id, "
+	    "'arcana-events:event': { number: String(900000 + i), time: new "
+	    "Date().toISOString(), kind: 'arcana-events:jail-state', "
+	    "'jail-state': { jail: 'gw', state: 'stopped' } } }] } } }) }));");
 	run("document.querySelector('li[data-act=select-network]').click()");
-	wait_js("document.querySelector('svg.topo .tnode')", 10);
+	wait_js("document.querySelector('svg.topo .tnode') && !document."
+	    "querySelector('svg.topo .tnode.vjail')", 15);
 	/*
 	 * A nexthop group's far ends found by their link-local addresses:
 	 * told here that lab sends by em1 to fe80::2, which lab2 has on
@@ -7703,10 +7722,6 @@ part_netsect_paths(void)
 	 * lab's em1; and by em0 to fe80::1, which lab2 has on its loopback
 	 * alone, as every host does: no host of the fleet is that one.
 	 */
-	run("window.labIds = null; fetch('/api/servers', {headers: {'X-Arcana': '1'}}).then(r => r.json())"
-	    ".then(j => { const ids = {}; j.servers.forEach(v => ids[v.name] = "
-	    "v.id); window.labIds = ids; });");
-	wait_js("window.labIds && window.labIds.lab2", 10);
 	run("window.fetchL = window.fetch; const ids = window.labIds; "
 	    "const A = (f, a, p) => ({ family: f, "
 	    "address: a, prefixlen: p }), I = (n, ad) => ({ name: n, up: "
