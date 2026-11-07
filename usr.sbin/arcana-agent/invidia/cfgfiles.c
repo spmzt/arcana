@@ -874,12 +874,14 @@ fw_plan(struct fwmove *m, const char *from, const char *to)
 		    "%s, firewall_script naming them", cf_unrooted(m->to),
 		    cf_unrooted(m->from));
 	free(b);
+	b = NULL;
 	if (m->why[0] == '\0' && (b = slurp(m->tosh, &lb)) != NULL &&
 	    strstr(b, FW_MARK) == NULL)
 		(void)snprintf(m->why, sizeof(m->why), "%s is the admin's own "
 		    "script: the firewall's files stay at %s, firewall_script "
 		    "naming them", cf_unrooted(m->tosh), cf_unrooted(m->from));
 	free(b);
+	b = NULL;
 	if (m->why[0] == '\0' && m->has_sh && ((b = slurp(m->fromsh, &lb)) ==
 	    NULL || strstr(b, FW_MARK) == NULL))
 		(void)snprintf(m->why, sizeof(m->why), "%s is not Arcana's "

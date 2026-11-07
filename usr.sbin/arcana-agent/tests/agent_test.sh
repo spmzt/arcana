@@ -8082,7 +8082,7 @@ sdwan_ids_run_body()
 	rs3='{"instances":[{"name":"sw1","interfaces":["any"],"conf":"default-log-dir: @LOGDIR@\npcap:\n  - interface: any\nrule-files:\n  - @RULES@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$rs3"
 	atf_check -o not-match:'interface: any' -o not-match:'interface: lo[0-9]' \
-	    -o match:'^  - interface: [a-z]+[0-9]+$' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	    -o match:'^  - interface: [a-z]+[0-9]+[a-z0-9]*$' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	# A pid file left by a start that failed or a crash: taken away, the
 	# instance started.
 	kill "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
@@ -9910,6 +9910,10 @@ EOS
 	mkdir -p root/etc/defaults
 	cp /etc/defaults/rc.conf root/etc/defaults/
 	printf 'kld_list="if_bridge"\n' > root/etc/rc.conf
+	# What could be loaded: the module path's files under the root (a
+	# jail has no /boot/kernel of its own).
+	mkdir -p root/boot/kernel
+	: > root/boot/kernel/if_fakemod.ko
 	DAEMON_ARGS="-Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf --root $(pwd)/root"
 	start_daemon
 	printf 'kld_list="if_bridge"\n' >> rc.conf
@@ -9921,7 +9925,7 @@ EOS
 	atf_check -o match:'^\{"arcana-kernel:kernel":\{' \
 	    -o match:'"file":\[\{"address":"0x[0-9a-f]+","id":1,"module":\["' \
 	    -o match:'"name":"kernel","path":"/boot/[^"]*kernel","refs":[0-9]+,"size":"[0-9]+"\}' \
-	    -o match:'"available":\[' -o match:'"kept":\["if_bridge"\]' \
+	    -o match:'"available":\[[^]]*"if_fakemod"' -o match:'"kept":\["if_bridge"\]' \
 	    -o match:'"memory":\{"files":"[0-9]+"' \
 	    -o match:'"malloc":\[\{"bytes":"[0-9]+","count":"[0-9]+","name":"[^"]+","requests":"[0-9]+"\}' \
 	    -o match:'"malloc-total":"[0-9]+"' \
@@ -12003,18 +12007,20 @@ storage_head()
 storage_body()
 {
 	# zfs(8) and zpool(8): what they list is canned, what they are told
-	# to do is logged.
+	# to do is logged.  Their pool is fakepool, a name no host's pool
+	# has: the guard of the pools the system lives on reads the real
+	# mounts, and a host on a pool named as the fake's would refuse.
 	cat > fake-zfs <<EOS
 #!/bin/sh
 echo "zfs \$*" >> $(pwd)/storage.log
 case "\$*" in
 "list -j -p -t filesystem,volume"*)
-	printf '%s\n' '{"output_version":{"command":"zfs list","vers_major":0,"vers_minor":1},"datasets":{"tank":{"name":"tank","type":"FILESYSTEM","pool":"tank","properties":{"type":{"value":"filesystem"},"used":{"value":"5000"},"available":{"value":"9000"},"referenced":{"value":"96"},"mountpoint":{"value":"/tank"},"compression":{"value":"lz4"},"compressratio":{"value":"1.50"},"quota":{"value":"0"},"reservation":{"value":"0"},"mounted":{"value":"yes"},"canmount":{"value":"on"},"origin":{"value":"-"},"volsize":{"value":"-"},"readonly":{"value":"off"},"encryption":{"value":"off"},"keystatus":{"value":"-"},"keylocation":{"value":"none"},"jailed":{"value":"off"}}},"tank/data":{"name":"tank/data","type":"FILESYSTEM","pool":"tank","properties":{"type":{"value":"filesystem"},"used":{"value":"4000"},"available":{"value":"9000"},"referenced":{"value":"4000"},"mountpoint":{"value":"/tank/data"},"compression":{"value":"lz4"},"compressratio":{"value":"2.00"},"quota":{"value":"8000"},"reservation":{"value":"0"},"mounted":{"value":"yes"},"canmount":{"value":"on"},"origin":{"value":"-"},"volsize":{"value":"-"},"readonly":{"value":"off"},"encryption":{"value":"aes-256-gcm"},"keystatus":{"value":"unavailable"},"keylocation":{"value":"file:///k"},"jailed":{"value":"on"}}},"tank/vol":{"name":"tank/vol","type":"VOLUME","pool":"tank","properties":{"type":{"value":"volume"},"used":{"value":"100"},"available":{"value":"9000"},"referenced":{"value":"100"},"mountpoint":{"value":"-"},"compression":{"value":"off"},"compressratio":{"value":"1.00"},"quota":{"value":"-"},"reservation":{"value":"0"},"mounted":{"value":"-"},"canmount":{"value":"-"},"origin":{"value":"tank/data@a"},"volsize":{"value":"1048576"},"readonly":{"value":"off"},"encryption":{"value":"off"},"keystatus":{"value":"-"},"keylocation":{"value":"none"},"jailed":{"value":"off"}}}}}' ;;
+	printf '%s\n' '{"output_version":{"command":"zfs list","vers_major":0,"vers_minor":1},"datasets":{"fakepool":{"name":"fakepool","type":"FILESYSTEM","pool":"fakepool","properties":{"type":{"value":"filesystem"},"used":{"value":"5000"},"available":{"value":"9000"},"referenced":{"value":"96"},"mountpoint":{"value":"/fakepool"},"compression":{"value":"lz4"},"compressratio":{"value":"1.50"},"quota":{"value":"0"},"reservation":{"value":"0"},"mounted":{"value":"yes"},"canmount":{"value":"on"},"origin":{"value":"-"},"volsize":{"value":"-"},"readonly":{"value":"off"},"encryption":{"value":"off"},"keystatus":{"value":"-"},"keylocation":{"value":"none"},"jailed":{"value":"off"}}},"fakepool/data":{"name":"fakepool/data","type":"FILESYSTEM","pool":"fakepool","properties":{"type":{"value":"filesystem"},"used":{"value":"4000"},"available":{"value":"9000"},"referenced":{"value":"4000"},"mountpoint":{"value":"/fakepool/data"},"compression":{"value":"lz4"},"compressratio":{"value":"2.00"},"quota":{"value":"8000"},"reservation":{"value":"0"},"mounted":{"value":"yes"},"canmount":{"value":"on"},"origin":{"value":"-"},"volsize":{"value":"-"},"readonly":{"value":"off"},"encryption":{"value":"aes-256-gcm"},"keystatus":{"value":"unavailable"},"keylocation":{"value":"file:///k"},"jailed":{"value":"on"}}},"fakepool/vol":{"name":"fakepool/vol","type":"VOLUME","pool":"fakepool","properties":{"type":{"value":"volume"},"used":{"value":"100"},"available":{"value":"9000"},"referenced":{"value":"100"},"mountpoint":{"value":"-"},"compression":{"value":"off"},"compressratio":{"value":"1.00"},"quota":{"value":"-"},"reservation":{"value":"0"},"mounted":{"value":"-"},"canmount":{"value":"-"},"origin":{"value":"fakepool/data@a"},"volsize":{"value":"1048576"},"readonly":{"value":"off"},"encryption":{"value":"off"},"keystatus":{"value":"-"},"keylocation":{"value":"none"},"jailed":{"value":"off"}}}}}' ;;
 "list -j -p -t snapshot"*)
-	printf '%s\n' '{"output_version":{"command":"zfs list","vers_major":0,"vers_minor":1},"datasets":{"tank/data@b":{"name":"tank/data@b","type":"SNAPSHOT","pool":"tank","properties":{"used":{"value":"10"},"referenced":{"value":"4000"},"creation":{"value":"1759500000"}}},"tank/data@a":{"name":"tank/data@a","type":"SNAPSHOT","pool":"tank","properties":{"used":{"value":"20"},"referenced":{"value":"3000"},"creation":{"value":"1759400000"}}}}}' ;;
-"destroy tank/busy") echo "cannot destroy 'tank/busy': dataset is busy" >&2; exit 1 ;;
-"list -H -o name -s createtxg -t snapshot -d 1 tank/data") printf 'tank/data@a\ntank/data@b\n' ;;
-"destroy tank/data@b") [ -f $(pwd)/held ] && { echo "cannot destroy snapshot tank/data@b: dataset is busy" >&2; exit 1; } ;;
+	printf '%s\n' '{"output_version":{"command":"zfs list","vers_major":0,"vers_minor":1},"datasets":{"fakepool/data@b":{"name":"fakepool/data@b","type":"SNAPSHOT","pool":"fakepool","properties":{"used":{"value":"10"},"referenced":{"value":"4000"},"creation":{"value":"1759500000"}}},"fakepool/data@a":{"name":"fakepool/data@a","type":"SNAPSHOT","pool":"fakepool","properties":{"used":{"value":"20"},"referenced":{"value":"3000"},"creation":{"value":"1759400000"}}}}}' ;;
+"destroy fakepool/busy") echo "cannot destroy 'fakepool/busy': dataset is busy" >&2; exit 1 ;;
+"list -H -o name -s createtxg -t snapshot -d 1 fakepool/data") printf 'fakepool/data@a\nfakepool/data@b\n' ;;
+"destroy fakepool/data@b") [ -f $(pwd)/held ] && { echo "cannot destroy snapshot fakepool/data@b: dataset is busy" >&2; exit 1; } ;;
 esac
 exit 0
 EOS
@@ -12022,10 +12028,10 @@ EOS
 #!/bin/sh
 echo "zpool \$*" >> $(pwd)/storage.log
 case "\$*" in
-"list -Hp -o name,size,alloc,free,health") printf 'tank\t14000\t5000\t9000\tONLINE\n' ;;
-"list -j -p -o name,size,allocated"*) printf '%s\n' '{"output_version":{"command":"zpool list","vers_major":0,"vers_minor":1},"pools":{"tank":{"name":"tank","type":"POOL","state":"DEGRADED","properties":{"size":{"value":"14000"},"allocated":{"value":"5000"},"free":{"value":"9000"},"fragmentation":{"value":"12"},"capacity":{"value":"35"},"dedupratio":{"value":"1.00"},"health":{"value":"DEGRADED"}}}}}' ;;
+"list -Hp -o name,size,alloc,free,health") printf 'fakepool\t14000\t5000\t9000\tONLINE\n' ;;
+"list -j -p -o name,size,allocated"*) printf '%s\n' '{"output_version":{"command":"zpool list","vers_major":0,"vers_minor":1},"pools":{"fakepool":{"name":"fakepool","type":"POOL","state":"DEGRADED","properties":{"size":{"value":"14000"},"allocated":{"value":"5000"},"free":{"value":"9000"},"fragmentation":{"value":"12"},"capacity":{"value":"35"},"dedupratio":{"value":"1.00"},"health":{"value":"DEGRADED"}}}}}' ;;
 import) printf '   pool: spare\n     id: 1234567890\n  state: ONLINE\n action: The pool can be imported using its name or numeric identifier.\n config:\n\n\tspare       ONLINE\n\t  ada7p1    ONLINE\n' ;;
-"status -j") printf '%s\n' '{"output_version":{"command":"zpool status","vers_major":0,"vers_minor":1},"pools":{"tank":{"name":"tank","state":"DEGRADED","pool_guid":"1","txg":"1","spa_version":"5000","zpl_version":"5","status":"One or more devices has been taken offline by the administrator. Sufficient replicas exist for the pool to continue functioning.","action":"Online the device using '\''zpool online'\''.","msgid":"ZFS-8000-2Q","moreinfo":"https://openzfs.github.io/openzfs-docs/msg/ZFS-8000-2Q","scan_stats":{"function":"SCRUB","state":"FINISHED","start_time":"Sun Oct  4 02:49:49 2026","end_time":"Sun Oct  4 03:00:00 2026","errors":"0"},"vdevs":{"tank":{"name":"tank","vdev_type":"root","guid":"1","class":"normal","state":"DEGRADED","read_errors":"0","write_errors":"0","checksum_errors":"0","vdevs":{"mirror-0":{"name":"mirror-0","vdev_type":"mirror","guid":"2","class":"normal","state":"DEGRADED","read_errors":"0","write_errors":"0","checksum_errors":"0","vdevs":{"ada1p1":{"name":"ada1p1","vdev_type":"disk","guid":"3","path":"/dev/ada1p1","class":"normal","state":"ONLINE","read_errors":"0","write_errors":"0","checksum_errors":"0"},"ada2p1":{"name":"ada2p1","vdev_type":"disk","guid":"4","path":"/dev/ada2p1","class":"normal","state":"OFFLINE","read_errors":"0","write_errors":"0","checksum_errors":"0"}}}}}},"error_count":"0","errlist":[]}}}' ;;
+"status -j") printf '%s\n' '{"output_version":{"command":"zpool status","vers_major":0,"vers_minor":1},"pools":{"fakepool":{"name":"fakepool","state":"DEGRADED","pool_guid":"1","txg":"1","spa_version":"5000","zpl_version":"5","status":"One or more devices has been taken offline by the administrator. Sufficient replicas exist for the pool to continue functioning.","action":"Online the device using '\''zpool online'\''.","msgid":"ZFS-8000-2Q","moreinfo":"https://openzfs.github.io/openzfs-docs/msg/ZFS-8000-2Q","scan_stats":{"function":"SCRUB","state":"FINISHED","start_time":"Sun Oct  4 02:49:49 2026","end_time":"Sun Oct  4 03:00:00 2026","errors":"0"},"vdevs":{"fakepool":{"name":"fakepool","vdev_type":"root","guid":"1","class":"normal","state":"DEGRADED","read_errors":"0","write_errors":"0","checksum_errors":"0","vdevs":{"mirror-0":{"name":"mirror-0","vdev_type":"mirror","guid":"2","class":"normal","state":"DEGRADED","read_errors":"0","write_errors":"0","checksum_errors":"0","vdevs":{"ada1p1":{"name":"ada1p1","vdev_type":"disk","guid":"3","path":"/dev/ada1p1","class":"normal","state":"ONLINE","read_errors":"0","write_errors":"0","checksum_errors":"0"},"ada2p1":{"name":"ada2p1","vdev_type":"disk","guid":"4","path":"/dev/ada2p1","class":"normal","state":"OFFLINE","read_errors":"0","write_errors":"0","checksum_errors":"0"}}}}}},"error_count":"0","errlist":[]}}}' ;;
 esac
 exit 0
 EOS
@@ -12072,21 +12078,21 @@ EOS
 
 	# A dataset's encryption and whether a jail has it; its key loaded
 	# from where it is kept, and forgotten; given to a jail, taken back.
-	atf_check -o match:'"name":"tank/data",[^}]*"encryption":"aes-256-gcm","keystatus":"unavailable","keylocation":"file:///k","jailed":"on"' \
+	atf_check -o match:'"name":"fakepool/data",[^}]*"encryption":"aes-256-gcm","keystatus":"unavailable","keylocation":"file:///k","jailed":"on"' \
 	    "$JGC" -c "$SOCK" storage datasets
-	atf_check -o match:'done +zfs load-key tank/data$' "$JGC" -c "$SOCK" zfs load-key tank/data
-	atf_check -o match:'done +zfs unload-key -r tank/data$' "$JGC" -c "$SOCK" zfs unload-key -r tank/data
-	atf_check -o match:'done +zfs jail web tank/data$' "$JGC" -c "$SOCK" zfs jail tank/data web
-	atf_check -o match:'done +zfs unjail web tank/data$' "$JGC" -c "$SOCK" zfs unjail tank/data web
-	atf_check -s exit:1 -e match:'a jail is named' -o ignore "$JGC" -c "$SOCK" zfs jail tank/data 'a b'
-	atf_check -s exit:1 -e match:'a dataset is pool/name' -o ignore "$JGC" -c "$SOCK" zfs jail tank web
+	atf_check -o match:'done +zfs load-key fakepool/data$' "$JGC" -c "$SOCK" zfs load-key fakepool/data
+	atf_check -o match:'done +zfs unload-key -r fakepool/data$' "$JGC" -c "$SOCK" zfs unload-key -r fakepool/data
+	atf_check -o match:'done +zfs jail web fakepool/data$' "$JGC" -c "$SOCK" zfs jail fakepool/data web
+	atf_check -o match:'done +zfs unjail web fakepool/data$' "$JGC" -c "$SOCK" zfs unjail fakepool/data web
+	atf_check -s exit:1 -e match:'a jail is named' -o ignore "$JGC" -c "$SOCK" zfs jail fakepool/data 'a b'
+	atf_check -s exit:1 -e match:'a dataset is pool/name' -o ignore "$JGC" -c "$SOCK" zfs jail fakepool web
 	# A snapshot sent into a new dataset: the helper pipes zfs send
 	# into zfs receive, of all or of what changed since another.
-	atf_check -o match:'done' "$JGC" -c "$SOCK" zfs replicate tank/data@b backup/data
-	atf_check -o match:"^0 zfs-pipe $(pwd)/fake-zfs tank/data@b backup/data - -\$" cat helper.log
-	atf_check -s exit:1 -e match:'a dataset is pool/name' -o ignore "$JGC" -c "$SOCK" zfs replicate tank/data backup/data
-	atf_check "$JGD" --scope-helper 0 zfs-pipe "$(pwd)/fake-zfs" tank/data@b backup/data tank/data@a r
-	atf_check -o match:'^zfs send -R -i tank/data@a tank/data@b$' \
+	atf_check -o match:'done' "$JGC" -c "$SOCK" zfs replicate fakepool/data@b backup/data
+	atf_check -o match:"^0 zfs-pipe $(pwd)/fake-zfs fakepool/data@b backup/data - -\$" cat helper.log
+	atf_check -s exit:1 -e match:'a dataset is pool/name' -o ignore "$JGC" -c "$SOCK" zfs replicate fakepool/data backup/data
+	atf_check "$JGD" --scope-helper 0 zfs-pipe "$(pwd)/fake-zfs" fakepool/data@b backup/data fakepool/data@a r
+	atf_check -o match:'^zfs send -R -i fakepool/data@a fakepool/data@b$' \
 	    -o match:'^zfs receive -u backup/data$' cat storage.log
 	# A file system made on a partition: not on one that has one, is
 	# a pool's, or is not a device; and one grown.
@@ -12126,7 +12132,7 @@ EOS
 	# The pools, with what zpool status says of each and its devices
 	# as they are nested.
 	atf_check -o save:p.json "$JGC" -c "$SOCK" storage pools
-	atf_check -o match:'"name":"tank","size":14000,"alloc":5000,"free":9000,"frag":12,"cap":35,"dedup":"1.00","health":"DEGRADED"' \
+	atf_check -o match:'"name":"fakepool","size":14000,"alloc":5000,"free":9000,"frag":12,"cap":35,"dedup":"1.00","health":"DEGRADED"' \
 	    -o match:'"state":"DEGRADED"' \
 	    -o match:'"status":"One or more devices has been taken offline by the administrator. Sufficient replicas exist' \
 	    -o match:'"scan":"scrub finished with 0 errors on Sun Oct  4 03:00:00 2026"' -o match:'"errors":"No known data errors"' \
@@ -12135,12 +12141,12 @@ EOS
 	    -o match:'\{"name":"ada2p1","depth":2,"state":"OFFLINE","read":"0","write":"0","cksum":"0"\}' \
 	    cat p.json
 	# Datasets and snapshots: sizes are numbers, "-" is nothing.
-	atf_check -o match:'\{"name":"tank/data","type":"filesystem","used":4000,"avail":9000,"refer":4000,"mountpoint":"/tank/data","compression":"lz4","ratio":"2.00","quota":8000,"reservation":0,"mounted":"yes","canmount":"on","readonly":"off",' \
-	    -o match:'"name":"tank/vol","type":"volume".*"origin":"tank/data@a","volsize":1048576' \
+	atf_check -o match:'\{"name":"fakepool/data","type":"filesystem","used":4000,"avail":9000,"refer":4000,"mountpoint":"/fakepool/data","compression":"lz4","ratio":"2.00","quota":8000,"reservation":0,"mounted":"yes","canmount":"on","readonly":"off",' \
+	    -o match:'"name":"fakepool/vol","type":"volume".*"origin":"fakepool/data@a","volsize":1048576' \
 	    "$JGC" -c "$SOCK" storage datasets
-	atf_check -o match:'\{"snapshots":\[\{"name":"tank/data@b","used":10,"refer":4000,"creation":1759500000\}' \
-	    "$JGC" -c "$SOCK" storage snapshots tank/data
-	atf_check -o match:'^zfs list -j -p -t snapshot -o name,used,referenced,creation -S creation -r tank/data$' \
+	atf_check -o match:'\{"snapshots":\[\{"name":"fakepool/data@b","used":10,"refer":4000,"creation":1759500000\}' \
+	    "$JGC" -c "$SOCK" storage snapshots fakepool/data
+	atf_check -o match:'^zfs list -j -p -t snapshot -o name,used,referenced,creation -S creation -r fakepool/data$' \
 	    cat storage.log
 	atf_check -s exit:1 -e match:'a dataset is named' -o ignore \
 	    "$JGC" -c "$SOCK" storage snapshots '-r'
@@ -12153,117 +12159,117 @@ EOS
 
 	# zfs: a snapshot, with those under it; rolled back; destroyed.
 	: > storage.log
-	atf_check -o match:'done +zfs snapshot -r tank/data@c$' \
-	    "$JGC" -c "$SOCK" zfs snapshot -r tank/data@c
-	atf_check -o match:'done +zfs rollback tank/data@c' \
-	    "$JGC" -c "$SOCK" zfs rollback tank/data@c
-	atf_check -o match:'done +zfs destroy tank/data@c' \
-	    "$JGC" -c "$SOCK" zfs destroy tank/data@c
+	atf_check -o match:'done +zfs snapshot -r fakepool/data@c$' \
+	    "$JGC" -c "$SOCK" zfs snapshot -r fakepool/data@c
+	atf_check -o match:'done +zfs rollback fakepool/data@c' \
+	    "$JGC" -c "$SOCK" zfs rollback fakepool/data@c
+	atf_check -o match:'done +zfs destroy fakepool/data@c' \
+	    "$JGC" -c "$SOCK" zfs destroy fakepool/data@c
 	# The newest snapshot made again under its name: a snapshot there
 	# all along; not one that is not the newest; one held kept.
 	n=$(wc -l < storage.log)
-	atf_check -o match:'done +zfs resnapshot tank/data@b$' \
-	    "$JGC" -c "$SOCK" zfs resnapshot tank/data@b
-	atf_check -o inline:'zfs list -H -o name -s createtxg -t snapshot -d 1 tank/data
-zfs snapshot tank/data@b.resnap
-zfs destroy tank/data@b
-zfs rename tank/data@b.resnap tank/data@b
+	atf_check -o match:'done +zfs resnapshot fakepool/data@b$' \
+	    "$JGC" -c "$SOCK" zfs resnapshot fakepool/data@b
+	atf_check -o inline:'zfs list -H -o name -s createtxg -t snapshot -d 1 fakepool/data
+zfs snapshot fakepool/data@b.resnap
+zfs destroy fakepool/data@b
+zfs rename fakepool/data@b.resnap fakepool/data@b
 ' tail -n +$((n + 1)) storage.log
-	atf_check -s exit:1 -o match:'tank/data@a is not the newest snapshot of tank/data: tank/data@b is' \
-	    "$JGC" -c "$SOCK" zfs resnapshot tank/data@a
+	atf_check -s exit:1 -o match:'fakepool/data@a is not the newest snapshot of fakepool/data: fakepool/data@b is' \
+	    "$JGC" -c "$SOCK" zfs resnapshot fakepool/data@a
 	touch held
 	n=$(wc -l < storage.log)
-	atf_check -s exit:1 -o match:'tank/data@b is kept as it was: .*busy' \
-	    "$JGC" -c "$SOCK" zfs resnapshot tank/data@b
-	atf_check -o match:'^zfs destroy tank/data@b.resnap$' -o not-match:'rename' \
+	atf_check -s exit:1 -o match:'fakepool/data@b is kept as it was: .*busy' \
+	    "$JGC" -c "$SOCK" zfs resnapshot fakepool/data@b
+	atf_check -o match:'^zfs destroy fakepool/data@b.resnap$' -o not-match:'rename' \
 	    tail -n +$((n + 1)) storage.log
 	rm held
-	atf_check -o match:'^zfs snapshot -r tank/data@b.resnap$' \
-	    -o match:'^zfs rename -r tank/data@b.resnap tank/data@b$' \
-	    sh -c "\"$JGC\" -c $SOCK zfs resnapshot -r tank/data@b >/dev/null; cat storage.log"
-	atf_check -o match:'done +zfs create -o compression=zstd -o quota=10G tank/new' \
-	    "$JGC" -c "$SOCK" zfs create tank/new compression=zstd quota=10G
-	atf_check -o match:'done +zfs create -V 2G -o volblocksize=16k tank/zvol' \
-	    "$JGC" -c "$SOCK" zfs create tank/zvol volsize=2G volblocksize=16k
-	atf_check -o match:'done +zfs set mountpoint=/srv/data atime=off tank/data' \
-	    "$JGC" -c "$SOCK" zfs set tank/data mountpoint=/srv/data atime=off
-	atf_check -o match:'done +zfs set org.example:owner=me tank/data' \
-	    "$JGC" -c "$SOCK" zfs set tank/data org.example:owner=me
-	atf_check -o match:'done +zfs inherit quota tank/data' \
-	    "$JGC" -c "$SOCK" zfs inherit tank/data quota
-	atf_check -o match:'done +zfs clone tank/data@a tank/copy' \
-	    "$JGC" -c "$SOCK" zfs clone tank/data@a tank/copy
-	atf_check -o match:'done +zfs unmount -f tank/data' \
-	    "$JGC" -c "$SOCK" zfs unmount -f tank/data
-	atf_check -o match:'done +zfs rename tank/a tank/b' \
-	    "$JGC" -c "$SOCK" zfs rename tank/a tank/b
+	atf_check -o match:'^zfs snapshot -r fakepool/data@b.resnap$' \
+	    -o match:'^zfs rename -r fakepool/data@b.resnap fakepool/data@b$' \
+	    sh -c "\"$JGC\" -c $SOCK zfs resnapshot -r fakepool/data@b >/dev/null; cat storage.log"
+	atf_check -o match:'done +zfs create -o compression=zstd -o quota=10G fakepool/new' \
+	    "$JGC" -c "$SOCK" zfs create fakepool/new compression=zstd quota=10G
+	atf_check -o match:'done +zfs create -V 2G -o volblocksize=16k fakepool/zvol' \
+	    "$JGC" -c "$SOCK" zfs create fakepool/zvol volsize=2G volblocksize=16k
+	atf_check -o match:'done +zfs set mountpoint=/srv/data atime=off fakepool/data' \
+	    "$JGC" -c "$SOCK" zfs set fakepool/data mountpoint=/srv/data atime=off
+	atf_check -o match:'done +zfs set org.example:owner=me fakepool/data' \
+	    "$JGC" -c "$SOCK" zfs set fakepool/data org.example:owner=me
+	atf_check -o match:'done +zfs inherit quota fakepool/data' \
+	    "$JGC" -c "$SOCK" zfs inherit fakepool/data quota
+	atf_check -o match:'done +zfs clone fakepool/data@a fakepool/copy' \
+	    "$JGC" -c "$SOCK" zfs clone fakepool/data@a fakepool/copy
+	atf_check -o match:'done +zfs unmount -f fakepool/data' \
+	    "$JGC" -c "$SOCK" zfs unmount -f fakepool/data
+	atf_check -o match:'done +zfs rename fakepool/a fakepool/b' \
+	    "$JGC" -c "$SOCK" zfs rename fakepool/a fakepool/b
 	# What zfs refuses is said as it said it.
 	atf_check -s exit:1 -o match:'dataset is busy' \
-	    "$JGC" -c "$SOCK" zfs destroy tank/busy
-	atf_check -o match:'^zfs snapshot -r tank/data@c$' \
-	    -o match:'^zfs create -V 2G -o volblocksize=16k tank/zvol$' \
+	    "$JGC" -c "$SOCK" zfs destroy fakepool/busy
+	atf_check -o match:'^zfs snapshot -r fakepool/data@c$' \
+	    -o match:'^zfs create -V 2G -o volblocksize=16k fakepool/zvol$' \
 	    cat storage.log
 	# No word is an option, a pool is not destroyed by its name, a
 	# property is one zfs has, and nothing here is undone: not in
 	# safe mode.
 	: > storage.log
-	for bad in 'destroy tank' 'destroy -R' 'destroy tank/x;reboot' \
-	    'snapshot tank/data' 'snapshot tank/data@a@b' 'rollback tank/data' \
-	    'create tank' 'create tank/x mountpoint' 'create tank/x evil=1' \
-	    'set tank/data -o=x' 'create tank/x volsize=lots' 'send tank/data' \
-	    'rename tank/a tank/b@c' 'destroy /etc/passwd'; do
+	for bad in 'destroy fakepool' 'destroy -R' 'destroy fakepool/x;reboot' \
+	    'snapshot fakepool/data' 'snapshot fakepool/data@a@b' 'rollback fakepool/data' \
+	    'create fakepool' 'create fakepool/x mountpoint' 'create fakepool/x evil=1' \
+	    'set fakepool/data -o=x' 'create fakepool/x volsize=lots' 'send fakepool/data' \
+	    'rename fakepool/a fakepool/b@c' 'destroy /etc/passwd'; do
 		atf_check -s exit:1 -o ignore -e not-empty \
 		    "$JGC" -c "$SOCK" zfs $bad
 	done
 	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
-	    "$JGC" -s -c "$SOCK" zfs snapshot tank/data@s
+	    "$JGC" -s -c "$SOCK" zfs snapshot fakepool/data@s
 	atf_check -s exit:1 -e match:'zfs takes no jail' -o ignore \
-	    "$JGC" -j web -c "$SOCK" zfs snapshot tank/data@s
+	    "$JGC" -j web -c "$SOCK" zfs snapshot fakepool/data@s
 	atf_check -o empty cat storage.log
 
 	# zpool: a scrub started and stopped, a device taken off and on.
-	atf_check -o match:'done +zpool scrub tank' "$JGC" -c "$SOCK" zpool scrub tank
-	atf_check -o match:'done +zpool scrub -s tank' \
-	    "$JGC" -c "$SOCK" zpool scrub-stop tank
-	atf_check -o match:'done +zpool offline tank ada2p1' \
-	    "$JGC" -c "$SOCK" zpool offline tank ada2p1
-	atf_check -o match:'done +zpool online tank gpt/disk2' \
-	    "$JGC" -c "$SOCK" zpool online tank gpt/disk2
-	atf_check -o match:'done +zpool clear tank' "$JGC" -c "$SOCK" zpool clear tank
+	atf_check -o match:'done +zpool scrub fakepool' "$JGC" -c "$SOCK" zpool scrub fakepool
+	atf_check -o match:'done +zpool scrub -s fakepool' \
+	    "$JGC" -c "$SOCK" zpool scrub-stop fakepool
+	atf_check -o match:'done +zpool offline fakepool ada2p1' \
+	    "$JGC" -c "$SOCK" zpool offline fakepool ada2p1
+	atf_check -o match:'done +zpool online fakepool gpt/disk2' \
+	    "$JGC" -c "$SOCK" zpool online fakepool gpt/disk2
+	atf_check -o match:'done +zpool clear fakepool' "$JGC" -c "$SOCK" zpool clear fakepool
 	# A pool made, of devices put together as zpool has it; given more
 	# devices; a device mirrored, taken out, replaced; exported,
 	# imported, destroyed.
-	atf_check -o match:'done +zpool create -m /srv/tank -o ashift=12 tank mirror ada1p1 ada2p1 log gpt/slog' \
-	    "$JGC" -c "$SOCK" zpool create tank mirror ada1p1 ada2p1 log gpt/slog mountpoint=/srv/tank ashift=12
+	atf_check -o match:'done +zpool create -m /srv/fakepool -o ashift=12 fakepool mirror ada1p1 ada2p1 log gpt/slog' \
+	    "$JGC" -c "$SOCK" zpool create fakepool mirror ada1p1 ada2p1 log gpt/slog mountpoint=/srv/fakepool ashift=12
 	atf_check -o match:'done +zpool create -f lab ada3' \
 	    "$JGC" -c "$SOCK" zpool create -f lab ada3
-	atf_check -o match:'done +zpool add tank cache ada4p1' \
-	    "$JGC" -c "$SOCK" zpool add tank cache ada4p1
-	atf_check -o match:'done +zpool attach tank ada1p1 ada5p1' \
-	    "$JGC" -c "$SOCK" zpool attach tank ada1p1 ada5p1
-	atf_check -o match:'done +zpool detach tank ada5p1' \
-	    "$JGC" -c "$SOCK" zpool detach tank ada5p1
-	atf_check -o match:'done +zpool replace tank ada2p1 ada6p1' \
-	    "$JGC" -c "$SOCK" zpool replace tank ada2p1 ada6p1
-	atf_check -o match:'done +zpool remove tank ada4p1' \
-	    "$JGC" -c "$SOCK" zpool remove tank ada4p1
-	atf_check -o match:'done +zpool export tank' "$JGC" -c "$SOCK" zpool export tank
-	atf_check -o match:'done +zpool import -R /mnt tank' \
-	    "$JGC" -c "$SOCK" zpool import tank altroot=/mnt
-	atf_check -o match:'done +zpool destroy tank' \
-	    "$JGC" -c "$SOCK" zpool destroy tank
+	atf_check -o match:'done +zpool add fakepool cache ada4p1' \
+	    "$JGC" -c "$SOCK" zpool add fakepool cache ada4p1
+	atf_check -o match:'done +zpool attach fakepool ada1p1 ada5p1' \
+	    "$JGC" -c "$SOCK" zpool attach fakepool ada1p1 ada5p1
+	atf_check -o match:'done +zpool detach fakepool ada5p1' \
+	    "$JGC" -c "$SOCK" zpool detach fakepool ada5p1
+	atf_check -o match:'done +zpool replace fakepool ada2p1 ada6p1' \
+	    "$JGC" -c "$SOCK" zpool replace fakepool ada2p1 ada6p1
+	atf_check -o match:'done +zpool remove fakepool ada4p1' \
+	    "$JGC" -c "$SOCK" zpool remove fakepool ada4p1
+	atf_check -o match:'done +zpool export fakepool' "$JGC" -c "$SOCK" zpool export fakepool
+	atf_check -o match:'done +zpool import -R /mnt fakepool' \
+	    "$JGC" -c "$SOCK" zpool import fakepool altroot=/mnt
+	atf_check -o match:'done +zpool destroy fakepool' \
+	    "$JGC" -c "$SOCK" zpool destroy fakepool
 	# Never by force: that unmounts what is in use.
 	atf_check -s exit:1 -e match:'not destroyed or exported by force' \
-	    -o ignore "$JGC" -c "$SOCK" zpool destroy -f tank
+	    -o ignore "$JGC" -c "$SOCK" zpool destroy -f fakepool
 	atf_check -s exit:1 -e match:'not destroyed or exported by force' \
-	    -o ignore "$JGC" -c "$SOCK" zpool export -f tank
+	    -o ignore "$JGC" -c "$SOCK" zpool export -f fakepool
 	: > storage.log
-	for bad in 'scrub -s' 'offline tank ../x' 'create tank' \
-	    'create tank mirror' 'create tank ada1 evil=1' \
-	    'create tank ada1 mountpoint=srv' 'create tank ada1 ashift=x' \
-	    'add tank ada1 mountpoint=/x' 'add tank log' \
-	    'import tank altroot=etc' 'attach tank ada1' 'detach tank' \
-	    'replace tank' 'destroy' 'create tank ada1;reboot' 'split tank x'; do
+	for bad in 'scrub -s' 'offline fakepool ../x' 'create fakepool' \
+	    'create fakepool mirror' 'create fakepool ada1 evil=1' \
+	    'create fakepool ada1 mountpoint=srv' 'create fakepool ada1 ashift=x' \
+	    'add fakepool ada1 mountpoint=/x' 'add fakepool log' \
+	    'import fakepool altroot=etc' 'attach fakepool ada1' 'detach fakepool' \
+	    'replace fakepool' 'destroy' 'create fakepool ada1;reboot' 'split fakepool x'; do
 		atf_check -s exit:1 -o ignore -e not-empty \
 		    "$JGC" -c "$SOCK" zpool $bad
 	done

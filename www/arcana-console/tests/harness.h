@@ -33,6 +33,10 @@
 /* The host's network cards the tests' documents name, there for the
  * agent on any host (libfakejail's if_nametoindex). */
 #define	FAKE_IFS	"vtnet0"
+/* What the agent reads of the kernel as the kernel's defaults have it,
+ * on a host set otherwise (libfakejail's sysctl): an address's route
+ * in its own table alone, as the SD-WAN plans want. */
+#define	FAKE_SYSCTL	"net.add_addr_allfibs=0"
 
 struct resp {
 	int		 status;
@@ -72,6 +76,7 @@ void		 start(const atf_tc_t *, int, const char *);
 void		 stop(void);
 void		 restart_console(void);
 void		 agent_restart(void);
+void		 need_fibs(int);
 void		 agent_jailed(const char *, const char *);
 void		 console_stop(void);
 void		 console_start(void);

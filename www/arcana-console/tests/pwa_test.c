@@ -18,6 +18,7 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+#include <sys/sysctl.h>
 
 #include <netinet/in.h>
 
@@ -4932,7 +4933,8 @@ part_storage_procs(void)
 {
 	char	script[2048];
 	FILE	*fp;
-	int	i;
+	size_t	len;
+	int	i, racct = 0;
 
 	ATF_REQUIRE(system("sleep 300 & echo $! > sleep.pid") == 0);
 	{
@@ -5161,11 +5163,18 @@ part_storage_procs(void)
 	    "'^keep=50$' history.conf") == 0);
 	ATF_CHECK(system("grep -q '^rule=net:lo0=1000000$' history.conf && "
 	    "grep -q '^rule=jail-mem:web=1073741824$' history.conf") == 0);
-	/* Without the kernel's accounting, what turns it on is said. */
-	ATF_CHECK(js_true("document.querySelector('section.ucard p.ujails') "
-	    "? document.querySelector('section.ucard p.ujails').textContent."
-	    "includes('kern.racct.enable') : document.querySelector("
-	    "'section.ucard .ujails')"));
+	/* Without the kernel's accounting, what turns it on is said; with
+	 * it (the host's, the agent's kernel), never. */
+	len = sizeof(racct);
+	if (sysctlbyname("kern.racct.enable", &racct, &len, NULL, 0) == -1 ||
+	    racct == 0)
+		ATF_CHECK(js_true("document.querySelector('section.ucard "
+		    "p.ujails') ? document.querySelector('section.ucard "
+		    "p.ujails').textContent.includes('kern.racct.enable') : "
+		    "document.querySelector('section.ucard .ujails')"));
+	else
+		ATF_CHECK(js_true("!document.querySelector('section.ucard "
+		    "p.ujails')"));
 	run("document.querySelector('section.ucard .uname').click()");
 	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
 	part_hosttabs();
@@ -11161,6 +11170,7 @@ ATF_TC_HEAD(pwa_flows_sdwan, tc)
 ATF_TC_BODY(pwa_flows_sdwan, tc)
 {
 
+	need_fibs(2);
 	prologue(tc, 2);
 	part_flows_sdwan();
 }

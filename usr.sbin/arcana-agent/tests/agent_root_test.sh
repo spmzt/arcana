@@ -39,6 +39,24 @@ has_sctp()
 	    kldstat -q -m sctp 2>/dev/null
 }
 
+# A new epair(4), the name of its a end: the cloner's next unit, else
+# one of its own.  The cloner's units are counted per vnet while the
+# names are checked against what is there: in a vnet jail given an
+# epair's b end, "ifconfig epair create" fails (EEXIST) for good once
+# the count reaches that unit.
+epair_create()
+{
+	local e n
+
+	e=$(ifconfig epair create 2>/dev/null) && { echo "$e"; return 0; }
+	for n in $(seq 100 199); do
+		e=$(ifconfig "epair$n" create 2>/dev/null) &&
+		    { echo "$e"; return 0; }
+	done
+	echo "agent_root_test: no epair could be made" >&2
+	return 1
+}
+
 programs()
 {
 	JGD="$(atf_get_srcdir)/../arcana-agent"
@@ -205,10 +223,25 @@ jail_allow_live_body()
 	start_daemon
 	AJ=arcana-allow-test
 	jls -j "$AJ" >/dev/null 2>&1 && atf_skip "a jail named $AJ exists"
+	# In a jail, a child has only what its parent has: raw sockets,
+	# and the second parameter one the parent is allowed.
+	P2=allow.sysvipc
+	if [ "$(sysctl -n security.jail.jailed)" = 1 ]; then
+		[ "$(sysctl -n security.jail.allow_raw_sockets)" = 1 ] ||
+		    atf_skip "this jail has no allow.raw_sockets to give its own"
+		P2=
+		for p in sysvipc mlock chflags; do
+			if [ "$(sysctl -n security.jail.${p}_allowed)" = 1 ]; then
+				P2=allow.$p
+				break
+			fi
+		done
+		[ -n "$P2" ] || atf_skip "this jail has none of allow.sysvipc, allow.mlock, allow.chflags to give its own"
+	fi
 	atf_check -o ignore jail -c name="$AJ" path=/ persist allow.raw_sockets=0
-	atf_check -o match:'jailparam_set\(3\)' -o match:'JAIL_UPDATE, 2 parameters' "$JGC" -t -c "$SOCK" allow "$AJ" allow.raw_sockets=1 allow.sysvipc=1
+	atf_check -o match:'jailparam_set\(3\)' -o match:'JAIL_UPDATE, 2 parameters' "$JGC" -t -c "$SOCK" allow "$AJ" allow.raw_sockets=1 $P2=1
 	atf_check -o match:'^(1|true)$' jls -j "$AJ" allow.raw_sockets
-	atf_check -o match:'^(1|true)$' jls -j "$AJ" allow.sysvipc
+	atf_check -o match:'^(1|true)$' jls -j "$AJ" $P2
 	# Safe mode: set to 0 and not confirmed, back to 1.
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" allow "$AJ" allow.raw_sockets=0
 	sleep 0.5
@@ -379,7 +412,7 @@ routes_body()
 	atf_check -o match:'done' "$JGC" -c "$SOCK" route delete 2001:db8:79::/48
 	# A neighbour, as ARP has it: listed by the kernel, and told as an
 	# event when it comes and when it goes.
-	ep=$(ifconfig epair create)
+	ep=$(epair_create)
 	echo "$ep" > epair
 	atf_check ifconfig "$ep" inet 192.0.2.201/24 up
 	atf_check arp -s 192.0.2.202 02:00:00:77:02:02
@@ -439,7 +472,7 @@ jail_network_body()
 	# An interface given to each, with an address and a route there:
 	# told with the jail's name, the interface by the jail's own index.
 	for n in 1 2; do
-		ep=$(ifconfig epair create)
+		ep=$(epair_create)
 		echo "${ep%a}" >> epairs
 		atf_check ifconfig "${ep%a}b" vnet "arcw_n$n"
 		atf_check jexec "arcw_n$n" ifconfig "${ep%a}b" inet "192.0.2.2$n/24" up
@@ -564,6 +597,8 @@ kmsg_head()
 }
 kmsg_body()
 {
+	dmesg > /dev/null 2>&1 ||
+	    atf_skip "kern.msgbuf cannot be read here: a jail needs allow.read_msgbuf"
 	start_daemon
 	atf_check -o save:k1.json "$JGC" -c "$SOCK" log @dmesg
 	atf_check -o match:'"name":"@dmesg","lines":\[\{' \
@@ -596,6 +631,8 @@ crash_event_body()
 {
 	[ "$(sysctl -n kern.logsigexit)" = 1 ] ||
 	    atf_skip "kern.logsigexit is off: the kernel says no crash"
+	dmesg > /dev/null 2>&1 ||
+	    atf_skip "kern.msgbuf cannot be read here: a jail needs allow.read_msgbuf"
 	start_daemon
 	# The agent's first read of the buffer is what came before it.
 	sleep 2
@@ -640,6 +677,8 @@ sdwan_probe_body()
 	atf_check -o match:'"kind":"sdwan-tunnel","data":\{"id":"lo","address":"127.0.0.1","state":"up"' \
 	    "$JGC" -c "$SOCK" events "$last"
 	# A table with no way to it: every probe lost, down in two.
+	[ "$(sysctl -n net.fibs)" -ge 3 ] ||
+	    atf_skip "net.fibs is $(sysctl -n net.fibs): the probe nothing routes is in FIB 2"
 	if setfib 2 route -n get 192.0.2.77 >/dev/null 2>&1; then
 		atf_skip "fib 2 has a route to 192.0.2.77"
 	fi
@@ -708,6 +747,8 @@ sdwan_control_body()
 	local c n
 
 	has_sctp || atf_skip "the kernel has no SCTP"
+	[ "$(sysctl -n net.fibs)" -ge 3 ] ||
+	    atf_skip "net.fibs is $(sysctl -n net.fibs): the probe nothing routes is in FIB 2"
 	if setfib 2 route -n get 192.0.2.77 >/dev/null 2>&1; then
 		atf_skip "fib 2 has a route to 192.0.2.77"
 	fi
@@ -835,7 +876,7 @@ sdwan_links_head()
 }
 sdwan_links_body()
 {
-	ep=$(ifconfig epair create) || atf_skip "no epair(4)"
+	ep=$(epair_create) || atf_skip "no epair(4)"
 	echo "$ep" > epair.name
 	start_daemon
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
@@ -903,7 +944,7 @@ sctp_multihome_body()
 	done
 	atf_check -o ignore jail -c name=arcw_ma vnet persist path=/
 	atf_check -o ignore jail -c name=arcw_mb vnet persist path=/
-	e0=$(ifconfig epair create); e1=$(ifconfig epair create)
+	e0=$(epair_create); e1=$(epair_create)
 	echo "${e0%a} ${e1%a}" > epairs
 	atf_check ifconfig $e0 vnet arcw_ma
 	atf_check ifconfig ${e0%a}b vnet arcw_mb
@@ -1015,7 +1056,7 @@ bird_live_body()
 	done
 	atf_check -o ignore jail -c name=arcw_ba vnet persist path=/
 	atf_check -o ignore jail -c name=arcw_bb vnet persist path=/
-	e=$(ifconfig epair create)
+	e=$(epair_create)
 	echo "${e%a}" > epair.name
 	atf_check ifconfig $e vnet arcw_ba
 	atf_check ifconfig ${e%a}b vnet arcw_bb
@@ -1244,7 +1285,7 @@ sctp_loopback_body()
 	done
 	atf_check -o ignore jail -c name=arcw_la vnet persist path=/
 	atf_check -o ignore jail -c name=arcw_lb vnet persist path=/
-	e=$(ifconfig epair create)
+	e=$(epair_create)
 	echo "${e%a}" > epair.name
 	atf_check ifconfig $e vnet arcw_la
 	atf_check ifconfig ${e%a}b vnet arcw_lb
@@ -1476,7 +1517,7 @@ carp_body()
 		atf_skip "a jail arcw_c1 or arcw_c2 is there already"
 	fi
 	touch mine
-	ep=$(ifconfig epair create)
+	ep=$(epair_create)
 	echo "${ep%a}" > epair
 	atf_check -o ignore jail -c name=arcw_c1 vnet persist path=/ vnet.interface="${ep%a}a"
 	atf_check -o ignore jail -c name=arcw_c2 vnet persist path=/ vnet.interface="${ep%a}b"
@@ -1548,7 +1589,7 @@ fwmatch_kernel_body()
 		atf_skip "a jail arcw_f1 or arcw_f2 is there already"
 	fi
 	touch mine
-	ep=$(ifconfig epair create)
+	ep=$(epair_create)
 	echo "${ep%a}" > epair
 	a="${ep%a}a"
 	b="${ep%a}b"
@@ -1661,8 +1702,8 @@ path_check_body()
 		jls -j $j >/dev/null 2>&1 && atf_skip "a jail $j is there already"
 	done
 	touch mine
-	e1=$(ifconfig epair create); e1=${e1%a}
-	e2=$(ifconfig epair create); e2=${e2%a}
+	e1=$(epair_create); e1=${e1%a}
+	e2=$(epair_create); e2=${e2%a}
 	echo "$e1 $e2" > epairs
 	atf_check -o ignore jail -c name=arcw_pc vnet persist path=/ vnet.interface="${e1}a"
 	atf_check -o ignore jail -c name=arcw_pr vnet persist path=/ vnet.interface="${e1}b" vnet.interface="${e2}a"
@@ -1914,7 +1955,7 @@ qos_lab_up()
 {
 	atf_check jail -c name=$QOS_A vnet persist path=/ host.hostname=$QOS_A
 	atf_check jail -c name=$QOS_B vnet persist path=/ host.hostname=$QOS_B
-	ep=$(ifconfig epair create)
+	ep=$(epair_create)
 	echo "$ep" > qos.epair
 	atf_check ifconfig "$ep" vnet $QOS_A
 	atf_check ifconfig "${ep%a}b" vnet $QOS_B
@@ -1971,6 +2012,8 @@ monitors_fib_head()
 monitors_fib_body()
 {
 	[ "$(sysctl -n net.fibs)" -ge 2 ] || atf_skip "one FIB alone here"
+	[ "$(sysctl -n net.add_addr_allfibs)" = 0 ] ||
+	    atf_skip "net.add_addr_allfibs is 1 here: an address is in every table already (net.add_addr_allfibs=0 in sysctl.conf)"
 	ifconfig lo56 >/dev/null 2>&1 && atf_skip "lo56 is there already"
 	atf_check -o ignore ifconfig lo56 create
 	atf_check ifconfig lo56 inet 192.0.2.57/32
@@ -2083,8 +2126,11 @@ yang_layers_head()
 }
 yang_layers_body()
 {
-	e1=$(ifconfig epair create) && echo "$e1" >> made
-	e2=$(ifconfig epair create) && echo "$e2" >> made
+	# A cloner the kernel has: kldload(8) is the host's, not a jail's.
+	ifconfig -C | tr ' ' '\n' | grep -qx lagg ||
+	    atf_skip "no lagg(4): kldload if_lagg on the host"
+	e1=$(epair_create) && echo "$e1" >> made
+	e2=$(epair_create) && echo "$e2" >> made
 	p1=${e1%a}b
 	p2=${e2%a}b
 	lg=$(ifconfig lagg create) && echo "$lg" >> made
@@ -2136,6 +2182,9 @@ yang_kinds_body()
 	local y="$(atf_get_srcdir)/ycollect"
 
 	[ "$(sysctl -n net.fibs)" -ge 2 ] || atf_skip "net.fibs is 1"
+	# A cloner the kernel has: kldload(8) is the host's, not a jail's.
+	ifconfig -C | tr ' ' '\n' | grep -qx lagg ||
+	    atf_skip "no lagg(4): kldload if_lagg on the host"
 	for i in epair77a epair78a epair79a epair80a vlan77 vlan78 lagg77 lagg78 \
 	    bridge77 gif77; do
 		ifconfig "$i" >/dev/null 2>&1 && atf_skip "$i exists"
@@ -2890,11 +2939,14 @@ route_fib_body()
 {
 	start_daemon
 	atf_check jail -c name=$FIB_J vnet persist path=/ host.hostname=$FIB_J
-	ep=$(ifconfig epair create)
+	ep=$(epair_create)
 	echo "$ep" > fib.epair
 	atf_check ifconfig "$ep" vnet $FIB_J
 	atf_check ifconfig "${ep%a}b" vnet $FIB_J
 	atf_check -o ignore jexec $FIB_J sysctl net.fibs=2
+	# An address's route in its own table alone, the kernel's default,
+	# whatever the host's loader.conf gives a new vnet.
+	atf_check -o ignore jexec $FIB_J sysctl net.add_addr_allfibs=0
 	atf_check jexec $FIB_J ifconfig "$ep" fib 1
 	atf_check jexec $FIB_J ifconfig "$ep" inet 192.0.2.1/24 up
 	atf_check jexec $FIB_J ifconfig "$ep" inet 192.0.2.5/32 alias
@@ -2905,7 +2957,10 @@ route_fib_body()
 	    jexec $FIB_J netstat -rn -F 1 -f inet
 	atf_check -s not-exit:0 -o ignore -e ignore \
 	    jexec $FIB_J route -n get -fib 0 198.51.100.7
-	# Out of the far end, from the route's source.
+	# Out of the far end, from the route's source; seen by bpf(4),
+	# which a jail has only where its devfs ruleset shows it.
+	[ -c /dev/bpf ] ||
+	    atf_skip "no /dev/bpf here: the jail's devfs ruleset hides bpf(4)"
 	jexec $FIB_J timeout 10 tcpdump -n -c 1 -i "${ep%a}b" icmp \
 	    > td.out 2>/dev/null &
 	td=$!
@@ -2950,7 +3005,7 @@ l2_vnet_body()
 	done
 	: > l2.epairs
 	for i in 1 2 3; do
-		ep=$(ifconfig epair create)
+		ep=$(epair_create)
 		echo "$ep" >> l2.epairs
 		atf_check ifconfig "$ep" vnet $L2_A
 		atf_check ifconfig "${ep%a}b" vnet $L2_B

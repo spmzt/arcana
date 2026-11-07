@@ -1327,8 +1327,8 @@ vc_set(struct vc_file *f, const char *name, const char *value, char *err,
  * Every assignment of name removed: its line, if alone on it (a comment
  * after it too), else it and the blanks after it.
  */
-int
-vc_unset(struct vc_file *f, const char *name, char *err, size_t errlen)
+static int
+unset_all(struct vc_file *f, const char *name, char *err, size_t errlen)
 {
 
 	if (!vc_name_ok(f->dialect, name)) {
@@ -1359,6 +1359,21 @@ vc_unset(struct vc_file *f, const char *name, char *err, size_t errlen)
 	}
 }
 
+/* name copied: one of f's own (f->a[i].name) is freed by the first
+ * edit, which parses the file anew. */
+int
+vc_unset(struct vc_file *f, const char *name, char *err, size_t errlen)
+{
+	char	*n;
+	int	 rc;
+
+	if ((n = strdup(name)) == NULL)
+		return (-1);
+	rc = unset_all(f, n, err, errlen);
+	free(n);
+	return (rc);
+}
+
 /*
  * Every assignment of name commented out where it is: its line, if it
  * is alone on it, with "#" before it and "  # mark" after (mark given);
@@ -1366,8 +1381,8 @@ vc_unset(struct vc_file *f, const char *name, char *err, size_t errlen)
  * own, so commented, put before the line.  "#" and the mark taken off
  * give the assignment again.
  */
-int
-vc_comment(struct vc_file *f, const char *name, const char *mark, char *err,
+static int
+comment_all(struct vc_file *f, const char *name, const char *mark, char *err,
     size_t errlen)
 {
 
@@ -1427,6 +1442,21 @@ vc_comment(struct vc_file *f, const char *name, const char *mark, char *err,
 		if (rc == -1)
 			return (-1);
 	}
+}
+
+/* name copied, as vc_unset() copies it. */
+int
+vc_comment(struct vc_file *f, const char *name, const char *mark, char *err,
+    size_t errlen)
+{
+	char	*n;
+	int	 rc;
+
+	if ((n = strdup(name)) == NULL)
+		return (-1);
+	rc = comment_all(f, n, mark, err, errlen);
+	free(n);
+	return (rc);
 }
 
 /*

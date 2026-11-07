@@ -24,10 +24,17 @@
  * spaces, are there when the host has none of the name, so that the
  * tests' documents may name a host's network card (vtnet0) on a host
  * whose cards are called otherwise.
+ *
+ * And sysctl(3)'s reads of the integers FAKESYSCTL names, as
+ * "net.add_addr_allfibs=0" (separated by spaces): the value given, not
+ * the host's, which may be set otherwise than the kernel's default the
+ * tests' plans are made for.  The format, description and everything
+ * else are the kernel's; a write goes to the kernel.
  */
 
 #include <sys/param.h>
 #include <sys/socket.h>
+#include <sys/sysctl.h>
 
 #include <net/if.h>
 
@@ -244,4 +251,108 @@ if_nametoindex(const char *ifname)
 	}
 	errno = ENXIO;
 	return (0);
+}
+
+typedef int	sysctl_fn(const int *, u_int, void *, size_t *, const void *,
+		    size_t);
+typedef int	sysctlbyname_fn(const char *, void *, size_t *, const void *,
+		    size_t);
+
+/* The integer FAKESYSCTL gives name; false if it gives none. */
+static bool
+fake_value(const char *name, int *val)
+{
+	const char	*p;
+	size_t		 n, len;
+
+	if (name == NULL || (p = getenv("FAKESYSCTL")) == NULL)
+		return (false);
+	n = strlen(name);
+	for (; *(p += strspn(p, " ")) != '\0'; p += len) {
+		len = strcspn(p, " ");
+		if (len > n && strncmp(p, name, n) == 0 && p[n] == '=') {
+			*val = (int)strtol(p + n + 1, NULL, 10);
+			return (true);
+		}
+	}
+	return (false);
+}
+
+/* A read of an integer answered with v, as the kernel answers it. */
+static int
+fake_read(int v, void *oldp, size_t *oldlenp)
+{
+
+	if (oldp != NULL) {
+		if (*oldlenp < sizeof(v)) {
+			errno = ENOMEM;
+			return (-1);
+		}
+		memcpy(oldp, &v, sizeof(v));
+	}
+	*oldlenp = sizeof(v);
+	return (0);
+}
+
+/* The name FAKESYSCTL gives a value whose numbers are mib's. */
+static bool
+fake_mib(const int *mib, u_int miblen, int *val)
+{
+	const char	*list, *p, *eq;
+	char		 name[128];
+	int		 oid[CTL_MAXNAME];
+	size_t		 n, len;
+
+	if ((list = getenv("FAKESYSCTL")) == NULL)
+		return (false);
+	for (p = list; *(p += strspn(p, " ")) != '\0'; p += len) {
+		len = strcspn(p, " ");
+		if ((eq = memchr(p, '=', len)) == NULL || (size_t)(eq - p) >=
+		    sizeof(name))
+			continue;
+		memcpy(name, p, (size_t)(eq - p));
+		name[eq - p] = '\0';
+		n = nitems(oid);
+		if (sysctlnametomib(name, oid, &n) == 0 && n == miblen &&
+		    memcmp(oid, mib, n * sizeof(*oid)) == 0)
+			return (fake_value(name, val));
+	}
+	return (false);
+}
+
+int
+sysctl(const int *mib, u_int miblen, void *oldp, size_t *oldlenp,
+    const void *newp, size_t newlen)
+{
+	static sysctl_fn	*realf;
+	int			 v;
+
+	/* Not the kernel's own nodes (CTL_SYSCTL): sysctlnametomib(3)
+	 * asks by them. */
+	if (newp == NULL && oldlenp != NULL && miblen > 0 &&
+	    mib[0] != CTL_SYSCTL && fake_mib(mib, miblen, &v))
+		return (fake_read(v, oldp, oldlenp));
+	if (realf == NULL && (realf = (sysctl_fn *)dlsym(RTLD_NEXT,
+	    "sysctl")) == NULL) {
+		errno = ENOSYS;
+		return (-1);
+	}
+	return (realf(mib, miblen, oldp, oldlenp, newp, newlen));
+}
+
+int
+sysctlbyname(const char *name, void *oldp, size_t *oldlenp,
+    const void *newp, size_t newlen)
+{
+	static sysctlbyname_fn	*realf;
+	int			 v;
+
+	if (newp == NULL && oldlenp != NULL && fake_value(name, &v))
+		return (fake_read(v, oldp, oldlenp));
+	if (realf == NULL && (realf = (sysctlbyname_fn *)dlsym(RTLD_NEXT,
+	    "sysctlbyname")) == NULL) {
+		errno = ENOSYS;
+		return (-1);
+	}
+	return (realf(name, oldp, oldlenp, newp, newlen));
 }

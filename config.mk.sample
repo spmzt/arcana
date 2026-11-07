@@ -22,3 +22,7 @@
 # depends" puts it: its port file, from the zip of a Dawn release, or
 # emdawnwebgpu for emcc to fetch it at build time (that needs the network):
 #EMDAWN=	/path/to/emdawnwebgpu_pkg/emdawnwebgpu.port.py
+
+# make check's work directories on a tmpfs(5), where the tree's pool is
+# slow to fsync(2) (a busy host's, a jail's on it):
+#CHECK_TMPDIR=	/path/to/a/tmpfs

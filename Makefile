@@ -119,13 +119,21 @@ TESTDIRS+=	usr.sbin/arcana-agent/tests \
 # failed or broken test fails the target, with kyua's report on it
 # (less the environment, which can hold secrets).  Each line names its
 # suite's directory, then its case.  One case a CPU: at one and a half
-# the load went past twice the CPUs and cases ran out of time.
+# the load went past twice the CPUs and cases ran out of time.  At most
+# 24 on a big host: 48 side by side, each Chromium and agents, put
+# the load at 30 and a page's timing off.
 CHECK_JOBS?=	12
 .if !defined(CHECK_PARALLEL)
-CHECK_PARALLEL!=	sysctl -n hw.ncpu
+CHECK_PARALLEL!=	n=$$(sysctl -n hw.ncpu); [ $$n -gt 24 ] && n=24; echo $$n
 .endif
 # check-root's cases: those of the host's shared state are exclusive.
 CHECK_ROOT_PARALLEL?=	6
+# kyua's work directories under CHECK_TMPDIR when it is set, else
+# TMPDIR: a tmpfs(5) there spares the cases the pool's fsync(2), which
+# on a busy pool outlasts the seconds a confirmed commit's case waits.
+.if defined(CHECK_TMPDIR)
+_KYUA_ENV=	TMPDIR=${CHECK_TMPDIR}
+.endif
 _KYUA_TOP=	${.OBJDIR}/Kyuafile
 _KYUA_OUT=	sed -n '/->/p;$$p' | sed -E 's|^([^ ]*/tests)/|\1: |'
 _KYUA_FAIL=	kyua report --results-file="$$db" --verbose \
@@ -172,7 +180,7 @@ check: .PHONY
 .endif
 	@${MAKE} -C ${.CURDIR} check-wire kyuafile
 	@db=${.OBJDIR}/check.db; rm -f "$$db"; set -o pipefail; \
-	cd ${.OBJDIR} && kyua -v parallelism=${CHECK_PARALLEL} test \
+	cd ${.OBJDIR} && env ${_KYUA_ENV} kyua -v parallelism=${CHECK_PARALLEL} test \
 	    --results-file="$$db" -k Kyuafile 2>&1 | ${_KYUA_OUT} || \
 	    { ${_KYUA_FAIL}; exit 1; }
 
@@ -191,7 +199,7 @@ check-root: .PHONY
 	@${CC} -O2 -Wall -Werror -o ${.OBJDIR}/closefds \
 	    ${.CURDIR}/tools/closefds.c
 	@db=${.OBJDIR}/check-root.db; mdo rm -f "$$db"*; set -o pipefail; \
-	cd ${.OBJDIR} && mdo ${.OBJDIR}/closefds kyua \
+	cd ${.OBJDIR} && mdo ${.OBJDIR}/closefds env ${_KYUA_ENV} kyua \
 	    -v parallelism=${CHECK_ROOT_PARALLEL} test --results-file="$$db" \
 	    -k Kyuafile ${_ROOT_CASES} 2>&1 | ${_KYUA_OUT} || \
 	    { ${_KYUA_FAIL}; exit 1; }

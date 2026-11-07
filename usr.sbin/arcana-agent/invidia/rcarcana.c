@@ -752,6 +752,13 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 	for (size_t j = 0; error == 0 && j < nops; j++) {
 		struct op *o = &ops[j];
 
+		/* Found again: a vc_set() or vc_unset() of an op before
+		 * reparsed its file, freeing what o->u pointed to. */
+		if (o->u != NULL && (o->u = vc_get(&uf[o->ui], o->name)) ==
+		    NULL) {
+			error = EIO;
+			break;
+		}
 		if (o->p == NULL || o->u == NULL) {
 			if (cf_ledger_get(&led, CF_RC, o->name) != NULL &&
 			    (o->p == NULL || !x->sys)) {
@@ -833,7 +840,12 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 			ledc = true;
 			continue;
 		}
-		if (o->write && o->val != NULL) {
+		/* In the ledger first: the vc_set() frees o->u. */
+		error = cf_ledger_put(&led, CF_RC, o->name,
+		    cf_unrooted(x->user[o->ui]), o->approved ? o->lbefore :
+		    o->u->value, o->val != NULL ? o->val : o->u->value, o->p);
+		ledc = true;
+		if (error == 0 && o->write && o->val != NULL) {
 			ufc[o->ui] = true;
 			if (vc_set(&uf[o->ui], o->name, o->val, err, errlen) ==
 			    -1) {
@@ -841,10 +853,6 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 				break;
 			}
 		}
-		error = cf_ledger_put(&led, CF_RC, o->name,
-		    cf_unrooted(x->user[o->ui]), o->approved ? o->lbefore :
-		    o->u->value, o->val != NULL ? o->val : o->u->value, o->p);
-		ledc = true;
 	}
 	if (error != 0)
 		goto out;
@@ -1017,13 +1025,14 @@ rca_release(struct rca *x, const char *prefix, bool dry,
 				free(val);
 				val = NULL;
 			}
+			/* Its line before the vc_set() frees u. */
+			t->line = u->line;
 			if ((val != NULL ? vc_set(&uf[ui], e->var, val, err,
 			    errlen) : vc_unset(&uf[ui], e->var, err, errlen)) ==
 			    -1)
 				error = errno != 0 ? errno : EIO;
 			ufc[ui] = true;
 			t->file = strdup(e->file);
-			t->line = u->line;
 			t->value = val;
 			val = NULL;
 		}

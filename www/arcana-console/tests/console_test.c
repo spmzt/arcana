@@ -10210,7 +10210,7 @@ ATF_TC_BODY(restconf_boot, tc)
 	run = b;
 	rc_lab(tc, data, cand, sizeof(cand));
 	id = strrchr(data, '=') + 1;
-	ATF_REQUIRE(mkdir("root/boot", 0755) == 0);
+	ATF_REQUIRE(mkdir("root/boot", 0755) == 0 || errno == EEXIST);
 	snprintf(path, sizeof(path), "%s/arcana-sysctl:boot", cand);
 	snprintf(body, sizeof(body), "{\"arcana-sysctl:boot\":{\"tunable\":["
 	    "{\"name\":\"kern.racct.enable\",\"value\":\"%d\"},{\"name\":"
@@ -12607,6 +12607,7 @@ ATF_TC_BODY(sdwan_uswe, tc)
 	struct resp	r;
 	char		sa[16], sb[16], doc[8192], t1[8192], t2[400];
 
+	need_fibs(2);
 	uswe_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc));
 	/* IPsec IKEv2 under a uswe tunnel is refused. */
 	ATF_REQUIRE(swap_in(doc, "\"kind\":\"uswe\",", "\"kind\":\"uswe\","
@@ -12675,6 +12676,7 @@ ATF_TC_BODY(sdwan_uswe_rekey, tc)
 	char		sa[16], sb[16], doc[8192];
 	int		i;
 
+	need_fibs(2);
 	uswe_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc));
 	uswe_apply(doc);
 	/* The keys turned by hand (Mplify 119 R110, R112): a next pair on
@@ -12767,6 +12769,7 @@ ATF_TC_BODY(sdwan_jail, tc)
 	char		cwd[1024], body[400], sa[16], sj[40];
 	char		doc[4096], t1[4096];
 
+	need_fibs(2);
 	start(tc, 0, NULL);
 	enrol(&a);
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
@@ -12928,12 +12931,20 @@ ATF_TC_BODY(sdwan_jail, tc)
 static const char lab_sh[] =
     "#!/bin/sh\n"
     "# up: the jails and epairs; snap: what is made; down: all gone.\n"
+    "# An epair: the cloner's next, else a unit of its own (in a vnet\n"
+    "# jail given an epair's b end, the cloner's next fails at its unit).\n"
+    "ep() { ifconfig epair create 2>/dev/null && return; for k in $(seq 100 "
+    "199); do ifconfig epair$k create 2>/dev/null && return; done; return "
+    "1; }\n"
     "case $1 in\n"
     "up)\n"
+    "\t# Each jail's addresses routed in its own table alone, the\n"
+    "\t# kernel's default, whatever loader.conf gives a new vnet.\n"
     "\tfor j in " LAB_A " " LAB_B "; do jail -c name=$j vnet persist "
-    "path=/ host.hostname=$j >/dev/null || exit 1; jexec $j ifconfig lo0 "
+    "path=/ host.hostname=$j >/dev/null || exit 1; jexec $j sysctl "
+    "net.add_addr_allfibs=0 >/dev/null; jexec $j ifconfig lo0 "
     "inet 127.0.0.1/8 up; done\n"
-    "\tu=$(ifconfig epair create) && n=$(ifconfig epair create) || exit 1\n"
+    "\tu=$(ep) && n=$(ep) || exit 1\n"
     "\techo \"${u%a} ${n%a}\" > lab.epairs\n"
     "\tifconfig ${u} vnet " LAB_A " && ifconfig ${u%a}b vnet " LAB_B " && "
     "ifconfig ${n} vnet " LAB_A " && ifconfig ${n%a}b vnet " LAB_B " || "
@@ -15352,6 +15363,7 @@ ATF_TC_BODY(sdwan_apply_fresh, tc)
 	char		sa[16], sb[16];
 	char		doc[8192], lifn[32], laddr[64];
 
+	need_fibs(2);
 	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
 	    sizeof(lifn), laddr, sizeof(laddr));
 	sdwan_apply_done();
@@ -15890,8 +15902,10 @@ ATF_TC_BODY(sdwan_apply, tc)
 	struct resp	r;
 	char		body[400], sa[16], sb[16];
 	char		doc[8192], t2[300], lifn[32], laddr[64];
-	size_t		i;
+	size_t		i, len;
+	int		fibs = 0;
 
+	need_fibs(2);
 	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
 	    sizeof(lifn), laddr, sizeof(laddr));
 	/* Applied: each made, in the order, IPsec with the far key. */
@@ -15931,10 +15945,13 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "history.1.state") == NULL, "%s", r.body);
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^gre100 create' ifconfig.log") == 0);
-	/* The edits committed: sysctl.conf has them, sysctl(8) set them. */
+	/* The edits committed: sysctl.conf has them, sysctl(8) set them;
+	 * net.fibs only where the kernel has fewer (it only goes up). */
 	ATF_CHECK(system("grep -qx 'net.inet6.ip6.forwarding=1' sysctl.conf && "
-	    "grep -qx 'net.fibs=4' sysctl.conf && grep -q "
-	    "'^sysctl net.inet.ip.forwarding=1' kld.log") == 0);
+	    "grep -q '^sysctl net.inet.ip.forwarding=1' kld.log") == 0);
+	len = sizeof(fibs);
+	if (sysctlbyname("net.fibs", &fibs, &len, NULL, 0) == 0 && fibs < 4)
+		ATF_CHECK(system("grep -qx 'net.fibs=4' sysctl.conf") == 0);
 	/* Suricata's alert (the stand-in writes one as it starts) is an
 	 * event, and the event a Security Event Notification (MEF 138
 	 * R24, Table 3): Arcana's own function, the service, the source,
@@ -16047,6 +16064,7 @@ ATF_TC_BODY(sdwan_apply_identities, tc)
 	char		sa[16], sb[16];
 	char		doc[8192], lifn[32], laddr[64];
 
+	need_fibs(2);
 	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
 	    sizeof(lifn), laddr, sizeof(laddr));
 	sdwan_apply_done();
@@ -16187,6 +16205,7 @@ ATF_TC_BODY(sdwan_apply_steer, tc)
 	char		doc[8192], lifn[32], laddr[64];
 	size_t		i;
 
+	need_fibs(2);
 	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
 	    sizeof(lifn), laddr, sizeof(laddr));
 	sdwan_apply_done();
@@ -16382,6 +16401,7 @@ ATF_TC_BODY(sdwan_apply_change, tc)
 	char		sa[16], sb[16];
 	char		doc[8192], t1[8192], lifn[32], laddr[64];
 
+	need_fibs(2);
 	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
 	    sizeof(lifn), laddr, sizeof(laddr));
 	sdwan_apply_done();
@@ -16426,6 +16446,7 @@ ATF_TC_BODY(sdwan_apply_security, tc)
 	char		sa[16], sb[16];
 	char		doc[8192], t1[8192], t2[300], lifn[32], laddr[64];
 
+	need_fibs(2);
 	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
 	    sizeof(lifn), laddr, sizeof(laddr));
 	sdwan_apply_done();
@@ -16822,6 +16843,7 @@ ATF_TC_BODY(sdwan_apply_rollback, tc)
 	char		sa[16], sb[16];
 	char		doc[8192], t1[8192], lifn[32], laddr[64];
 
+	need_fibs(2);
 	sdwan_apply_start(tc, &a, sa, sb, sizeof(sa), doc, sizeof(doc), lifn,
 	    sizeof(lifn), laddr, sizeof(laddr));
 	sdwan_apply_done();

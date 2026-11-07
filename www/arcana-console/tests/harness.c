@@ -12,6 +12,7 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 
@@ -71,6 +72,24 @@ put(const char *path, const char *text)
 	ATF_REQUIRE((fp = fopen(path, "w")) != NULL);
 	ATF_REQUIRE(fputs(text, fp) >= 0);
 	ATF_REQUIRE(fclose(fp) == 0);
+}
+
+/*
+ * Skipped where the kernel has fewer than n routing tables: the agent
+ * reads each table's network instance from the kernel itself.  A
+ * host's net.fibs is set in loader.conf; a vnet jail has its own,
+ * which sysctl(8) raises in it.
+ */
+void
+need_fibs(int n)
+{
+	int	fibs = 0;
+	size_t	len = sizeof(fibs);
+
+	if (sysctlbyname("net.fibs", &fibs, &len, NULL, 0) == -1 || fibs < n)
+		atf_tc_skip("net.fibs is %d here, the plan wants %d tables: "
+		    "net.fibs=%d (loader.conf; a vnet jail's own by sysctl)",
+		    fibs, n, n);
 }
 
 static pid_t
@@ -1439,6 +1458,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	(void)mkdir("root/usr", 0755);
 	(void)mkdir("root/usr/local", 0755);
 	(void)mkdir("root/usr/local/etc", 0755);
+	/* A module that could be loaded, read under the root as the
+	 * kernel's module path has it: on any host, a jail's too. */
+	(void)mkdir("root/boot", 0755);
+	(void)mkdir("root/boot/kernel", 0755);
+	put("root/boot/kernel/if_disc.ko", "");
 	put("root/etc/defaults/periodic.conf", "daily_clean_tmps_enable=\"NO\"\n"
 	    "daily_status_disks_enable=\"YES\"\n");
 	put("root/etc/rc.conf", "hostname=\"lab\"\nsshd_enable=\"YES\"\n"
@@ -1450,8 +1474,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	 * its environment alone, not the console's. */
 	snprintf(fjf, sizeof(fjf), "%s/jails", cwd);
 	ATF_REQUIRE(setenv("FAKEJAIL", fjf, 1) == 0);
-	/* The host's network card the documents name, on any host. */
+	/* The host's network card the documents name, on any host; and
+	 * the kernel's defaults the plans are made for, on a host set
+	 * otherwise. */
 	ATF_REQUIRE(setenv("FAKEIFS", FAKE_IFS, 1) == 0);
+	ATF_REQUIRE(setenv("FAKESYSCTL", FAKE_SYSCTL, 1) == 0);
 	ATF_REQUIRE(setenv("LD_PRELOAD", fjl, 1) == 0);
 	for (int i = 0; i < 139 && argv[i] != NULL; i++) {
 		free(agent_argv[i]);
@@ -1464,6 +1491,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(unsetenv("LD_PRELOAD") == 0);
 	ATF_REQUIRE(unsetenv("FAKEJAIL") == 0);
 	ATF_REQUIRE(unsetenv("FAKEIFS") == 0);
+	ATF_REQUIRE(unsetenv("FAKESYSCTL") == 0);
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);
 	fclose(fp);
@@ -1515,11 +1543,13 @@ agent_restart(void)
 	(void)unlink("jgd.sock");
 	ATF_REQUIRE(setenv("FAKEJAIL", agent_fjf, 1) == 0);
 	ATF_REQUIRE(setenv("FAKEIFS", FAKE_IFS, 1) == 0);
+	ATF_REQUIRE(setenv("FAKESYSCTL", FAKE_SYSCTL, 1) == 0);
 	ATF_REQUIRE(setenv("LD_PRELOAD", agent_fjl, 1) == 0);
 	pid = spawn_server(agent_argv, "arcana-agent.out");
 	ATF_REQUIRE(unsetenv("LD_PRELOAD") == 0);
 	ATF_REQUIRE(unsetenv("FAKEJAIL") == 0);
 	ATF_REQUIRE(unsetenv("FAKEIFS") == 0);
+	ATF_REQUIRE(unsetenv("FAKESYSCTL") == 0);
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);
 	fclose(fp);

@@ -396,17 +396,22 @@ param_set(struct jedit *e, const char *scope, const char *name,
 		return (error);
 	n = jc_replace(f, b, pname, remove ? NULL : nvals == 0 ? "" : vals[0],
 	    &out, &len);
-	jc_free(&jc);
-	if (n < 0)
+	if (n < 0) {
+		jc_free(&jc);
 		return (ENOMEM);
+	}
 	if (remove && n == 0) {
+		jc_free(&jc);
 		free(out);
 		(void)snprintf(e->err, sizeof(e->err), "%s: %s is inherited "
 		    "from the file's defaults, not the jail's own: not taken "
 		    "out here", name, pname);
 		return (EINVAL);
 	}
-	if ((error = block_put(e, f, out, len)) != 0)
+	/* f is jc's: freed after its file is written. */
+	error = block_put(e, f, out, len);
+	jc_free(&jc);
+	if (error != 0)
 		return (error);
 	for (size_t i = 1; !remove && i < nvals; i++) {
 		if ((error = block_of(e, scope, name, &jc, &f, &b)) != 0)
@@ -416,8 +421,9 @@ param_set(struct jedit *e, const char *scope, const char *name,
 			jc_free(&jc);
 			return (EINVAL);
 		}
+		error = block_put(e, f, out, len);
 		jc_free(&jc);
-		if ((error = block_put(e, f, out, len)) != 0)
+		if (error != 0)
 			return (error);
 	}
 	return (0);

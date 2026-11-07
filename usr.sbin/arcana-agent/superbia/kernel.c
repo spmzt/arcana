@@ -201,6 +201,7 @@ do_kernel(struct work *w, const char **errp)
 	unsigned char		*json;
 	const char		**loaded, **avail, *out;
 	char			*path, *dir, *name, addr[32];
+	char			 rdir[MAXPATHLEN];
 	u_long			 ul;
 	uint64_t		 total, sum;
 	size_t			 len, nloaded, navail, i, k;
@@ -247,7 +248,8 @@ do_kernel(struct work *w, const char **errp)
 	step_end(w, step, true, "%zu files", nloaded);
 	ucl_object_insert_key(top, files, "files", 0, false);
 
-	/* What could be loaded: the files of the module path not yet in. */
+	/* What could be loaded: the files of the module path not yet in,
+	 * under --root as the system's other files are. */
 	avail = wcalloc(w, KERNEL_AVAIL, sizeof(*avail));
 	navail = 0;
 	len = 0;
@@ -257,7 +259,11 @@ do_kernel(struct work *w, const char **errp)
 		if (sysctlbyname("kern.module_path", path, &len, NULL, 0) != 0)
 			path[0] = '\0';
 		while ((dir = strsep(&path, ";")) != NULL) {
-			if (dir[0] != '/' || (d = opendir(dir)) == NULL)
+			if (dir[0] != '/')
+				continue;
+			(void)snprintf(rdir, sizeof(rdir), "%s%s",
+			    opts.root != NULL ? opts.root : "", dir);
+			if ((d = opendir(rdir)) == NULL)
 				continue;
 			while ((de = readdir(d)) != NULL && navail <
 			    KERNEL_AVAIL) {
