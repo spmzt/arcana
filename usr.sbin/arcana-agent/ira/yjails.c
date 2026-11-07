@@ -105,6 +105,20 @@ yjails_from_list(const struct jails_read *rsp, cbl_yarena *a,
 		y->allow.v = j->allow.v;
 		y->plugin.n = j->plugins.n;
 		y->plugin.v = j->plugins.v;
+		if (j->dying.n > 0) {
+			struct arcana_jails_jails_jail_dying *d;
+
+			if ((d = cbl_yarena_alloc(a, j->dying.n *
+			    sizeof(*d))) == NULL)
+				return (ENOMEM);
+			for (size_t k = 0; k < j->dying.n; k++) {
+				memset(&d[k], 0, sizeof(d[k]));
+				d[k].jid = j->dying.v[k].jid;
+				d[k].path = j->dying.v[k].path;
+			}
+			y->dying.n = j->dying.n;
+			y->dying.v = d;
+		}
 		/* An LNE while it runs with a vnet of its own (ylne.c). */
 		if (j->has_vnet && j->vnet && j->has_state &&
 		    j->state == ARC_JAIL_STATE_RUNNING)

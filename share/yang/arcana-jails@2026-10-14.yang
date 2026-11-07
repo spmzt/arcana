@@ -291,6 +291,25 @@ module arcana-jails {
         description
           "The logical network element it is, with a vnet of its own.";
       }
+      list dying {
+        key "jid";
+        config false;
+        description
+          "Earlier jails of this name the kernel still has, dying (jls
+           -d), while one of the name runs or is defined: a jail
+           removed whose sockets or mounts hold it.  A dying jail with
+           no other of its name is the entry itself, state dying.";
+        leaf jid {
+          type uint32;
+          description
+            "Its jail ID.";
+        }
+        leaf path {
+          type string;
+          description
+            "Its root.";
+        }
+      }
       action start {
         nacm:default-deny-all;
         description

@@ -31,6 +31,9 @@ module: arcana-jails
         +--ro allow*         string
         +--ro plugin*        string
         +--ro lne?           -> /lne:logical-network-elements/lne:logical-network-element/lne:name
+        +--ro dying* [jid]
+        |  +--ro jid     uint32
+        |  +--ro path?   string
         +---x start
         |  +--ro output
         |     +--ro state?   jail-state

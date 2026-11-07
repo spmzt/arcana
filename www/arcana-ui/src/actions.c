@@ -1654,6 +1654,9 @@ jail_row(const ucl_object_t *j)
 		ucl_array_append(ps, e);
 	}
 	kput(r, "params", ps);
+	/* Earlier jails of its name, dying: their jids and roots. */
+	if (jget(j, "dying") != NULL)
+		kput(r, "dying", ucl_object_copy(jget(j, "dying")));
 	return (r);
 }
 

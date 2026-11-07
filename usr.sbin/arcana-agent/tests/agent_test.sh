@@ -14417,7 +14417,7 @@ datastores_jails_body()
 	# Running: each jail's parameters as jail(8) -e has them, and what
 	# starts at boot from the files rc(8) reads; nothing of its state.
 	atf_check -o save:run.json "$JGC" -c "$SOCK" get -d running jails
-	atf_check -o match:'"name":"db","param":.*"scope":"[^"]*/etc/jail.conf","boot":true\},\{"name":"mail"' \
+	atf_check -o match:'"boot":true,"name":"db","param":.*"scope":"[^"]*/etc/jail.conf"\},\{"boot":false,"name":"mail"' \
 	    -o match:'"name":"ip4.addr","value":\["10.0.0.10","10.0.0.11"\]' \
 	    -o not-match:'"state"' -o not-match:'"conf-error"' cat run.json
 	atf_check -o match:'"name":"web".*"state":"stopped"' \

@@ -79,7 +79,7 @@ on the wire.
 | 61 800 | 100 | `ietf-network-instance@2019-01-21` (no IETF range) | `share/yang/ietf-network-instance@2019-01-21.sid` (21 used) |
 | 61 900 | 100 | `arcana-network-instance` | `share/yang/arcana-network-instance@2026-10-14.sid` (2 used) |
 | 62 000 | 100 | `ietf-logical-network-element@2019-01-25` (no IETF range) | `share/yang/ietf-logical-network-element@2019-01-25.sid` (12 used) |
-| 62 100 | 100 | `arcana-jails` | `share/yang/arcana-jails@2026-10-14.sid` (53 used) |
+| 62 100 | 100 | `arcana-jails` | `share/yang/arcana-jails@2026-10-14.sid` (56 used) |
 | 62 200 | 100 | `arcana-services` | `share/yang/arcana-services@2026-10-14.sid` (79 used) |
 | 62 300 | 100 | `arcana-packages` | `share/yang/arcana-packages@2026-10-14.sid` (100 used; its rest at 79 500) |
 | 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (704 used, 34 obsolete: a job's steps in the state, now its read action's, and each kind's safe, now the change's; the dry-run rpc, its changes submit's again; a job's user; room for the kinds to come; its rest at 83 200) |

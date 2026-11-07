@@ -832,11 +832,26 @@ attribute-sets:
         doc: |
           Of a running jail: its allow.* parameters as the kernel has
           them, each "allow.name=0|1" (jail-allow sets them).
+      - name: dying
+        type: nest
+        nested-attributes: dying-jail
+        multi-attr: true
+        doc: |
+          Earlier jails of this name the kernel still has, dying (jls
+          -d), while one of the name runs or is defined: a jail removed
+          whose sockets or mounts hold it.
       - name: boot
         type: bool
         doc: |
           Of a jail defined: started at boot by rc.d/jail, jail_enable
           being yes and jail_list empty or naming it.
+
+  - name: dying-jail
+    attributes:
+      - name: jid
+        type: u32
+      - name: path
+        type: text
 
   - name: param
     attributes:

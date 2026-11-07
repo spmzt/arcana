@@ -159,8 +159,21 @@ ecmp_tick(double now)
 	struct netq	 q;
 	int		 i;
 
-	if (!ecmp_shown() || !app.visible)
+	static bool	 shown;
+
+	if (!ecmp_shown() || !app.visible) {
+		shown = false;
 		return;
+	}
+	/* Just opened: read now; the stream keeps it fresh from there. */
+	if (!shown) {
+		shown = true;
+		ec.ifs_asked = 0;
+		for (i = 0; i < app.nservers; i++)
+			if ((e = ehost(app.servers[i].id, false)) != NULL &&
+			    !e->loading)
+				e->asked = 0;
+	}
 	if (now - ec.ifs_asked > (sse_fleet_up() ? EC_TOLD_MS : EC_IFS_MS)) {
 		ec.ifs_asked = now;
 		topo_poll_all();

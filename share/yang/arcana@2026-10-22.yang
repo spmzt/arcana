@@ -120,12 +120,29 @@ module arcana {
         "Of a running jail: its allow.* parameters as the kernel has
          them, each \"allow.name=0|1\" (jail-allow sets them).";
     }
+    list dying {
+      cg:struct "dying-jail";
+      description
+        "Earlier jails of this name the kernel still has, dying (jls
+         -d), while one of the name runs or is defined: a jail removed
+         whose sockets or mounts hold it.";
+      uses set-dying-jail;
+    }
     leaf boot {
       type boolean;
       description
         "Of a jail defined: started at boot by rc.d/jail, jail_enable
          being yes and jail_list empty or naming it.
          ";
+    }
+  }
+
+  grouping set-dying-jail {
+    leaf jid {
+      type uint32;
+    }
+    leaf path {
+      type string;
     }
   }
 

@@ -727,6 +727,24 @@ card(struct html *h, struct server *s, const ucl_object_t *j)
 		h_txt(h, jstr(j, "path"));
 		h_raw(h, "</dd>");
 	}
+	/* Earlier jails of the name the kernel still has (jls -d). */
+	if (ucl_array_size(jget(j, "dying")) > 0) {
+		const ucl_object_t	*d;
+		ucl_object_iter_t	 it = NULL;
+		bool			 first = true;
+
+		h_raw(h, "<dt>DYING</dt><dd class=\"mono\" title=\"Removed, "
+		    "but still held by the kernel (jls -d): something made "
+		    "inside it, such as a mount or a socket, keeps it until "
+		    "that goes\">");
+		while ((d = ucl_object_iterate(jget(j, "dying"), &it, true)) !=
+		    NULL) {
+			h_fmt(h, "%sJID %lld", first ? "" : ", ",
+			    (long long)jint(d, "jid", 0));
+			first = false;
+		}
+		h_raw(h, "</dd>");
+	}
 	h_raw(h, "</dl>");
 	if (jget(j, "nproc") != NULL) {
 		char rss[32];

@@ -261,6 +261,46 @@ jail_allow_live_cleanup()
 	cleanup
 }
 
+atf_test_case jail_dying_namesake cleanup
+jail_dying_namesake_head()
+{
+	atf_set "descr" "A jail removed but dying (a mount made inside holds it) and one made again of its name: one entry, the live one, the dying one in its dying list by jid"
+	atf_set "require.user" "root"
+}
+jail_dying_namesake_body()
+{
+	DJ=arcana-dying-test
+	jls -d -j "$DJ" >/dev/null 2>&1 && atf_skip "a jail named $DJ exists"
+	if [ "$(sysctl -n security.jail.jailed)" = 1 ]; then
+		[ "$(sysctl -n security.jail.mount_allowed)" = 1 ] &&
+		    [ "$(sysctl -n security.jail.mount_tmpfs_allowed)" = 1 ] ||
+		    atf_skip "this jail may not let its own mount a tmpfs"
+	fi
+	mkdir m
+	atf_check -o ignore jail -c name="$DJ" path=/ persist allow.mount \
+	    allow.mount.tmpfs enforce_statfs=1
+	old=$(jls -j "$DJ" jid)
+	# Mounted from inside: it holds the jail dying once removed.
+	atf_check jexec "$DJ" mount -t tmpfs tmpfs "$(pwd)/m"
+	atf_check -o ignore jail -r "$DJ"
+	atf_check -o match:'^(1|true)$' jls -d -j "$old" dying
+	atf_check -o ignore jail -c name="$DJ" path=/ persist
+	new=$(jls -j "$DJ" jid)
+	DAEMON_ARGS="-w 2"
+	start_daemon
+	atf_check -o save:j.json "$JGC" -c "$SOCK" get jails
+	# Once: the live one, the dying one under it.
+	atf_check -o inline:'1\n' sh -c "grep -o '\"name\":\"$DJ\"' j.json | wc -l | tr -d ' '"
+	atf_check -o match:"\"dying\":\\[\\{\"jid\":$old,\"path\":\"/\"\\}\\]" \
+	    -o match:"\"jid\":$new" cat j.json
+}
+jail_dying_namesake_cleanup()
+{
+	jail -r arcana-dying-test >/dev/null 2>&1
+	umount -f "$(pwd)/m" >/dev/null 2>&1
+	cleanup
+}
+
 atf_test_case live_address cleanup
 live_address_head()
 {
@@ -3612,6 +3652,7 @@ atf_init_test_cases()
 	atf_add_test_case monitors_fib
 	atf_add_test_case monitors_qos
 	atf_add_test_case jail_allow_live
+	atf_add_test_case jail_dying_namesake
 	atf_add_test_case live_address
 	atf_add_test_case aliases
 	atf_add_test_case routes

@@ -58,6 +58,53 @@ cmp_jail(const void *a, const void *b)
  * Running jails merged with configured ones, sorted by name.  With
  * config_only the running ones are not looked at.
  */
+/*
+ * Is list[k] another's dying earlier self?  One entry a name: the live
+ * jail, else the newest dying one; the other dying jails of the name
+ * are its dying list (a jail removed whose sockets or mounts hold it,
+ * made again meanwhile).
+ */
+static bool
+shadowed(const struct jinfo *list, size_t n, size_t k)
+{
+
+	if (!list[k].dying || list[k].name == NULL)
+		return (false);
+	for (size_t m = 0; m < n; m++)
+		if (m != k && list[m].name != NULL && strcmp(list[m].name,
+		    list[k].name) == 0 && (!list[m].dying || list[m].jid >
+		    list[k].jid))
+			return (true);
+	return (false);
+}
+
+/* The dying jails list[] has of name ji's but ji, onto j. */
+static void
+dying_of(struct work *w, struct arc_jail *j, const struct jinfo *ji,
+    const struct jinfo *list, size_t n)
+{
+	struct arc_dying_jail	*d;
+	size_t			 nd = 0;
+
+	for (size_t m = 0; m < n; m++)
+		if (&list[m] != ji && shadowed(list, n, m) && strcmp(
+		    list[m].name, ji->name) == 0)
+			nd++;
+	if (nd == 0)
+		return;
+	d = wcalloc(w, nd, sizeof(*d));
+	nd = 0;
+	for (size_t m = 0; m < n; m++)
+		if (&list[m] != ji && shadowed(list, n, m) && strcmp(
+		    list[m].name, ji->name) == 0) {
+			d[nd].has_jid = true;
+			d[nd].jid = (uint32_t)list[m].jid;
+			d[nd++].path = list[m].path;
+		}
+	j->dying.v = d;
+	j->dying.n = nd;
+}
+
 int
 do_list(struct work *w, bool config_only, struct jails_read *rsp)
 {
@@ -66,7 +113,7 @@ do_list(struct work *w, bool config_only, struct jails_read *rsp)
 	struct jboot	 boot;
 	struct jinfo	*list;
 	struct jref	*refs;
-	size_t		 n, i, k, m;
+	size_t		 n, nall, i, k, m;
 	bool		 seen;
 
 	list = NULL;
@@ -85,10 +132,14 @@ do_list(struct work *w, bool config_only, struct jails_read *rsp)
 	rsp->nerrors = conf.nerrors;
 
 	refs = wcalloc(w, n + conf.njails + 1, sizeof(*refs));
-	for (k = 0; k < n; k++) {
-		refs[k].name = list[k].name != NULL ? list[k].name : "";
-		refs[k].ji = &list[k];
+	nall = n;
+	for (i = k = 0; i < n; i++) {
+		if (shadowed(list, n, i))
+			continue;
+		refs[k].name = list[i].name != NULL ? list[i].name : "";
+		refs[k++].ji = &list[i];
 	}
+	n = k;
 	for (i = 0; i < conf.njails; i++) {
 		seen = false;
 		for (m = 0; m < n; m++)
@@ -111,6 +162,8 @@ do_list(struct work *w, bool config_only, struct jails_read *rsp)
 	for (i = 0; i < k; i++) {
 		jail_record(w, &jails[i], refs[i].name, refs[i].ji,
 		    conf_jail(&conf, refs[i].name));
+		if (refs[i].ji != NULL)
+			dying_of(w, &jails[i], refs[i].ji, list, nall);
 		if (jails[i].configured) {
 			jails[i].has_boot = true;
 			jails[i].boot = jail_boot_of(&boot, refs[i].name);
