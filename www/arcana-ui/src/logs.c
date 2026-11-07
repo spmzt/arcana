@@ -9,7 +9,10 @@
  * the newest line first.  The end of the file is read, and then only
  * what was written since, every few seconds, so the page follows the
  * log as tail -f does.  A text is searched for on the host, where the
- * whole file is; the filter narrows what is here.
+ * whole file is; the filter narrows what is here.  The agent's events
+ * (arcana-events' read) and the kernel's messages are told as they come
+ * by the fleet's stream (sse.c), and read every few seconds only while
+ * it is not up.
  */
 
 #define	_GNU_SOURCE		/* strcasestr(3) */
@@ -57,47 +60,6 @@ static struct {
 } lg;
 
 static ucl_object_t	*event_line(const ucl_object_t *);
-
-/*
- * The host's events as they happen, over the console's stream, while
- * they are shown: they are then not asked for every few seconds.  Its
- * ids are its own, above the network's.
- */
-#define	EV_BASE		2000000
-#define	EV_RETRY	30000	/* ms before the stream is tried again */
-
-static struct {
-	int		 id;
-	bool		 on;
-	char		 sid[9];
-	double		 retry;		/* not before this */
-} ev = { .id = EV_BASE };
-
-static void
-ev_stop(void)
-{
-	char	msg[64];
-
-	if (ev.on) {
-		snprintf(msg, sizeof(msg), "{\"id\":%d,\"stop\":true}", ev.id);
-		arc_stream_send(msg);
-	}
-	ev.on = false;
-}
-
-static void
-ev_start(struct server *s)
-{
-	char	msg[128];
-
-	ev_stop();
-	ev.id++;
-	ev.on = true;
-	snprintf(ev.sid, sizeof(ev.sid), "%s", s->id);
-	snprintf(msg, sizeof(msg), "{\"id\":%d,\"server\":\"%s\",\"what\":"
-	    "\"events\"}", ev.id, s->id);
-	arc_stream_send(msg);
-}
 
 /* An event, appended once: what was read already is not again. */
 static void
@@ -243,27 +205,35 @@ report_out(struct html *h, const char *report)
 
 static void	logs_take(const ucl_object_t *);
 
+/* arcana-events' read: the events as the stream tells them, its last. */
 static void
-logs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+yev_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	const ucl_object_t	*d;
-	char			*sid;
+	const ucl_object_t	*e;
+	ucl_object_t		*d, *a;
+	ucl_object_iter_t	 it = NULL;
+	char			*sid = arg;
 
-	sid = arg;
 	if (strcmp(sid, lg.sid) != 0) {
 		free(sid);
 		return;
 	}
 	free(sid);
 	lg.loading = false;
-	if (status != 200 || !jbool(o, "ok") || (d = jget(o, "data")) ==
-	    NULL) {
-		snprintf(lg.error, sizeof(lg.error), "%s", status == 200 &&
-		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
-		    err : "no answer");
+	if (status != 200 || o == NULL) {
+		snprintf(lg.error, sizeof(lg.error), "%s", err != NULL ? err :
+		    "no answer");
 		return;
 	}
+	d = ucl_object_typed_new(UCL_OBJECT);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	while ((e = ucl_object_iterate(jget(o, "event"), &it, true)) != NULL)
+		ucl_array_append(a, event_of_yang(e));
+	ucl_object_insert_key(d, a, "events", 0, false);
+	ucl_object_insert_key(d, ucl_object_fromint(jint(o, "last", 0)),
+	    "last", 0, false);
 	logs_take(d);
+	ucl_object_unref(d);
 }
 
 /* A line's level as syslogd -vv writes it, of RFC 5424's facility and
@@ -434,10 +404,10 @@ logs_read(struct server *s, bool follow)
 		lg.seq = 0;
 	memset(&u, 0, sizeof(u));
 	if (strcmp(lg.name, EVENTS) == 0) {
-		h_fmt(&u, "events?after=%lld", follow ? lg.position : 0LL);
+		h_fmt(&u, "{\"after\":\"%lld\"}", follow ? lg.position : 0LL);
 		url = h_take(&u);
-		host_read(s, url, "read the events", !follow, logs_cb,
-		    strdup(s->id));
+		host_yread(s, "arcana-events:events/read", url, "read the "
+		    "events", !follow, yev_cb, strdup(s->id));
 		free(url);
 		return;
 	}
@@ -475,66 +445,59 @@ refresh_logs(struct server *s, bool again)
 	logs_read(s, false);
 }
 
+/* Are the events or the kernel's messages of the host shown followed
+ * by the fleet's stream? */
+static bool
+told(const struct server *s)
+{
+
+	return (app.node == NODE_HOST && app.tab == TAB_LOG && !lg.paused &&
+	    app.visible && s != NULL && strcmp(lg.sid, s->id) == 0 &&
+	    (strcmp(lg.name, EVENTS) == 0 || (strcmp(lg.name, "@dmesg") ==
+	    0 && lg.jail[0] == '\0')) && sse_fleet_up() && lg.lines != NULL &&
+	    lg.position >= 0);
+}
+
 void
 logs_tick(double now)
 {
 	struct server	*s;
-	bool		 shown;
 
 	s = cur_server();
-	/* The events, and the kernel's messages, told as they come. */
-	shown = app.node == NODE_HOST && app.tab == TAB_LOG && !lg.paused &&
-	    app.visible && s != NULL && strcmp(lg.sid, s->id) == 0 &&
-	    (strcmp(lg.name, EVENTS) == 0 || (strcmp(lg.name, "@dmesg") ==
-	    0 && lg.jail[0] == '\0'));
-	if (ev.on && (!shown || strcmp(ev.sid, s->id) != 0))
-		ev_stop();
-	/* Read once, then told as they happen. */
-	if (shown && !ev.on && !lg.loading && lg.lines != NULL &&
-	    lg.position >= 0 && now >= ev.retry)
-		ev_start(s);
 	if (app.node != NODE_HOST || app.tab != TAB_LOG || lg.paused ||
 	    !app.visible || lg.loading || s == NULL ||
 	    strcmp(lg.sid, s->id) != 0 || now - lg.asked < LOGS_EVERY ||
-	    ev.on)
+	    told(s))
 		return;
 	logs_read(s, true);
 }
 
-/* What the console's stream says of the events followed. */
+/* An event of host sid's, from the fleet's stream (sse.c). */
 void
-logs_stream(const ucl_object_t *o)
+logs_event(const char *sid, const ucl_object_t *e)
 {
-	struct server	*s;
+	struct server	*s = cur_server();
+	const char	*kind = jstr(e, "kind");
 
-	if (jbool(o, "closed")) {
-		ev.on = false;
-		ev.retry = arc_now() + EV_RETRY;
+	if (!told(s) || strcmp(sid, lg.sid) != 0 || kind == NULL)
 		return;
-	}
-	if (!ev.on || jint(o, "id", -1) != ev.id)
-		return;
-	if (jget(o, "event") != NULL && strcmp(lg.sid, ev.sid) == 0 &&
-	    strcmp(lg.name, EVENTS) == 0) {
-		ev_append(jget(o, "event"));
+	if (strcmp(lg.name, EVENTS) == 0) {
+		ev_append(e);
 		lg.fetched = arc_now();
+		return;
 	}
 	/*
 	 * A line of the kernel's, as @dmesg numbers it: the next one is
 	 * added; one further on, or "more" than were told, has the log
 	 * read after what is here.
 	 */
-	if (jget(o, "event") != NULL && strcmp(lg.sid, ev.sid) == 0 &&
-	    strcmp(lg.name, "@dmesg") == 0 && jstr(jget(o, "event"),
-	    "kind") != NULL && strcmp(jstr(jget(o, "event"), "kind"),
-	    "kmsg") == 0 && lg.lines != NULL) {
-		const ucl_object_t	*d = jget(jget(o, "event"), "data");
+	if (strcmp(kind, "kmsg") == 0) {
+		const ucl_object_t	*d = jget(e, "data");
 		ucl_object_t		*c;
 
 		if (jget(d, "more") != NULL || jint(d, "seq", 0) !=
 		    lg.position + 1) {
-			if ((s = cur_server()) != NULL && !lg.loading &&
-			    jint(d, "seq", 0) > lg.position)
+			if (!lg.loading && jint(d, "seq", 0) > lg.position)
 				logs_read(s, true);
 		} else {
 			c = ucl_object_typed_new(UCL_OBJECT);
@@ -542,8 +505,8 @@ logs_stream(const ucl_object_t *o)
 			    "text")), "text", 0, false);
 			ucl_object_insert_key(c, ucl_object_fromint(jint(d,
 			    "seq", 0)), "seq", 0, false);
-			ucl_object_insert_key(c, ucl_object_fromint(jint(
-			    jget(o, "event"), "t", 0)), "seen", 0, false);
+			ucl_object_insert_key(c, ucl_object_fromint(jint(e,
+			    "t", 0)), "seen", 0, false);
 			ucl_array_append(lg.lines, c);
 			while (ucl_array_size(lg.lines) > LOGS_MAX)
 				ucl_object_unref(ucl_array_pop_first(
@@ -552,13 +515,19 @@ logs_stream(const ucl_object_t *o)
 			lg.fetched = arc_now();
 		}
 	}
-	/* Some went past, or the host is gone: read as before. */
-	if (jbool(o, "lost") && (s = cur_server()) != NULL && !lg.loading)
+}
+
+/* Some of host sid's (NULL: any host's) went past: read after what is
+ * here. */
+void
+logs_lost(const char *sid)
+{
+	struct server	*s = cur_server();
+
+	if (s != NULL && (sid == NULL || strcmp(sid, lg.sid) == 0) &&
+	    app.node == NODE_HOST && app.tab == TAB_LOG && !lg.loading &&
+	    strcmp(lg.sid, s->id) == 0 && lg.lines != NULL)
 		logs_read(s, true);
-	if (jstr(o, "error") != NULL) {
-		ev.on = false;
-		ev.retry = arc_now() + EV_RETRY;
-	}
 }
 
 /* Is it a line somebody should see?  By its words: syslog's file has
@@ -726,7 +695,7 @@ view_logs(struct html *h, struct server *s)
 		    "is the Host), that came, went or changed since the "
 		    "agent started, the last 512 kept. A storm of routes "
 		    "is counted, not listed. %s</p>",
-		    (int)ucl_array_size(lg.lines), ev.on ? "Each is shown "
+		    (int)ucl_array_size(lg.lines), told(s) ? "Each is shown "
 		    "the moment the agent tells it." : "Read again every "
 		    "few seconds.");
 		return;

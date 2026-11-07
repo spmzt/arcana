@@ -926,6 +926,16 @@ job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	 */
 	op->confirm_by = jstr(o, "state") != NULL && strcmp(jstr(o, "state"),
 	    "unconfirmed") == 0 ? jint(o, "confirm-by", 0) : 0;
+	/*
+	 * arcana-jobs' on-change subscription tells when it changes
+	 * (sse.c): read then, and now and then; one waiting to be
+	 * confirmed each second, as the host's timer runs.
+	 */
+	if (op->poll_again)
+		op->next_poll = arc_now();
+	else if (sse_jobs_up() && op->confirm_by == 0)
+		op->next_poll = arc_now() + JOB_SAFE_MS;
+	op->poll_again = false;
 	if (op->confirm_by != 0) {
 		job_path(url, sizeof(url), op->sid, op->job, "confirm");
 		rc_read(url, NULL, NULL, job_confirm_cb, NULL);
@@ -971,6 +981,30 @@ job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			    "Arcana: done" : "Arcana: failed", body);
 	}
 	job_finished(op, ok, err);
+}
+
+/* Host sid's jobs changed (sse.c): its running ones read now, its Jobs
+ * tab soon. */
+void
+jobs_changed(const char *sid)
+{
+	struct server	*s;
+	struct op	*op;
+	int		 i;
+
+	for (i = 0; i < app.nops; i++) {
+		op = &app.ops[i];
+		if (op->job <= 0 || strcmp(op->sid, sid) != 0)
+			continue;
+		if (op->polling)
+			op->poll_again = true;
+		else
+			op->next_poll = arc_now();
+	}
+	if ((s = server_by_id(sid)) != NULL && s == cur_server() &&
+	    app.node == NODE_HOST && app.tab == TAB_JOBS)
+		refresh_jobs(s);
+	jobs_poll();
 }
 
 /* Read every running job that is due; called from the clock. */
@@ -1768,59 +1802,6 @@ refresh_jails(struct server *s, bool user)
 	host_yread(s, "arcana-jails:jails", NULL, NULL, user, jails_cb, c);
 }
 
-/* A tab's read asked for: its task, then what the tab does with it. */
-struct hread {
-	int	 op;
-	api_cb	*cb;
-	void	*arg;
-};
-
-static void
-hread_cb(int status, const ucl_object_t *o, const char *err, void *arg)
-{
-	struct hread	 h = *(struct hread *)arg;
-	const char	*e;
-	bool		 ok;
-
-	free(arg);
-	e = err != NULL ? err : jstr(o, "error.message") != NULL ?
-	    jstr(o, "error.message") : jstr(o, "error");
-	ok = status == 200 && e == NULL && (jget(o, "ok") == NULL ||
-	    jbool(o, "ok"));
-	op_done(op_find(h.op), ok, o, ok ? NULL : e != NULL ? e :
-	    "no answer from the console");
-	h.cb(status, o, err, h.arg);
-}
-
-/*
- * A read of host s's for a tab: read is the path after
- * /api/servers/<id>/, with its query.  One the user asked for (opening
- * the tab, Refresh) is a task called title, its steps drawn as the host
- * takes them over the console's socket; the others, as a tab reads on
- * by itself, are a plain GET and no task.
- */
-void
-host_read(const struct server *s, const char *read, const char *title,
-    bool user, api_cb *cb, void *arg)
-{
-	struct hread	*h;
-	struct op	*op;
-	char		 url[400];
-
-	snprintf(url, sizeof(url), "/api/servers/%s/%s", s->id, read);
-	if (!user || app.quiet) {
-		api("GET", url, NULL, cb, arg);
-		return;
-	}
-	if ((h = calloc(1, sizeof(*h))) == NULL)
-		abort();
-	op = op_new(title, s->name);
-	h->op = op->id;
-	h->cb = cb;
-	h->arg = arg;
-	live_read(s->id, read, url, op->id, hread_cb, h);
-}
-
 struct hrc {
 	api_cb	*cb;
 	void	*arg;
@@ -2369,22 +2350,26 @@ stats_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	struct ctx		*c;
 	struct server		*s;
+
+	c = arg;
+	if ((s = server_by_id(c->sid)) != NULL) {
+		s->stats_loading = false;
+		if (status == 200 && o != NULL)
+			stats_take(s, o);
+	}
+	free(c);
+}
+
+/* arcana-host's stats of host s, read or pushed (sse.c): its sample. */
+void
+stats_take(struct server *s, const ucl_object_t *o)
+{
 	const ucl_object_t	*st, *p;
 	ucl_object_t		*sm;
 	ucl_object_iter_t	 it;
 	double			 total, alloc, size, used;
 	int			 i;
 
-	c = arg;
-	if ((s = server_by_id(c->sid)) == NULL) {
-		free(c);
-		return;
-	}
-	s->stats_loading = false;
-	if (status != 200 || o == NULL) {
-		free(c);
-		return;
-	}
 	if (s->stats != NULL)
 		ucl_object_unref(s->stats);
 	/* arcana-host's stats as the cards draw them. */
@@ -2414,7 +2399,6 @@ stats_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	s->hist[1][s->nhist] = total > 0 ? (float)(100 * used / total) : 0;
 	s->hist[2][s->nhist] = size > 0 ? (float)(100 * alloc / size) : 0;
 	s->nhist++;
-	free(c);
 }
 
 static const char *const jobs_map[] = { "lanes", "lanes", "stopping",

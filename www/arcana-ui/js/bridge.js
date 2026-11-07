@@ -2709,6 +2709,65 @@ addToLibrary({
 		};
 	},
 
+	/*
+	 * RESTCONF's event streams and subscriptions as Server-Sent Events
+	 * (sse.c): an EventSource each, by the page's id.  What it says goes
+	 * to arc_on_sse(id, event, data): "open"; a record ("message"); the
+	 * console's "error", "info" and "lost" events; "down" when the
+	 * connection went, data "closed" when the browser gives it up (an
+	 * HTTP error), "" when it comes back by itself, with Last-Event-ID.
+	 * window.arcanaStreams has them by id, for a plugin or a test to
+	 * listen to as well.
+	 */
+	$arcSse: {},
+	arc_sse_open__deps: ["$arcSse", "$arcStr", "$UTF8ToString"],
+	arc_sse_open: function (id, urlp) {
+		var url = UTF8ToString(urlp), es;
+		var say = function (ev, data) {
+			if (arcSse[id] === es)
+				Module._arc_on_sse(id, arcStr(ev), arcStr(data));
+		};
+
+		if (arcSse[id])
+			arcSse[id].close();
+		try {
+			es = new EventSource(url);
+		} catch (e) {
+			delete arcSse[id];
+			setTimeout(function () {
+				Module._arc_on_sse(id, arcStr("down"),
+				    arcStr("closed"));
+			}, 0);
+			return;
+		}
+		arcSse[id] = es;
+		window.arcanaStreams = arcSse;
+		es.onopen = function () { say("open", ""); };
+		es.onmessage = function (e) { say("message", e.data); };
+		["info", "lost"].forEach(function (k) {
+			es.addEventListener(k, function (e) {
+				say(k, e.data || "");
+			});
+		});
+		/* The console's error event has data; the connection's not. */
+		es.addEventListener("error", function (e) {
+			if (typeof e.data === "string") {
+				say("error", e.data);
+				return;
+			}
+			say("down", es.readyState === 2 ? "closed" : "");
+			if (es.readyState === 2 && arcSse[id] === es)
+				delete arcSse[id];
+		});
+	},
+	arc_sse_close__deps: ["$arcSse"],
+	arc_sse_close: function (id) {
+		if (arcSse[id]) {
+			arcSse[id].close();
+			delete arcSse[id];
+		}
+	},
+
 	/* Is the window as narrow as a phone held upright? */
 	arc_narrow: function () {
 		return (window.innerWidth <= 620 ? 1 : 0);

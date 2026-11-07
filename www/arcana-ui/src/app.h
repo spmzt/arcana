@@ -32,6 +32,7 @@
 #define	AGE_STEP_MS		10000	/* how often ages are redrawn */
 #define	NOTIFY_MS		10000	/* a task this long is announced */
 #define	JOB_POLL_MS		1000	/* a running job is read this often */
+#define	JOB_SAFE_MS		10000	/* and this often while its changes are told */
 #define	MAX_BATCH		64	/* changes held in the queue */
 #define	UPDATE_MS		(6 * 3600 * 1000)
 
@@ -61,6 +62,8 @@ void		 arc_sw_register(void);
 double		 arc_now(void);
 int		 arc_narrow(void);
 void		 arc_stream_send(const char *);
+void		 arc_sse_open(int, const char *);
+void		 arc_sse_close(int);
 int		 arc_map_w(void);
 int		 arc_map_h(void);
 void		 arc_fullscreen(const char *, int);
@@ -401,6 +404,7 @@ struct op {
 	long long	 watched;	/* the number, kept after it is done */
 	double		 next_poll;
 	bool		 polling;
+	bool		 poll_again;	/* told it changed while being read */
 	bool		 waiting;	/* the host does not answer; it runs on */
 	long long	 confirm_by;	/* a safe change waiting: undone then, or 0 */
 	int		 what;		/* JOB_*: what to refresh when done */
@@ -672,20 +676,30 @@ struct op	*op_find(int);
 void		 fresh(struct html *, double, bool, const char *);
 void		 live_tick(double);
 void		 live_cancel(int);
-void		 host_read(const struct server *, const char *, const char *,
-		    bool, api_cb *, void *);
-void		 live_read(const char *, const char *, const char *, int,
-		    api_cb *, void *);
 void		 live_yread(const char *, const char *, const char *,
 		    const char *, int, api_cb *, void *);
 void		 host_yread(const struct server *, const char *, const char *,
 		    const char *, bool, api_cb *, void *);
 void		 live_stream(const ucl_object_t *);
+void		 live_event(const char *, const ucl_object_t *);
+void		 live_lost(const char *);
 const char	*op_class(const struct op *);
 struct op	*op_begin(const char *, const char *);
 void		 op_end(struct op *, bool, const char *);
 void		 confirm(const char *, const char *, const char *, bool,
 		    const char *, const char *, const char *, const char *);
+
+/*
+ * sse.c: RESTCONF's streams and subscriptions the page follows: what of
+ * a host (SD_*) is due to be read, the events and pushes that say so.
+ */
+enum { SD_JAILS, SD_STATS, SD_JOBS, SD_N };
+void		 sse_tick(double);
+bool		 sse_due(const struct server *, int, double, double, bool);
+void		 sse_read(const struct server *, int);
+bool		 sse_fleet_up(void);
+bool		 sse_jobs_up(void);
+ucl_object_t	*event_of_yang(const ucl_object_t *);
 
 /* actions.c: what the buttons do. */
 void		 refresh_servers(void);
@@ -750,6 +764,8 @@ const char	*kind_plugin(int);
 bool		 plugin_at(const struct server *, const char *, const char *);
 bool		 has_plugin(const struct server *, const char *);
 void		 refresh_stats(struct server *);
+void		 stats_take(struct server *, const ucl_object_t *);
+void		 jobs_changed(const char *);
 bool		 agent_outdated(const struct server *);
 void		 agent_update(struct server *, bool);
 bool		 version_older(const char *, const char *);
@@ -1000,7 +1016,8 @@ bool		 procs_form(const char *, const ucl_object_t *);
 bool		 procs_action(const char *, const char *, const char *);
 void		 refresh_logs(struct server *, bool);
 void		 logs_tick(double);
-void		 logs_stream(const ucl_object_t *);
+void		 logs_event(const char *, const ucl_object_t *);
+void		 logs_lost(const char *);
 void		 view_logs(struct html *, struct server *);
 bool		 logs_form(const char *, const ucl_object_t *);
 bool		 logs_action(const char *, const char *, const char *);
@@ -1049,6 +1066,7 @@ void		 glmap_scene_clear(void);
 void		 topo_probe_tick(double);
 bool		 ecmp_shown(void);
 void		 ecmp_tick(double);
+void		 ecmp_event(const char *, const char *, bool);
 void		 ecmp_group(struct html *, const struct server *,
 		    const ucl_object_t *);
 void		 view_ecmp(struct html *);

@@ -17,6 +17,10 @@
  * interface that carries more than the group's routes counts that too.
  * Next hops that leave by one interface, or arrive at one, are one
  * share, as the samples cannot tell them apart.
+ *
+ * The groups and the addresses are read again when a host's events on
+ * the fleet's stream say its routes or its interfaces changed (sse.c),
+ * and now and then; every EC_GROUPS_MS while the stream is not up.
  */
 
 #include <math.h>
@@ -34,6 +38,7 @@
 #define	EC_SAMPLES	1000	/* samples of an interface looked at */
 #define	EC_GROUPS_MS	15000	/* the groups of every host, read again */
 #define	EC_IFS_MS	15000	/* every host's interfaces, for addresses */
+#define	EC_TOLD_MS	120000	/* the same while the events tell of them */
 #define	EC_FILL_S	45	/* a gap in a share's samples taken as no change */
 #define	CW		360	/* a chart's box */
 #define	CH		110
@@ -81,6 +86,25 @@ ecmp_shown(void)
 	    app.net.kind == NET_NHGROUPS && net_scope()[0] == '\0'));
 }
 
+
+static struct ehost	*ehost(const char *, bool);
+
+/* An event of host sid's (sse.c): its groups or every host's addresses
+ * read again at the next tick, when shown. */
+void
+ecmp_event(const char *sid, const char *kind, bool jailed)
+{
+	struct ehost	*e;
+
+	if (jailed)
+		return;
+	if (strncmp(kind, "route", 5) == 0 && (e = ehost(sid, false)) !=
+	    NULL && !e->loading)
+		e->asked = 0;
+	else if (strncmp(kind, "link", 4) == 0 || strncmp(kind, "address-",
+	    8) == 0)
+		ec.ifs_asked = 0;
+}
 
 static struct ehost *
 ehost(const char *sid, bool make)
@@ -137,7 +161,7 @@ ecmp_tick(double now)
 
 	if (!ecmp_shown() || !app.visible)
 		return;
-	if (now - ec.ifs_asked > EC_IFS_MS) {
+	if (now - ec.ifs_asked > (sse_fleet_up() ? EC_TOLD_MS : EC_IFS_MS)) {
 		ec.ifs_asked = now;
 		topo_poll_all();
 	}
@@ -146,7 +170,8 @@ ecmp_tick(double now)
 	for (i = 0; i < app.nservers; i++) {
 		if ((e = ehost(app.servers[i].id, true)) == NULL ||
 		    (e->loading && now - e->asked < 30000) ||
-		    now - e->asked < EC_GROUPS_MS)
+		    now - e->asked < (sse_fleet_up() ? EC_TOLD_MS :
+		    EC_GROUPS_MS))
 			continue;
 		e->loading = true;
 		e->asked = now;

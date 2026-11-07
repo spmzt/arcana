@@ -2538,12 +2538,59 @@ whose first part is served.
   entry with its steps (hosts_restconf_live(); console_test
   stream_restconf); arcana-jobs' confirm over a connection the console
   dials for it, as a confirming commit (restconf_confirms(); console_test
-  restconf_job_confirm).  Decided: the Log tab's events stay on /api
-  with the socket's events, the same shape, until the stream is
-  RESTCONF's (4.8.2).  Open: the events read (logs.c, 4.8.2); then
-  `/api` keeps D-10's resources alone.
+  restconf_job_confirm).  The Log tab's events moved with 4.8.2
+  (console 0.399.0): arcana-events' read, then the fleet's stream;
+  host_read() and the socket's `{"what": "read"}` and `{"what":
+  "events"}` are no longer the page's (the console's side stays until
+  4.4.2).
 - 4.8.2 P: SSE subscriptions replace the page's polling; check:
   timings in the browser test.
+- 4.8.2 done (console 0.398.0, 0.399.0; page sse.c, bridge.js's
+  arc_sse_open()): the page holds at most three EventSources, HTTP/2
+  giving each a stream of the console's few: the fleet's stream while
+  the console is shown; arcana-host's stats as a periodic subscription
+  of the operational datastore (REFRESH_MS), every host's on the fleet
+  and devices views, the host's own on its page; arcana-jobs on-change,
+  every host's, while a job of the page's runs or a Jobs tab is shown.
+  A subscription's EventSource down is established again (its URI is
+  taken once); the fleet's comes back by itself with Last-Event-ID.
+  Added to the console: establish-subscription POSTed under
+  `arcana-fleet:fleet` itself, every host's this user may read on one
+  reply, its XPath each host's below its mount, each record in its
+  host's entry, a host lost said and subscribed again as the fleet's
+  stream does (console_test restconf); records left out said in a
+  `lost` event, not a comment.  What moved: each host's jails, on every
+  view, read when its events say (jail-state, a job ended, jail.conf
+  changed) a second on, a burst one read; its stats as pushed; a
+  running job read when arcana-jobs changes (each step), every 10 s
+  besides, one waiting to be confirmed each second; the Jobs tab when
+  its host's jobs change; the open host's tabs as live.c's events said
+  over the socket before (live_event()); the Log tab's events and the
+  kernel's messages added as told (logs_event()), read every few
+  seconds only while the stream is not up; the nexthop groups and the
+  addresses beside them (ecmp.c) when a host's routes or interfaces
+  change.  A host lost or heard again, a record left out, the stream
+  back after a cut or the page shown again: what is shown of that host
+  (of every host) read again.  What a stream tells is still read every
+  3 minutes (2 the groups), and as before on its timer while its
+  stream is not up.  Still polled, as nothing tells them or what is
+  shown is a rate or a sample: the jails' usage on the host's tiles
+  (Jails, Summary, a jail; every REFRESH_MS, nproc, RSS and CPU), the
+  map's and Interfaces' counters (5 s), processes (3 s), the
+  firewall's states and counters, connections, sockets and neighbours
+  (2 s), monitors and the FEC relay (probe samples), usage and the
+  Monitoring tab (the history's step), the summary's transport
+  sysctls, traceroute rounds, the tunnels' quality, the services,
+  storage, kernel, SSH and certificates tabs now and then (no event
+  covers all they show); and the console's own pages (CA, cluster,
+  plugins, feeds, workflows, SD-WAN, Security, Builder, transfers),
+  which no host's stream tells.  Decided: alarms and network instances
+  had no poller of their own (the Network tab's follows the events);
+  the service worker leaves /restconf/ alone.  Check: pwa_test
+  pwa_streams (Devices idle 25 s: no read of jails or stats, the
+  stats pushed in their hosts' entries, no subscription made again; a
+  jail appended to jail.conf shown in about 2 s against the old 10 s
+  poll); pwa_storage_procs' events told, not read.
 - 4.8.3 P: forms generated from the yang-library for the Arcana
   modules (the schema page's renderer reused); check: a jail made
   from a generated form.

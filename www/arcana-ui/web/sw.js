@@ -36,7 +36,8 @@ self.addEventListener("fetch", (e) => {
 	const url = new URL(e.request.url);
 
 	if (e.request.method !== "GET" || url.origin !== location.origin ||
-	    url.pathname.startsWith("/api/"))
+	    url.pathname.startsWith("/api/") ||
+	    url.pathname.startsWith("/restconf/"))
 		return;
 	/* Pages: the network first, the cached shell when offline. */
 	if (e.request.mode === "navigate") {

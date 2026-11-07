@@ -29,12 +29,12 @@ struct app app = {
 	.net = { .sort = -1 },
 };
 
-static double	last_health, last_refresh, last_tick_render, last_update;
+static double	last_health, last_tick_render, last_update;
 static char	loc_shown[600];	/* the page's address names this */
 static char	loc_wanted[600];	/* to go to once the hosts are known */
-static int	others_turn;	/* refreshes since the other hosts were read */
 
-#define	OTHERS_EVERY	3	/* the hosts not selected: every third refresh */
+#define	OTHERS_EVERY	3	/* the hosts not selected: every third refresh,
+				 * without the fleet's stream */
 
 static void	tick(void *);
 static void	close_service(void);
@@ -563,6 +563,7 @@ tick(void *arg)
 			secpage_tick(now);
 			builder_tick(now);
 			live_tick(now);
+			sse_tick(now);
 		}
 		app.quiet = false;
 	}
@@ -571,39 +572,49 @@ tick(void *arg)
 		last_update = now;
 		check_update();
 	}
-	if (app.screen == SCREEN_CONSOLE && app.visible && app.online &&
-	    now - last_refresh > REFRESH_MS) {
-		last_refresh = now;
-		/* The fleet page watches every host, a host page its own. */
-		for (i = 0; (app.node == NODE_FLEET || app.node ==
-		    NODE_NETWORK || app.node == NODE_USAGE || app.node ==
-		    NODE_DEVICES) && i < app.nservers; i++) {
-			refresh_jails(&app.servers[i], false);
-			if (app.node == NODE_FLEET || app.node == NODE_DEVICES)
-				refresh_stats(&app.servers[i]);
+	/*
+	 * The fleet page watches every host, a host page its own: each
+	 * host's jails when its events say they changed, its stats as its
+	 * subscription pushes them, its jobs when they change (sse.c); on
+	 * a timer, every REFRESH_MS, only what nothing tells (the jails'
+	 * usage on the tiles of the host's) or while a stream is not up.
+	 */
+	if (app.screen == SCREEN_CONSOLE && app.visible && app.online) {
+		bool	fleet;
+
+		fleet = app.node == NODE_FLEET || app.node == NODE_NETWORK ||
+		    app.node == NODE_USAGE || app.node == NODE_DEVICES;
+		for (i = 0; fleet && i < app.nservers; i++) {
+			s = &app.servers[i];
+			if (sse_due(s, SD_JAILS, now, REFRESH_MS, false))
+				refresh_jails(s, false);
+			if ((app.node == NODE_FLEET || app.node ==
+			    NODE_DEVICES) && sse_due(s, SD_STATS, now,
+			    REFRESH_MS, false))
+				refresh_stats(s);
 		}
-		if (app.node != NODE_FLEET && app.node != NODE_NETWORK &&
-		    app.node != NODE_USAGE && app.node != NODE_DEVICES && (s =
-		    cur_server()) != NULL) {
-			refresh_jails(s, false);
-			refresh_stats(s);
-			if (app.tab == TAB_JOBS)
+		if (!fleet && (s = cur_server()) != NULL) {
+			if (sse_due(s, SD_JAILS, now, REFRESH_MS, app.node ==
+			    NODE_JAIL || (app.node == NODE_HOST && (app.tab ==
+			    TAB_JAILS || app.tab == TAB_SUMMARY))))
+				refresh_jails(s, false);
+			if (sse_due(s, SD_STATS, now, REFRESH_MS, false))
+				refresh_stats(s);
+			if (app.node == NODE_HOST && app.tab == TAB_JOBS &&
+			    sse_due(s, SD_JOBS, now, REFRESH_MS, false))
 				refresh_jobs(s);
 		}
 		/*
 		 * The tree shows every host: its state, its jails, its
-		 * agent's version.  The others are read too, less often,
-		 * or an agent updated or restarted elsewhere would show
-		 * its old self until the page is loaded again.
+		 * agent's version.  The others are read too, when their
+		 * events say (an agent updated or restarted is a host the
+		 * fleet's stream lost and heard again), or less often
+		 * without the stream.
 		 */
-		if (app.node != NODE_FLEET && app.node != NODE_NETWORK &&
-		    app.node != NODE_USAGE && app.node != NODE_DEVICES &&
-		    ++others_turn >= OTHERS_EVERY) {
-			others_turn = 0;
-			for (i = 0; i < app.nservers; i++)
-				if (i != app.sel)
-					refresh_jails(&app.servers[i], false);
-		}
+		for (i = 0; !fleet && i < app.nservers; i++)
+			if (i != app.sel && sse_due(&app.servers[i], SD_JAILS,
+			    now, OTHERS_EVERY * REFRESH_MS, false))
+				refresh_jails(&app.servers[i], false);
 	}
 	if (changed || now - last_tick_render >= AGE_STEP_MS) {
 		last_tick_render = now;
@@ -2276,7 +2287,6 @@ arc_on_stream(char *text)
 		return;
 	sysctl_stream(o);
 	network_stream(o);
-	logs_stream(o);
 	live_stream(o);
 	ucl_object_unref(o);
 	render();
@@ -2288,7 +2298,7 @@ arc_on_net(int online)
 
 	app.online = online != 0;
 	if (app.online) {
-		last_health = last_refresh = 0;
+		last_health = 0;
 		check_health();
 		if (app.screen == SCREEN_OFFLINE)
 			auth_status();
@@ -2303,7 +2313,6 @@ arc_on_visible(int visible)
 
 	app.visible = visible != 0;
 	if (app.visible) {
-		last_refresh = 0;
 		plugins_poke();
 	}
 }
@@ -2348,7 +2357,7 @@ main(void)
 	}
 	render();
 	check_health();
-	last_health = last_refresh = arc_now();
+	last_health = arc_now();
 	auth_status();
 	emscripten_set_interval(tick, 1000, NULL);
 	return (0);

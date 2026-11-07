@@ -5075,16 +5075,16 @@ part_storage_procs(void)
 	    "{ 'Content-Type': 'application/json', 'X-Arcana': '1' }, body: "
 	    "JSON.stringify({ step: 5, keep: 720, hold: 0, cpu: cpu, mem: "
 	    "mem, swap: 50 }) }))));");
-	/* The agent samples every five seconds and the console asks for
-	 * events every five: two clocks in a row, and the page's draw. */
+	/* The agent samples every five seconds, then tells the fleet's
+	 * stream, and the page draws it. */
 	run("window.lim(90, 1);");
 	wait_js("[...document.querySelectorAll('table.logs tbody tr')].some("
 	    "r => r.textContent.includes('threshold') && r.textContent."
 	    "includes('mem at'))", 40);
 	/* Nothing was asked again for it: it came by itself. */
 	ATF_CHECK(js_true("!performance.getEntriesByType('resource').some("
-	    "e => e.name.includes('/events?after=') && e.startTime > "
-	    "window.evt0)"));
+	    "e => e.name.includes('arcana-events:events/read') && "
+	    "e.startTime > window.evt0)"));
 	/* And the way back under, as well, while it stays followed. */
 	run("window.lim(90, 90);");
 	wait_js("[...document.querySelectorAll('table.logs tbody tr')].some("
@@ -7992,6 +7992,102 @@ part_routes(void)
 	run("window.before = 1; location.reload();");
 	wait_js("window.before === undefined && location.hash === '#/' && "
 	    "document.querySelector('.tree [data-act=select-fleet].selected')", 30);
+}
+
+/*
+ * What the page is told rather than asks for (sse.c): on Devices, the
+ * fleet's stream and every host's stats as a periodic subscription.
+ * Over an idle stretch longer than two of the old refreshes, no read of
+ * the jails or of the stats, the stats pushed meanwhile; a jail added
+ * to jail.conf (the agent's conf event) shown well within the old ten
+ * seconds' poll.
+ */
+static void
+part_streams(void)
+{
+	FILE	*fp;
+	char	 got[512];
+	double	 ms;
+	int	 idle;
+
+	click_when("li[data-act=select-devices]", 10);
+	wait_js("document.querySelector('table.devices tr.pick')", 10);
+	/*
+	 * The fleet's stream open, and the stats' subscription of every
+	 * host's (the host's own, of the page before, given up for it):
+	 * each EventSource of the stats' listened to, its first push
+	 * waited for.
+	 */
+	wait_js("window.arcanaStreams && window.arcanaStreams[1] && "
+	    "window.arcanaStreams[1].readyState === 1", 30);
+	run("window.pushes = []; window.subs = 0; setInterval(() => { "
+	    "const es = window.arcanaStreams[2]; if (es && !es.heard) { "
+	    "es.heard = true; window.subs++; es.addEventListener('message', "
+	    "e => window.pushes.push(e.data)); } }, 100);");
+	wait_js("window.pushes.some(p => p.includes('\"arcana-fleet:fleet\"'))",
+	    40);
+	run("window.pushes = []; window.subs = 0; window.reqs = []; "
+	    "window.fetch0 = window.fetch; window.fetch = function (u, o) { "
+	    "window.reqs.push((o && o.method || 'GET') + ' ' + String(u && "
+	    "u.url || u)); return window.fetch0.apply(this, arguments); };");
+	idle = 25;
+	sleep(idle);
+	js_str(got, sizeof(got), "window.reqs.filter(r => r.includes("
+	    "'arcana-jails:jails') || r.includes('arcana-host:host')).join("
+	    "' | ').slice(0, 500) || 'none'");
+	fprintf(stderr, "streams: %d s idle on Devices: %d requests, %d "
+	    "stats pushed, %d subscriptions made again; jails or stats "
+	    "read: %s\n", idle, (int)js_num("window.reqs.length"),
+	    (int)js_num("window.pushes.length"), (int)js_num("window.subs"),
+	    got);
+	ATF_CHECK_STREQ_MSG("none", got, "jails or stats read while idle: %s",
+	    got);
+	ATF_CHECK(js_num("window.subs") == 0);
+	/* The stats came anyway, each host's in its entry. */
+	ATF_CHECK(js_true("window.pushes.some(p => p.includes("
+	    "'\"arcana-fleet:fleet\"') && p.includes('push-update') && "
+	    "p.includes('\"stats\"'))"));
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.devices "
+	    "tr.pick')][0].children[7].textContent.trim() !== '—'"));
+
+	/* A jail added: shown as the agent tells of jail.conf. */
+	run("window.jails0 = [...document.querySelectorAll('table.devices "
+	    "tr.pick')][0].children[6].textContent; window.t0 = "
+	    "performance.now();");
+	ATF_REQUIRE((fp = fopen("etc/jail.conf", "a")) != NULL);
+	fprintf(fp, "told {\n\tip4.addr = 10.0.0.40;\n}\n");
+	fclose(fp);
+	wait_js("(() => { const t = [...document.querySelectorAll("
+	    "'table.devices tr.pick')][0].children[6].textContent; if (t !== "
+	    "window.jails0 && !window.t1) window.t1 = performance.now(); "
+	    "return !!window.t1; })()", 10);
+	ms = js_num("window.t1 - window.t0");
+	fprintf(stderr, "streams: a jail added shown after %.0f ms (the old "
+	    "poll: every 10000 ms)\n", ms);
+	ATF_CHECK_MSG(ms < busy_secs(5) * 1000.0, "a jail added shown after "
+	    "%.0f ms", ms);
+	/* By the event, not by a read on a timer: one read, after it. */
+	ATF_CHECK(js_true("window.reqs.filter(r => r.includes("
+	    "'arcana-jails:jails')).length >= 1"));
+}
+
+ATF_TC_WITH_CLEANUP(pwa_streams);
+ATF_TC_HEAD(pwa_streams, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The page follows the fleet's event stream and a stats subscription: no periodic reads of jails or stats while idle, a jail added shown within seconds");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_streams, tc)
+{
+
+	prologue(tc, 1);
+	part_streams();
+}
+ATF_TC_CLEANUP(pwa_streams, tc)
+{
+
+	browser_stop();
 }
 
 ATF_TC_WITH_CLEANUP(pwa_routes);
@@ -11125,6 +11221,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_pad);
 	ATF_TP_ADD_TC(tp, pwa_cplug);
 	ATF_TP_ADD_TC(tp, pwa_routes);
+	ATF_TP_ADD_TC(tp, pwa_streams);
 	ATF_TP_ADD_TC(tp, pwa_cfgfiles);
 	ATF_TP_ADD_TC(tp, pwa_nacm);
 	ATF_TP_ADD_TC(tp, pwa_ra);
