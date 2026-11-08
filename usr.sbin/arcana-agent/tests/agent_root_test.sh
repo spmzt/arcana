@@ -1018,6 +1018,8 @@ sctp_multihome_head()
 	    "one cut goes on over the other, and the cut one comes back"
 	atf_set "require.user" "root"
 	atf_set "timeout" "180"
+	# Its paths judged by timers of 100 ms: not beside a loaded suite.
+	atf_set "is.exclusive" "true"
 }
 sctp_multihome_body()
 {
