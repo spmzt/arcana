@@ -1526,6 +1526,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		/* Approved: the same again, OSVERSION ignored. */
 		pkg_upgrade(s, strcmp(arg, "some") == 0 ? app.pkg.names : NULL,
 		    act[7] == 'd', true);
+	} else if (strcmp(act, "do-chflags-retry") == 0 && s != NULL) {
+		chflags_retry(s);
 	} else if (strcmp(act, "queue") == 0) {
 		app.queue_on = !app.queue_on;
 		arc_queue_set(app.queue_on ? 1 : 0);

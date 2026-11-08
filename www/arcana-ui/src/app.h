@@ -775,6 +775,7 @@ void		 agent_build(struct server *, const char *, bool);
 void		 agent_restarts(double);
 void		 op_cancel(struct op *);
 void		 op_done(struct op *, bool, const ucl_object_t *, const char *);
+void		 chflags_retry(struct server *);
 void		 op_answered(int, int, int, const ucl_object_t *, const char *);
 void		 if_address(struct server *, const char *, const char *, bool,
 		    bool);

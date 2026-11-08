@@ -586,6 +586,84 @@ op_trace_fetch(struct op *op)
 	rc_read(url, NULL, NULL, trace_fetch_cb, c);
 }
 
+/*
+ * A jail's base by pkg refused for allow.chflags (pkg sets the base's
+ * files' flags): asked whether to allow it on the running jail alone,
+ * not in its file and not in safe mode, then the same job again once
+ * that is done.
+ */
+static struct {
+	char	*again;		/* the job to send again */
+	char	 sid[16];
+	char	 jail[64];
+	int	 allow_op;	/* the jail-allow's task, 0 none */
+} chf;
+
+static void
+chflags_after(struct op *o, bool ok, const char *err)
+{
+	struct server	*s;
+	ucl_object_t	*j;
+	char		 body[512], title[160];
+	char		*again;
+
+	if (chf.allow_op != 0 && o->id == chf.allow_op) {
+		chf.allow_op = 0;
+		again = chf.again;
+		chf.again = NULL;
+		if (!ok || (s = server_by_id(chf.sid)) == NULL) {
+			free(again);
+			return;
+		}
+		snprintf(title, sizeof(title), "jail %s: base by pkg, again "
+		    "(allow.chflags now)", chf.jail);
+		job_send(s, again, title, JOB_PACKAGES, chf.jail);
+		return;
+	}
+	if (ok || err == NULL || strstr(err, "allow.chflags") == NULL ||
+	    o->again == NULL || strstr(o->again, "\"kind\":\"jail-base\"") ==
+	    NULL || (j = json_parse(o->again)) == NULL)
+		return;
+	free(chf.again);
+	chf.again = strdup(o->again);
+	snprintf(chf.sid, sizeof(chf.sid), "%s", o->sid);
+	snprintf(chf.jail, sizeof(chf.jail), "%s", jstr(j, "jail") != NULL ?
+	    jstr(j, "jail") : "");
+	ucl_object_unref(j);
+	snprintf(body, sizeof(body), "pkg needs to set flags on the base "
+	    "system's files (chflags(2)), and jail %s may not "
+	    "(allow.chflags=0). Allow it on the running jail now and run the "
+	    "same again? Only for now: not kept in its file, so it is gone "
+	    "at the jail's next start, and not in safe mode.", chf.jail);
+	confirm("The jail may not set files' flags", body, "Allow now and "
+	    "retry", false, "", "do-chflags-retry", chf.jail, "");
+}
+
+/* Approved: allow.chflags on the running jail alone, then the job. */
+void
+chflags_retry(struct server *s)
+{
+	char	*json, *qn, title[160];
+	bool	 queued = app.queue_on;
+
+	if (s == NULL || chf.again == NULL || strcmp(s->id, chf.sid) != 0)
+		return;
+	qn = json_quote(chf.jail);
+	if (asprintf(&json, "{\"kind\":\"jail-allow\",\"jail\":%s,\"args\":"
+	    "[\"allow.chflags=1\"],\"live\":true,\"persist\":false,"
+	    "\"safe\":false}", qn) == -1)
+		abort();
+	free(qn);
+	snprintf(title, sizeof(title), "jail %s allow.chflags (now, not kept)",
+	    chf.jail);
+	/* Approved as it is: sent now, the queue or not, so that the job
+	 * follows it. */
+	app.queue_on = false;
+	job_send_host(s, json, title, JOB_JAIL, "jails");
+	app.queue_on = queued;
+	chf.allow_op = app.nops > 0 ? app.ops[0].id : 0;
+}
+
 void
 op_done(struct op *o, bool ok, const ucl_object_t *reply, const char *err)
 {
@@ -613,6 +691,7 @@ op_done(struct op *o, bool ok, const ucl_object_t *reply, const char *err)
 	}
 	if (err != NULL)
 		snprintf(o->error, sizeof(o->error), "%s", err);
+	chflags_after(o, ok, err);
 }
 
 /* Replace the jail of the same name in the server's list. */

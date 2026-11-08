@@ -121,6 +121,16 @@ pkg(struct work *w, const struct arc_job_spec *sp, bool anyos,
 	return (rc);
 }
 
+/*
+ * A jail that may not change files' flags: pkg sets the base's (schg on
+ * the kernel's and libc's files) and fails half way without it.  Said
+ * so, allow.chflags named: the console offers to allow it on the
+ * running jail and run the job again.
+ */
+#define	NEED_CHFLAGS	"jail %s may not change files' flags " \
+	"(allow.chflags=0), which pkg needs for the base's files: allow " \
+	"allow.chflags on the running jail and run this again"
+
 /* What pkg said went wrong: its repository lines, or its last words. */
 static const char *
 pkg_failed(struct work *w, const struct execres *res, const char *prog)
@@ -129,7 +139,25 @@ pkg_failed(struct work *w, const struct execres *res, const char *prog)
 
 	if ((e = pkg_repo_error(w, res, prog)) != NULL)
 		return (e);
-	return (wtext(w, exec_error(w, res, prog)));
+	e = wtext(w, exec_error(w, res, prog));
+	if (strstr(e, "chflags") != NULL && strstr(e,
+	    "Operation not permitted") != NULL && w->jail != NULL)
+		return (wfmt(w, NEED_CHFLAGS ": %s", w->jail, e));
+	return (e);
+}
+
+/* Is the running jail named allowed chflags?  Unknown: yes, pkg tells. */
+static bool
+may_chflags(struct work *w, const char *name)
+{
+	static const char	*names[] = { "allow.chflags" };
+	const char		**live;
+	struct jinfo		 ji;
+
+	if (jail_named(w, name, &ji) < 0 || jail_allow_live(w, ji.jid, names,
+	    1, &live) != 1)
+		return (true);
+	return (strcmp(live[0], "allow.chflags=0") != 0);
 }
 
 /*
@@ -792,6 +820,11 @@ do_jail_base(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	osrelease = NULL;
 	if ((e = jail_of(w, sp->jail, &osrelease)) != NULL) {
 		*errp = e;
+		return (-1);
+	}
+	/* Refused before anything changes, not half way through. */
+	if (!may_chflags(w, sp->jail)) {
+		*errp = wfmt(w, NEED_CHFLAGS, sp->jail);
 		return (-1);
 	}
 	root = w->jroot;

@@ -284,6 +284,12 @@ version)
 ' "$nv" "$remote"
 	done < pending ;;
 upgrade|install)
+	# A jail that may not set files' flags (allow.chflags=0): pkg
+	# fails as it extracts the base's flagged files.
+	if [ -e noflags ]; then
+		echo 'pkg: Fail to chflags /lib/libc.so.7:Operation not permitted' >&2
+		exit 70
+	fi
 	# A repository for a newer FreeBSD: refused but past OSVERSION,
 	# and pkg exits 0 still.
 	if [ -e newer -a $anyos = no ]; then
@@ -3802,6 +3808,13 @@ EOS
 	# Too old for pkgbase.
 	atf_check -s exit:1 -o match:'needs FreeBSD 15.1' \
 	    "$JGC" -c "$SOCK" jail-base old convert
+	# pkg refused the base's files' flags: said by allow.chflags, which
+	# the console offers to allow on the running jail and run again.
+	touch noflags
+	atf_check -s exit:1 -o match:'jail web may not change files. flags \(allow.chflags=0\)' \
+	    -o match:'Operation not permitted' \
+	    "$JGC" -c "$SOCK" jail-base web convert
+	rm noflags
 	# Converted: the repository's file in the jail, /etc kept aside,
 	# pkg update then install of the default set from FreeBSD-base.
 	atf_check -o save:cv.out "$JGC" -t -c "$SOCK" jail-base web convert

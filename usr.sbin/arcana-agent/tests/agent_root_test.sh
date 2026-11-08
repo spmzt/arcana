@@ -261,6 +261,32 @@ jail_allow_live_cleanup()
 	cleanup
 }
 
+atf_test_case jail_base_chflags cleanup
+jail_base_chflags_head()
+{
+	atf_set "descr" "A jail's base to pkgbase refused before anything changes where the running jail may not set files' flags (allow.chflags=0), said by allow.chflags"
+	atf_set "require.user" "root"
+}
+jail_base_chflags_body()
+{
+	CJ=arcana-chflags-test
+	jls -d -j "$CJ" >/dev/null 2>&1 && atf_skip "a jail named $CJ exists"
+	mkdir -p r/etc r/usr/local/etc
+	atf_check -o ignore jail -c name="$CJ" path="$(pwd)/r" persist \
+	    allow.chflags=0
+	start_daemon
+	atf_check -s exit:1 -o match:"jail $CJ may not change files. flags \(allow.chflags=0\)" \
+	    "$JGC" -c "$SOCK" jail-base "$CJ" convert
+	# Nothing of the conversion's: no repository, no /etc kept aside.
+	atf_check test ! -e r/usr/local/etc/pkg/repos/arcana-base.conf
+	atf_check test ! -e r/var/backups/etc-before-pkgbase.tar
+}
+jail_base_chflags_cleanup()
+{
+	jail -r arcana-chflags-test >/dev/null 2>&1
+	cleanup
+}
+
 atf_test_case config_files_not_at_boot cleanup
 config_files_not_at_boot_head()
 {
@@ -3692,6 +3718,7 @@ atf_init_test_cases()
 	atf_add_test_case jail_allow_live
 	atf_add_test_case jail_dying_namesake
 	atf_add_test_case config_files_not_at_boot
+	atf_add_test_case jail_base_chflags
 	atf_add_test_case live_address
 	atf_add_test_case aliases
 	atf_add_test_case routes
