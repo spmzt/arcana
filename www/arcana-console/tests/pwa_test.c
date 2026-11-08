@@ -1363,7 +1363,20 @@ part_hosts(void)
 	ATF_CHECK(js_true("document.querySelector('.modal .buttons button.primary').textContent === 'Change'"));
 	ATF_CHECK(js_true("document.querySelector('form[data-form=jm-allow] table.allow select').getBoundingClientRect().width > 100"));
 	ATF_CHECK(js_true("(() => { const m = document.querySelector('.modal'), t = m.querySelector('table.allow'); return t.getBoundingClientRect().right <= m.getBoundingClientRect().right + 1; })()"));
-	run("document.querySelector('.modal button[data-act=close]').click()");
+	/* A parameter set: its field is named allow.chflags, a dotted key
+	 * the form's reader must take as it is. */
+	run("const f = document.querySelector('form[data-form=jm-allow]'); "
+	    "f.querySelector('select[name=\"allow.chflags\"]').value = '1'; f.safe.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=jm-allow]')", 10);
+	ATF_CHECK(js_true("!(document.querySelector('.modal .err') || {})"
+	    ".textContent?.includes('Nothing to change')"));
+	/* The queue is on: sent from there. */
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 100 && system("grep -q 'allow.chflags' "
+	    "etc/jail.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 100, "allow.chflags is not in db's file");
 	ATF_CHECK(js_true("document.querySelector('.jail-page h1').textContent "
 	    "=== 'db'"));
 	run("document.querySelector('.jail-page button[data-act=address-add]')"

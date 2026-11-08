@@ -36,9 +36,15 @@ json_parse(const char *s)
 const ucl_object_t *
 jget(const ucl_object_t *o, const char *path)
 {
+	const ucl_object_t	*v;
 
 	if (o == NULL)
 		return (NULL);
+	/* A key that is itself dotted first (a form's field allow.chflags,
+	 * a sysctl's name): libucl's path would look inside "allow". */
+	if (ucl_object_type(o) == UCL_OBJECT && strchr(path, '.') != NULL &&
+	    (v = ucl_object_lookup(o, path)) != NULL)
+		return (v);
 	return (ucl_object_lookup_path(o, path));
 }
 
