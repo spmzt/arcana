@@ -25,6 +25,9 @@ const struct route routes[] = {
 	    HTTP_METHOD_GET },
 	{ "/restconf/yang-library-version", api_restconf_ylv, NULL,
 	    HTTP_METHOD_GET },
+	/* A module described for forms (ymodule.c). */
+	{ "^/yang/[a-z][a-z0-9_.-]{0,63}@[0-9]{4}-[0-9]{2}-[0-9]{2}[.]json$",
+	    api_yang_module, NULL, HTTP_METHOD_GET },
 	{ "^/restconf/data/ietf-network:networks(/.*)?$", api_sapnet,
 	    api_sapnet_free, HTTP_METHOD_GET | HTTP_METHOD_OPTIONS },
 	/* arcana-console's actions that wait on a task. */

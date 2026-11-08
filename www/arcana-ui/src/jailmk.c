@@ -248,7 +248,12 @@ jailmk_buttons(struct html *h)
 	    "ghost small\" data-act=\"jm-defaults\" title=\"/etc/jail.conf, "
 	    "what every jail includes\">Defaults</button><button class=\""
 	    "ghost small\" data-act=\"jm-files\" title=\"The templates, and "
-	    "the jails made from here\">Templates</button></span>");
+	    "the jails made from here\">Templates</button><button class=\""
+	    "ghost small\" data-act=\"yf-new\" data-arg=\"arcana-jails|"
+	    "/arcana-jails:jails/jail\" title=\"A jail's entry in "
+	    "arcana-jails, by the form its YANG module makes: its name, "
+	    "whether it starts at boot, its parameters\">New jail (from its "
+	    "model)</button></span>");
 }
 
 static const char *

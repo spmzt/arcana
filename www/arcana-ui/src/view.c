@@ -1011,24 +1011,25 @@ stage(struct html *h)
 		 * row of them under these. */
 		static const struct {
 			const char	*arg, *title;
-			int		 tab, tab2, tab3, tab4;
+			int		 tab, tab2, tab3, tab4, tab5;
 		} tabs[] = {
-			{ "summary", "Summary", TAB_SUMMARY, -1, -1, -1 },
+			{ "summary", "Summary", TAB_SUMMARY, -1, -1, -1, -1 },
 			{ "monitoring", "Monitoring", TAB_MONITORING, TAB_ALERTS,
-			    -1, -1 },
-			{ "jails", "Jails", TAB_JAILS, -1, -1, -1 },
+			    -1, -1, -1 },
+			{ "jails", "Jails", TAB_JAILS, -1, -1, -1, -1 },
 			{ "services", "Services", TAB_SERVICES, TAB_MAIL, -1,
+			    -1, -1 },
+			{ "network", "Network", TAB_NETWORK, TAB_RELAY, -1, -1,
 			    -1 },
-			{ "network", "Network", TAB_NETWORK, TAB_RELAY, -1, -1 },
-			{ "firewall", "Firewall", TAB_FIREWALL, -1, -1, -1 },
-			{ "packages", "Packages", TAB_PACKAGES, -1, -1, -1 },
-			{ "storage", "Storage", TAB_STORAGE, -1, -1, -1 },
+			{ "firewall", "Firewall", TAB_FIREWALL, -1, -1, -1, -1 },
+			{ "packages", "Packages", TAB_PACKAGES, -1, -1, -1, -1 },
+			{ "storage", "Storage", TAB_STORAGE, -1, -1, -1, -1 },
 			{ "system", "System", TAB_SYSTEM, TAB_SYSCTL, TAB_KERNEL,
-			    TAB_PROCESSES },
+			    TAB_PROCESSES, TAB_MODELS },
 			{ "security", "Security", TAB_SECURITY, TAB_SSH,
-			    TAB_CERTS, -1 },
-			{ "log", "Log", TAB_LOG, -1, -1, -1 },
-			{ "jobs", "Jobs", TAB_JOBS, -1, -1, -1 },
+			    TAB_CERTS, -1, -1 },
+			{ "log", "Log", TAB_LOG, -1, -1, -1, -1 },
+			{ "jobs", "Jobs", TAB_JOBS, -1, -1, -1, -1 },
 		};
 		size_t		 t;
 		bool		 on, mon;
@@ -1039,7 +1040,8 @@ stage(struct html *h)
 		for (t = 0; t < nitems(tabs); t++) {
 			on = (int)app.tab == tabs[t].tab || (int)app.tab ==
 			    tabs[t].tab2 || (int)app.tab == tabs[t].tab3 ||
-			    (int)app.tab == tabs[t].tab4;
+			    (int)app.tab == tabs[t].tab4 ||
+			    (int)app.tab == tabs[t].tab5;
 			if (mon)
 				on = tabs[t].tab == TAB_MONITORING;
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
@@ -1137,6 +1139,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_PROCESSES) {
 		view_procs(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_MODELS) {
+		view_models(h, s);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -2625,6 +2632,10 @@ modal(struct html *h)
 		if (!cfg_modal(h))
 			return;
 		break;
+	case MODAL_YFORM:
+		if (!yform_modal(h))
+			return;
+		break;
 	case MODAL_WG_INIT:
 	case MODAL_WG_PEER:
 	case MODAL_WG_CLIENT:
@@ -3214,6 +3225,9 @@ modal(struct html *h)
 			break;
 		case MODAL_CFG:
 			cfg_modal_buttons(h);
+			break;
+		case MODAL_YFORM:
+			yform_modal_buttons(h);
 			break;
 		case MODAL_LOOKUP:
 			h_raw(h, "<button class=\"primary\">Look up</button>");

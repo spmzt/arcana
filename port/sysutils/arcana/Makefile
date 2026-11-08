@@ -36,7 +36,10 @@ WEBGPU_IMPLIES=	CONSOLE
 # The console's HTTP server is on libwebsockets; the PWA compiles libucl
 # and libyaml, the releases base imports, to wasm: their sources, as
 # /usr/src has them, fetched here (a package build has no /usr/src).
-CONSOLE_BUILD_DEPENDS=	emcc:devel/emscripten
+# libyang for ydescgen, which writes what the console's module
+# descriptions take of Arcana's modules at the build.
+CONSOLE_BUILD_DEPENDS=	emcc:devel/emscripten \
+			libyang3>0:net/libyang3
 CONSOLE_LIB_DEPENDS=	libwebsockets.so:net/libwebsockets
 CONSOLE_USES=		ssl
 CONSOLE_GH_TUPLE=	vstakhov:libucl:0.9.4:libucl/libucl \

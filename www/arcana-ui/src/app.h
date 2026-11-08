@@ -257,6 +257,7 @@ enum tab {
 	TAB_JOBS,
 	TAB_MONITORING,		/* utilization, sampling and limits */
 	TAB_ALERTS,		/* what the alerts leave out */
+	TAB_MODELS,		/* its YANG modules, their forms (yform.c) */
 };
 
 /* The packages tab: pending upgrades of the host or of one jail. */
@@ -532,6 +533,7 @@ enum modal {
 	MODAL_LOOKUP,
 	MODAL_NHOP,
 	MODAL_CFG,		/* config-files: the switch, the merge editor */
+	MODAL_YFORM,		/* a form made from a module (yform.c) */
 };
 
 struct confirm {
@@ -1296,6 +1298,7 @@ struct ycommit {
 	bool		 busy;		/* a save on its way */
 	char		 note[512];	/* how the last save went */
 	char		 tag[64];	/* a warning to accept, its app-tag */
+	char		 errpath[512];	/* the last error's error-path, or "" */
 	char		 accepted[192];	/* those accepted so far, by commas */
 	char		 token[40];	/* a commit waiting: its persist */
 	double		 until;		/* and when the host undoes it (ms) */
@@ -1310,6 +1313,22 @@ void		 ycommit_tick(struct ycommit *, double);
  * merge editor has given the host its values: act's "-merge"). */
 void		 ycommit_accept(struct ycommit *, const char *);
 const char	*rc_why(const ucl_object_t *, const char *);
+/*
+ * yform.c: forms made from a host's YANG modules, described by the
+ * console (/yang/<module>@<revision>.json).  yform_open(): the form of
+ * a module's node (its schema path), a new list entry (key NULL), the
+ * entry of key, or a container (key ""), in MODAL_YFORM; saved by
+ * ycommit.c.  view_models(): the System tab's Models, the host's
+ * library and each Arcana module's configuration.
+ */
+void		 yform_open(const char *, const char *, const char *,
+		    const char *);
+bool		 yform_modal(struct html *);
+void		 yform_modal_buttons(struct html *);
+bool		 yform_action(const char *, const char *, const char *);
+bool		 yform_form(const char *, const ucl_object_t *);
+void		 yform_tick(double);
+void		 view_models(struct html *, struct server *);
 /* actions.c: a name that goes into a request's path as it is. */
 bool		 url_word(const char *);
 /* ra.c: an interface's router advertisements (rtadvd.conf(5)), on the

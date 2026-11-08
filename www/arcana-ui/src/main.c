@@ -115,6 +115,7 @@ static const char *const tabnames[] = {
 	[TAB_PROCESSES] = "processes",
 	[TAB_LOG] = "log", [TAB_JOBS] = "jobs",
 	[TAB_MONITORING] = "monitoring", [TAB_ALERTS] = "monitoring/alerts",
+	[TAB_MODELS] = "models",
 };
 
 /* A jail's name in the address: what is not a letter, a digit or ._- in
@@ -539,6 +540,7 @@ tick(void *arg)
 			macdo_tick(now);
 			nacm_tick(now);
 			ra_tick(now);
+			yform_tick(now);
 			service_commit_tick(now);
 			jail_commit_tick(now);
 			sysview_tick(now);
@@ -781,7 +783,7 @@ submit(const char *form, const ucl_object_t *f)
 	    builder_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) || cfg_form(form, f) ||
 	    sysctl_form(form, f) || nacm_form(form, f) || ra_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
-	    macdo_form(form, f) ||
+	    macdo_form(form, f) || yform_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
 		return;
 	submit_form(form, f);
@@ -1255,7 +1257,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || nacm_action(act, arg, value) ||
 	    macdo_action(act, arg, value) ||
-	    ra_action(act, arg, value) ||
+	    ra_action(act, arg, value) || yform_action(act, arg, value) ||
 	    apidoc_action(act, arg, value) ||
 	    procs_action(act, arg, value) || logs_action(act, arg, value) ||
 	    usage_action(act, arg, value) || ecmp_action(act, arg, value) ||
@@ -1360,6 +1362,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "certificates") == 0 ? TAB_CERTS :
 		    strcmp(arg, "ssh") == 0 ? TAB_SSH :
 		    strcmp(arg, "processes") == 0 ? TAB_PROCESSES :
+		    strcmp(arg, "models") == 0 ? TAB_MODELS :
 		    strcmp(arg, "log") == 0 ? TAB_LOG :
 		    strcmp(arg, "firewall") == 0 ? TAB_FIREWALL :
 		    strcmp(arg, "storage") == 0 ? TAB_STORAGE :

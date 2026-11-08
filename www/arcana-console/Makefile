@@ -101,6 +101,24 @@ ychange.c: ${ARC_TOP}/share/arcana/jobs.awk ${ARC_TOP}/share/arcana/jobs.yaml \
 	    > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
 
+# A module described for forms (ymodule.c): the tables' nodes with what
+# they leave out, written of Arcana's modules at the build by ydescgen,
+# a tool of the build host's compiled over libyang as cblink-gen is.
+SRCS+=		ymodule.c ydesc.c
+YDESCGEN=	${.OBJDIR}/ydescgen
+CLEANFILES+=	ydescgen ydesc.c ydesc.c.tmp
+${YDESCGEN}: ${.CURDIR}/ydescgen.c
+	${CC} -O2 -Wall -Wextra -Werror -I${LOCALBASE}/include \
+	    -o ${.TARGET} ${.CURDIR}/ydescgen.c -L${LOCALBASE}/lib \
+	    -Wl,-rpath,${LOCALBASE}/lib -lyang
+ydesc.c: ${YDESCGEN} ${ARC_YMODS:@m@${ARC_YANG_DIR}/${m}.yang@} \
+    ${ARC_TOP}/share/mk/arcana.yang.mk
+	cd ${ARC_YANG_DIR} && ${YDESCGEN} ${_arc_yfeats:@f@'${f}'@} \
+	    -p ${CBLINK_YANG_DIR} -o ${.OBJDIR}/ydesc.c \
+	    ${ARC_YMODS:S/$/.yang/}
+ymodule.o: ymodel.h
+CFLAGS.ydesc.c+=	-I${.CURDIR}
+
 HAS_TESTS=
 SUBDIR.${MK_TESTS}+= tests
 

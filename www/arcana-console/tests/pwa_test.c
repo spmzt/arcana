@@ -4290,7 +4290,7 @@ part_hosttabs(void)
 	    "[data-act=net-kind]')", 10);
 	host_tab("kernel");
 	wait_js("document.querySelectorAll('nav.hsects button.tab').length "
-	    "=== 4 && location.hash.endsWith('/system/kernel')", 10);
+	    "=== 5 && location.hash.endsWith('/system/kernel')", 10);
 	shot("8h-system-kernel");
 	host_tab("ssh");
 	wait_js("location.hash.endsWith('/security/ssh')", 10);
@@ -12914,6 +12914,104 @@ ATF_TC_CLEANUP(pwa_forms_lanes, tc)
 	browser_stop();
 }
 
+/*
+ * A jail made from a generated form (PLAN-SDN-YANG 4.8.3): the Jails
+ * tab's "New jail (from its model)" draws arcana-jails' jail from the
+ * module the console describes; sent without its key, said at the field
+ * and not sent; filled (its name, two parameters as entries of the list
+ * param), committed, and the host's jail.conf.d has the jail.  Then
+ * from System's Models: the module's jails as a table, the jail's entry
+ * read into the same form, its key fixed, a parameter changed and saved.
+ */
+static void
+part_yform_jail(void)
+{
+
+	click_when("button.tab[data-arg=jails]", 10);
+	click_when("button[data-act=yf-new]", 10);
+	wait_js("document.querySelector('form[data-form=ymf] input[name=name]')",
+	    30);
+	/* Configuration alone: a jail's state is not a field. */
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=ymf] "
+	    "[name=state]') && !document.querySelector('form[data-form=ymf] "
+	    "[name=jid]')"));
+	ATF_CHECK(js_true("document.querySelector('form[data-form=ymf] "
+	    "input[type=checkbox][name=boot]')"));
+	/* The key left out: said at its field, nothing sent. */
+	run("document.querySelector('form[data-form=ymf]').requestSubmit();");
+	wait_js("[...document.querySelectorAll('form[data-form=ymf] .yf-err')]"
+	    ".some(e => e.textContent.includes('key'))", 10);
+	click_when("form[data-form=ymf] button[data-act=yf-add][data-arg=param]",
+	    10);
+	wait_js("document.querySelector('form[data-form=ymf] "
+	    "input[name=\\'param/0/name\\']')", 10);
+	click_when("form[data-form=ymf] button[data-act=yf-add][data-arg=param]",
+	    10);
+	wait_js("document.querySelector('form[data-form=ymf] "
+	    "input[name=\\'param/1/name\\']')", 10);
+	run("const f = document.querySelector('form[data-form=ymf]'); "
+	    "const q = n => f.querySelector('[name=\"' + n + '\"]'); "
+	    "q('name').value = 'yfjail'; "
+	    "q('param/0/name').value = 'path'; "
+	    "q('param/0/value').value = '/jails/yfjail'; "
+	    "q('param/1/name').value = 'host.hostname'; "
+	    "q('param/1/value').value = 'yf.example.org';");
+	shot("4h-yform-jail");
+	run("document.querySelector('form[data-form=ymf]').requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
+	    "textContent.includes('Created and committed'))", 60);
+	host_tool("grep -qx 'yfjail {' etc/jail.conf.d/yfjail.conf && grep -Eq "
+	    "'path = \"?/jails/yfjail\"?;' etc/jail.conf.d/yfjail.conf && grep "
+	    "-Eq 'host.hostname = \"?yf.example.org\"?;' "
+	    "etc/jail.conf.d/yfjail.conf",
+	    "the jail made from the generated form is not in its file");
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=ymf]')"));
+
+	/* Its entry from System's Models, read into the form. */
+	click_when("button.tab[data-arg=system]", 10);
+	click_when("button[data-act=tab][data-arg=\\'system/models\\']", 10);
+	click_when("button[data-act=yf-mod][data-arg=arcana-jails]", 30);
+	wait_js("document.querySelector('button[data-act=yf-edit][data-arg="
+	    "\\'arcana-jails|/arcana-jails:jails/jail|yfjail\\']')", 30);
+	shot("4h-yform-models");
+	click_when("button[data-act=yf-edit][data-arg=\\'arcana-jails|"
+	    "/arcana-jails:jails/jail|yfjail\\']", 30);
+	wait_js("(f => f && f.querySelector('[name=name]').value === 'yfjail' "
+	    "&& f.querySelector('[name=name]').readOnly && [...f."
+	    "querySelectorAll('textarea')].some(t => t.value === "
+	    "'yf.example.org'))(document.querySelector('form[data-form=ymf]'))",
+	    30);
+	run("const f = document.querySelector('form[data-form=ymf]'); "
+	    "const t = [...f.querySelectorAll('textarea')].find(t => t.value "
+	    "=== 'yf.example.org'); t.value = 'yf2.example.org'; "
+	    "f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
+	    "textContent.includes('Saved and committed'))", 60);
+	host_tool("grep -Eq 'host.hostname = \"?yf2.example.org\"?;' "
+	    "etc/jail.conf.d/yfjail.conf && grep -Eq 'path = \"?/jails/yfjail"
+	    "\"?;' etc/jail.conf.d/yfjail.conf", "the jail's entry edited by its "
+	    "generated form is not saved in its file");
+}
+
+ATF_TC_WITH_CLEANUP(pwa_yform_jail);
+ATF_TC_HEAD(pwa_yform_jail, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A jail made from the form arcana-jails' module generates, committed and found in its file; edited from System's Models");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_yform_jail, tc)
+{
+
+	prologue(tc, 1);
+	part_yform_jail();
+}
+ATF_TC_CLEANUP(pwa_yform_jail, tc)
+{
+
+	browser_stop();
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 
@@ -12985,5 +13083,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_forms_builder);
 	ATF_TP_ADD_TC(tp, pwa_forms_jails);
 	ATF_TP_ADD_TC(tp, pwa_forms_lanes);
+	ATF_TP_ADD_TC(tp, pwa_yform_jail);
 	return (atf_no_error());
 }

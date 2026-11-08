@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.404.4"
+#define	ARCW_VERSION		"0.407.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -523,6 +523,9 @@ int		 api_restconf(struct http_request *);
 int		 api_restconf_ylv(struct http_request *);
 int		 api_restconf_data(struct http_request *);
 int		 api_restconf_host(struct http_request *);
+/* ymodule.c: a module described for forms (/yang/<module>@<rev>.json). */
+int		 api_yang_module(struct http_request *);
+const char	*ymodule_json(const char *, const char *);
 /* l3nm.c: the services as L3NM, the console's own datastore. */
 bool		 l3nm_path(const char *);
 /* A module of the console's own datastore, which no host has. */

@@ -55,6 +55,9 @@ static const struct hsect {
 	{ "system", "kernel", "Kernel", "kernel", TAB_KERNEL, -1, NULL, NULL },
 	{ "system", "processes", "Processes", "processes", TAB_PROCESSES, -1,
 	    NULL, NULL },
+	{ "system", "models", "Models", "models", TAB_MODELS, -1, NULL,
+	    "Its YANG modules, each one's configuration edited by forms "
+	    "made from the module" },
 	{ "security", "general", "General", "security", TAB_SECURITY, -1, NULL,
 	    NULL },
 	{ "security", "ssh", "SSH", "ssh", TAB_SSH, -1, NULL, NULL },

@@ -80,8 +80,9 @@ token_readable(const char *path)
 	    3) == 0 || strncmp(path, CYANG_DATA "credentials",
 	    sizeof(CYANG_DATA) + 10) == 0)
 		return (false);
+	/* The modules described for forms too (ymodule.c). */
 	if (strcmp(path, "/restconf") == 0 || strncmp(path, "/restconf/",
-	    10) == 0)
+	    10) == 0 || strncmp(path, "/yang/", 6) == 0)
 		return (true);
 	return (strncmp(path, "/api/", 5) == 0 && strncmp(path,
 	    "/api/settings", 13) != 0 && strncmp(path, "/api/auth", 9) != 0 &&

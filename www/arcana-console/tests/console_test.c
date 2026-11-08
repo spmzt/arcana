@@ -21138,6 +21138,129 @@ ATF_TC_BODY(cyang_plugins, tc)
 	resp_free(&r);
 }
 
+/* The node of a module's description at path, below nodes, choices and
+ * cases passed through. */
+static const ucl_object_t *
+ym_node(const ucl_object_t *nodes, const char *path)
+{
+	const ucl_object_t	*n, *f, *v;
+	ucl_object_iter_t	 it = NULL;
+
+	while ((n = ucl_object_iterate(nodes, &it, true)) != NULL) {
+		if ((v = ucl_object_lookup(n, "path")) != NULL &&
+		    strcmp(ucl_object_tostring(v), path) == 0)
+			return (n);
+		if ((v = ucl_object_lookup(n, "children")) != NULL &&
+		    (f = ym_node(v, path)) != NULL)
+			return (f);
+		if ((v = ucl_object_lookup(n, "cases")) != NULL &&
+		    (f = ym_node(v, path)) != NULL)
+			return (f);
+	}
+	return (NULL);
+}
+
+static const char *
+ym_str(const ucl_object_t *o, const char *key)
+{
+	const ucl_object_t	*v;
+
+	v = o != NULL ? ucl_object_lookup_path(o, key) : NULL;
+	return (v != NULL ? ucl_object_tostring_forced(v) : NULL);
+}
+
+CONSOLE_TC(yang_module, "A module described for forms (4.8.3): the jail "
+    "list with its key, a leaf's type, an enumeration's values, the "
+    "descriptions; another revision 404, without a session 401, 304 by "
+    "its entity-tag")
+ATF_TC_BODY(yang_module, tc)
+{
+	struct authn		 a;
+	struct resp		 r;
+	const ucl_object_t	*jail, *n, *e;
+	char			 etag[128], hdr[192];
+	bool			 found;
+	ucl_object_iter_t	 it;
+
+	start(tc, 0, NULL);
+	http("GET", "/yang/arcana-jails@2026-10-14.json", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	enrol(&a);
+	http("GET", "/yang/arcana-jails@2026-10-14.json", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(r.json != NULL);
+	ATF_CHECK_STREQ("arcana-jails", ym_str(r.json, "name"));
+	ATF_CHECK_STREQ("urn:arcana:yang:arcana-jails", ym_str(r.json,
+	    "namespace"));
+	ATF_CHECK(ym_str(r.json, "description") != NULL &&
+	    strstr(ym_str(r.json, "description"), "jail.conf(5)") != NULL);
+	jail = ym_node(ucl_object_lookup(r.json, "nodes"),
+	    "/arcana-jails:jails/jail");
+	ATF_REQUIRE_MSG(jail != NULL, "no jail list: %.300s", r.body);
+	ATF_CHECK_STREQ("list", ym_str(jail, "kind"));
+	ATF_CHECK_STREQ("true", ym_str(jail, "config"));
+	ATF_CHECK_STREQ("name", ym_str(jail, "keys.0"));
+	/* Its key first among its children. */
+	ATF_CHECK_STREQ("name", ym_str(jail, "children.0.name"));
+	n = ym_node(ucl_object_lookup(jail, "children"),
+	    "/arcana-jails:jails/jail/boot");
+	ATF_CHECK_STREQ("boolean", ym_str(n, "type.base"));
+	ATF_CHECK(ym_str(n, "description") != NULL);
+	n = ym_node(ucl_object_lookup(jail, "children"),
+	    "/arcana-jails:jails/jail/param/value");
+	ATF_CHECK_STREQ("leaf-list", ym_str(n, "kind"));
+	ATF_CHECK_STREQ("string", ym_str(n, "type.base"));
+	/* State as config false; an enumeration's values, its typedef. */
+	n = ym_node(ucl_object_lookup(jail, "children"),
+	    "/arcana-jails:jails/jail/state");
+	ATF_CHECK_STREQ("false", ym_str(n, "config"));
+	ATF_CHECK_STREQ("enumeration", ym_str(n, "type.base"));
+	ATF_CHECK_STREQ("jail-state", ym_str(n, "typedef"));
+	found = false;
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup_path(n, "type.enum"),
+	    &it, true)) != NULL)
+		if (strcmp(ym_str(e, "name"), "stopped") == 0 &&
+		    strcmp(ym_str(e, "value"), "1") == 0 &&
+		    ym_str(e, "description") != NULL)
+			found = true;
+	ATF_CHECK_MSG(found, "no enum stopped = 1");
+	/* An action and its input; its output left out. */
+	n = ym_node(ucl_object_lookup(jail, "children"),
+	    "/arcana-jails:jails/jail/start");
+	ATF_CHECK_STREQ("action", ym_str(n, "kind"));
+	ATF_CHECK(ym_node(ucl_object_lookup(jail, "children"),
+	    "/arcana-jails:jails/jail/start/output") == NULL);
+	/* A leafref's path and target. */
+	n = ym_node(ucl_object_lookup(jail, "children"),
+	    "/arcana-jails:jails/jail/lne");
+	ATF_CHECK(ym_str(n, "type.leafref.path") != NULL);
+	ATF_CHECK_STREQ("/ietf-logical-network-element:logical-network-"
+	    "elements/logical-network-element/name", ym_str(n,
+	    "type.leafref.target"));
+	ATF_REQUIRE(resp_header(&r, "etag", etag, sizeof(etag)) != NULL);
+	resp_free(&r);
+	/* Asked again with its tag: not modified. */
+	snprintf(hdr, sizeof(hdr), "If-None-Match: %s\r\n", etag);
+	http_with("GET", "/yang/arcana-jails@2026-10-14.json", hdr, NULL, &r);
+	EXPECT(&r, 304);
+	resp_free(&r);
+	/* Another module. */
+	http("GET", "/yang/arcana-network@2026-10-29.json", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("arcana-network", ym_str(r.json, "name"));
+	resp_free(&r);
+	/* Another revision than the console's, a module it has not. */
+	http("GET", "/yang/arcana-jails@2020-01-01.json", NULL, &r);
+	EXPECT(&r, 404);
+	ATF_CHECK(strstr(r.body, "2026-10-14") != NULL);
+	resp_free(&r);
+	http("GET", "/yang/no-such-module@2020-01-01.json", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	/* The longest first: kyua starts them in this order. */
@@ -21304,5 +21427,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, cyang_sdwan);
 	ATF_TP_ADD_TC(tp, cyang_console);
 	ATF_TP_ADD_TC(tp, cyang_plugins);
+	ATF_TP_ADD_TC(tp, yang_module);
 	return (atf_no_error());
 }

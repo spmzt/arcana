@@ -48,6 +48,17 @@ rpc_url(char *buf, size_t len, const struct ycommit *yc, const char *rpc)
 	    "ietf-netconf:%s", yc->sid, rpc);
 }
 
+/* Where the host says the error is: its error-path, for a form to say
+ * it at its field. */
+static void
+errpath_of(struct ycommit *yc, const ucl_object_t *o)
+{
+	const char	*p;
+
+	p = jstr(o, "ietf-restconf:errors.error.0.error-path");
+	snprintf(yc->errpath, sizeof(yc->errpath), "%s", p != NULL ? p : "");
+}
+
 static void
 finish(struct ycommit *yc, int how)
 {
@@ -103,6 +114,8 @@ commit_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		const char	*tag = jstr(o,
 		    "ietf-restconf:errors.error.0.error-app-tag");
 
+		errpath_of(yc, o);
+
 		yc->busy = false;
 		yc->token[0] = '\0';
 		/* A warning the host stops at: offered to be accepted, where
@@ -155,6 +168,7 @@ edit_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	struct ycommit	*yc = arg;
 
 	if (status != 204 && status != 200 && status != 201) {
+		errpath_of(yc, o);
 		yc->busy = false;
 		snprintf(yc->note, sizeof(yc->note), "Not saved: %s", rc_why(o,
 		    err));
@@ -173,7 +187,7 @@ ycommit_save(struct ycommit *yc, const char *sid, const char *method,
 		return (false);
 	snprintf(yc->sid, sizeof(yc->sid), "%s", sid);
 	yc->busy = true;
-	yc->note[0] = yc->tag[0] = yc->accepted[0] = '\0';
+	yc->note[0] = yc->tag[0] = yc->accepted[0] = yc->errpath[0] = '\0';
 	api(method, url, body, edit_cb, yc);
 	render();
 	return (true);

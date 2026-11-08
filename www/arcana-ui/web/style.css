@@ -5769,3 +5769,18 @@ section.usampling form.usample { margin-top: .5rem; }
 
 /* pkg clean's box: each choice's explanation under its words. */
 form[data-form=pkg-clean] label.toggle small { display: block; margin-top: .1rem; color: var(--dim); }
+/* A form made from a host's YANG module (yform.c): containers, lists and
+ * choices as fieldsets, each list's entries inside its own. */
+form.yform fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: .4rem .7rem .6rem; margin: .6rem 0; min-width: 0; }
+form.yform fieldset legend { padding: 0 .3rem; font-size: .8rem; }
+form.yform fieldset.yf-entry legend .icon { margin-left: .3rem; }
+form.yform label.yf-field small { display: block; }
+form.yform .yf-type code { font-size: .7rem; word-break: break-all; }
+form.yform .yf-req { color: var(--red); }
+form.yform small.yf-err { display: block; padding: .25rem .6rem; }
+form.yform label.check { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: .45rem; }
+form.yform label.check input { width: auto; margin: 0; flex: none; }
+form.yform label.check small { flex-basis: 100%; }
+section.yf-models .yf-mlist { margin: .9rem 0; }
+section.yf-models .yf-mlist h4 { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; margin: 0 0 .3rem; }
+section.yf-models .yf-mlist h4 .dim { font-weight: normal; font-size: .75rem; word-break: break-all; }

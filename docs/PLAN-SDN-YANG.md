@@ -2594,6 +2594,63 @@ whose first part is served.
 - 4.8.3 P: forms generated from the yang-library for the Arcana
   modules (the schema page's renderer reused); check: a jail made
   from a generated form.
+- 4.8.3 done (console 0.406.0, 0.407.0; console ymodule.c, ydescgen.c;
+  page yform.c): a module described for forms, `GET
+  /yang/<module>@<revision>.json`, the module and revision a host's
+  YANG library names (a token that reads may read it, for the app's
+  forms, 4.4.3).  Made of the console's schema tables, what RESTCONF
+  checks a change by: each node's path (RFC 9595's schema-node path),
+  kind, config, mandatory, presence, keys, min- and max-elements,
+  ordered-by, default, units, status; its type's base (a leafref its
+  target's), range and length, patterns (as written and as the POSIX
+  ERE the tables have), fraction-digits, enums and bits, an
+  identityref's identities (those derived from its bases), a leafref's
+  path and target, a union's members; choices and cases rebuilt from
+  each node's; actions and their input, outputs and notifications left
+  out; what the module augments into others' trees beside.  What the
+  tables have not, ydescgen writes at the build of the same modules
+  (libyang, the features cblink-gen is given): each description, the
+  order the module writes its nodes in (the tables keep them by SID:
+  keys first, then that order), a leaf's typedef, the enums', the
+  identities' and the modules' descriptions, of what arcana-* modules
+  define.  Made once a module while the console runs; its entity-tag
+  the revision and the console's version (304 on If-None-Match); a
+  revision the console has not 404, saying the one it has.  Decided:
+  no cblink change (descriptions in the generated tables would grow
+  every program that links them, the agent's too); a console path, not
+  RFC 8040's yang-library schema leaf, which names a module's YANG
+  text.  The page's generic form (yform.c), of a container or a list's
+  entry, new or there (read from running, content=config): keys first
+  and fixed in an entry there, the mandatory marked; a boolean or an
+  empty a checkbox (false sent only where it was set or its default is
+  true); an enumeration or an identityref a select (the identities of
+  modules the host's library has); an integer a number input with its
+  range; the others text with type, range, length, pattern, units and
+  default said; a leaf-list one value a line; containers as fieldsets
+  (a presence one ticked there); nested lists their entries added and
+  removed; a choice a select of its cases; config false and the nodes
+  of modules the host's library has not left out; each description
+  the help under its field.  Checked first: mandatory, range, length,
+  pattern (regcomp(3) of the ERE), an enum's name, a union's members in
+  order; then RFC 7951 JSON (numbers of 32 bits or fewer, strings
+  beyond), a new entry POSTed into the candidate's parent (409 where
+  it is), an entry there or a container PUT, through ycommit.c's
+  confirmed commit; ycommit keeps the error's error-path, said at its
+  field (the entries by their keys' predicates).  Where it shows: the
+  Jails tab's "New jail (from its model)", arcana-jails' jail; the
+  System tab's Models, the host's library as a table, an Arcana
+  module's configuration lists as tables of their entries (Edit, New)
+  and its containers with leaves of their own (Edit).  Check: pwa_test
+  pwa_yform_jail (the key left out said at its field and nothing sent;
+  a jail with two parameters as entries of param created and found in
+  jail.conf.d; its entry from Models read into the form, its key
+  fixed, a parameter changed and saved); console_test yang_module (the
+  jail list with its key first, a boolean's and a leaf-list's types,
+  state config false with jail-state's enum values and descriptions,
+  an action without its output, a leafref's target, 304, another
+  revision and an unknown module 404, 401 without a session).  Left:
+  a leafref's values offered from its target; a list of several keys
+  edited from its parent's form only; bits as text.
 - 4.9.1 D: the API page from the RESTCONF description; openapi.yaml
   retired or generated; the book's chapters.
   Done (docs/restconf-modules.py; arcana-docs): the book's API is
