@@ -2432,6 +2432,68 @@ view_settings(struct html *h)
 }
 
 /*
+ * How pkg reaches the repository (pkg -4, -6), as a field of a box that
+ * runs pkg; the choice kept as the page's default (app.pkg.ip).
+ */
+static void
+pkg_net_select(struct html *h)
+{
+
+	h_fmt(h, "<label>Reach the repository over<select name=\"pkg_ip\">"
+	    "<option value=\"0\"%s>IPv4 or IPv6</option><option value=\"4\"%s>"
+	    "IPv4 only (pkg -4)</option><option value=\"6\"%s>IPv6 only "
+	    "(pkg -6)</option></select><small>Kept for the next time.</small>"
+	    "</label>", app.pkg.ip == 0 ? " selected" : "", app.pkg.ip == 4 ?
+	    " selected" : "", app.pkg.ip == 6 ? " selected" : "");
+}
+
+/*
+ * pkg clean asked in one box: what (the packages no longer needed, or
+ * every one), and where (this host, its running jails, or both; the
+ * jail shown, when it is a jail's page).
+ */
+static void
+pkg_clean_box(struct html *h, struct server *s)
+{
+	const ucl_object_t	*j;
+	ucl_object_iter_t	 it = NULL;
+	int			 n = 0;
+
+	while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
+	    "jails"), &it, true)) != NULL)
+		if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+		    "running") == 0)
+			n++;
+	h_raw(h, "<form data-form=\"pkg-clean\"><h2>Clean the package cache"
+	    "</h2><p>What is installed stays: only downloaded packages are "
+	    "deleted, and downloaded again when needed.</p><fieldset><legend>"
+	    "What to delete</legend><label class=\"toggle\"><input type=\""
+	    "radio\" name=\"all\" value=\"0\" checked><span>What is no "
+	    "longer needed <code>pkg clean</code><small>Packages no "
+	    "installed version needs, or that the repository no longer has."
+	    "</small></span></label><label class=\"toggle\"><input type=\""
+	    "radio\" name=\"all\" value=\"1\"><span>Every downloaded package "
+	    "<code>pkg clean -a</code><small>The whole cache; upgrades "
+	    "download again.</small></span></label></fieldset>");
+	if (app.pkg.jail[0] != '\0') {
+		h_raw(h, "<p>In the jail <b>");
+		h_txt(h, app.pkg.jail);
+		h_raw(h, "</b>.</p>");
+		return;
+	}
+	h_raw(h, "<fieldset><legend>Where</legend><label class=\"toggle\">"
+	    "<input type=\"checkbox\" name=\"host\" checked><span>This host, ");
+	h_txt(h, s->name);
+	h_fmt(h, "</span></label><label class=\"toggle\"><input type=\""
+	    "checkbox\" name=\"jails\"%s><span>Its running jails%s</span>"
+	    "</label></fieldset>", n == 0 ? " disabled" : "", n == 0 ?
+	    " <small>it has no running jail</small>" : "");
+	if (n > 0)
+		h_fmt(h, "<p class=\"dim\">The jails: %d, a job each in one batch; "
+		    "one without pkg, or whose pkg refuses, fails alone.</p>", n);
+}
+
+/*
  * Which of pkg's repositories there to take packages from (pkg -r),
  * the packages read's: any (as pkg is configured), or one alone,
  * enabled or not.  Nothing when the read named none.  Chosen as it
@@ -2500,6 +2562,8 @@ modal(struct html *h)
 			    "autocomplete=\"off\" spellcheck=\"false\" "
 			    "autofocus></label>");
 		}
+		if (c->pkgnet)
+			pkg_net_select(h);
 		/* The console's update: what it brings. */
 		if (strcmp(c->act, "do-agent-build") == 0 && strcmp(c->value,
 		    "console") == 0 && strcmp(app.notes_for, "console") == 0)
@@ -2790,8 +2854,20 @@ modal(struct html *h)
 		    "(its users and groups among them) are kept; the packages' "
 		    "versions left beside them (.pkgnew) are named in the "
 		    "job's trace, to merge by hand. Restart the "
-		    "jail after%s.</p>", app.pkg.ip == 4 ? "; over IPv4" :
-		    app.pkg.ip == 6 ? "; over IPv6" : "");
+		    "jail after.</p>");
+		pkg_net_select(h);
+		break;
+	case MODAL_PKG_CLEAN:
+		if (cur_server() == NULL)
+			return;
+		pkg_clean_box(h, cur_server());
+		break;
+	case MODAL_PKG_NET:
+		h_raw(h, "<form data-form=\"pkg-net\"><h2>How pkg reaches the "
+		    "repository</h2><p>For what this page asks of pkg on any "
+		    "host or jail: reading what is newer, installing, "
+		    "upgrading. The boxes that run pkg ask it again.</p>");
+		pkg_net_select(h);
 		break;
 	case MODAL_PKG_INSTALL:
 		if (cur_server() == NULL)
@@ -2807,16 +2883,15 @@ modal(struct html *h)
 			h_txt(h, cur_server()->name);
 			h_raw(h, "</b>");
 		}
-		h_fmt(h, ", from its repository%s, with what they need.</p>"
+		h_raw(h, ", from its repository, with what they need.</p>"
 		    "<label>Packages<input name=\"names\" spellcheck=\"false\" "
 		    "autocomplete=\"off\" placeholder=\"strongswan "
 		    "bird3\" autofocus><small>Their names, with spaces "
 		    "between them.</small></label><label class=\"toggle\"><input "
 		    "type=\"checkbox\" name=\"anyos\"><span>Also packages built "
-		    "for a newer FreeBSD <em>IGNORE_OSVERSION</em></span></label>",
-		    app.pkg.ip == 4 ? ", over IPv4" : app.pkg.ip == 6 ?
-		    ", over IPv6" : "");
+		    "for a newer FreeBSD <em>IGNORE_OSVERSION</em></span></label>");
 		pkg_repo_select(h, "install");
+		pkg_net_select(h);
 		break;
 	case MODAL_LOOKUP:
 		if (cur_server() == NULL)
@@ -3145,6 +3220,12 @@ modal(struct html *h)
 			break;
 		case MODAL_PKG_INSTALL:
 			h_raw(h, "<button class=\"primary\">Install</button>");
+			break;
+		case MODAL_PKG_CLEAN:
+			h_raw(h, "<button class=\"primary\">Clean</button>");
+			break;
+		case MODAL_PKG_NET:
+			h_raw(h, "<button class=\"primary\">Save</button>");
 			break;
 		case MODAL_JAIL_BASE:
 			h_fmt(h, "<button class=\"danger\">%s</button>",
@@ -4015,24 +4096,19 @@ view_packages(struct html *h, struct server *s)
 	    "data-arg=\"1\" title=\"What the repository has newer versions "
 	    "of: it is asked\">Upgrades</button></nav>", app.pkg.mode == 0 ?
 	    " on" : "", app.pkg.mode == 1 ? " on" : "");
-	/* How the repository is reached: pkg -4, -6, or either. */
-	h_fmt(h, "<nav class=\"sub\" title=\"How pkg reaches the repository: "
-	    "over IPv4 only (pkg -4), IPv6 only (pkg -6), or either\">"
-	    "<button class=\"ghost small%s\" data-act=\"pkg-ip\" data-arg=\"0"
-	    "\">either</button><button class=\"ghost small%s\" data-act=\""
-	    "pkg-ip\" data-arg=\"4\">IPv4</button><button class=\"ghost "
-	    "small%s\" data-act=\"pkg-ip\" data-arg=\"6\">IPv6</button></nav>",
-	    app.pkg.ip == 0 ? " on" : "", app.pkg.ip == 4 ? " on" : "",
-	    app.pkg.ip == 6 ? " on" : "");
+	/* How the repository is reached: one button, saying it, a box to
+	 * change it; the boxes that run pkg ask it too. */
+	h_fmt(h, "<button class=\"ghost small\" data-act=\"pkg-net-ask\" "
+	    "title=\"How pkg reaches the repository: IPv4 or IPv6, IPv4 only "
+	    "(pkg -4), IPv6 only (pkg -6)\">Network: %s</button>",
+	    app.pkg.ip == 4 ? "IPv4 only" : app.pkg.ip == 6 ? "IPv6 only" :
+	    "either");
 	h_raw(h, "<button class=\"ghost small\" data-act=\"pkg-install\" "
 	    "title=\"pkg install: packages added\">Install…</button>");
-	/* The cache of downloaded packages, cleaned. */
-	h_raw(h, "<button class=\"ghost small\" data-act=\"pkg-clean\" "
-	    "data-arg=\"\" title=\"pkg clean: the downloaded packages no "
-	    "longer needed deleted\">Clean</button><button class=\"ghost "
-	    "small\" data-act=\"pkg-clean\" data-arg=\"all\" title=\"pkg "
-	    "clean -a: all the downloaded packages deleted\">Clean all"
-	    "</button>");
+	/* The cache of downloaded packages: what, and where, in a box. */
+	h_raw(h, "<button class=\"ghost small\" data-act=\"pkg-clean-ask\" "
+	    "title=\"pkg clean: the cache of downloaded packages, of this "
+	    "host, its jails, or both\">Clean…</button>");
 	/* A jail's base system by pkg: to pkgbase while it is not on it;
 	 * once it is, to a newer release.  The read says which. */
 	if (app.pkg.jail[0] != '\0' && mine && jget(app.pkg.data, "pkgbase") !=
@@ -4048,9 +4124,6 @@ view_packages(struct html *h, struct server *s)
 	/* Of every running jail at once, from the host's page. */
 	if (app.pkg.jail[0] == '\0')
 		h_raw(h, "<button class=\"ghost small\" data-act=\""
-		    "pkg-clean-jails\" data-arg=\"\" title=\"pkg clean in "
-		    "every running jail, one batch of a job each\">Clean the "
-		    "jails</button><button class=\"ghost small\" data-act=\""
 		    "pkg-upgrade-jails\" title=\"pkg upgrade -y in every running "
 		    "jail, one batch of a job each\">Upgrade the jails"
 		    "</button>");

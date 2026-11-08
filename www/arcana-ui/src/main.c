@@ -667,6 +667,80 @@ confirm(const char *title, const char *body, const char *button,
 	app.modal_error[0] = '\0';
 }
 
+/* How pkg reaches the repository, as a box that runs pkg says it:
+ * kept as the page's default. */
+static void
+pkg_net_take(const ucl_object_t *f)
+{
+	const char	*v;
+
+	if ((v = jstr(f, "pkg_ip")) == NULL)
+		return;
+	app.pkg.ip = atoi(v) == 4 ? 4 : atoi(v) == 6 ? 6 : 0;
+	arc_store_set("arc_pkg_ip", app.pkg.ip == 4 ? "4" : app.pkg.ip == 6 ?
+	    "6" : "");
+}
+
+/* pkg clean, as its box asks it: of the jail shown, or of the host,
+ * its running jails, or both; every package or what is not needed. */
+static void
+pkg_clean_form(struct server *s, const ucl_object_t *f)
+{
+	const ucl_object_t	*j;
+	ucl_object_iter_t	 it = NULL;
+	struct queued		*q;
+	const char		*all;
+	bool			 host, jails;
+	char			*qj;
+	int			 n, max;
+
+	all = jstr(f, "all") != NULL && strcmp(jstr(f, "all"), "1") == 0 ?
+	    ",\"force\":true" : "";
+	host = app.pkg.jail[0] != '\0' || jbool(f, "host");
+	jails = app.pkg.jail[0] == '\0' && jbool(f, "jails");
+	if (!host && !jails) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "Where: this "
+		    "host, its jails, or both");
+		return;
+	}
+	max = 1 + (int)ucl_array_size(jget(s->list, "jails"));
+	if ((q = calloc((size_t)max, sizeof(*q))) == NULL)
+		abort();
+	n = 0;
+	if (host) {
+		qj = json_quote(app.pkg.jail);
+		if (asprintf(&q[n].json, "{\"kind\":\"pkg-clean\"%s%s%s}",
+		    app.pkg.jail[0] != '\0' ? ",\"jail\":" : "",
+		    app.pkg.jail[0] != '\0' ? qj : "", all) == -1)
+			abort();
+		free(qj);
+		snprintf(q[n].title, sizeof(q[n].title), "pkg clean%s%s%s",
+		    all[0] != '\0' ? " -a" : "", app.pkg.jail[0] != '\0' ?
+		    " in " : "", app.pkg.jail);
+		snprintf(q[n].target, sizeof(q[n].target), "%s", app.pkg.jail);
+		n++;
+	}
+	while (jails && n < max && (j = ucl_object_iterate(jget(s->list,
+	    "jails"), &it, true)) != NULL) {
+		if (jstr(j, "name") == NULL || jstr(j, "state") == NULL ||
+		    strcmp(jstr(j, "state"), "running") != 0)
+			continue;
+		qj = json_quote(jstr(j, "name"));
+		if (asprintf(&q[n].json, "{\"kind\":\"pkg-clean\",\"jail\":%s%s}",
+		    qj, all) == -1)
+			abort();
+		free(qj);
+		snprintf(q[n].title, sizeof(q[n].title), "pkg clean%s in %s",
+		    all[0] != '\0' ? " -a" : "", jstr(j, "name"));
+		snprintf(q[n].target, sizeof(q[n].target), "%s", jstr(j, "name"));
+		n++;
+	}
+	app.modal = MODAL_NONE;
+	if (n > 0)
+		job_send_many(s, q, n, JOB_PACKAGES);
+	free(q);
+}
+
 /* The service drawer closes: its configuration goes. */
 static void
 close_service(void)
@@ -734,6 +808,18 @@ submit_form(const char *form, const ucl_object_t *f)
 	bool		 dry;
 	int		 i;
 
+	if (strcmp(form, "pkg-clean") == 0 && cur_server() != NULL) {
+		pkg_clean_form(cur_server(), f);
+		return;
+	}
+	if (strcmp(form, "pkg-net") == 0) {
+		pkg_net_take(f);
+		app.modal = MODAL_NONE;
+		return;
+	}
+	if ((strcmp(form, "pkg-install") == 0 || strcmp(form, "jail-base") ==
+	    0 || strcmp(form, "confirm") == 0))
+		pkg_net_take(f);
 	if (strcmp(form, "pkg-install") == 0 && cur_server() != NULL) {
 		struct html	 b;
 		const char	*p;
@@ -986,6 +1072,7 @@ submit_form(const char *form, const ucl_object_t *f)
 			app.pkg.names = strdup(names);
 			confirm("Upgrade packages", cb, "Upgrade", true, "",
 			    "do-pkg-upgrade", "some", "");
+			app.confirm.pkgnet = true;
 		}
 		else
 			dispatch("pkg-upgrade-all", "", "");
@@ -1343,93 +1430,12 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.pkg.base_up = strcmp(arg, "upgrade") == 0;
 		app.modal = MODAL_JAIL_BASE;
 		app.modal_error[0] = '\0';
-	} else if (strcmp(act, "pkg-clean") == 0 && s != NULL) {
-		snprintf(body, sizeof(body), "pkg clean%s on %s%s%s: %s",
-		    arg[0] != '\0' ? " -a" : "", s->name, app.pkg.jail[0] !=
-		    '\0' ? ", in jail " : "", app.pkg.jail, arg[0] != '\0' ?
-		    "every downloaded package in the cache is deleted; what is "
-		    "installed stays, and what is upgraded later is downloaded "
-		    "again." : "the downloaded packages that are no longer "
-		    "needed, or that the repository no longer has, are "
-		    "deleted; what is installed stays.");
-		confirm(arg[0] != '\0' ? "Clean all the package cache" :
-		    "Clean the package cache", body, "Clean", arg[0] != '\0',
-		    "", "do-pkg-clean", arg, "");
-	} else if (strcmp(act, "do-pkg-clean") == 0 && s != NULL) {
-		char	*json, *qj, title[300];
-
-		qj = json_quote(app.pkg.jail);
-		if (asprintf(&json, "{\"kind\":\"pkg-clean\"%s%s%s}",
-		    app.pkg.jail[0] != '\0' ? ",\"jail\":" : "",
-		    app.pkg.jail[0] != '\0' ? qj : "", arg[0] != '\0' ?
-		    ",\"force\":true" : "") == -1)
-			abort();
-		free(qj);
-		snprintf(title, sizeof(title), "pkg clean%s%s%s", arg[0] != '\0' ?
-		    " -a" : "", app.pkg.jail[0] != '\0' ? " in " : "",
-		    app.pkg.jail);
-		/* The text is the queue's now. */
-		job_send(s, json, title, JOB_PACKAGES, app.pkg.jail);
-	} else if (strcmp(act, "pkg-clean-jails") == 0 && s != NULL) {
-		const ucl_object_t	*j;
-		ucl_object_iter_t	 it;
-		int			 n;
-
-		n = 0;
-		it = NULL;
-		while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
-		    "jails"), &it, true)) != NULL)
-			if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
-			    "running") == 0)
-				n++;
-		if (n == 0) {
-			toast(true, "%s has no running jail", s->name);
-			return;
-		}
-		snprintf(body, sizeof(body), "pkg clean%s in each of the %d "
-		    "running jails of %s, each a job of its own in one batch: "
-		    "%s A jail without pkg, or whose pkg refuses, fails alone; "
-		    "the others are cleaned all the same. The host's own cache "
-		    "is not touched.", arg[0] != '\0' ? " -a" : "", n, s->name,
-		    arg[0] != '\0' ? "every downloaded package in their caches "
-		    "is deleted." : "the downloaded packages no longer needed, "
-		    "or no longer in the repository, are deleted.");
-		confirm(arg[0] != '\0' ? "Clean all the caches of the jails" :
-		    "Clean the caches of the jails", body, "Clean", arg[0] !=
-		    '\0', "", "do-pkg-clean-jails", arg, "");
-	} else if (strcmp(act, "do-pkg-clean-jails") == 0 && s != NULL) {
-		const ucl_object_t	*j;
-		ucl_object_iter_t	 it;
-		struct queued		*q;
-		char			*qj;
-		int			 n;
-
-		n = (int)ucl_array_size(jget(s->list, "jails"));
-		if (n == 0 || (q = calloc((size_t)n, sizeof(*q))) == NULL)
-			return;
-		n = 0;
-		it = NULL;
-		while ((j = ucl_object_iterate(jget(s->list, "jails"), &it,
-		    true)) != NULL) {
-			if (jstr(j, "name") == NULL || jstr(j, "state") ==
-			    NULL || strcmp(jstr(j, "state"), "running") != 0)
-				continue;
-			qj = json_quote(jstr(j, "name"));
-			if (asprintf(&q[n].json, "{\"kind\":\"pkg-clean\","
-			    "\"jail\":%s%s}", qj, arg[0] != '\0' ?
-			    ",\"force\":true" : "") == -1)
-				abort();
-			free(qj);
-			snprintf(q[n].title, sizeof(q[n].title), "pkg clean%s "
-			    "in %s", arg[0] != '\0' ? " -a" : "", jstr(j,
-			    "name"));
-			snprintf(q[n].target, sizeof(q[n].target), "%s",
-			    jstr(j, "name"));
-			n++;
-		}
-		if (n > 0)
-			job_send_many(s, q, n, JOB_PACKAGES);
-		free(q);
+	} else if (strcmp(act, "pkg-clean-ask") == 0 && s != NULL) {
+		app.modal = MODAL_PKG_CLEAN;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "pkg-net-ask") == 0) {
+		app.modal = MODAL_PKG_NET;
+		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "pkg-upgrade-jails") == 0 && s != NULL) {
 		const ucl_object_t	*j;
 		ucl_object_iter_t	 it;
@@ -1455,6 +1461,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "touched.", n, s->name);
 		confirm("Upgrade the jails' packages", body, "Upgrade", true, "",
 		    "do-pkg-upgrade-jails", "", "");
+		app.confirm.pkgnet = true;
 	} else if (strcmp(act, "do-pkg-upgrade-jails") == 0 && s != NULL) {
 		const ucl_object_t	*j;
 		ucl_object_iter_t	 it;
@@ -1476,10 +1483,11 @@ dispatch(const char *act, const char *arg, const char *value)
 			/* From the repository chosen for that jail, if one. */
 			qr = json_quote(pkg_repo_kept(s, jstr(j, "name"), "upgrade"));
 			if (asprintf(&q[n].json, "{\"kind\":\"pkg-upgrade\","
-			    "\"jail\":%s%s%s}", qj, pkg_repo_kept(s, jstr(j, "name"),
+			    "\"jail\":%s%s%s%s}", qj, pkg_repo_kept(s, jstr(j, "name"),
 			    "upgrade")[0] != '\0' ? ",\"pkg_repo\":" : "",
 			    pkg_repo_kept(s, jstr(j, "name"), "upgrade")[0] != '\0' ?
-			    qr : "") == -1)
+			    qr : "", app.pkg.ip == 4 ? ",\"pkg_ip\":4" : app.pkg.ip ==
+			    6 ? ",\"pkg_ip\":6" : "") == -1)
 				abort();
 			free(qj);
 			free(qr);
@@ -1502,10 +1510,6 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.pkg.error[0] = '\0';
 		app.pkg.loading = false;
 		refresh_packages(s, false);
-	} else if (strcmp(act, "pkg-ip") == 0) {
-		app.pkg.ip = atoi(arg) == 4 ? 4 : atoi(arg) == 6 ? 6 : 0;
-		arc_store_set("arc_pkg_ip", app.pkg.ip == 4 ? "4" : app.pkg.ip ==
-		    6 ? "6" : "");
 	} else if (strcmp(act, "pkg-upgrade-all") == 0 && s != NULL) {
 		snprintf(body, sizeof(body), "pkg upgrade -y %s%s: every "
 		    "package with a newer version in %s%s is replaced; services "
@@ -1514,6 +1518,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "the repository " : "the repository", app.pkg.repo);
 		confirm("Upgrade all packages", body, "Upgrade", true, "",
 		    "do-pkg-upgrade", "", "");
+		app.confirm.pkgnet = true;
 	} else if (strcmp(act, "do-pkg-upgrade") == 0 && s != NULL) {
 		pkg_upgrade(s, strcmp(arg, "some") == 0 ? app.pkg.names : NULL,
 		    false, false);

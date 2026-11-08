@@ -1546,14 +1546,22 @@ part_hosts(void)
 	    "'aria2') && r.textContent.includes('by hand'))", 20);
 	ATF_CHECK(system("grep -q '^query ' pkg.log") == 0);
 	shot("6b-installed");
-	/* The cache cleaned, all of it: asked first, then a job. */
-	run("document.querySelector('button[data-act=pkg-clean][data-arg=all]')"
-	    ".click()");
-	wait_js("document.querySelector('form[data-form=confirm]') && document."
-	    "querySelector('.modal').textContent.includes('every downloaded "
-	    "package')", 5);
-	run("document.querySelector('form[data-form=confirm]')."
-	    "requestSubmit();");
+	/* The cache cleaned, all of it: what and where asked in one box.
+	 * No jail runs here: their choice is off, and said why; nothing
+	 * chosen to clean is refused. */
+	run("document.querySelector('button[data-act=pkg-clean-ask]').click()");
+	wait_js("document.querySelector('form[data-form=pkg-clean]')", 5);
+	shot("6b-clean");
+	ATF_CHECK(js_true("document.querySelector('form[data-form=pkg-clean] "
+	    "input[name=jails]').disabled && document.querySelector('.modal')"
+	    ".textContent.includes('no running jail')"));
+	run("const f = document.querySelector('form[data-form=pkg-clean]'); "
+	    "f.host.checked = false; f.requestSubmit();");
+	wait_js("document.querySelector('.modal').textContent.includes("
+	    "'Where: this host')", 5);
+	run("const f = document.querySelector('form[data-form=pkg-clean]'); "
+	    "f.host.checked = true; f.querySelector('input[name=all][value=\"1\"]')"
+	    ".checked = true; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q '^clean -ay$' pkg.log "
 	    "2>/dev/null") != 0; i++)
@@ -1578,19 +1586,18 @@ part_hosts(void)
 	run("document.querySelector('.dock > header').click()");
 	/* Of every running jail at once: none runs here, which is said,
 	 * and nothing is asked. */
-	run("document.querySelector('button[data-act=pkg-clean-jails]').click()");
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('has no running jail'))", 5);
-	ATF_CHECK(js_true("!document.querySelector('form[data-form=confirm]')"));
-	run("document.querySelectorAll('.toast').forEach(t => t.remove())");
 	run("document.querySelector('button[data-act=pkg-upgrade-jails]')"
 	    ".click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('has no running jail'))", 5);
 	ATF_CHECK(js_true("!document.querySelector('form[data-form=confirm]')"));
-	/* Over IPv6 only: pkg -6, kept in the browser. */
-	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"6\"]')"
-	    ".click()");
+	/* Over IPv6 only: pkg -6, chosen in its box, kept in the browser. */
+	run("document.querySelector('button[data-act=pkg-net-ask]').click()");
+	wait_js("document.querySelector('form[data-form=pkg-net]')", 5);
+	run("const f = document.querySelector('form[data-form=pkg-net]'); "
+	    "f.pkg_ip.value = '6'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=pkg-net-ask]')"
+	    ".textContent.includes('IPv6 only')", 5);
 	run("document.querySelector('button[data-act=pkg-mode][data-arg=\"1\"]')"
 	    ".click()");
 	/* The pending read is refused by the newer repository: asked once
@@ -1628,8 +1635,12 @@ part_hosts(void)
 	    "o.textContent.includes('ignoring OSVERSION'))", 10);
 	run("document.querySelector('.dock > header').click()");
 	ATF_REQUIRE(system("rm newer-os && mv pending.keep pending") == 0);
-	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"0\"]')"
-	    ".click()");
+	run("document.querySelector('button[data-act=pkg-net-ask]').click()");
+	wait_js("document.querySelector('form[data-form=pkg-net]')", 5);
+	run("const f = document.querySelector('form[data-form=pkg-net]'); "
+	    "f.pkg_ip.value = '0'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=pkg-net-ask]')"
+	    ".textContent.includes('either')", 5);
 	/* From one of pkg's repositories alone: pkg upgrade -r. */
 	run("document.querySelector('button[data-act=pkg-check]').click()");
 	wait_js("[...document.querySelectorAll('select[name=repo] option')]"

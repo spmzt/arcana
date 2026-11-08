@@ -587,10 +587,11 @@ op_trace_fetch(struct op *op)
 }
 
 /*
- * A jail's base by pkg refused for allow.chflags (pkg sets the base's
- * files' flags): asked whether to allow it on the running jail alone,
- * not in its file and not in safe mode, then the same job again once
- * that is done.
+ * A job of pkg's in a jail refused for allow.chflags (pkg sets the
+ * base's files' flags: a conversion to pkgbase, or an upgrade or an
+ * install of base packages in a jail on it): asked whether to allow it
+ * on the running jail alone, not in its file and not in safe mode, then
+ * the same job again once that is done.
  */
 static struct {
 	char	*again;		/* the job to send again */
@@ -615,15 +616,22 @@ chflags_after(struct op *o, bool ok, const char *err)
 			free(again);
 			return;
 		}
-		snprintf(title, sizeof(title), "jail %s: base by pkg, again "
+		snprintf(title, sizeof(title), "jail %s: pkg again "
 		    "(allow.chflags now)", chf.jail);
 		job_send(s, again, title, JOB_PACKAGES, chf.jail);
 		return;
 	}
 	if (ok || err == NULL || strstr(err, "allow.chflags") == NULL ||
-	    o->again == NULL || strstr(o->again, "\"kind\":\"jail-base\"") ==
-	    NULL || (j = json_parse(o->again)) == NULL)
+	    o->again == NULL || (strstr(o->again, "\"kind\":\"jail-base\"") ==
+	    NULL && strstr(o->again, "\"kind\":\"pkg-upgrade\"") == NULL &&
+	    strstr(o->again, "\"kind\":\"pkg-install\"") == NULL) ||
+	    (j = json_parse(o->again)) == NULL)
 		return;
+	/* A jail's alone: the host's own pkg is not refused so. */
+	if (jstr(j, "jail") == NULL || jstr(j, "jail")[0] == '\0') {
+		ucl_object_unref(j);
+		return;
+	}
 	free(chf.again);
 	chf.again = strdup(o->again);
 	snprintf(chf.sid, sizeof(chf.sid), "%s", o->sid);
@@ -2641,6 +2649,7 @@ osversion_ask(const char *err, bool dry_run, bool read)
 	confirm("Packages for a newer FreeBSD", body, dry_run ? "Dry run "
 	    "anyway" : "Upgrade anyway", true, "", dry_run ? "do-pkg-dry-anyos" :
 	    "do-pkg-anyos", app.pkg.names != NULL ? "some" : "", "");
+	app.confirm.pkgnet = true;
 }
 
 static const char *const pkg_top_map[] = { "pkgbase", "pkgbase",

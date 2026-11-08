@@ -524,6 +524,8 @@ enum modal {
 	MODAL_UGROUP,		/* a group of users: its roles, its members */
 	MODAL_PKG_INSTALL,
 	MODAL_JAIL_BASE,
+	MODAL_PKG_CLEAN,
+	MODAL_PKG_NET,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
 	MODAL_STORAGE,
@@ -541,6 +543,7 @@ struct confirm {
 	char		 act[64];	/* action to run on confirm */
 	char		 arg[256];
 	char		 value[512];
+	bool		 pkgnet;	/* asks how pkg reaches the repository */
 	int		 fib;		/* if-set: the interface's tables now, */
 	int		 tunnelfib;	/* or -1 unknown */
 };

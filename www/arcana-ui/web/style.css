@@ -5766,3 +5766,6 @@ section.ra { margin: 1rem 0; }
 /* A host's Monitoring tab: its plots, then how it is sampled. */
 section.hutil section.ucard h4 .uname { cursor: default; color: inherit; }
 section.usampling form.usample { margin-top: .5rem; }
+
+/* pkg clean's box: each choice's explanation under its words. */
+form[data-form=pkg-clean] label.toggle small { display: block; margin-top: .1rem; color: var(--dim); }
