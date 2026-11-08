@@ -149,3 +149,24 @@ script's line), `firewall_script` in Arcana's file following them.
   `loader.conf` appended.
 - Pre-1.0, no compatibility: an older agent does not know `loader.conf`
   as a file's name; the map's tunables read both names.
+
+## Where Arcana's own file cannot work
+
+`/etc/rc` reads `rc_conf_files` once, at its start, before the local
+filesystems are mounted, and does not read them again.  On a host whose
+`/usr/local` is a filesystem of its own (a ZFS dataset), Arcana's own
+file is missed for the whole boot: every variable in it, the agent's
+`arcana_agent_listen` too, which leaves the agent on its local socket
+until the service is restarted by hand.  So there:
+
+- `arcana-agent:agent/config-files/arcana-at-boot` is false (the
+  nearest existing directory of the file's is on another device than
+  `/`);
+- in mode `arcana`, a commit that would write Arcana's file is refused
+  with `rc-conf-not-at-boot`, which no acceptance passes, and so is a
+  switch to `arcana`;
+- the switch to the system's files stays offered, and is the way: the
+  System tab says so beside its Switch button;
+- the agent logs it at start, and its rc script says it instead of the
+  rc_conf_files warning.
+

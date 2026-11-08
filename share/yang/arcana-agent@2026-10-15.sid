@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-agent",
     "module-revision": "2026-10-15",
-    "sid-file-version": 8,
+    "sid-file-version": 9,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -1329,6 +1329,11 @@
         "namespace": "data",
         "identifier": "/arcana-agent:agent/config-files/switch/output/to",
         "sid": "82159"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-files/arcana-at-boot",
+        "sid": "82160"
       },
       {
         "namespace": "data",

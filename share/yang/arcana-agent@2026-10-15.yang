@@ -882,6 +882,16 @@ module arcana-agent {
         description
           "The files a commit writes.";
       }
+      leaf arcana-at-boot {
+        type boolean;
+        description
+          "Whether rc(8) can read Arcana's own rc.conf file at boot:
+           /etc/rc reads rc_conf_files once, before the local
+           filesystems are mounted, so the file on one of those
+           (/usr/local its own dataset) is missed.  False: mode arcana
+           is refused (rc-conf-not-at-boot), commits and the switch to
+           it alike; the system's files are the way.";
+      }
       leaf rc-file {
         type string;
         description

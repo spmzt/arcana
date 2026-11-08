@@ -501,6 +501,10 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 	memset(&led, 0, sizeof(led));
 	said[0] = '\0';
 	rooted(path, sizeof(path), RC_CONF);
+	/* Arcana's own file where rc(8) misses it at boot: never written. */
+	if (!x->sys && !cf_arcana_at_boot())
+		return (refuse(req, "rc-conf-not-at-boot", cf_not_at_boot(),
+		    err, errlen));
 	/* rc_conf_files: names Arcana's file, or will (Arcana's alone). */
 	if (!x->sys) {
 		if (vc_read(&rc, VC_SH, path, err, errlen) == -1)

@@ -261,6 +261,39 @@ jail_allow_live_cleanup()
 	cleanup
 }
 
+atf_test_case config_files_not_at_boot cleanup
+config_files_not_at_boot_head()
+{
+	atf_set "descr" "Arcana's rc.conf file on a filesystem of its own (/usr/local a dataset), which /etc/rc reads before it is mounted at boot: said in the state, and a commit into it refused with rc-conf-not-at-boot; the switch to the system's files still offered"
+	atf_set "require.user" "root"
+}
+config_files_not_at_boot_body()
+{
+	mkdir -p root/etc/defaults root/usr/local
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'ntpd_enable="NO"\n' > root/etc/rc.conf
+	mount -t tmpfs tmpfs root/usr/local 2>/dev/null ||
+	    atf_skip "no tmpfs can be mounted here"
+	mkdir -p root/usr/local/etc
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	atf_check -o match:'"arcana-at-boot":false' -o match:'"mode":"arcana"' \
+	    "$JGC" -c "$SOCK" get agent
+	atf_check -s exit:1 -e match:'mounts after it reads rc.conf at boot' \
+	    "$JGC" -c "$SOCK" service -a rc-conf-files ntpd enable
+	atf_check test ! -e root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o inline:'ntpd_enable="NO"\n' cat root/etc/rc.conf
+	# The way out stays open: the switch to the system's files.
+	atf_check -o match:'"to":"system"' "$JGC" -c "$SOCK" action \
+	    agent/config-files switch to=system dry-run=true
+}
+config_files_not_at_boot_cleanup()
+{
+	cleanup
+	umount -f "$(pwd)/root/usr/local" >/dev/null 2>&1
+	true
+}
+
 atf_test_case jail_dying_namesake cleanup
 jail_dying_namesake_head()
 {
@@ -3658,6 +3691,7 @@ atf_init_test_cases()
 	atf_add_test_case monitors_qos
 	atf_add_test_case jail_allow_live
 	atf_add_test_case jail_dying_namesake
+	atf_add_test_case config_files_not_at_boot
 	atf_add_test_case live_address
 	atf_add_test_case aliases
 	atf_add_test_case routes

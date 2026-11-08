@@ -14745,7 +14745,8 @@ config_files_switch_body()
 		atf_check cmp "$(echo $f | tr / _).0" root/$f
 	done
 	atf_check test ! -e root/usr/local/etc/arcana/config-files.conf
-	atf_check -o match:'"mode":"arcana"' "$JGC" -c "$SOCK" get agent
+	atf_check -o match:'"mode":"arcana"' -o match:'"arcana-at-boot":true' \
+	    "$JGC" -c "$SOCK" get agent
 	# Done: the list merged, the line taken by Arcana replaced where
 	# it is, rc_conf_files back to the defaults', Arcana's files gone,
 	# every file before copied.

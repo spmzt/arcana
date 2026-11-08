@@ -143,6 +143,15 @@ cfgfiles_view(struct html *h, struct server *s)
 	h_raw(h, " <button class=\"ghost small\" data-act=\"cfg-switch\" "
 	    "title=\"Switch the files a commit writes: a dry run first\">"
 	    "Switch</button></p>");
+	/* Arcana's file where /etc/rc misses it at boot: the system's then. */
+	if (!is_system() && jget(cf.state, "arcana-at-boot") != NULL &&
+	    !jbool(cf.state, "arcana-at-boot"))
+		h_raw(h, "<p class=\"err cfg-not-at-boot\">Arcana's own file is "
+		    "on a filesystem <code>/etc/rc</code> mounts after it reads "
+		    "rc.conf(5) at boot (<code>/usr/local</code> its own "
+		    "dataset): what it sets is missed at every boot, the "
+		    "agent's own address too. Commits are refused until this "
+		    "host is switched to the system's files: press Switch.</p>");
 	if (jstr(cf.state, "firewall-rules") != NULL) {
 		h_raw(h, "<p class=\"dim\">Kept firewall rules: <code>");
 		h_txt(h, jstr(cf.state, "firewall-rules"));

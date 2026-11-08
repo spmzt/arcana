@@ -193,6 +193,8 @@ struct cf_pend {
 };
 
 void	cf_load(void);
+bool	cf_arcana_at_boot(void);
+const char *cf_not_at_boot(void);
 const char *cf_ipfw_home(void);
 bool	cf_list_var(const char *name);
 const char *cf_rooted(char *buf, size_t len, const char *path);

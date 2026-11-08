@@ -131,6 +131,42 @@ cf_system(void)
 	return (cf_sys);
 }
 
+/*
+ * Can rc(8) read Arcana's own rc.conf file at boot?  /etc/rc reads
+ * rc_conf_files once, before the local filesystems are mounted: a file
+ * on one of those (/usr/local its own dataset) is missed for the whole
+ * boot, so Arcana's own files do not work on that host; the system's
+ * do.  The nearest directory of the file's that exists, on the root's
+ * filesystem.
+ */
+bool
+cf_arcana_at_boot(void)
+{
+	struct stat	 root, dir;
+	char		 path[MAXPATHLEN], *slash;
+
+	if (stat(cf_rooted(path, sizeof(path), "/"), &root) == -1)
+		return (true);
+	cf_rooted(path, sizeof(path), RC_ARCANA);
+	while ((slash = strrchr(path, '/')) != NULL && slash != path) {
+		*slash = '\0';
+		if (stat(path, &dir) == 0)
+			return (dir.st_dev == root.st_dev);
+	}
+	return (true);
+}
+
+/* What a refusal says where cf_arcana_at_boot() is false. */
+const char *
+cf_not_at_boot(void)
+{
+
+	return ("Arcana's own rc.conf file, " RC_ARCANA ", is on a "
+	    "filesystem /etc/rc mounts after it reads rc.conf at boot: what "
+	    "it sets would be missed at every boot.  Switch this host to the "
+	    "system's files (System tab, Configuration files)");
+}
+
 /* Words of s, by blanks: a copy, *n of them. */
 static char **
 words(const char *s, size_t *n)
@@ -720,6 +756,8 @@ cf_load(void)
 		opts.ipfw_rules = cf_ipfw;
 	}
 	vc_free(&f);
+	if (!cf_sys && !cf_arcana_at_boot())
+		logmsg(LOG_WARNING, "config-files: %s", cf_not_at_boot());
 }
 
 /* The directory Arcana's own files were in: the feeds' beside them. */
@@ -1826,6 +1864,12 @@ cf_switch(cbl_req *req, const yswin *in, cbl_yarena *a, yswout *out)
 		out->note.n = nt.n;
 		return (0);
 	}
+	/* Arcana's own files where rc(8) misses them at boot: refused. */
+	if (!sys && !cf_arcana_at_boot()) {
+		(void)cbl_req_set_yapptag(req, "rc-conf-not-at-boot");
+		(void)cbl_req_set_yerr(req, cf_not_at_boot(), 0);
+		return (EEXIST);
+	}
 	error = sys ? to_system(req, in, dry, a, out, &nt) :
 	    to_arcana(req, dry, a, out, &nt);
 	if (error == 0) {
@@ -1894,6 +1938,8 @@ cf_state(cbl_yarena *a, const struct arcana_agent_agent_config_files **op)
 	o->has_mode = true;
 	o->mode = cf_sys ? ARCANA_AGENT_AGENT_CONFIG_FILES_MODE_SYSTEM :
 	    ARCANA_AGENT_AGENT_CONFIG_FILES_MODE_ARCANA;
+	o->has_arcana_at_boot = true;
+	o->arcana_at_boot = cf_arcana_at_boot();
 	o->rc_file = cf_sys ? RC_CONF : RC_ARCANA;
 	o->loader_file = cf_sys ? LOADER_CONF : LOADER_ARCANA;
 	o->firewall_rules = adup(a, cf_unrooted(opts.ipfw_rules));

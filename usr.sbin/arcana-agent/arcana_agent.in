@@ -62,10 +62,23 @@ arcana_agent_precmd()
 	[ -z "${arcana_agent_listen}" ] && [ -r "${_f}" ] || return 0
 	_l=$(sysrc -inf "${_f}" arcana_agent_listen)
 	[ -n "${_l}" ] || return 0
-	warn "${_f} sets arcana_agent_listen=\"${_l}\" but" \
-	    "rc_conf_files (${rc_conf_files}) does not name it:" \
-	    "listening on ${arcana_agent_socket} alone.  Add it:" \
-	    "sysrc rc_conf_files+=\" ${_f}\""
+	case " ${rc_conf_files} " in
+	*" ${_f} "*)
+		# Named, but on a filesystem mounted after /etc/rc read
+		# rc_conf_files at boot.
+		warn "${_f} sets arcana_agent_listen=\"${_l}\", but at boot" \
+		    "/etc/rc reads rc_conf_files before ${_f%/*} is mounted:" \
+		    "listening on ${arcana_agent_socket} alone.  Switch this" \
+		    "host to the system's files (the console's System tab," \
+		    "Configuration files), or restart this service now"
+		;;
+	*)
+		warn "${_f} sets arcana_agent_listen=\"${_l}\" but" \
+		    "rc_conf_files (${rc_conf_files}) does not name it:" \
+		    "listening on ${arcana_agent_socket} alone.  Add it:" \
+		    "sysrc rc_conf_files+=\" ${_f}\""
+		;;
+	esac
 	return 0
 }
 

@@ -61,6 +61,7 @@ module: arcana-agent
      |        +---w peer?          string
      +--ro config-files
      |  +--ro mode?             enumeration
+     |  +--ro arcana-at-boot?   boolean
      |  +--ro rc-file?          string
      |  +--ro loader-file?      string
      |  +--ro firewall-rules?   string
