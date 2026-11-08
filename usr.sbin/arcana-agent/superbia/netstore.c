@@ -761,8 +761,12 @@ do_netstore_job(struct work *w, const struct arc_job_spec *sp,
 		if (strcmp(sp->verb, "enable") == 0)
 			return (service_onoff(w, "hastd", strcmp(word(sp,
 			    "enable"), "yes") == 0, errp));
-		if ((bin = tool(w, "hastctl")) == NULL)
-			bin = "/sbin/hastctl";
+		/* The tools' directory's alone when there is one: never
+		 * the system's in its place. */
+		if ((bin = tool(w, "hastctl")) == NULL) {
+			*errp = "the host has no hastctl(8)";
+			return (-1);
+		}
 		v = word(sp, "resource");
 		argv[0] = (char *)(uintptr_t)bin;
 		if (strcmp(sp->verb, "role") == 0) {

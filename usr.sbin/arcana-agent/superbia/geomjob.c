@@ -165,8 +165,12 @@ do_geom_job(struct work *w, const struct arc_job_spec *sp,
 
 	if ((*errp = geom_check(sp)) != NULL)
 		return (-1);
-	if ((bin = tool(w, "geom")) == NULL)
-		bin = "/sbin/geom";
+	/* The tools' directory's alone when there is one: never the
+	 * system's in its place. */
+	if ((bin = tool(w, "geom")) == NULL) {
+		*errp = "the host has no geom(8)";
+		return (-1);
+	}
 	passfile = NULL;
 	n = 0;
 	argv[n++] = (char *)(uintptr_t)bin;

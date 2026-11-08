@@ -11394,6 +11394,45 @@ part_netstore(void)
 	shot("9y-storage-hast");
 }
 
+/*
+ * An instance's own rules as text, a line more, saved whole: written
+ * to its rules file, checked first; the table again after.
+ */
+static void
+part_forms_ownall(void)
+{
+	int	i;
+
+	click_when("button[data-act=own-text]", 10);
+	wait_js("document.querySelector('form[data-form=own-all] "
+	    "textarea[name=rules]')", 10);
+	/* Saved by its button, which waits for the change before. */
+	wait_js("document.querySelector('form[data-form=own-all] "
+	    "button[type=submit]:not([disabled])')", 30);
+	run("const f = document.querySelector('form[data-form=own-all]'); "
+	    "f.rules.value += '\\nalert udp any any -> any 69 (msg:\\\"LOCAL "
+	    "tftp\\\"; sid:1000020; rev:1;)\\n'; f.querySelector('button"
+	    "[type=submit]').click();");
+	for (i = 0; i < 300 && system("grep -qF 'alert udp any any -> any 69 "
+	    "(msg:\"LOCAL tftp\"; sid:1000020; rev:1;)' "
+	    "sdwan-ids-sec-lan.rules") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the rules written as text are not written");
+	wait_js("document.querySelector('table.ownrules') && document."
+	    "querySelector('table.ownrules').textContent.includes('1000020')",
+	    30);
+	/* Taken away again, as the part goes on with one. */
+	wait_js("document.querySelector('table.secids.applying') === null && "
+	    "document.querySelector('table.ownrules button[data-act=own-del]"
+	    "[data-arg=\"1\"]:not([disabled])')", 30);
+	run("document.querySelector('table.ownrules button[data-act=own-del]"
+	    "[data-arg=\"1\"]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("document.querySelectorAll('table.ownrules tbody tr').length "
+	    "== 1", 30);
+}
+
 static void
 part_security(void)
 {
@@ -11807,6 +11846,7 @@ part_security(void)
 	    0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the Lua script stayed");
+	part_forms_ownall();
 	shot("9x-security-ids-own-rules");
 	click_when("button[data-act=own-back]", 10);
 	wait_js("document.querySelector('table.secids') && document."
@@ -12065,6 +12105,804 @@ ATF_TC_CLEANUP(pwa_flows_builder, tc)
 	browser_stop();
 }
 
+/*
+ * The forms below are submitted as a user would, and what the host was
+ * told is checked where it lands: the command a stand-in ran, the file
+ * written, the state read back.
+ */
+
+/* Waits until the shell command cmd succeeds, or fails with what. */
+static void
+host_tool(const char *cmd, const char *what)
+{
+	int	i;
+
+	for (i = 0; i < 300 && system(cmd) != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "%s", what);
+}
+
+/*
+ * Storage's other boxes: properties set and one inherited, a snapshot
+ * cloned, devices added to a pool; and on a disk the host shows, when
+ * it shows one (gpart is a stand-in), a partition added with its size
+ * and label left empty, labelled, and resized to the room after it.
+ */
+static void
+part_forms_storage(void)
+{
+	char	disk[64], idx[16], cmd[512];
+
+	run("document.querySelector('button.tab[data-arg=storage]').click()");
+	click_when("button[data-act=st-kind][data-arg=datasets]", 20);
+	click_when("tr[data-ds='tank/data'] button[data-act=st-props]", 20);
+	wait_js("document.querySelector('form[data-form=st-props] "
+	    "textarea[name=props]')", 5);
+	run("const f = document.querySelector('form[data-form=st-props]'); "
+	    "f.z_compression.value = 'zstd'; f.props.value = "
+	    "'com.example:note=lab'; f.inherit.value = 'atime'; "
+	    "f.requestSubmit();");
+	queued_run();
+	host_tool("grep -q '^zfs set com.example:note=lab compression=zstd "
+	    "tank/data$' storage.log", "the properties are not set");
+	host_tool("grep -q '^zfs inherit atime tank/data$' storage.log",
+	    "the property is not inherited");
+	dock_closed();
+	click_when("tr[data-ds='tank/data'] button[data-act=st-snaps-of]",
+	    20);
+	click_when("table.snapshots tr[data-snap='tank/data@a'] "
+	    "button[data-act=st-clone]", 20);
+	wait_js("document.querySelector('form[data-form=st-clone] "
+	    "input[name=name]')", 5);
+	run("const f = document.querySelector('form[data-form=st-clone]'); "
+	    "f.name.value = 'tank/fork'; f.requestSubmit();");
+	queued_run();
+	host_tool("grep -q '^zfs clone tank/data@a tank/fork$' storage.log",
+	    "the snapshot is not cloned");
+	dock_closed();
+	click_when("button[data-act=st-kind][data-arg=pools]", 20);
+	click_when("section.pool[data-pool=tank] button[data-act=st-pool-add]",
+	    20);
+	wait_js("document.querySelector('form[data-form=st-pool-add] "
+	    "select[name=layout]')", 5);
+	run("const f = document.querySelector('form[data-form=st-pool-add]'); "
+	    "f.layout.value = 'log'; f.devices.value = 'ada7p1'; "
+	    "f.requestSubmit();");
+	queued_run();
+	host_tool("grep -q '^zpool add tank log ada7p1$' storage.log",
+	    "the device is not added to the pool");
+	dock_closed();
+	/* A snapshot replicated on this host, what changed since another,
+	 * with what is under it: a job of the host's own. */
+	click_when("button[data-act=st-kind][data-arg=datasets]", 20);
+	click_when("tr[data-ds='tank/data'] button[data-act=st-snaps-of]",
+	    20);
+	click_when("table.snapshots tr[data-snap='tank/data@b'] "
+	    "button[data-act=st-ask][data-arg=replicate]", 20);
+	wait_js("document.querySelector('form[data-form=st-ask] "
+	    "input[name=from]')", 5);
+	run("const f = document.querySelector('form[data-form=st-ask]'); "
+	    "if (f.to) f.to.value = ''; f.name.value = 'tank/copy2'; "
+	    "f.from.value = 'tank/data@a'; f.recursive.checked = true; "
+	    "f.requestSubmit();");
+	queued_run();
+	/* zfs send piped to receive by the agent's helper, a stand-in. */
+	host_tool("grep -q 'zfs-pipe ./fake-zfs tank/data@b tank/copy2 "
+	    "tank/data@a r$' helper.log", "the snapshot is not replicated on "
+	    "the host");
+	dock_closed();
+	/* Swap on a device, from the mounts. */
+	click_when("button[data-act=st-kind][data-arg=mounts]", 20);
+	click_when("button[data-act=st-ask][data-arg=swapon]", 20);
+	wait_js("document.querySelector('form[data-form=st-ask] "
+	    "input[name=name]')", 5);
+	run("const f = document.querySelector('form[data-form=st-ask]'); "
+	    "f.name.value = '/dev/ada0p9'; f.requestSubmit();");
+	queued_run();
+	host_tool("grep -q '^swapon /dev/ada0p9$' storage.log", "swapon is "
+	    "not run");
+	dock_closed();
+	/* The disks are the machine's own, where it has any. */
+	click_when("button[data-act=st-kind][data-arg=disks]", 20);
+	wait_js("document.querySelector('section.disk, .empty')", 20);
+	if (!js_true("document.querySelector('button[data-act=st-part-add]')")) {
+		printf("no disk with a partition table here: gpart's boxes "
+		    "not tried\n");
+		return;
+	}
+	js_str(disk, sizeof(disk), "document.querySelector('button[data-act="
+	    "st-part-add]').dataset.arg");
+	run("document.querySelector('button[data-act=st-part-add]').click()");
+	wait_js("document.querySelector('form[data-form=st-part-add] "
+	    "select[name=type]')", 5);
+	run("const f = document.querySelector('form[data-form=st-part-add]'); "
+	    "f.type.value = 'freebsd-ufs'; f.size.value = ''; f.label.value = "
+	    "''; f.requestSubmit();");
+	queued_run();
+	snprintf(cmd, sizeof(cmd), "grep -q '^gpart add -t freebsd-ufs -a 1m "
+	    "%s$' storage.log", disk);
+	host_tool(cmd, "the partition is not added");
+	dock_closed();
+	if (!js_true("document.querySelector('button[data-act=st-part-label]')"))
+		return;
+	js_str(disk, sizeof(disk), "document.querySelector('button[data-act="
+	    "st-part-label]').dataset.arg");
+	js_str(idx, sizeof(idx), "document.querySelector('button[data-act="
+	    "st-part-label]').dataset.value");
+	run("document.querySelector('button[data-act=st-part-label]').click()");
+	wait_js("document.querySelector('form[data-form=st-part-label] "
+	    "input[name=label]')", 5);
+	run("const f = document.querySelector('form[data-form=st-part-label]');"
+	    " f.label.value = 'lab0'; f.requestSubmit();");
+	queued_run();
+	snprintf(cmd, sizeof(cmd), "grep -q '^gpart modify -i %s -l lab0 %s$' "
+	    "storage.log", idx, disk);
+	host_tool(cmd, "the partition is not labelled");
+	dock_closed();
+	click_when("button[data-act=st-part-resize]", 10);
+	wait_js("document.querySelector('form[data-form=st-part-resize] "
+	    "input[name=size]')", 5);
+	run("const f = document.querySelector('form[data-form=st-part-resize]"
+	    "'); f.size.value = ''; f.requestSubmit();");
+	queued_run();
+	snprintf(cmd, sizeof(cmd), "grep -q '^gpart resize -i %s -a 1m %s$' "
+	    "storage.log", idx, disk);
+	host_tool(cmd, "the partition is not resized");
+	dock_closed();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_forms_storage);
+ATF_TC_HEAD(pwa_forms_storage, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Storage's boxes submitted: properties, a clone, a pool's devices, gpart's partitions");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_forms_storage, tc)
+{
+
+	prologue(tc, 2);
+	part_forms_storage();
+}
+ATF_TC_CLEANUP(pwa_forms_storage, tc)
+{
+
+	browser_stop();
+}
+
+/*
+ * The System tab's resource limit, a line added to rctl.conf; and a
+ * GEOM class's command from Storage (geom a stand-in here), GELI's
+ * passphrase given it by a file of its own, gone after.
+ */
+static void
+part_forms_system(void)
+{
+	FILE	*fp;
+
+	ATF_REQUIRE((fp = fopen("tools/geom", "w")) != NULL);
+	fprintf(fp, "#!/bin/sh\necho \"geom $*\" >> geom.log\n"
+	    "[ \"$3\" = -J ] && echo \"pass=$(cat \"$4\")\" >> geom.log\n"
+	    "exit 0\n");
+	fclose(fp);
+	ATF_REQUIRE(chmod("tools/geom", 0755) == 0);
+	run("document.querySelector('button.tab[data-arg=system]').click()");
+	wait_js("document.querySelector('form[data-form=sv-rctl] "
+	    "select[name=resource]')", 20);
+	run("const f = document.querySelector('form[data-form=sv-rctl]'); "
+	    "f.subject.value = 'user'; f.other.value = 'www'; "
+	    "f.resource.value = 'maxproc'; f.action.value = 'deny'; "
+	    "f.amount.value = '100'; f.requestSubmit();");
+	queued_run();
+	host_tool("grep -q '^user:www:maxproc:deny=100$' root/etc/rctl.conf",
+	    "the limit is not in rctl.conf");
+	dock_closed();
+	run("document.querySelector('button.tab[data-arg=storage]').click()");
+	click_when("button[data-act=sv-show][data-arg=storage][data-value='1']",
+	    10);
+	wait_js("document.querySelector('form[data-form=sv-geom] "
+	    "input[name=sub]')", 20);
+	run("const f = document.querySelector('form[data-form=sv-geom]'); "
+	    "f.class.value = 'mirror'; f.sub.value = 'label'; f.words.value = "
+	    "'-v gm0 ada8 ada9'; f.requestSubmit();");
+	queued_run();
+	host_tool("grep -q '^geom mirror label -v gm0 ada8 ada9$' geom.log",
+	    "geom mirror label is not run");
+	dock_closed();
+	run("const f = document.querySelector('form[data-form=sv-geom]'); "
+	    "f.class.value = 'eli'; f.sub.value = 'init'; f.words.value = "
+	    "'-e AES-XTS ada9'; f.pass.value = 'correct horse'; "
+	    "f.requestSubmit();");
+	queued_run();
+	host_tool("grep -q '^geom eli init -J .* -e AES-XTS ada9$' geom.log && "
+	    "grep -qx 'pass=correct horse' geom.log", "geli init is not given "
+	    "its passphrase");
+	ATF_CHECK(js_true("![...document.querySelectorAll('.dock .op')].some("
+	    "o => o.textContent.includes('correct horse'))"));
+	dock_closed();
+	/* Where the tools are the agent's directory's, one not there is
+	 * not the system's: refused, here with what only reads. */
+	ATF_REQUIRE(unlink("tools/geom") == 0);
+	run("const f = document.querySelector('form[data-form=sv-geom]'); "
+	    "f.class.value = 'mirror'; f.sub.value = 'status'; f.words.value = "
+	    "''; f.pass.value = ''; f.requestSubmit();");
+	queued_run();
+	host_tool("grep -q 'geom mirror status: the host has no geom(8)' "
+	    "arcana-agent.out", "the system's geom is run in the tools' "
+	    "place");
+	dock_closed();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_forms_system);
+ATF_TC_HEAD(pwa_forms_system, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A resource limit and GEOM's commands submitted from their forms");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_forms_system, tc)
+{
+
+	prologue(tc, 2);
+	part_forms_system();
+}
+ATF_TC_CLEANUP(pwa_forms_system, tc)
+{
+
+	browser_stop();
+}
+
+/*
+ * The Mail tab's form with its smart host and policy, rendered into
+ * smtpd.conf by the host; and a table written whole, its entries
+ * before gone.
+ */
+static void
+part_forms_mail(void)
+{
+
+	host_tab("mail");
+	/* No smtpd.conf yet: Arcana's own tables, one started whole. */
+	click_when("button[data-act=ml-table][data-arg=aliases]", 20);
+	wait_js("document.querySelector('form[data-form=ml-table] "
+	    "textarea[name=text]')", 10);
+	run("const f = document.querySelector('form[data-form=ml-table]'); "
+	    "f.text.value = 'abuse: root\\nroot: ops@example.org\\n'; "
+	    "f.requestSubmit();");
+	queued_run();
+	host_tool("grep -qx 'abuse: root' smtpd.d/aliases && grep -qx 'root: "
+	    "ops@example.org' smtpd.d/aliases", "the table is not written "
+	    "whole");
+	dock_closed();
+	click_when("button[data-act=ml-conf]", 20);
+	wait_js("document.querySelector('form[data-form=ml-conf] "
+	    "input[name=relay_host]')", 10);
+	run("const f = document.querySelector('form[data-form=ml-conf]'); "
+	    "f.listeners.value = 'localhost'; f.domains.value = 'example.org'; "
+	    "f.aliases.checked = true; f.relay_host.value = 'smtp.example.net'; "
+	    "f.relay_port.value = '587'; f.relay_proto.value = 'smtp+tls'; "
+	    "f.relay_auth.checked = true; f.mail_from.value = '@example.org'; "
+	    "f.max_size.value = '35M'; f.max_rcpt.value = '50'; "
+	    "f.bounce_warn.value = '1h,4h'; f.check_rdns.checked = true; "
+	    "f.queue_compression.checked = true; f.requestSubmit();");
+	queued_run();
+	host_tool("grep -q '^action \"relay\" relay host "
+	    "smtp+tls://relay@smtp.example.net:587 auth <secrets> mail-from "
+	    "\"@example.org\"$' smtpd.conf", "the smart host is not in "
+	    "smtpd.conf");
+	ATF_CHECK(system("grep -q '^smtp max-message-size 35M$' smtpd.conf && "
+	    "grep -q '^smtp max-rcpt 50$' smtpd.conf && grep -q '^bounce "
+	    "warn-interval 1h,4h$' smtpd.conf && grep -q '^queue compression$' "
+	    "smtpd.conf") == 0);
+	dock_closed();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_forms_mail);
+ATF_TC_HEAD(pwa_forms_mail, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The Mail tab's smart host and policy, and a table written whole");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_forms_mail, tc)
+{
+
+	prologue(tc, 2);
+	part_forms_mail();
+}
+ATF_TC_CLEANUP(pwa_forms_mail, tc)
+{
+
+	browser_stop();
+}
+
+/*
+ * BIRD's whole file from its box: a line more, parsed by bird and put
+ * in place, the file before kept beside.
+ */
+static void
+part_forms_bird(void)
+{
+
+	host_tabs();
+	host_tab("bird");
+	click_when("button[data-act=bird-file]", 20);
+	wait_js("document.querySelector('form[data-form=bird-file] "
+	    "textarea[name=text]') && document.querySelector('form[data-form="
+	    "bird-file] textarea').value.includes('protocol')", 10);
+	run("const f = document.querySelector('form[data-form=bird-file]'); "
+	    "f.text.value += '\\n# kept by the lab\\n'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=bird-file]')", 20);
+	host_tool("grep -qx '# kept by the lab' bird/bird.conf && ! grep -q "
+	    "'kept by the lab' bird/bird.conf.arcana-old", "the whole file is "
+	    "not written");
+	ATF_CHECK(system("grep -q '^protocol' bird/bird.conf") == 0);
+}
+
+ATF_TC_WITH_CLEANUP(pwa_forms_bird);
+ATF_TC_HEAD(pwa_forms_bird, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "BIRD's whole configuration saved from its box");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_forms_bird, tc)
+{
+
+	prologue(tc, 1);
+	part_forms_bird();
+}
+ATF_TC_CLEANUP(pwa_forms_bird, tc)
+{
+
+	browser_stop();
+}
+
+/*
+ * NACM's defaults and a rule-list from their forms, saved by the
+ * confirmed commit; the host's own read back with them, and over
+ * RESTCONF as the host has them.
+ */
+static void
+part_forms_nacm(void)
+{
+
+	run("document.querySelector('button[data-act=tab][data-arg=security]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=nacm-defaults] "
+	    "select[name=write]')", 30);
+	run("const f = document.querySelector('form[data-form=nacm-defaults]');"
+	    " f.read.value = 'permit'; f.write.value = 'permit'; f.exec.value "
+	    "= 'permit'; f.requestSubmit();");
+	run("const f = document.querySelector('form[data-form=nacm-rl]'); "
+	    "f.name.value = 'auditors'; f.groups.value = 'audit, ops'; "
+	    "f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.nacm-rl h4')].some(h => h."
+	    "textContent.includes('auditors'))", 10);
+	click_when("button[data-act=nacm-save]", 10);
+	wait_js("document.body.textContent.includes('Saved: the host holds "
+	    "every request to the new rules')", 30);
+	wait_js("!document.querySelector('button[data-act=nacm-save]') && "
+	    "[...document.querySelectorAll('.nacm-rl h4')].some(h => h."
+	    "textContent.includes('auditors')) && document.querySelector("
+	    "'form[data-form=nacm-defaults] select[name=write]').value === "
+	    "'permit'", 20);
+	run("window.nacmHost = null; fetch('/restconf/data/arcana-fleet:fleet')"
+	    ".then(r => r.json()).then(j => fetch('/restconf/data/arcana-fleet:"
+	    "fleet/host=' + j['arcana-fleet:fleet'].host[0].id + '/"
+	    "ietf-netconf-acm:nacm')).then(r => r.json()).then(j => { "
+	    "window.nacmHost = j; });");
+	wait_js("window.nacmHost !== null", 20);
+	ATF_CHECK(js_true("(n => n['write-default'] === 'permit' && n["
+	    "'rule-list'].some(l => l.name === 'auditors' && l.group.join() "
+	    "=== 'audit,ops'))(window.nacmHost['ietf-netconf-acm:nacm'])"));
+}
+
+ATF_TC_WITH_CLEANUP(pwa_forms_nacm);
+ATF_TC_HEAD(pwa_forms_nacm, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "NACM's defaults and a rule-list saved from their forms");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_forms_nacm, tc)
+{
+
+	prologue(tc, 1);
+	part_forms_nacm();
+}
+ATF_TC_CLEANUP(pwa_forms_nacm, tc)
+{
+
+	browser_stop();
+}
+
+/* A file's text as a JavaScript string, quoted; the caller frees it. */
+static char *
+js_file(const char *path)
+{
+	ucl_object_t	*o;
+	char		 buf[16384], *q;
+	size_t		 n;
+	FILE		*fp;
+
+	ATF_REQUIRE((fp = fopen(path, "r")) != NULL);
+	n = fread(buf, 1, sizeof(buf) - 1, fp);
+	fclose(fp);
+	buf[n] = '\0';
+	o = ucl_object_fromstring(buf);
+	q = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(o);
+	ATF_REQUIRE(q != NULL);
+	return (q);
+}
+
+/*
+ * Settings, the console's CA: another CA imported, its certificate and
+ * key pasted, staged as the next one; discarded again.
+ */
+static void
+part_forms_ca(void)
+{
+	char	*cert, *key, *script;
+
+	ATF_REQUIRE(system("openssl req -x509 -newkey ec -pkeyopt "
+	    "ec_paramgen_curve:P-256 -nodes -keyout imp.key -out imp.pem -days "
+	    "30 -subj '/CN=lab import CA' -addext "
+	    "basicConstraints=critical,CA:TRUE -addext "
+	    "keyUsage=critical,keyCertSign,cRLSign 2>/dev/null") == 0);
+	cert = js_file("imp.pem");
+	key = js_file("imp.key");
+	go("/#/settings/aaa/keys");
+	click_when("button[data-act=set-tab][data-arg=ca]", 20);
+	wait_js("document.querySelector('form[data-form=ca-import] "
+	    "textarea[name=cert]')", 20);
+	ATF_REQUIRE(asprintf(&script, "const f = document.querySelector('form"
+	    "[data-form=ca-import]'); f.cert.value = %s; f.key.value = %s; "
+	    "f.requestSubmit();", cert, key) != -1);
+	run(script);
+	free(script);
+	free(cert);
+	free(key);
+	wait_js("document.querySelector('#ca-next') && document.querySelector("
+	    "'#ca-next').textContent.includes('CN=lab import CA')", 20);
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=ca-import]"
+	    "') || document.querySelector('form[data-form=ca-import]').key"
+	    ".value === ''"));
+	click_when("button[data-act=ca-discard]", 10);
+	wait_js("!document.querySelector('#ca-next')", 20);
+}
+
+ATF_TC_WITH_CLEANUP(pwa_forms_ca);
+ATF_TC_HEAD(pwa_forms_ca, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Another CA for the console imported from its form, then discarded");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_forms_ca, tc)
+{
+
+	prologue(tc, 0);
+	part_forms_ca();
+}
+ATF_TC_CLEANUP(pwa_forms_ca, tc)
+{
+
+	browser_stop();
+}
+
+/* The console's SD-WAN document, read into window.sdDoc. */
+static void
+sd_doc_read(void)
+{
+
+	run("window.sdDoc = null; fetch('/restconf/data/arcana-console:sdwan/"
+	    "document').then(r => r.json()).then(j => { window.sdDoc = j; });");
+	wait_js("window.sdDoc !== null", 20);
+}
+
+/*
+ * SD-WAN's boxes that change the document, each kept and the document
+ * read back: a security policy, a function policy's entries, a group
+ * of a remote end point; a list for the policies; an identity issued,
+ * its configuration shown once.
+ */
+static void
+part_forms_sdwan(void)
+{
+	char	doc[2048];
+
+	run("document.querySelector('li[data-act=select-sdwan]').click()");
+	click_when("button[data-act=sd-tab][data-arg=document]", 20);
+	wait_js("document.querySelector('form[data-form=sd-doc] textarea')", 10);
+	run("document.querySelector('button[data-act=sd-example]').click()");
+	wait_js("document.querySelector('form[data-form=sd-doc] textarea')"
+	    ".value.includes('\"office\"')", 10);
+	run("const t = document.querySelector('form[data-form=sd-doc] "
+	    "textarea'); t.value = t.value.replaceAll('\"vtnet2\"', '\"lo0\"')"
+	    ".replace('\"geneve\"', '\"gif\"').replace(', \"fd00:64::/64\"', "
+	    "'');");
+	run("document.querySelector('form[data-form=sd-doc] button[value="
+	    "keep]').click()");
+	wait_js("/version [0-9]+/.test((document.querySelector('section."
+	    "sdwan .notice') || {}).textContent)", 20);
+	/* A security policy, new, of one function policy. */
+	click_when("button[data-act=sd-tab][data-arg=security]", 10);
+	click_when("button[data-act=sd-secpol-add]", 20);
+	wait_js("document.querySelector('form[data-form=sd-secpol] "
+	    "input[name=fp0]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-secpol]'); "
+	    "f.name.value = 'lab-guard'; const c = [...f.querySelectorAll("
+	    "'input[name^=fp]')].find(i => i.value === 'guard-dnf'); "
+	    "c.checked = true; f.rate.value = '1000000'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-secpol]')", 20);
+	sd_doc_read();
+	js_str(doc, sizeof(doc), "JSON.stringify(window.sdDoc).slice(0, 2000)");
+	ATF_CHECK_MSG(js_true("JSON.stringify(window.sdDoc).includes("
+	    "'lab-guard')"), "the security policy is not kept: %s", doc);
+	ATF_CHECK(js_true("(s => s && s['function-policies'].join() === "
+	    "'guard-dnf' && Number(s['rate-limit']) === 1000000)(JSON.parse("
+	    "JSON.stringify(window.sdDoc).match(/\\{[^{}]*\"name\":"
+	    "\"lab-guard\"[^{}]*\\}/)?.[0] || 'null'))"));
+	/* A function policy's Block list, an entry more. */
+	click_when("button[data-act=sd-sfp-edit][data-arg=guard-ippf]", 20);
+	wait_js("document.querySelector('form[data-form=sd-sfp] "
+	    "textarea[name=block]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-sfp]'); "
+	    "f.block.value += '\\ndav4=198.51.100.0/24'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-sfp]')", 20);
+	sd_doc_read();
+	ATF_CHECK_MSG(js_true("JSON.stringify(window.sdDoc).includes("
+	    "'198.51.100.0/24') && JSON.stringify(window.sdDoc).includes("
+	    "'192.0.2.0/24')"), "the function policy's entry is not kept");
+	/* A list for the policies, pasted. */
+	click_when("button[data-act=sd-list-add]", 20);
+	wait_js("document.querySelector('form[data-form=sd-list] "
+	    "textarea[name=text]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-list]'); "
+	    "f.name.value = 'lab-block'; f.text.value = '192.0.2.99/32\\n"
+	    "bad.example.org\\n'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-list]')", 20);
+	run("window.sdLists = null; fetch('/restconf/data/arcana-console:sdwan/"
+	    "lists').then(r => r.json()).then(j => { window.sdLists = j; });");
+	wait_js("window.sdLists !== null", 20);
+	js_str(doc, sizeof(doc), "JSON.stringify(window.sdLists).slice(0, 2000)");
+	ATF_CHECK_MSG(js_true("JSON.stringify(window.sdLists).includes("
+	    "'lab-block') && JSON.stringify(window.sdLists).includes("
+	    "'bad.example.org')"), "the list is not kept: %s", doc);
+	/* A group of the remote end point's identities. */
+	click_when("button[data-act=sd-tab][data-arg=identities]", 10);
+	click_when("button[data-act=sd-group-add]", 20);
+	wait_js("document.querySelector('form[data-form=sd-group] "
+	    "select[name=at]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-group]'); "
+	    "f.name.value = 'contractors'; f.zone.value = 'staff'; "
+	    "f.pool.value = ''; f.reach.value = 'staff'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-group]')", 20);
+	sd_doc_read();
+	ATF_CHECK_MSG(js_true("JSON.stringify(window.sdDoc).includes("
+	    "'\"contractors\"')"), "the group is not kept");
+	ATF_CHECK(js_true("(g => g && g.zone === 'staff' && g.reach.join() "
+	    "=== 'staff')(JSON.parse(JSON.stringify(window.sdDoc).match(/\\{[^{}]"
+	    "*\"name\":\"contractors\"[^{}]*\\}/)?.[0] || 'null'))"));
+	/* An identity, issued: refused in a zone the service has not,
+	 * which the refusal names with the service; then issued, its
+	 * configuration shown once. */
+	click_when("button[data-act=sd-ident-add]", 20);
+	wait_js("document.querySelector('form[data-form=sd-identity] "
+	    "input[name=name]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-identity]'); "
+	    "f.name.value = 'bob'; f.zone.value = 'nowhere'; f.group.value = "
+	    "''; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .err') && document."
+	    "querySelector('.modal .err').textContent.includes('the zone is "
+	    "one of service')", 20);
+	js_str(doc, sizeof(doc), "document.querySelector('.modal .err')"
+	    ".textContent");
+	ATF_CHECK_MSG(strstr(doc, "of service office's") != NULL, "the "
+	    "refusal names another service: %s", doc);
+	run("const f = document.querySelector('form[data-form=sd-identity]'); "
+	    "f.zone.value = 'staff'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal textarea[readonly]') && "
+	    "document.querySelector('.modal textarea[readonly]').value."
+	    "includes('[Interface]')", 20);
+	click_when("button[data-act=sd-config-done]", 5);
+	wait_js("[...document.querySelectorAll('section.sdwan table.sd tbody "
+	    "tr')].some(tr => tr.textContent.includes('bob'))", 20);
+}
+
+ATF_TC_WITH_CLEANUP(pwa_forms_sdwan);
+ATF_TC_HEAD(pwa_forms_sdwan, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "SD-WAN's boxes submitted and the document read back: a security policy, a function policy, a list, a group, an identity");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_forms_sdwan, tc)
+{
+
+	need_fibs(2);
+	prologue(tc, 2);
+	part_forms_sdwan();
+}
+ATF_TC_CLEANUP(pwa_forms_sdwan, tc)
+{
+
+	browser_stop();
+}
+
+/*
+ * The Builder's make.conf: a new one, a jail's, written in
+ * poudriere.d by its form; changed again from its button.
+ */
+static void
+part_forms_builder(void)
+{
+
+	click_when("li.bldnode[data-act=select-builder]", 10);
+	wait_js("document.querySelector('select[data-input=bld-host]')", 10);
+	run("const s = document.querySelector('select[data-input=bld-host]'); "
+	    "s.value = s.options[s.options.length - 1].value; s.dispatchEvent("
+	    "new Event('input', { bubbles: true }))");
+	wait_js("document.querySelector('.bldpage details.bldconf')", 20);
+	click_when("button[data-act=bld-tab][data-arg=bulk]", 10);
+	click_when("button[data-act=bld-mc-new]", 10);
+	wait_js("document.querySelector('form[data-form=bld-makeconf] "
+	    "input[name=name]')", 10);
+	run("const f = document.querySelector('form[data-form=bld-makeconf]'); "
+	    "f.name.value = '150amd64'; f.text.value = 'DEFAULT_VERSIONS+= "
+	    "ssl=openssl\\n'; f.requestSubmit();");
+	queued_run();
+	host_tool("grep -qx 'DEFAULT_VERSIONS+= ssl=openssl' "
+	    "pe/poudriere.d/150amd64-make.conf", "the jail's make.conf is not "
+	    "written");
+	dock_closed();
+	click_when("ul.bldmc button[data-arg='150amd64']", 20);
+	wait_js("document.querySelector('form[data-form=bld-makeconf] "
+	    "textarea[name=text]') && document.querySelector('form[data-form="
+	    "bld-makeconf]').text.value.includes('ssl=openssl')", 10);
+	run("const f = document.querySelector('form[data-form=bld-makeconf]'); "
+	    "f.text.value += 'OPTIONS_UNSET+= DOCS\\n'; f.requestSubmit();");
+	queued_run();
+	host_tool("grep -qx 'OPTIONS_UNSET+= DOCS' "
+	    "pe/poudriere.d/150amd64-make.conf && grep -qx 'DEFAULT_VERSIONS+= "
+	    "ssl=openssl' pe/poudriere.d/150amd64-make.conf", "the make.conf "
+	    "is not changed");
+	dock_closed();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_forms_builder);
+ATF_TC_HEAD(pwa_forms_builder, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The Builder's make.conf written and changed from its form");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_forms_builder, tc)
+{
+
+	prologue(tc, 2);
+	part_forms_builder();
+}
+ATF_TC_CLEANUP(pwa_forms_builder, tc)
+{
+
+	browser_stop();
+}
+
+/*
+ * A jail made from a base snapshot by its form: its dataset cloned from
+ * it, beside the base's, mounted at its path; then taken away with its
+ * dataset named.
+ */
+static void
+part_forms_jails(void)
+{
+	FILE	*fp;
+
+	/* The stand-in has every dataset asked of it: not the new one. */
+	ATF_REQUIRE(rename("fake-zfs", "fake-zfs.all") == 0);
+	ATF_REQUIRE((fp = fopen("fake-zfs", "w")) != NULL);
+	fprintf(fp, "#!/bin/sh\n[ \"$*\" = 'list -H -o name tank/www2' ] && "
+	    "{ echo \"zfs $*\" >> storage.log; exit 1; }\n"
+	    "[ \"$*\" = 'get -H -o value mountpoint tank/www2' ] && "
+	    "{ echo /jails/www2; exit 0; }\n"
+	    "exec \"$(dirname \"$0\")/fake-zfs.all\" \"$@\"\n");
+	fclose(fp);
+	ATF_REQUIRE(chmod("fake-zfs", 0755) == 0);
+	click_when("button.tab[data-arg=jails]", 10);
+	click_when("button[data-act=jm-new]", 10);
+	wait_js("document.querySelector('form[data-form=jm-new] "
+	    "select[name=snapshot] option[value=\"tank/data@a\"]')", 20);
+	run("const f = document.querySelector('form[data-form=jm-new]'); "
+	    "f.name.value = 'www2'; f.snapshot.value = 'tank/data@a'; "
+	    "f.querySelector('input[name=copy][value=clone]').checked = true; "
+	    "f.path.value = '/jails/www2'; f.start.checked = false; "
+	    "f.requestSubmit();");
+	queued_run();
+	host_tool("test -e etc/jail.conf.d/www2.conf", "the jail's file is not "
+	    "written");
+	host_tool("grep -q 'zfs clone .*tank/data@a tank/www2' storage.log",
+	    "the jail's dataset is not cloned from the snapshot");
+	ATF_CHECK(system("grep -q 'path = \"/jails/www2\";' "
+	    "etc/jail.conf.d/www2.conf") == 0);
+	dock_closed();
+	run("document.querySelector('button[data-act=jm-files]').click()");
+	click_when("button[data-act=jm-rm][data-arg=www2]", 20);
+	wait_js("document.querySelector('form[data-form=jm-remove] "
+	    "input[name=ds]')", 5);
+	run("const f = document.querySelector('form[data-form=jm-remove]'); "
+	    "f.ds.value = 'tank/www2'; f.requestSubmit();");
+	queued_run();
+	host_tool("grep -q '^zfs destroy -r tank/www2$' storage.log && test ! "
+	    "-e etc/jail.conf.d/www2.conf", "the jail and its dataset are not "
+	    "taken away");
+	dock_closed();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_forms_jails);
+ATF_TC_HEAD(pwa_forms_jails, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A jail made from a base snapshot by its form, its dataset cloned");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_forms_jails, tc)
+{
+
+	prologue(tc, 1);
+	part_forms_jails();
+}
+ATF_TC_CLEANUP(pwa_forms_jails, tc)
+{
+
+	browser_stop();
+}
+
+/*
+ * How many jobs of pkg in jails run at once, from the Jobs tab: the
+ * commit said saved, and the host's arcana-jobs read back with it.
+ */
+static void
+part_forms_lanes(void)
+{
+
+	click_when("button.tab[data-arg=jobs]", 10);
+	wait_js("document.querySelector('form[data-form=jobs-lanes] "
+	    "input[name=lanes]')", 20);
+	run("const f = document.querySelector('form[data-form=jobs-lanes]'); "
+	    "f.lanes.value = '3'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
+	    "textContent.includes('pkg in jails, 3 at once'))", 30);
+	run("window.lanes = null; fetch('/restconf/data/arcana-fleet:fleet')"
+	    ".then(r => r.json()).then(j => fetch('/restconf/data/arcana-fleet:"
+	    "fleet/host=' + j['arcana-fleet:fleet'].host[0].id + '/"
+	    "arcana-jobs:jobs/lanes')).then(r => r.json()).then(j => { "
+	    "window.lanes = j; });");
+	wait_js("window.lanes !== null", 20);
+	ATF_CHECK(js_true("Number(window.lanes['arcana-jobs:lanes']) === 3"));
+}
+
+ATF_TC_WITH_CLEANUP(pwa_forms_lanes);
+ATF_TC_HEAD(pwa_forms_lanes, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The lanes of pkg in jails set from the Jobs tab, committed and read back");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_forms_lanes, tc)
+{
+
+	prologue(tc, 1);
+	part_forms_lanes();
+}
+ATF_TC_CLEANUP(pwa_forms_lanes, tc)
+{
+
+	browser_stop();
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 
@@ -12126,5 +12964,15 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_console_forms);
 	ATF_TP_ADD_TC(tp, pwa_macdo_paths);
 	ATF_TP_ADD_TC(tp, pwa_pkg_selected);
+	ATF_TP_ADD_TC(tp, pwa_forms_storage);
+	ATF_TP_ADD_TC(tp, pwa_forms_system);
+	ATF_TP_ADD_TC(tp, pwa_forms_mail);
+	ATF_TP_ADD_TC(tp, pwa_forms_bird);
+	ATF_TP_ADD_TC(tp, pwa_forms_nacm);
+	ATF_TP_ADD_TC(tp, pwa_forms_ca);
+	ATF_TP_ADD_TC(tp, pwa_forms_sdwan);
+	ATF_TP_ADD_TC(tp, pwa_forms_builder);
+	ATF_TP_ADD_TC(tp, pwa_forms_jails);
+	ATF_TP_ADD_TC(tp, pwa_forms_lanes);
 	return (atf_no_error());
 }

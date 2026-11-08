@@ -358,6 +358,26 @@ ds_get(struct work *w, const char *ds, const char *prop)
 }
 
 /*
+ * The path of the jail named in its file, as jail(8) reads the file:
+ * the jails of the defaults it includes beside it, so the one of that
+ * name; NULL when it has none.
+ */
+static const char *
+own_path(struct work *w, const char *file, const char *name)
+{
+	struct cjail	*js;
+	const char	*e;
+	size_t		 n, i;
+
+	if (conf_scope_read(w, file, &js, &n, &e) == -1)
+		return (NULL);
+	for (i = 0; i < n; i++)
+		if (strcmp(js[i].name, name) == 0)
+			return (cjail_param1(&js[i], "path"));
+	return (NULL);
+}
+
+/*
  * jail(8)'s reading of file: the jails it defines beyond those of the
  * defaults it includes are the one named, alone, and its path is the
  * one asked; *errp otherwise.
@@ -537,10 +557,9 @@ undo:
 static int
 jail_edit(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
-	struct cjail	*js;
-	const char	*file, *tmp, *path, *e;
+	const char	*file, *tmp, *path;
 	char		*old;
-	size_t		 n, len;
+	size_t		 len;
 
 	file = wfmt(w, "%s/%s.conf", opts.jail_conf_d, sp->jail);
 	errno = 0;
@@ -549,10 +568,7 @@ jail_edit(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		    "not read");
 		return (-1);
 	}
-	path = NULL;
-	if (jail_getid(sp->jail) >= 0 && conf_scope_read(w, file, &js, &n,
-	    &e) == 0 && n > 0)
-		path = cjail_param1(&js[0], "path");
+	path = jail_getid(sp->jail) >= 0 ? own_path(w, file, sp->jail) : NULL;
 	tmp = wfmt(w, "%s/.%s.conf.arcana-check", opts.jail_conf_d, sp->jail);
 	if (put_file(w, tmp, sp->text, errp) != 0)
 		return (-1);
@@ -573,10 +589,9 @@ static int
 jail_unmake(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
 	struct jail_done	 ar;
-	struct cjail		*js;
-	const char		*file, *path, *e, *mp;
+	const char		*file, *path, *mp;
 	char			*buf;
-	size_t			 n, len;
+	size_t			 len;
 
 	file = wfmt(w, "%s/%s.conf", opts.jail_conf_d, sp->jail);
 	if ((buf = get_file(w, file, &len)) == NULL) {
@@ -584,9 +599,7 @@ jail_unmake(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		    "away from here", file);
 		return (-1);
 	}
-	path = NULL;
-	if (conf_scope_read(w, file, &js, &n, &e) == 0 && n == 1)
-		path = cjail_param1(&js[0], "path");
+	path = own_path(w, file, sp->jail);
 	/* Its dataset, only where it is the jail's root: asked before
 	 * anything is done, the jail left running when it is not. */
 	if (sp->dataset != NULL && sp->dataset[0] != '\0') {

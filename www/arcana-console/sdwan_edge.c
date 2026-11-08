@@ -9695,9 +9695,18 @@ api_sdwan_identities(struct http_request *req)
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON body: swvc, "
 		    "end_point, name, zone or group, user"));
-	swvc = (char *)(uintptr_t)str(body, "swvc");
-	epid = (char *)(uintptr_t)str(body, "end_point");
+	/* Copied: the replies below are made after the body is freed. */
+	snprintf(rsw, sizeof(rsw), "%s", str(body, "swvc") != NULL ? str(body,
+	    "swvc") : "?");
+	snprintf(rep, sizeof(rep), "%s", str(body, "end_point") != NULL ?
+	    str(body, "end_point") : "?");
+	swvc = str(body, "swvc") != NULL ? rsw : NULL;
+	epid = str(body, "end_point") != NULL ? rep : NULL;
 	name = (char *)(uintptr_t)str(body, "name");
+	if (name != NULL && strlen(name) < sizeof(rnm)) {
+		snprintf(rnm, sizeof(rnm), "%s", name);
+		name = rnm;
+	}
 	zone = str(body, "zone");
 	user = ucl_flag(body, "user");
 	for (i = 0; name != NULL && name[i] != '\0'; i++)
