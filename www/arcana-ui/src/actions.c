@@ -1067,6 +1067,8 @@ job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			arc_push_send(not_undone ? "Arcana: NOT UNDONE" : ok ?
 			    "Arcana: done" : "Arcana: failed", body);
 	}
+	/* A job is over here, not in op_done: what follows from it. */
+	chflags_after(op, ok, err);
 	job_finished(op, ok, err);
 }
 

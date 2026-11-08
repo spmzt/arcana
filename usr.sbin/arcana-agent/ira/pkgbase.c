@@ -693,6 +693,12 @@ convert(struct work *w, const struct arc_job_spec *sp, const char *root,
 		major_alone = strchr(sp->release, '.') == NULL;
 	}
 	branch = branch_of(w, &r, major_alone);
+	/* Refused before anything changes, not half way through; and
+	 * after what allowing it would not change. */
+	if (!may_chflags(w, sp->jail)) {
+		*errp = wfmt(w, NEED_CHFLAGS, sp->jail);
+		return (-1);
+	}
 	if ((repo = base_repo(w, sp, root, branch, errp)) == NULL)
 		return (-1);
 	if ((e = etc_backup(w, root)) != NULL) {
@@ -785,6 +791,10 @@ upgrade(struct work *w, const struct arc_job_spec *sp, const char *root,
 	}
 	abi = wfmt(w, "FreeBSD:%d:%s", r.major, arch);
 	osversion = wfmt(w, "%d", r.major * 100000 + r.minor * 1000);
+	if (!may_chflags(w, sp->jail)) {
+		*errp = wfmt(w, NEED_CHFLAGS, sp->jail);
+		return (-1);
+	}
 	if ((repo = base_repo(w, sp, root, branch_of(w, &r, major_alone),
 	    errp)) == NULL)
 		return (-1);
@@ -844,11 +854,6 @@ do_jail_base(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	osrelease = NULL;
 	if ((e = jail_of(w, sp->jail, &osrelease)) != NULL) {
 		*errp = e;
-		return (-1);
-	}
-	/* Refused before anything changes, not half way through. */
-	if (!may_chflags(w, sp->jail)) {
-		*errp = wfmt(w, NEED_CHFLAGS, sp->jail);
 		return (-1);
 	}
 	root = w->jroot;

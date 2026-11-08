@@ -1203,10 +1203,12 @@ part_hosts(void)
 	/* The fleet page lists it, and leads back to it. */
 	run("document.querySelector('.tree .titem.fleet').click()");
 	wait_js("document.querySelector('.hosts .hostcard')", 5);
-	/* The fleet's graph is of what runs: no jail here does, so the
-	 * host stands alone in it. */
+	/* The fleet's graph is of what runs: gw alone here, with a
+	 * network of its own; not the stopped ones. */
 	ATF_CHECK(js_true("document.querySelector('.topo .tnode.host') && "
-	    "!document.querySelector('.topo .tnode[data-act=peek-jail]')"));
+	    "document.querySelector('.topo .tnode[data-act=peek-jail]"
+	    "[data-arg=gw]') && !document.querySelector('.topo .tnode"
+	    "[data-act=peek-jail]:not([data-arg=gw])')"));
 	shot("2-fleet");
 	/* Devices: the hosts as a table, filtered; a row opens its host. */
 	run("document.querySelector('.tree .titem.devnode').click()");
@@ -1235,18 +1237,18 @@ part_hosts(void)
 	run("document.querySelector('button.tab[data-arg=jails]').click()");
 	wait_js("document.querySelector('#j-web.s-stopped')", 20);
 	ATF_CHECK(js_true("document.querySelector('#j-db')"));
-	/* Jails: those running first, by name within; by name when asked,
-	 * and the other way round when asked again. */
+	/* Jails: those running first (gw), by name within; by name when
+	 * asked, and the other way round when asked again. */
 	ATF_CHECK(js_true("document.querySelector('.sorts button.on')."
 	    "dataset.arg === 'running'"));
 	ATF_CHECK(js_true("document.querySelector('.grid > *').id === "
-	    "'j-cache'"));
+	    "'j-gw'"));
 	run("document.querySelector('.sorts button[data-arg=name]').click()");
 	run("document.querySelector('.sorts button[data-arg=name]').click()");
 	wait_js("document.querySelector('.grid > *').id === 'j-web'", 20);
 	run("document.querySelector('.sorts button[data-arg=running]')"
 	    ".click()");
-	wait_js("document.querySelector('.grid > *').id === 'j-cache'", 20);
+	wait_js("document.querySelector('.grid > *').id === 'j-gw'", 20);
 	/* A change waits in the queue until it is sent. */
 	ATF_CHECK(js_true("document.querySelector('button[data-act=queue].on')"));
 	run("document.querySelector('#j-web button[data-act=start]').click()");
@@ -1547,16 +1549,17 @@ part_hosts(void)
 	ATF_CHECK(system("grep -q '^query ' pkg.log") == 0);
 	shot("6b-installed");
 	/* The cache cleaned, all of it: what and where asked in one box.
-	 * No jail runs here: their choice is off, and said why; nothing
-	 * chosen to clean is refused. */
+	 * Jails run here (gw, web): theirs may be chosen too, how many
+	 * said; nothing chosen to clean is refused. */
 	run("document.querySelector('button[data-act=pkg-clean-ask]').click()");
 	wait_js("document.querySelector('form[data-form=pkg-clean]')", 5);
 	shot("6b-clean");
-	ATF_CHECK(js_true("document.querySelector('form[data-form=pkg-clean] "
-	    "input[name=jails]').disabled && document.querySelector('.modal')"
-	    ".textContent.includes('no running jail')"));
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=pkg-clean] "
+	    "input[name=jails]').disabled && /The jails: [0-9]+/.test(document"
+	    ".querySelector('.modal').textContent)"));
 	run("const f = document.querySelector('form[data-form=pkg-clean]'); "
-	    "f.host.checked = false; f.requestSubmit();");
+	    "f.host.checked = false; f.jails.checked = false; "
+	    "f.requestSubmit();");
 	wait_js("document.querySelector('.modal').textContent.includes("
 	    "'Where: this host')", 5);
 	run("const f = document.querySelector('form[data-form=pkg-clean]'); "
@@ -1584,13 +1587,15 @@ part_hosts(void)
 	ATF_CHECK(system("grep -q 'install -y strongswan wireguard-tools$' "
 	    "pkg.log") == 0);
 	run("document.querySelector('.dock > header').click()");
-	/* Of every running jail at once: none runs here, which is said,
-	 * and nothing is asked. */
+	/* Of every running jail at once (gw, and web started above):
+	 * asked first; cancelled here. */
 	run("document.querySelector('button[data-act=pkg-upgrade-jails]')"
 	    ".click()");
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('has no running jail'))", 5);
-	ATF_CHECK(js_true("!document.querySelector('form[data-form=confirm]')"));
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "/pkg upgrade -y in each of the [0-9]+ running jails/.test("
+	    "document.querySelector('.modal').textContent)", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('form[data-form=confirm]')", 5);
 	/* Over IPv6 only: pkg -6, chosen in its box, kept in the browser. */
 	run("document.querySelector('button[data-act=pkg-net-ask]').click()");
 	wait_js("document.querySelector('form[data-form=pkg-net]')", 5);
@@ -2858,13 +2863,14 @@ part_plugins_hosts(void)
 	wait_js("document.querySelector('button[data-act=route-add]') && "
 	    "document.querySelector('select[data-input=net-jail]')?.value === "
 	    "'gw'", 10);
-	/* And the host's again, picked there; gw does not run, so the
-	 * host's own network is offered no picker then. */
+	/* And the host's again, picked there; gw runs, so the picker
+	 * stays, on the host. */
 	run("const p = document.querySelector('select[data-input=net-jail]'); "
 	    "p.value = ''; p.dispatchEvent(new Event('input', {bubbles: "
 	    "true}));");
-	wait_js("!document.querySelector('select[data-input=net-jail]') && "
-	    "document.querySelector('button[data-act=route-add]')", 10);
+	wait_js("document.querySelector('select[data-input=net-jail]')?.value "
+	    "=== '' && document.querySelector('button[data-act=route-add]')",
+	    10);
 	host_tabs();
 }
 
@@ -5066,7 +5072,18 @@ part_storage_procs(void)
 	    "1 && document.querySelector('table.logs tbody tr b').textContent "
 	    "=== 'su'", 10);
 
-	/* A jail's own logs; the kernel's messages, or why not. */
+	/* A jail's own logs (gw runs: its file beneath its root); the
+	 * kernel's messages, or why not. */
+	ATF_REQUIRE(system("mkdir -p jroot/var/log && printf 'Oct  5 12:00:11 "
+	    "gw sshd[9]: the jail'\\''s own line\\n' > jroot/var/log/messages")
+	    == 0);
+	run("const s = document.querySelector('label.lg-file select'); "
+	    "s.value = 'messages'; s.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === 5",
+	    10);
+	ATF_CHECK(js_true("document.querySelector('button[data-act=lg-jail]"
+	    "[data-arg=gw]')"));
 	if (js_true("document.querySelector('button[data-act=lg-jail]"
 	    "[data-arg=gw]')")) {
 		run("document.querySelector('button[data-act=lg-jail]"
@@ -7118,8 +7135,9 @@ netsect_open(void)
 	    "\\t0\\t0\\n' > wg.peers.wg0") == 0);
 	ptr_define();
 	run("document.querySelector('li[data-act=select-network]').click()");
-	wait_js("document.querySelectorAll('svg.topo .tnode.up').length === 2",
-	    30);
+	/* The two hosts (gw, a vnet jail of each, beside them). */
+	wait_js("document.querySelectorAll('svg.topo .tnode.up:not(.vjail)')"
+	    ".length === 2", 30);
 }
 
 /*
@@ -7132,6 +7150,13 @@ part_netsect_map(void)
 {
 
 	netsect_open();
+	/* The hosts and their links alone: gw, a vnet jail of each that
+	 * runs, not drawn (all, then none). */
+	click_at("button[data-act=topo-vnet]");
+	click_at("button[data-act=topo-vnet]");
+	wait_js("document.querySelector('button[data-act=topo-vnet]')"
+	    ".textContent.includes('none') && !document.querySelector("
+	    "'svg.topo .tnode.vjail')", 10);
 	wait_js("document.querySelector('.map-panel .facts')", 10);
 	/* A host's bridge is drawn above it: a dot for each member, in
 	 * the colour the spanning tree gave it. */
@@ -7617,16 +7642,8 @@ part_netsect_paths(void)
 	    "click()");
 	/*
 	 * A running jail with a network of its own is a node of the map,
-	 * tied to its host, read through it.  No jail runs here, so the
-	 * page is told that gw does.
+	 * tied to its host, read through it: gw, as the host's jails say.
 	 */
-	run("window.fetch0 = window.fetch; window.fetch = (u, o) => "
-	    "window.fetch0(u, o).then(r => String(u).endsWith(':jails') ? "
-	    "r.text().then(t => { const j = JSON.parse(t), walk = v => { if "
-	    "(v && typeof v === 'object') { if (v.name === 'gw' && 'vnet' in "
-	    "v) v.state = 'running'; Object.values(v).forEach(walk); } }; "
-	    "walk(j); return new Response(JSON.stringify(j), { status: "
-	    "r.status, headers: r.headers }); }) : r);");
 	host_open(NULL);
 	click_when("button[data-act=refresh]", 10);
 	click_when("button.tab[data-arg=jails]", 10);
@@ -7717,18 +7734,19 @@ part_netsect_paths(void)
 	wait_js("document.querySelector('select[data-input=net-jail]')?.value "
 	    "=== 'gw' && document.querySelector('table.ifaces tr[data-if="
 	    "epair1b]')", 20);
-	run("window.fetch = window.fetch0;");
 	run("window.labIds = null; fetch('/api/servers', {headers: {'X-Arcana': '1'}}).then(r => r.json())"
 	    ".then(j => { const ids = {}; j.servers.forEach(v => ids[v.name] = "
 	    "v.id); window.labIds = ids; });");
 	wait_js("window.labIds && window.labIds.lab2", 10);
 	/*
-	 * gw stopped again, as each agent would tell the fleet's stream
-	 * (the page reads no jails on a timer while the stream is up): its
-	 * node gone from the map, its addresses no gateway's below.
+	 * gw stopped (out of ./jails), as each agent would tell the fleet's
+	 * stream (the page reads no jails on a timer while the stream is
+	 * up): its node gone from the map, its addresses no gateway's
+	 * below.
 	 */
 	wait_js("window.arcanaStreams && window.arcanaStreams[1] && "
 	    "window.arcanaStreams[1].readyState === 1", 10);
+	ATF_REQUIRE(system("sed -i '' '/^gw /d' jails") == 0);
 	run("Object.values(window.labIds).forEach((id, i) => window."
 	    "arcanaStreams[1].onmessage({ data: JSON.stringify({ "
 	    "'ietf-restconf:notification': { eventTime: new Date()."
@@ -7889,7 +7907,8 @@ part_netsect_paths(void)
 	run("window.fetch = window.fetchL;");
 	run("document.querySelector('.netsect button.tab[data-arg=map]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('svg.topo .tnode.up').length === 2 "
+	wait_js("document.querySelectorAll('svg.topo .tnode.up:not(.vjail)')"
+	    ".length === 2 "
 	    "&& document.querySelector('svg.topo .tlink.lan')", 40);
 	/* On a phone the map is above its panel, each as wide as the screen;
 	 * its tools in a line of their own, its legend under it. */
@@ -10550,6 +10569,13 @@ part_map_fleet(void)
 {
 
 	map_open();
+	/* The hosts alone: gw, the vnet jail that runs beside lab, not
+	 * drawn (all, then none), so that the host dragged is a host. */
+	click_when("button[data-act=topo-vnet]", 10);
+	click_at("button[data-act=topo-vnet]");
+	wait_js("document.querySelector('button[data-act=topo-vnet]')"
+	    ".textContent.includes('none') && !document.querySelector("
+	    "'svg.topo .tnode.vjail')", 10);
 	run("window.synN = 40; window.synL = 500; window.synSeen = new Set(); "
 	    "window.synIfs = (id) => { "
 	    "const n = parseInt(id.slice(2)) - 1, out = []; for (let k = 0; k < "
@@ -13012,6 +13038,213 @@ ATF_TC_CLEANUP(pwa_yform_jail, tc)
 	browser_stop();
 }
 
+/*
+ * A jail started and stopped from its card: jail(8) run, and the host's
+ * jails (./jails, which the agent's libjail reads) say it runs, then
+ * not; no stand-in of the page's reads.
+ */
+static void
+part_jail_runs(void)
+{
+
+	click_when("button.tab[data-arg=jails]", 10);
+	wait_js("document.querySelector('#j-web.s-stopped') && document."
+	    "querySelector('#j-gw.s-running')", 20);
+	click_when("#j-web button[data-act=start]", 10);
+	queued_run();
+	host_tool("grep -q '^web [0-9]* inherit /jails/web$' jails",
+	    "web is not running after its start");
+	wait_js("document.querySelector('#j-web.s-running')", 20);
+	click_when("#j-web button[data-act=stop]", 10);
+	click_when(".modal button.primary", 5);
+	queued_run();
+	host_tool("! grep -q '^web ' jails", "web still runs after its stop");
+	wait_js("document.querySelector('#j-web.s-stopped')", 20);
+	dock_closed();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_jail_runs);
+ATF_TC_HEAD(pwa_jail_runs, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A jail started and stopped from its card, the host's own read saying it runs and then not");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_jail_runs, tc)
+{
+
+	prologue(tc, 1);
+	part_jail_runs();
+}
+ATF_TC_CLEANUP(pwa_jail_runs, tc)
+{
+
+	browser_stop();
+}
+
+/*
+ * A running jail's base to pkgbase from its Packages: refused at first,
+ * as the jail may not set files' flags (allow.chflags=0, as the kernel
+ * says of it); the page asks, and once approved allows it on the
+ * running jail alone (live, not kept, not in safe mode) and runs the
+ * conversion again, which is through.
+ */
+static void
+part_jail_base(void)
+{
+	FILE	*fp;
+	int	 i;
+
+	ATF_REQUIRE(mkdir("wroot", 0755) == 0);
+	ATF_REQUIRE(mkdir("wroot/etc", 0755) == 0);
+	put("wroot/etc/rc.conf", "hostname=\"web\"\n");
+	ATF_REQUIRE((fp = fopen("jails", "a")) != NULL);
+	fprintf(fp, "web 21 inherit %s/wroot 16.0-RELEASE "
+	    "allow.chflags=0\n", cwd);
+	fclose(fp);
+	/* What the page sends, to see the allow it asks of the agent. */
+	run("window.sent = []; const fs0 = window.fetch; window.fetch = "
+	    "function (u, o) { if (o && o.body) window.sent.push(String(o."
+	    "body)); return fs0.call(this, u, o); };");
+	click_when("button[data-act=refresh]", 10);
+	click_when("button.tab[data-arg=packages]", 10);
+	click_when("button[data-act=pkg-target][data-arg=web]", 20);
+	click_when("button[data-act=jail-base][data-arg=convert]", 20);
+	wait_js("document.querySelector('form[data-form=jail-base]')", 5);
+	run("document.querySelector('form[data-form=jail-base]')"
+	    ".requestSubmit()");
+	queued_run();
+	/* Refused before pkg runs: the page asks. */
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "document.querySelector('.modal').textContent.includes("
+	    "'allow.chflags=0')", 30);
+	ATF_CHECK(system("grep -q -- '-j web install' pkg.log") != 0);
+	ATF_CHECK(system("test -e pkgbase.web") != 0);
+	click_when(".modal button.primary", 5);
+	/* allow.chflags on the running jail, and the conversion again. */
+	host_tool("grep -q '^web 21 .* allow.chflags=1$' jails",
+	    "allow.chflags is not set on the running jail");
+	ATF_CHECK(system("grep -q chflags etc/jail.conf") != 0);
+	/* Sent at once, the queue or not: live, not kept, not safe. */
+	ATF_CHECK(js_true("window.sent.some(b => b.includes('\"jail-allow\"') "
+	    "&& b.includes('allow.chflags=1') && b.includes('\"live\":true') "
+	    "&& b.includes('\"persist\":false') && !b.includes('\"safe\"'))"));
+	/* The conversion again once the allow is through: into the queue,
+	 * which is on here. */
+	for (i = 0; i < 200 && system("grep -q -- '-j web install' pkg.log") !=
+	    0; i++) {
+		run("const b = document.querySelector('button[data-act="
+		    "queue-run]'); if (b) b.click();");
+		usleep(100000);
+	}
+	host_tool("grep -q -- '^-j web install -r arcana-base -y "
+	    "FreeBSD-set-base-jail$' pkg.log && test -e pkgbase.web",
+	    "the conversion did not run again once allowed");
+	host_tool("test -s wroot/var/backups/etc-before-pkgbase.tar && "
+	    "test ! -e wroot/usr/local/etc/pkg/repos/arcana-base.conf",
+	    "the conversion is not through");
+	click_when("button.tab[data-arg=jobs]", 10);
+	wait_js("document.querySelectorAll('table.jobs tr.j-done').length >= 2"
+	    " && document.querySelector('table.jobs tr.j-failed')", 20);
+	dock_closed();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_jail_base);
+ATF_TC_HEAD(pwa_jail_base, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A running jail's base to pkgbase from its Packages: refused for allow.chflags=0, allowed on the running jail alone once approved, and converted");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_jail_base, tc)
+{
+
+	prologue(tc, 1);
+	part_jail_base();
+}
+ATF_TC_CLEANUP(pwa_jail_base, tc)
+{
+
+	browser_stop();
+}
+
+/*
+ * A pkg upgrade in a running jail that may not set files' flags: pkg
+ * refuses, as it says it; the page asks, and once approved allows it
+ * on the running jail alone and runs the same upgrade again, which is
+ * through.
+ */
+static void
+part_jail_pkg_chflags(void)
+{
+	FILE	*fp;
+	int	 i;
+
+	ATF_REQUIRE(mkdir("wroot", 0755) == 0);
+	ATF_REQUIRE((fp = fopen("jails", "a")) != NULL);
+	fprintf(fp, "web 21 inherit %s/wroot 16.0-RELEASE "
+	    "allow.chflags=0\n", cwd);
+	fclose(fp);
+	run("window.sent = []; const fs0 = window.fetch; window.fetch = "
+	    "function (u, o) { if (o && o.body) window.sent.push(String(o."
+	    "body)); return fs0.call(this, u, o); };");
+	click_when("button[data-act=refresh]", 10);
+	click_when("button.tab[data-arg=packages]", 10);
+	click_when("button[data-act=pkg-target][data-arg=web]", 20);
+	click_when("button[data-act=pkg-mode][data-arg='1']", 20);
+	wait_js("document.querySelector('form[data-form=packages] input"
+	    "[name=\"p:aria2\"]') && document.querySelector('button[value=go]:"
+	    "not([disabled])')", 20);
+	run("const f = document.querySelector('form[data-form=packages]'); "
+	    "f.querySelector('input[name=\"p:aria2\"]').checked = true; "
+	    "f.requestSubmit(f.querySelector('button[value=go]'));");
+	wait_js("document.querySelector('form[data-form=confirm]')", 10);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	queued_run();
+	/* pkg refused: the page asks. */
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "document.querySelector('.modal').textContent.includes("
+	    "'Allow it on the running jail now')", 30);
+	ATF_CHECK(system("grep -q -- '^-j web upgrade' pkg.log") == 0);
+	ATF_CHECK(system("grep -q '^aria2-' pending") == 0);
+	click_when(".modal button.primary", 5);
+	host_tool("grep -q '^web 21 .* allow.chflags=1$' jails",
+	    "allow.chflags is not set on the running jail");
+	ATF_CHECK(system("grep -q chflags etc/jail.conf") != 0);
+	ATF_CHECK(js_true("window.sent.some(b => b.includes('\"jail-allow\"') "
+	    "&& b.includes('allow.chflags=1') && b.includes('\"live\":true') "
+	    "&& b.includes('\"persist\":false') && !b.includes('\"safe\"'))"));
+	/* The same upgrade again, through. */
+	for (i = 0; i < 200 && system("grep -q '^aria2-' pending") == 0; i++) {
+		run("const b = document.querySelector('button[data-act="
+		    "queue-run]'); if (b) b.click();");
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(i < 200, "the upgrade did not run again once allowed");
+	ATF_CHECK(system("test $(grep -c -- '^-j web upgrade' pkg.log) -ge 2")
+	    == 0);
+	dock_closed();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_jail_pkg_chflags);
+ATF_TC_HEAD(pwa_jail_pkg_chflags, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A pkg upgrade in a running jail refused for allow.chflags, allowed on the running jail alone once approved, and run again");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_jail_pkg_chflags, tc)
+{
+
+	prologue(tc, 1);
+	part_jail_pkg_chflags();
+}
+ATF_TC_CLEANUP(pwa_jail_pkg_chflags, tc)
+{
+
+	browser_stop();
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 
@@ -13084,5 +13317,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_forms_jails);
 	ATF_TP_ADD_TC(tp, pwa_forms_lanes);
 	ATF_TP_ADD_TC(tp, pwa_yform_jail);
+	ATF_TP_ADD_TC(tp, pwa_jail_runs);
+	ATF_TP_ADD_TC(tp, pwa_jail_base);
+	ATF_TP_ADD_TC(tp, pwa_jail_pkg_chflags);
 	return (atf_no_error());
 }

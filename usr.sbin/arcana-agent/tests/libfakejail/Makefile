@@ -1,4 +1,4 @@
-# libfakejail.so: libjail's jail_getv(3) answered from a file of the
+# libfakejail.so: the jail system calls answered from a file of the
 # test's, preloaded into the agent the tests start (fakejail.c).  For
 # the tests alone: installed beside them, never where rtld(1) looks.
 

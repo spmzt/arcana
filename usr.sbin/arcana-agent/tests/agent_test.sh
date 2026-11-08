@@ -3793,9 +3793,10 @@ jail_base_body()
 	mkdir -p "$R/etc" "$R/usr/local/etc"
 	printf 'hostname="web"\n' > "$R/etc/rc.conf"
 	start_daemon
-	# The jails: web runs, on 15.1; old, an older release; nothing else.
+	# The jails: web runs, on 15.1, and may set files' flags; old, an
+	# older release; nothing else.
 	cat > jails <<EOS
-web 7 inherit $R 15.1-RELEASE-p3
+web 7 inherit $R 15.1-RELEASE-p3 allow.chflags=1
 old 8 inherit $R 14.3-RELEASE
 EOS
 	# Not running, not a verb, no release to go to: refused at once.
@@ -3805,11 +3806,24 @@ EOS
 	    "$JGC" -c "$SOCK" jail-base web reinstall
 	atf_check -s exit:2 -o ignore -e match:'usage' \
 	    "$JGC" -c "$SOCK" jail-base web upgrade
-	# Too old for pkgbase.
+	# Too old for pkgbase: said first, though old may not set files'
+	# flags either (allow.chflags is 0, not on its line), since allowing
+	# it would not help.
 	atf_check -s exit:1 -o match:'needs FreeBSD 15.1' \
-	    "$JGC" -c "$SOCK" jail-base old convert
-	# pkg refused the base's files' flags: said by allow.chflags, which
-	# the console offers to allow on the running jail and run again.
+	    -o not-match:'allow.chflags' "$JGC" -c "$SOCK" jail-base old convert
+	# A jail that may not set files' flags, as the kernel says of it:
+	# refused before pkg changes anything.
+	sed -i '' 's/allow.chflags=1/allow.chflags=0/' jails
+	atf_check -s exit:1 -o match:'jail web may not change files. flags \(allow.chflags=0\)' \
+	    -o not-match:'fake-pkg -j web (update|install)' "$JGC" -t -c "$SOCK" jail-base web convert
+	atf_check test ! -e "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	# Allowed on the running jail (jail -m, jail_set(2) with
+	# JAIL_UPDATE): what the kernel says of it after.
+	atf_check -o ignore "$JGC" -c "$SOCK" allow web allow.chflags=1
+	atf_check -o match:'^web 7 .* allow.chflags=1$' cat jails
+	# pkg refused the base's files' flags all the same: said by
+	# allow.chflags, which the console offers to allow on the running
+	# jail and run again.
 	touch noflags
 	atf_check -s exit:1 -o match:'jail web may not change files. flags \(allow.chflags=0\)' \
 	    -o match:'Operation not permitted' \

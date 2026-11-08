@@ -351,8 +351,21 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(mkdir("jroot/var", 0755) == 0 || errno == EEXIST);
 	ATF_REQUIRE(mkdir("jroot/var/run", 0755) == 0 || errno == EEXIST);
 	put("jroot/etc/rc.conf", "hostname=\"gw\"\n");
-	put("fake-jail", "#!/bin/sh\nfor a; do [ \"$a\" = -e ] && "
-	    "exec /usr/sbin/jail \"$@\"; done\necho \"fake-jail: $*\"\n");
+	/*
+	 * jail(8): -e is the real one's; a jail started is in ./jails,
+	 * at the next jid from 10, its root under /jails as jail.conf
+	 * says; one stopped is taken out; restarted, it stays.
+	 */
+	snprintf(buf, sizeof(buf), "#!/bin/sh\nfor a; do [ \"$a\" = -e ] && "
+	    "exec /usr/sbin/jail \"$@\"; done\necho \"fake-jail: $*\"\n"
+	    "j=%s/jails; eval n=\\${$#}; eval o=\\${$(($# - 1))}\n"
+	    "case \"$o\" in\n"
+	    "-c) grep -q \"^$n \" $j || echo \"$n $(awk 'BEGIN { m = 9 } "
+	    "$2 > m { m = $2 } END { print m + 1 }' $j) inherit /jails/$n\" "
+	    ">> $j ;;\n"
+	    "-r) grep -v \"^$n \" $j > $j.r; mv $j.r $j ;;\n"
+	    "esac\nexit 0\n", cwd);
+	put("fake-jail", buf);
 	ATF_REQUIRE(chmod("fake-jail", 0755) == 0);
 	/* An rc.d of two scripts and stand-ins for service(8) and
 	 * sysrc(8) working from ./rc.conf, as the daemon's tests have. */
@@ -436,7 +449,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-pkg", "#!/bin/sh\necho \"$*\" >> pkg.log\nanyos=no\n"
 	    "case \"$1\" in -4|-6) shift ;; esac\n"
 	    "[ \"$1\" = -o ] && { anyos=yes; shift 2; }\n"
-	    "[ \"$1\" = -j ] && shift 2\n"
+	    "jl=; [ \"$1\" = -j ] && { jl=$2; shift 2; }\n"
+	    /* A jail that may not set files' flags, as ./jails says: pkg
+	     * refuses the base's flagged files, as it says it. */
+	    "[ -n \"$jl\" ] && { [ \"$1\" = upgrade ] || [ \"$1\" = install "
+	    "]; } && grep -q \"^$jl .*allow.chflags=0\" jails && { echo "
+	    "'pkg: Package FreeBSD-runtime has files with flags that cannot "
+	    "be managed in this jail. Set allow.chflags in the jail "
+	    "configuration.' >&2; exit 3; }\n"
 	    "{ [ \"$1\" = upgrade ] || [ \"$1\" = version ]; } && [ -f newer-os ] "
 	    "&& [ $anyos = no ] && "
 	    "{ printf 'Newer FreeBSD version for package curl:\\n- package: "
@@ -452,6 +472,12 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "poudriere/data/packages/lab\\\",\\n    enabled : no,\\n  }"
 	    "\\n' ;;\n"
 	    "update) exit 0 ;;\n"
+	    /* A jail's base: on pkgbase once the sets are installed. */
+	    "info) case \"$*\" in *FreeBSD-runtime*) [ -f pkgbase.$jl ] || "
+	    "exit 1 ;; esac ;;\n"
+	    "rquery) printf 'FreeBSD-runtime\\nFreeBSD-set-base-jail\\n"
+	    "FreeBSD-set-minimal-jail\\n' ;;\n"
+	    "install) [ -z \"$jl\" ] || touch pkgbase.$jl ;;\n"
 	    "query) printf 'aria2\\t1.37.0_1\\t0\\t5242880\\twww/aria2\\t"
 	    "Download utility\\npimd\\t3.1.0\\t1\\t102400\\tnet/pimd\\t"
 	    "PIM-SM daemon\\n' ;;\n"
