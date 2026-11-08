@@ -292,6 +292,8 @@ config_files_not_at_boot_head()
 {
 	atf_set "descr" "Arcana's rc.conf file on a filesystem of its own (/usr/local a dataset), which /etc/rc reads before it is mounted at boot: said in the state, and a commit into it refused with rc-conf-not-at-boot; the switch to the system's files still offered"
 	atf_set "require.user" "root"
+	# It mounts a filesystem: the host's mounts, which others read.
+	atf_set "is.exclusive" "true"
 }
 config_files_not_at_boot_body()
 {
