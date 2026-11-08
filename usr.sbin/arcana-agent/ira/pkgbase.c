@@ -617,6 +617,28 @@ base_repo(struct work *w, const struct arc_job_spec *sp, const char *root,
 	return (BASE_REPO);
 }
 
+/*
+ * The repository's file taken away once the job is through: the base
+ * installed has its own FreeBSD-base (/etc/pkg/FreeBSD.conf), and the
+ * official one left enabled beside the admin's would be read by every
+ * pkg upgrade.  Only the file the job wrote; a repository of the
+ * jail's own (pkg-repo) stays as it is; a job that failed keeps it.
+ */
+static void
+repo_done(struct work *w, const char *repo)
+{
+	const char	*e = NULL;
+	int		 step;
+
+	if (repo == NULL || strcmp(repo, BASE_REPO) != 0)
+		return;
+	step = step_begin(w, STEP_FILE, "remove", "%s", REPO_FILE);
+	if (scope_unlink(w, REPO_FILE) == -1 && errno != ENOENT)
+		e = wfmt(w, "%s: %s", REPO_FILE, strerror(errno));
+	step_end(w, step, e == NULL, "%s", e != NULL ? e : "the base has its "
+	    "own FreeBSD-base");
+}
+
 static int
 convert(struct work *w, const struct arc_job_spec *sp, const char *root,
     const char *osrelease, const char **errp)
@@ -710,6 +732,7 @@ convert(struct work *w, const struct arc_job_spec *sp, const char *root,
 		*errp = e;
 		return (-1);
 	}
+	repo_done(w, repo);
 	leftovers(w, root);
 	return (0);
 }
@@ -804,6 +827,7 @@ upgrade(struct work *w, const struct arc_job_spec *sp, const char *root,
 		    "pkg upgrade"));
 		return (-1);
 	}
+	repo_done(w, repo);
 	leftovers(w, root);
 	return (0);
 }

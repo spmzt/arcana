@@ -3814,16 +3814,21 @@ EOS
 	atf_check -s exit:1 -o match:'jail web may not change files. flags \(allow.chflags=0\)' \
 	    -o match:'Operation not permitted' \
 	    "$JGC" -c "$SOCK" jail-base web convert
+	# A job that failed keeps the repository's file it wrote.
+	atf_check -o match:'^arcana-base: \{' \
+	    -o match:'pkg.FreeBSD.org/\$\{ABI\}/base_release_1' \
+	    cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	rm noflags
 	# Converted: the repository's file in the jail, /etc kept aside,
 	# pkg update then install of the default set from FreeBSD-base.
 	atf_check -o save:cv.out "$JGC" -t -c "$SOCK" jail-base web convert
-	atf_check -o match:'pkg.FreeBSD.org/\$\{ABI\}/base_release_1' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	# Through, the file taken away: the base has its own FreeBSD-base.
+	atf_check -o match:'base_release_1' -o match:'the base has its own FreeBSD-base' cat cv.out
+	atf_check test ! -e "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	atf_check test -s "$R/var/backups/etc-before-pkgbase.tar"
 	atf_check -o match:'rc.conf' tar -tf "$R/var/backups/etc-before-pkgbase.tar"
 	atf_check -o match:'fake-pkg -j web update -r arcana-base' cat cv.out
 	atf_check -o match:'^install -r arcana-base -y FreeBSD-set-base-jail$' cat install.log
-	atf_check -o match:'^arcana-base: \{' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	atf_check -o match:'restart the jail' cat cv.out
 	# The jail's own files, which pkg put aside as it installed the
 	# stock ones, back in place: its users and groups with the new
@@ -3860,13 +3865,13 @@ EOS
 	rm -r stock jexec.log
 	# Sets named, and one the repository has not; a branch named.
 	rm install.log
-	atf_check -o ignore "$JGC" -c "$SOCK" jail-base web convert -b 16 \
+	atf_check -o save:b16.out "$JGC" -t -c "$SOCK" jail-base web convert -b 16 \
 	    FreeBSD-set-minimal-jail
 	atf_check -o match:'^install -r arcana-base -y FreeBSD-set-minimal-jail$' cat install.log
-	atf_check -o match:'base_latest' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	atf_check -o match:'base_latest' cat b16.out
 	# From one of the jail's own repositories instead: nothing written,
 	# the one named used; one pkg has not, refused.
-	rm install.log "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	rm -f install.log "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	atf_check -o ignore "$JGC" -c "$SOCK" jail-base web convert -r builder
 	atf_check -o match:'^install -r builder -y FreeBSD-set-base-jail$' cat install.log
 	atf_check test ! -e "$R/usr/local/etc/pkg/repos/arcana-base.conf"
@@ -3888,13 +3893,14 @@ EOS
 	atf_check -o save:up.out "$JGC" -t -c "$SOCK" jail-base web upgrade 16
 	atf_check -o match:'opt ABI=FreeBSD:16:[a-z0-9]+' -o match:'opt OSVERSION=1600000' \
 	    -o match:'opt IGNORE_OSVERSION=yes' cat opts.log
-	atf_check -o match:'base_latest' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	atf_check -o match:'base_latest' -o match:'the base has its own FreeBSD-base' cat up.out
+	atf_check test ! -e "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	atf_check -o match:'upgrade from arcana-base' cat repo.log
 	atf_check -o match:'fake-pkg -o ABI=FreeBSD:16:[a-z0-9]+ -o OSVERSION=1600000 -j web upgrade -y' cat up.out
 	# A release of its own; beyond the host's kernel, refused.
-	atf_check -o ignore "$JGC" -c "$SOCK" jail-base web upgrade 15.2
+	atf_check -o save:u152.out "$JGC" -t -c "$SOCK" jail-base web upgrade 15.2
 	atf_check -o match:'opt OSVERSION=1502000' cat opts.log
-	atf_check -o match:'base_release_2' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	atf_check -o match:'base_release_2' cat u152.out
 	atf_check -s exit:1 -o match:'cannot run a newer userland' \
 	    "$JGC" -c "$SOCK" jail-base web upgrade 99
 	atf_check -s exit:1 -o match:'is not a release' \
