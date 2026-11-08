@@ -2561,7 +2561,7 @@ osversion_ask(const char *err, bool dry_run, bool read)
 	    "packages anyway");
 	confirm("Packages for a newer FreeBSD", body, dry_run ? "Dry run "
 	    "anyway" : "Upgrade anyway", true, "", dry_run ? "do-pkg-dry-anyos" :
-	    "do-pkg-anyos", "", app.pkg.names != NULL ? app.pkg.names : "");
+	    "do-pkg-anyos", app.pkg.names != NULL ? "some" : "", "");
 }
 
 static const char *const pkg_top_map[] = { "pkgbase", "pkgbase",
@@ -2713,9 +2713,12 @@ pkg_upgrade(struct server *s, const char *names, bool dry_run, bool anyos)
 
 	if (!app.online || app.pkg.busy)
 		return;
-	/* What it is asked of, to ask it again past OSVERSION. */
-	free(app.pkg.names);
-	app.pkg.names = names != NULL ? strdup(names) : NULL;
+	/* What it is asked of, to ask it again past OSVERSION; asked again,
+	 * names is that already. */
+	if (names != app.pkg.names) {
+		free(app.pkg.names);
+		app.pkg.names = names != NULL ? strdup(names) : NULL;
+	}
 	if (!dry_run) {
 		char *json;
 

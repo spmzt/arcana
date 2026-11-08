@@ -980,8 +980,12 @@ submit_form(const char *form, const ucl_object_t *f)
 			    "packages%s%s; services may restart.",
 			    app.pkg.repo[0] != '\0' ? ", from the repository " :
 			    "", app.pkg.repo);
+			/* The names kept here, the confirmation's value
+			 * too short for many: arg "some" says so. */
+			free(app.pkg.names);
+			app.pkg.names = strdup(names);
 			confirm("Upgrade packages", cb, "Upgrade", true, "",
-			    "do-pkg-upgrade", "", names);
+			    "do-pkg-upgrade", "some", "");
 		}
 		else
 			dispatch("pkg-upgrade-all", "", "");
@@ -1511,7 +1515,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		confirm("Upgrade all packages", body, "Upgrade", true, "",
 		    "do-pkg-upgrade", "", "");
 	} else if (strcmp(act, "do-pkg-upgrade") == 0 && s != NULL) {
-		pkg_upgrade(s, value[0] != '\0' ? value : NULL, false, false);
+		pkg_upgrade(s, strcmp(arg, "some") == 0 ? app.pkg.names : NULL,
+		    false, false);
 	} else if (strcmp(act, "do-pkg-read-anyos") == 0 && s != NULL) {
 		/* Approved: the pending read past OSVERSION, this session. */
 		app.pkg.anyos = true;
@@ -1519,8 +1524,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if ((strcmp(act, "do-pkg-anyos") == 0 || strcmp(act,
 	    "do-pkg-dry-anyos") == 0) && s != NULL) {
 		/* Approved: the same again, OSVERSION ignored. */
-		pkg_upgrade(s, value[0] != '\0' ? value : NULL, act[7] == 'd',
-		    true);
+		pkg_upgrade(s, strcmp(arg, "some") == 0 ? app.pkg.names : NULL,
+		    act[7] == 'd', true);
 	} else if (strcmp(act, "queue") == 0) {
 		app.queue_on = !app.queue_on;
 		arc_queue_set(app.queue_on ? 1 : 0);

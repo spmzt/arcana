@@ -8898,6 +8898,786 @@ ATF_TC_CLEANUP(pwa_ra, tc)
 	browser_stop();
 }
 
+/*
+ * The lists of an interface's router advertisements, each by its own
+ * form: a prefix, a route, a DNS search domain, a NAT64 prefix and a
+ * field of rtadvd.conf's own, saved by one confirmed commit; the
+ * host's rtadvd.conf has each.
+ */
+ATF_TC_WITH_CLEANUP(pwa_ra_lists);
+ATF_TC_HEAD(pwa_ra_lists, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "An interface's router advertisements: a prefix, a route, a DNSSL domain, a PREF64 prefix and a field of its own, each by its form, saved to rtadvd.conf");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_ra_lists, tc)
+{
+	char	conf[4096];
+	FILE	*fp;
+	size_t	n;
+
+	prologue(tc, 1);
+	(void)mkdir("root/usr", 0755);
+	(void)mkdir("root/usr/local", 0755);
+	(void)mkdir("root/usr/local/etc", 0755);
+	(void)mkdir("root/usr/local/etc/rc.conf.d", 0755);
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]')", 10);
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]').click()");
+	wait_js("document.querySelector('tr.iface[data-if=lo0] button[data-act="
+	    "ra-open]')", 20);
+	run("document.querySelector('tr.iface[data-if=lo0] button[data-act="
+	    "ra-open]').click()");
+	wait_js("document.querySelector('#ra form[data-form=ra-prefix]')", 20);
+	/* A valid lifetime shorter than the preferred one's default is
+	 * said here, not by the host's commit, and nothing is added. */
+	run("const f = document.querySelector('form[data-form=ra-prefix]'); "
+	    "f.prefix.value = '2001:db8:1::/64'; f.valid.value = '7200'; "
+	    "f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('preferred lifetime is at most'))", 10);
+	ATF_CHECK(js_true("!document.querySelector('#ra').textContent"
+	    ".includes('2001:db8:1::/64')"));
+	run("const f = document.querySelector('form[data-form=ra-prefix]'); "
+	    "f.prefix.value = '2001:db8:1::/64'; f.valid.value = '7200'; "
+	    "f.preferred.value = '3600'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=ra-save]')", 10);
+	run("const f = document.querySelector('form[data-form=ra-route]'); "
+	    "f.prefix.value = '2001:db8:100::/48'; f.pref.value = 'high'; "
+	    "f.lifetime.value = '600'; f.requestSubmit();");
+	run("const f = document.querySelector('form[data-form=ra-dnssl]'); "
+	    "f.domain.value = 'example.org'; f.requestSubmit();");
+	run("const f = document.querySelector('form[data-form=ra-pref64]'); "
+	    "f.prefix.value = '64:ff9b::/96'; f.requestSubmit();");
+	run("const f = document.querySelector('form[data-form=ra-other]'); "
+	    "f.text.value = 'hatime#100'; f.requestSubmit();");
+	wait_js("document.querySelector('#ra').textContent.includes("
+	    "'example.org') && document.querySelector('#ra').textContent"
+	    ".includes('hatime#100')", 10);
+	run("document.querySelector('button[data-act=ra-save]').click()");
+	wait_js("document.querySelector('button[data-act=ra-accept]') || "
+	    "document.body.textContent.includes('Saved: rtadvd.conf')", 30);
+	run("document.querySelector('button[data-act=ra-accept]')?.click()");
+	wait_js("document.body.textContent.includes('Saved: rtadvd.conf holds "
+	    "the record')", 30);
+	ATF_REQUIRE((fp = fopen("rtadvd.conf", "r")) != NULL);
+	n = fread(conf, 1, sizeof(conf) - 1, fp);
+	conf[n] = '\0';
+	fclose(fp);
+	ATF_CHECK_MSG(strstr(conf, ":addr=\"2001:db8:1::\":") != NULL &&
+	    strstr(conf, ":prefixlen#64:") != NULL &&
+	    strstr(conf, ":vltime#7200:") != NULL &&
+	    strstr(conf, ":pltime#3600:") != NULL, "prefix: %s", conf);
+	ATF_CHECK_MSG(strstr(conf, ":rtprefix=\"2001:db8:100::\":") != NULL &&
+	    strstr(conf, ":rtplen#48:") != NULL &&
+	    strstr(conf, ":rtflags=\"h\":") != NULL &&
+	    strstr(conf, ":rtltime#600:") != NULL, "route: %s", conf);
+	ATF_CHECK_MSG(strstr(conf, ":dnssl=\"example.org\":") != NULL,
+	    "dnssl: %s", conf);
+	/* 96, rtadvd's default length, is not written. */
+	ATF_CHECK_MSG(strstr(conf, ":pref64=\"64:ff9b::\":") != NULL,
+	    "pref64: %s", conf);
+	ATF_CHECK_MSG(strstr(conf, ":hatime#100:") != NULL, "other: %s", conf);
+}
+ATF_TC_CLEANUP(pwa_ra_lists, tc)
+{
+
+	browser_stop();
+}
+
+/* Wait up to 30 s for sh's test to succeed; false when it never does. */
+static bool
+host_has(const char *test)
+{
+	int	i;
+
+	for (i = 0; i < 300 && system(test) != 0; i++)
+		usleep(100000);
+	return (i < 300);
+}
+
+/*
+ * The Storage page's other forms, each submitted and its effect on the
+ * host checked: the NFS server's settings (rc.conf's flags, the
+ * sysctl), a dataset shared, ctl.conf and hast.conf as typed.
+ */
+static void
+part_netstore_forms(void)
+{
+
+	click_when("li.nasnode[data-act=select-storage]", 10);
+	wait_js("location.hash.startsWith('#/storage/nfs') && document."
+	    "querySelector('select[data-input=nas-host]')", 10);
+	run("const s = document.querySelector('select[data-input=nas-host]'); "
+	    "s.value = [...s.options].find(o => o.textContent === 'lab2').value; "
+	    "s.dispatchEvent(new Event('input', {bubbles: true}));");
+	wait_js("document.querySelector('form[data-form=nas-nfs]')", 20);
+	run("const f = document.querySelector('form[data-form=nas-nfs]'); "
+	    "f.enable.checked = true; f.minor.value = '1'; f.threads.value = "
+	    "'8'; f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^vfs.nfsd.server_max_minorversion=1$' "
+	    "sysctl.conf"), "the minor version is not kept");
+	ATF_CHECK_MSG(host_has("grep -rqs 'nfs_server_flags=\"-u -t -n 8\"' "
+	    "root/etc root/usr/local/etc rc.conf"), "nfsd's flags are not kept");
+	ATF_CHECK_MSG(host_has("grep -rqs 'nfsv4_server_only=\"YES\"' "
+	    "root/etc root/usr/local/etc rc.conf"), "NFSv4 alone is not set");
+	dock_closed();
+	wait_js("document.querySelector('form[data-form=nas-share]')", 20);
+	run("const f = document.querySelector('form[data-form=nas-share]'); "
+	    "f.dataset.value = 'tank/data'; f.sharenfs.value = "
+	    "'-maproot=root'; f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^zfs set sharenfs=-maproot=root "
+	    "tank/data$' storage.log"), "the dataset is not shared");
+	dock_closed();
+	click_when("button[data-act=nas-tab][data-arg=iscsi]", 10);
+	wait_js("document.querySelector('form[data-form=nas-ctl]')", 20);
+	run("const f = document.querySelector('form[data-form=nas-ctl]'); "
+	    "f.text.value = 'portal-group pg9 {\\n\\tlisten 0.0.0.0\\n}\\n'; "
+	    "f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^portal-group pg9 {$' ctl.conf"),
+	    "ctl.conf is not written");
+	dock_closed();
+	click_when("button[data-act=nas-tab][data-arg=hast]", 10);
+	wait_js("document.querySelector('form[data-form=nas-hast]')", 20);
+	run("const f = document.querySelector('form[data-form=nas-hast]'); "
+	    "f.text.value = 'resource other {\\n\\ton lab {\\n\\t\\tlocal "
+	    "/dev/md8\\n\\t\\tremote 10.0.0.3\\n\\t}\\n}\\n'; "
+	    "f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^resource other {$' hast.conf"),
+	    "hast.conf is not written");
+	dock_closed();
+}
+
+/*
+ * A bridge's forms on the Network tab, each submitted and found in
+ * what ifconfig was told: a member taken in and kept, its own options
+ * (only the one changed sent), an address set behind a member; then a
+ * firewall table made and an object of ipfw's own words.
+ */
+static void
+part_l2_forms(void)
+{
+
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind][data-arg="
+	    "bridges]')", 10);
+	run("document.querySelector('button[data-act=net-kind][data-arg="
+	    "bridges]').click()");
+	wait_js("document.querySelector('form[data-form=br-add]') && "
+	    "document.querySelector('form[data-form=br-set] input[name="
+	    "priority]')", 20);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=br-set] "
+	    "input[name=proto]').value === 'rstp'"));
+	run("const f = document.querySelector('form[data-form=br-add]'); "
+	    "f.member.value = 'tap9'; f.persist.checked = true; "
+	    "f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^bridge0 addm tap9' ifconfig.log"),
+	    "the member is not taken in");
+	ATF_CHECK_MSG(host_has("grep -q 'ifconfig_bridge0=.*addm tap9' "
+	    "root/etc/rc.conf root/usr/local/etc/rc.conf.d/arcana rc.conf "
+	    "2>/dev/null"), "the member is not kept");
+	dock_closed();
+	/* Only what was changed is set: the others are the bridge's now. */
+	wait_js("document.querySelector('form[data-form=br-set] input[name="
+	    "priority]')", 20);
+	run("const f = document.querySelector('form[data-form=br-set]'); "
+	    "f.priority.value = '4096'; f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^bridge0 priority 4096' ifconfig.log"),
+	    "the priority is not set");
+	usleep(1000000);
+	ATF_CHECK_MSG(system("grep -qE '^bridge0 (proto|hellotime|fwddelay|"
+	    "maxage|holdcnt|maxaddr|timeout) ' ifconfig.log") != 0,
+	    "options not changed were set too");
+	dock_closed();
+	wait_js("document.querySelector('form[data-form=br-static] select"
+	    "[name=member] option')", 20);
+	run("const f = document.querySelector('form[data-form=br-static]'); "
+	    "f.mac.value = '02:00:00:00:00:09'; f.member.value = 'em1'; "
+	    "f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^bridge0 static em1 "
+	    "02:00:00:00:00:09' ifconfig.log"), "the address is not set");
+	dock_closed();
+
+	fw_open();
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-4\"]').click()");
+	wait_js("document.querySelector('form[data-form=fw-table]')", 10);
+	run("const f = document.querySelector('form[data-form=fw-table]'); "
+	    "f.name.value = 'blocked_v4'; f.type.value = 'addr'; "
+	    "f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^ipfw -q table blocked_v4 create "
+	    "type addr$' ipfw.log"), "the table is not made");
+	ATF_CHECK_MSG(host_has("grep -q '^table blocked_v4 create type addr$' "
+	    "ipfw.rules"), "the table is not kept");
+	dock_closed();
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-5\"]').click()");
+	wait_js("document.querySelector('form[data-form=fw-object] select')",
+	    10);
+	run("const f = document.querySelector('form[data-form=fw-object]'); "
+	    "f.kind.value = 'pipe'; f.words.value = '3 config bw 5Mbit/s'; "
+	    "f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^ipfw -q pipe 3 config bw 5Mbit/s$' "
+	    "ipfw.log"), "the pipe is not configured");
+	ATF_CHECK_MSG(host_has("grep -q '^pipe 3 config bw 5Mbit/s$' "
+	    "ipfw.rules"), "the pipe is not kept");
+	dock_closed();
+}
+
+/*
+ * The console's own role and user forms, submitted: a role of a dotted
+ * name (net.ops), an operator on every host and an admin on the one;
+ * a user given it by its box, r_net.ops, a dotted field; users.json
+ * has both.
+ */
+static void
+part_aaa_forms(void)
+{
+
+	run("document.querySelector('.rail-foot li[data-act=settings]')"
+	    ".click()");
+	wait_js("document.querySelector('button[data-act=set-tab][data-arg=aaa]')",
+	    10);
+	run("document.querySelector('button[data-act=set-tab][data-arg=aaa]')"
+	    ".click()");
+	wait_js("document.querySelector('button[data-act=aaa-tab][data-arg="
+	    "roles]')", 10);
+	run("document.querySelector('button[data-act=aaa-tab][data-arg=roles]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.roles tbody tr').length >= 3",
+	    10);
+	run("document.querySelector('button[data-act=role-add]').click()");
+	wait_js("document.querySelector('.modal form[data-form=role] "
+	    "select[name=console]')", 5);
+	run("const f = document.querySelector('.modal form[data-form=role]'); "
+	    "f.querySelector('input[name=name]').value = 'net.ops'; "
+	    "f.console.value = 'operator'; f.all.value = 'operator'; "
+	    "const h = f.querySelector('select[name^=h_]'); h.value = 'admin'; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('table.roles tbody tr')].some(tr => tr."
+	    "textContent.includes('net.ops'))", 10);
+	ATF_CHECK_MSG(host_has("grep -q '\"net.ops\"' data/users.json"),
+	    "the role is not kept");
+	ATF_CHECK(system("grep -q '\"admin\"' data/users.json") == 0);
+	run("document.querySelector('button[data-act=aaa-tab][data-arg=users]')"
+	    ".click()");
+	wait_js("document.querySelector('button[data-act=user-add]')", 10);
+	run("document.querySelector('button[data-act=user-add]').click()");
+	wait_js("document.querySelector('.modal form[data-form=user] "
+	    "input[name=\"r_net.ops\"]')", 5);
+	run("const f = document.querySelector('.modal form[data-form=user]'); "
+	    "f.querySelector('input[name=name]').value = 'carol'; "
+	    "f.querySelector('input[name=\"r_net.ops\"]').checked = true; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('.modal .err') || (!document."
+	    "querySelector('.modal') && [...document.querySelectorAll("
+	    "'table.users tbody tr')].some(tr => tr.textContent.includes("
+	    "'carol')))", 10);
+	ATF_CHECK_MSG(js_true("!document.querySelector('.modal')"),
+	    "the user form stays");
+	ATF_CHECK_MSG(host_has("tr -d ' \\n' < data/users.json | grep -q "
+	    "'\"name\":\"carol\"[^}]*\"net.ops\"'"), "the user and its role "
+	    "are not kept");
+	/* The directory's settings, a form of their own: kept. */
+	run("document.querySelector('button[data-act=aaa-tab][data-arg=ldap]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=settings-ldap] "
+	    "input[name=ldap_url]')", 10);
+	run("const f = document.querySelector('form[data-form=settings-ldap]'); "
+	    "f.ldap_url.value = 'ldaps://ldap.example.invalid'; "
+	    "f.ldap_base.value = 'ou=people,dc=example,dc=invalid'; "
+	    "f.ldap_group.value = 'cn=ops,dc=example,dc=invalid'; "
+	    "f.requestSubmit();");
+	ATF_CHECK_MSG(host_has("grep -q 'ldaps://ldap.example.invalid' "
+	    "data/settings.json && grep -q 'ou=people,dc=example,dc=invalid' "
+	    "data/settings.json && grep -q 'cn=ops,dc=example,dc=invalid' "
+	    "data/settings.json"), "the directory's settings are not kept");
+}
+
+/*
+ * Interfaces made by the Network tab's form, each kind's fields sent
+ * and found in what ifconfig was told and rc.conf keeps: a VLAN on
+ * lo0 (the kernel's: the agent looks for the parent) with an address,
+ * a gif tunnel; then a netgraph node made by mkpeer from a node picked
+ * on the graph.
+ */
+static void
+part_if_forms(void)
+{
+
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]')", 10);
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]').click()");
+	wait_js("document.querySelector('button[data-act=topo-if-create]')",
+	    20);
+	run("document.querySelector('button[data-act=topo-if-create]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=if-create] select"
+	    "[name=kind]')", 5);
+	run("const s = document.querySelector('form[data-form=if-create] "
+	    "select[name=kind]'); s.value = 'vlan'; s.dispatchEvent(new "
+	    "Event('input', {bubbles: true}));");
+	wait_js("document.querySelector('form[data-form=if-create] "
+	    "input[name=parent]')", 5);
+	run("const f = document.querySelector('form[data-form=if-create]'); "
+	    "f.number.value = '20'; f.id.value = '20'; f.parent.value = 'lo0'; "
+	    "f.address.value = '10.20.0.1/24'; f.description.value = 'lab "
+	    "vlan'; f.persist.checked = true; f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^vlan20 create' ifconfig.log && "
+	    "grep '^vlan20 create' ifconfig.log | grep -q 'vlan 20' && "
+	    "grep '^vlan20 create' ifconfig.log | grep -q 'vlandev lo0'"),
+	    "the VLAN is not made with its tag and parent");
+	ATF_CHECK_MSG(host_has("grep -rqs 'cloned_interfaces=.*vlan20' "
+	    "root/etc/rc.conf root/usr/local/etc/rc.conf.d/arcana rc.conf"),
+	    "the VLAN is not kept");
+	ATF_CHECK_MSG(host_has("grep -rqs '10.20.0.1' ifconfig.log"),
+	    "the VLAN's address is not set");
+	dock_closed();
+	run("document.querySelector('button[data-act=topo-if-create]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=if-create] select"
+	    "[name=kind]')", 5);
+	run("const s = document.querySelector('form[data-form=if-create] "
+	    "select[name=kind]'); s.value = 'gif'; s.dispatchEvent(new "
+	    "Event('input', {bubbles: true}));");
+	wait_js("document.querySelector('form[data-form=if-create] "
+	    "input[name=tunnel_local]')", 5);
+	run("const f = document.querySelector('form[data-form=if-create]'); "
+	    "f.number.value = '7'; f.tunnel_local.value = '192.0.2.1'; "
+	    "f.tunnel_remote.value = '192.0.2.2'; f.tunnelfib.value = '1'; "
+	    "f.persist.checked = false; f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^gif7 ' ifconfig.log && grep '^gif7 ' "
+	    "ifconfig.log | grep -q 'tunnel 192.0.2.1 192.0.2.2' && "
+	    "grep '^gif7 ' ifconfig.log | grep -q 'tunnelfib 1'"),
+	    "the gif tunnel is not made with its ends and table");
+	dock_closed();
+
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=netgraph]').click()");
+	wait_js("document.querySelectorAll('.ngmap .tnode').length === 2", 20);
+	run("window.ptr = (el, type, x, y) => { const r = el."
+	    "getBoundingClientRect(); (type === 'pointerdown' ? el : document)"
+	    ".dispatchEvent(new PointerEvent(type, { bubbles: true, button: "
+	    "0, clientX: x === undefined ? r.x + r.width / 2 : x, clientY: "
+	    "y === undefined ? r.y + r.height / 2 : y })); };");
+	run("const n = document.querySelector('.ngmap .tnode .box'); "
+	    "ptr(n, 'pointerdown'); ptr(n, 'pointerup');");
+	wait_js("document.querySelector('.pane-actions button[data-act="
+	    "ng-mkpeer]')", 5);
+	run("document.querySelector('.pane-actions button[data-act=ng-mkpeer]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=ng-mkpeer]')", 5);
+	run("const f = document.querySelector('form[data-form=ng-mkpeer]'); "
+	    "f.hook.value = 'upper'; f.type.value = 'tee'; f.peerhook.value = "
+	    "'right'; f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -qE '^mkpeer [^ ]+ tee upper right$' "
+	    "ngctl.log"), "the node is not made");
+	dock_closed();
+}
+
+/*
+ * A jail's address by its form, not previewed but sent: an address
+ * job, into the jail's file alone; then taken out again.
+ */
+static void
+part_address_job(void)
+{
+
+	run("document.querySelector('button.tab[data-arg=jails]').click()");
+	wait_js("document.querySelector('#j-db')", 20);
+	run("document.querySelector('#j-db').click()");
+	wait_js("document.querySelector('.jail-page button[data-act="
+	    "address-add]')", 10);
+	run("document.querySelector('.jail-page button[data-act=address-add]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=address]')", 5);
+	run("const f = document.querySelector('form[data-form=address]'); "
+	    "f.address.value = '10.0.0.21/24'; f.live.checked = false; "
+	    "f.persist.checked = true; f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '10.0.0.21' etc/jail.conf"),
+	    "the address is not in db's file");
+	dock_closed();
+	wait_js("document.querySelector('.jail-page button[data-act="
+	    "address-add]')", 10);
+	run("document.querySelector('.jail-page button[data-act=address-add]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=address]')", 5);
+	run("const f = document.querySelector('form[data-form=address]'); "
+	    "f.address.value = '10.0.0.21/24'; f.mode.value = 'remove'; "
+	    "f.live.checked = false; f.persist.checked = true; "
+	    "f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("! grep -q '10.0.0.21' etc/jail.conf"),
+	    "the address is still in db's file");
+	dock_closed();
+}
+
+/*
+ * After part_security: a ruleset file's rules disabled whole by its
+ * form, shown as set; a rule source of one's own added by its form,
+ * kept by suricata-update's sources.
+ */
+static void
+part_suricata_forms(void)
+{
+
+	click_when("button[data-act=sec-tab][data-arg=ids]", 10);
+	click_when("button[data-act=sec-idsview][data-arg=rules]", 10);
+	wait_js("document.querySelector('form[data-form=sur-group]')", 20);
+	run("const f = document.querySelector('form[data-form=sur-group]'); "
+	    "f.file.value = 'emerging-games.rules'; f.to.value = 'off'; "
+	    "f.requestSubmit();");
+	queued_run();
+	wait_js("[...document.querySelectorAll('.secpage .row')].some(r => "
+	    "r.textContent.includes('emerging-games.rules') && r.textContent"
+	    ".includes('off'))", 30);
+	ATF_CHECK_MSG(host_has("grep -rqs 'group:emerging-games.rules' "
+	    "--include='*.conf' ."), "the group is not kept");
+	dock_closed();
+	click_when("button[data-act=sec-idsview][data-arg=sources]", 10);
+	click_when("button[data-act=sus-adding]", 10);
+	wait_js("document.querySelector('form[data-form=sus-add]')", 5);
+	run("const f = document.querySelector('form[data-form=sus-add]'); "
+	    "f.name.value = 'lab/rules'; f.url.value = "
+	    "'https://rules.example.invalid/lab.tar.gz'; f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -rqs 'rules.example.invalid/lab.tar.gz' "
+	    "update"), "the source is not kept");
+	dock_closed();
+}
+
+/*
+ * Manually keyed SAs of an ipsec(4) interface by the IPsec tab's form:
+ * set from keys given, not in safe mode (keys set by hand cannot be
+ * put back); setkey was given both SAs with their SPIs and reqid.
+ */
+static void
+part_ipsec_sa(void)
+{
+
+	host_tabs();
+	host_tab("ipsec");
+	wait_js("document.querySelector('.pane.ipsec button[data-act="
+	    "ipsec-sa-add]')", 20);
+	run("document.querySelector('.pane.ipsec button[data-act=ipsec-sa-add]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=ipsec-sa]')", 5);
+	run("const f = document.querySelector('form[data-form=ipsec-sa]'); "
+	    "f.verb.value = 'set'; f.interface.value = 'ipsec0'; "
+	    "f.reqid.value = '100'; f.local.value = '192.0.2.1'; "
+	    "f.remote.value = '192.0.2.2'; f.words.value = 'spi-in 0x1001 "
+	    "spi-out 0x1002 enc aes-cbc auth hmac-sha1 key-in "
+	    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff "
+	    "key-out "
+	    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff "
+	    "akey-in 0011223344556677889900112233445566778899 akey-out "
+	    "0011223344556677889900112233445566778899'; f.safe.checked = "
+	    "false; f.requestSubmit();");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^add 192.0.2.2 192.0.2.1 esp 0x1001 "
+	    "-m tunnel -u 100 ' setkey.conf && grep -q '^add 192.0.2.1 "
+	    "192.0.2.2 esp 0x1002 -m tunnel -u 100 ' setkey.conf"),
+	    "the SAs are not set");
+	dock_closed();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_ipsec_sa);
+ATF_TC_HEAD(pwa_ipsec_sa, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Manually keyed SAs set by the IPsec tab's form, found in what setkey was given");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_ipsec_sa, tc)
+{
+
+	prologue(tc, 1);
+	part_ipsec_sa();
+}
+ATF_TC_CLEANUP(pwa_ipsec_sa, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_address_job);
+ATF_TC_HEAD(pwa_address_job, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A jail's address added by its form as a job, and taken out, found in its file");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_address_job, tc)
+{
+
+	prologue(tc, 1);
+	part_address_job();
+}
+ATF_TC_CLEANUP(pwa_address_job, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_if_forms);
+ATF_TC_HEAD(pwa_if_forms, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A VLAN and a gif tunnel made by the interface form, a netgraph node by mkpeer, each found in what the host was told");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_if_forms, tc)
+{
+
+	prologue(tc, 1);
+	part_if_forms();
+}
+ATF_TC_CLEANUP(pwa_if_forms, tc)
+{
+
+	browser_stop();
+}
+
+/*
+ * The console's own host forms: a host enrolled (a token made, the
+ * command to run shown); a host added at an address nothing answers,
+ * told the right one by its page's form, then reached.
+ */
+static void
+part_console_forms(void)
+{
+	char	script[1024];
+
+	run("document.querySelector('button[data-act=add-server]').click()");
+	wait_js("document.querySelector('form[data-form=add-server] a[data-act="
+	    "enrol]')", 5);
+	run("document.querySelector('form[data-form=add-server] a[data-act="
+	    "enrol]').click()");
+	wait_js("document.querySelector('form[data-form=enrol-host]')", 5);
+	run("const f = document.querySelector('form[data-form=enrol-host]'); "
+	    "f.name.value = 'edge9'; f.host.value = 'edge9.example.invalid'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=enrol-host] pre') && "
+	    "document.querySelector('form[data-form=enrol-host] pre')"
+	    ".textContent.includes('arcana-enrol')", 10);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
+
+	ATF_REQUIRE(symlink("jgd.sock", "jgd3.sock") == 0);
+	run("document.querySelector('button[data-act=add-server]').click()");
+	wait_js("document.querySelector('form[data-form=add-server]')", 5);
+	/* Over TCP, where nothing listens: a socket would be the
+	 * console's own host, whose address is not offered. */
+	snprintf(script, sizeof(script), "const f = document.querySelector("
+	    "'form[data-form=add-server]'); f.name.value = 'far'; f.uri.value "
+	    "= 'tcp://127.0.0.1:%d'; f.requestSubmit();", free_port());
+	run(script);
+	wait_js("document.querySelector('.hostbar[data-server=far]') && "
+	    "document.querySelector('form[data-form=server-uri]')", 30);
+	snprintf(script, sizeof(script), "const f = document.querySelector("
+	    "'form[data-form=server-uri]'); f.uri.value = 'unix:%s/jgd3.sock'; "
+	    "f.requestSubmit();", cwd);
+	run(script);
+	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
+	    "textContent.includes('reaches it at the new address'))", 15);
+	wait_js("!document.querySelector('form[data-form=server-uri]')", 30);
+	ATF_CHECK_MSG(host_has("grep -q 'jgd3.sock' data/hosts.json 2>/dev/null "
+	    "|| grep -rqs 'jgd3.sock' data"), "the new address is not kept");
+}
+
+/*
+ * mac_do's programs (security.mac.do.exec_paths, a dotted name the
+ * commit keys a sysctl by), where the kernel has mac_do: saved by
+ * their form, kept in sysctl.conf and set.
+ */
+static void
+part_macdo_paths(void)
+{
+
+	host_tabs();
+	run("document.querySelector('button.tab[data-arg=security]').click()");
+	wait_js("document.getElementById('macdo') && !document.querySelector("
+	    "'#macdo ~ .loader')", 20);
+	if (!js_true("!!document.querySelector('form[data-form=md-paths]')")) {
+		printf("no mac_do in this kernel: its programs not tried\n");
+		return;
+	}
+	run("const f = document.querySelector('form[data-form=md-paths]'); "
+	    "f.paths.value = '/usr/bin/mdo:/usr/local/bin/lab-tool'; "
+	    "f.requestSubmit();");
+	ATF_CHECK_MSG(host_has("grep -q '^security.mac.do.exec_paths=/usr/bin/"
+	    "mdo:/usr/local/bin/lab-tool$' sysctl.conf && grep -q 'sysctl "
+	    "security.mac.do.exec_paths=/usr/bin/mdo:/usr/local/bin/lab-tool' "
+	    "kld.log"), "mac_do's programs are not kept and set");
+	wait_js("[...document.querySelectorAll('p.note')].some(p => "
+	    "p.textContent.includes('Saved'))", 20);
+}
+
+/*
+ * Packages ticked for an upgrade, many of them (a host behind on many):
+ * their names more than a confirmation's value holds, yet every one
+ * is in the upgrade that is confirmed.
+ */
+static void
+part_pkg_selected(void)
+{
+
+	run("document.querySelector('button.tab[data-arg=packages]').click()");
+	click_when("button[data-act=pkg-mode][data-arg='1']", 20);
+	wait_js("document.querySelector('form[data-form=packages] input"
+	    "[name=\"p:aria2\"]') && document.querySelector('button[value=go]:"
+	    "not([disabled])')", 20);
+	/* Forty more, ticked with aria2, sent at once. */
+	run("const f = document.querySelector('form[data-form=packages]'); "
+	    "f.querySelector('input[name=\"p:aria2\"]').checked = true; "
+	    "for (let i = 0; i < 40; i++) { const c = document.createElement("
+	    "'input'); c.type = 'checkbox'; c.name = 'p:lab-package-' + "
+	    "String(i).padStart(2, '0') + '-of-a-long-name'; c.checked = true; "
+	    "c.hidden = true; f.appendChild(c); } "
+	    "f.requestSubmit(f.querySelector('button[value=go]'));");
+	wait_js("document.querySelector('form[data-form=confirm]') && document."
+	    "querySelector('.modal').textContent.includes('selected')", 10);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	queued_run();
+	ATF_CHECK_MSG(host_has("grep -q '^upgrade -y .*aria2.*"
+	    "lab-package-39-of-a-long-name' pkg.log"), "the upgrade is not of "
+	    "every package ticked");
+	dock_closed();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_pkg_selected);
+ATF_TC_HEAD(pwa_pkg_selected, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Many packages ticked for an upgrade, more than a confirmation's value holds: every one upgraded");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_pkg_selected, tc)
+{
+
+	prologue(tc, 1);
+	part_pkg_selected();
+}
+ATF_TC_CLEANUP(pwa_pkg_selected, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_macdo_paths);
+ATF_TC_HEAD(pwa_macdo_paths, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "mac_do's programs saved by their form, kept in sysctl.conf and set");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_macdo_paths, tc)
+{
+
+	prologue(tc, 1);
+	part_macdo_paths();
+}
+ATF_TC_CLEANUP(pwa_macdo_paths, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_console_forms);
+ATF_TC_HEAD(pwa_console_forms, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A host enrolled by its form; a host added at a wrong address told the right one by its page's form, then reached");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_console_forms, tc)
+{
+
+	prologue(tc, 1);
+	part_console_forms();
+}
+ATF_TC_CLEANUP(pwa_console_forms, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_aaa_forms);
+ATF_TC_HEAD(pwa_aaa_forms, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The console's role and user forms submitted, a role of a dotted name given to a user by its box; users.json has both");
+	atf_tc_set_md_var(tc, "timeout", "180");
+}
+ATF_TC_BODY(pwa_aaa_forms, tc)
+{
+
+	prologue(tc, 1);
+	part_aaa_forms();
+}
+ATF_TC_CLEANUP(pwa_aaa_forms, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_l2_forms);
+ATF_TC_HEAD(pwa_l2_forms, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A bridge's member, options and static address, a firewall table and an ipfw object, each submitted and found on the host");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_l2_forms, tc)
+{
+
+	prologue(tc, 1);
+	part_l2_forms();
+}
+ATF_TC_CLEANUP(pwa_l2_forms, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_netstore_forms);
+ATF_TC_HEAD(pwa_netstore_forms, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The Storage page's NFS server settings, a ZFS share, ctl.conf and hast.conf, each submitted and found on the host");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_netstore_forms, tc)
+{
+
+	prologue(tc, 2);
+	part_netstore_forms();
+}
+ATF_TC_CLEANUP(pwa_netstore_forms, tc)
+{
+
+	browser_stop();
+}
+
 ATF_TC_WITH_CLEANUP(pwa_feeds);
 ATF_TC_HEAD(pwa_feeds, tc)
 {
@@ -11239,6 +12019,7 @@ ATF_TC_BODY(pwa_flows_security, tc)
 
 	prologue(tc, 2);
 	part_security();
+	part_suricata_forms();
 }
 ATF_TC_CLEANUP(pwa_flows_security, tc)
 {
@@ -11335,5 +12116,15 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_mapgpu);
 	ATF_TP_ADD_TC(tp, pwa_mesh);
 	ATF_TP_ADD_TC(tp, pwa_scale);
+	ATF_TP_ADD_TC(tp, pwa_ra_lists);
+	ATF_TP_ADD_TC(tp, pwa_netstore_forms);
+	ATF_TP_ADD_TC(tp, pwa_l2_forms);
+	ATF_TP_ADD_TC(tp, pwa_aaa_forms);
+	ATF_TP_ADD_TC(tp, pwa_if_forms);
+	ATF_TP_ADD_TC(tp, pwa_address_job);
+	ATF_TP_ADD_TC(tp, pwa_ipsec_sa);
+	ATF_TP_ADD_TC(tp, pwa_console_forms);
+	ATF_TP_ADD_TC(tp, pwa_macdo_paths);
+	ATF_TP_ADD_TC(tp, pwa_pkg_selected);
 	return (atf_no_error());
 }

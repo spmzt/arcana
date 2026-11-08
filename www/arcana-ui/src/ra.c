@@ -786,6 +786,18 @@ ra_form(const char *form, const ucl_object_t *f)
 			toast(true, "A prefix with its length is needed");
 			return (true);
 		}
+		/* Preferred no longer than valid (RFC 4861 4.6.2), each its
+		 * default (RFC 8349's, rtadvd's) when not given: a valid of
+		 * a day alone is refused by the host at the commit. */
+		if ((jstr(f, "preferred") != NULL && jstr(f, "preferred")[0] !=
+		    '\0' ? strtoll(jstr(f, "preferred"), NULL, 10) : 604800) >
+		    (jstr(f, "valid") != NULL && jstr(f, "valid")[0] != '\0' ?
+		    strtoll(jstr(f, "valid"), NULL, 10) : 2592000)) {
+			ucl_object_unref(e);
+			toast(true, "The preferred lifetime is at most the valid "
+			    "one (604800 s when not given)");
+			return (true);
+		}
 		ucl_object_insert_key(e, ucl_object_fromstring(v),
 		    "prefix-spec", 0, true);
 		set_num(e, "valid-lifetime", f, "valid");
