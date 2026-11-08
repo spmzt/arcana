@@ -2146,6 +2146,16 @@ vhost_new(int k)
 			info.alpn = "h2,http/1.1";
 			info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
 			    LWS_SERVER_OPTION_CREATE_VHOST_SSL_CTX;
+#ifdef LWS_SERVER_OPTION_SNI_FALLBACK
+			/*
+			 * One vhost a port, named l<n>, not by the host's
+			 * names: libwebsockets 5.1 refuses an SNI name no
+			 * vhost has (unrecognized_name) unless one is the
+			 * port's fallback.  Every name the certificate is for
+			 * is this one's.
+			 */
+			info.options |= LWS_SERVER_OPTION_SNI_FALLBACK;
+#endif
 			info.ssl_cipher_list = "ECDHE+AESGCM:ECDHE+CHACHA20";
 			info.ssl_options_set = SSL_OP_NO_TLSv1 |
 			    SSL_OP_NO_TLSv1_1;
